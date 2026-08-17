@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { RoadType, RoadDirection, ROAD_WIDTHS } from '../../core/road/types';
 import { SIDEWALK_WIDTH } from '../../core/traffic/SidewalkGraph';
 import {
-  buildRoadStrips, buildSidewalkStrips, BEND_ARC_SEGMENTS,
+  buildRoadStrips, buildSidewalkStrips, buildLampPositions,
+  BEND_ARC_SEGMENTS, BEND_KERB_SEGMENTS,
   type RoadCell,
 } from '../RoadStripBuilder';
 
@@ -175,7 +176,7 @@ describe('L 形彎的路緣', () => {
     const half = ROAD_WIDTHS[RoadType.TWO_LANE]! / 2;
     const c = turnCentre(NE);
     const strips = buildSidewalkStrips([cell(NE)]);
-    expect(strips).toHaveLength(BEND_ARC_SEGMENTS);
+    expect(strips).toHaveLength(BEND_KERB_SEGMENTS);
     for (const s of strips) {
       // 外緣準確 —— 路緣的外側就是玩家看到的街廓邊界。
       expect(radius(s, c) + s.sx / 2).toBeCloseTo(0.5 + half + SIDEWALK_WIDTH, 9);
@@ -208,7 +209,7 @@ describe('L 形彎的路緣', () => {
     const half = ROAD_WIDTHS[RoadType.TWO_LANE]! / 2;
     const c = turnCentre(flags);
     const strips = buildSidewalkStrips([cell(flags)]);
-    expect(strips).toHaveLength(BEND_ARC_SEGMENTS);
+    expect(strips).toHaveLength(BEND_KERB_SEGMENTS);
     for (const s of strips) {
       expect(radius(s, c) + s.sx / 2).toBeCloseTo(0.5 + half + SIDEWALK_WIDTH, 9);
     }
@@ -224,5 +225,101 @@ describe('L 形彎的路緣', () => {
     const cross = cell(RoadDirection.NORTH | RoadDirection.SOUTH | RoadDirection.EAST);
     for (const s of buildSidewalkStrips([cross])) expect(s.rotY).toBe(0);
     for (const s of buildRoadStrips([cross])) expect(s.rotY).toBe(0);
+  });
+});
+
+describe('L 形彎的路緣石不能凸出去', () => {
+  /** 一段長方形四個角裡，離彎心最遠的那一個。 */
+  function furthestCorner(
+    s: { x: number; z: number; sx: number; sz: number; rotY: number },
+    c: { cx: number; cz: number },
+  ): number {
+    let far = 0;
+    for (const a of [1, -1]) {
+      for (const b of [1, -1]) {
+        const px = s.x + a * (s.sz / 2) * Math.sin(s.rotY) + b * (s.sx / 2) * Math.cos(s.rotY);
+        const pz = s.z + a * (s.sz / 2) * Math.cos(s.rotY) - b * (s.sx / 2) * Math.sin(s.rotY);
+        far = Math.max(far, Math.hypot(px - c.cx, pz - c.cz));
+      }
+    }
+    return far;
+  }
+
+  it('should not let the kerb bulge past its own outer radius', () => {
+    // 每一段都是直的長方形，中間貼著圓弧 —— 所以**兩端的角**會凸到圓外面，
+    // 凸出量是 R×(1/cos(θ/2)−1)。段數太少的話那是一圈看得見的扇貝邊，接在
+    // 直路的路緣上特別明顯:直路是一條直線，彎道卻鼓出來一塊。
+    const half = ROAD_WIDTHS[RoadType.TWO_LANE]! / 2;
+    const nominal = 0.5 + half + SIDEWALK_WIDTH;
+    const c = turnCentre(NE);
+    for (const s of buildSidewalkStrips([cell(NE)])) {
+      // 容許量取路緣寬的 5% —— 再多就看得出來了。
+      expect(furthestCorner(s, c) - nominal).toBeLessThan(SIDEWALK_WIDTH * 0.05);
+    }
+  });
+
+  it('should keep the kerb about as thick as it is on a straight', () => {
+    // 補內側的量跟半徑成正比，而路緣的半徑比路面大 —— 段數不夠的話彎道的路緣
+    // 會比直路胖一圈。
+    for (const s of buildSidewalkStrips([cell(NE)])) {
+      expect(s.sx).toBeLessThan(SIDEWALK_WIDTH * 1.05);
+    }
+  });
+
+  it('should spend the extra pieces on the kerb, not on the asphalt', () => {
+    // 柏油的凸出被路緣蓋住，所以它不需要那麼多段。段數分開才不會白花實例。
+    expect(BEND_KERB_SEGMENTS).toBeGreaterThan(BEND_ARC_SEGMENTS);
+    expect(buildSidewalkStrips([cell(NE)])).toHaveLength(BEND_KERB_SEGMENTS);
+    expect(buildRoadStrips([cell(NE)])).toHaveLength(BEND_ARC_SEGMENTS);
+  });
+});
+
+describe('路燈', () => {
+  it('should stand on the kerb of a straight road', () => {
+    const half = ROAD_WIDTHS[RoadType.TWO_LANE]! / 2 + SIDEWALK_WIDTH / 2;
+    const lamps = buildLampPositions([cell(NS)]);
+    expect(lamps.map(l => `${l.x.toFixed(3)},${l.z.toFixed(3)}`).sort())
+      .toEqual([`${(-half).toFixed(3)},0.000`, `${half.toFixed(3)},0.000`].sort());
+  });
+
+  it('should follow the kerb round a bend', () => {
+    // 原本是照直路的規則擺的:南邊界與西邊界的中點。那兩點離彎心 1.003，而路緣
+    // 只到 0.87 —— 路燈整個站到草地上去了。
+    const half = ROAD_WIDTHS[RoadType.TWO_LANE]! / 2;
+    const onKerb = 0.5 + half + SIDEWALK_WIDTH / 2;
+    const c = turnCentre(NE);
+    const lamps = buildLampPositions([cell(NE)]);
+    expect(lamps).toHaveLength(2);
+    for (const l of lamps) {
+      expect(Math.hypot(l.x - c.cx, l.z - c.cz)).toBeCloseTo(onKerb, 9);
+    }
+  });
+
+  it('should not put both bend lamps in the same place', () => {
+    const lamps = buildLampPositions([cell(NE)]);
+    expect(Math.hypot(lamps[0]!.x - lamps[1]!.x, lamps[0]!.z - lamps[1]!.z))
+      .toBeGreaterThan(0.3);
+  });
+
+  it.each([[NE], [NW], [SE], [SW]])('should light the outside of every bend (%i)', (flags) => {
+    const half = ROAD_WIDTHS[RoadType.TWO_LANE]! / 2;
+    const c = turnCentre(flags);
+    for (const l of buildLampPositions([cell(flags)])) {
+      expect(Math.hypot(l.x - c.cx, l.z - c.cz)).toBeCloseTo(0.5 + half + SIDEWALK_WIDTH / 2, 9);
+    }
+  });
+
+  it('should light only the sides with no road on them', () => {
+    // 十字路口三面有路，只剩一面要燈。
+    const lamps = buildLampPositions([cell(RoadDirection.NORTH | RoadDirection.SOUTH | RoadDirection.EAST)]);
+    expect(lamps).toHaveLength(1);
+    expect(lamps[0]!.x).toBeLessThan(0);
+  });
+
+  it('should carry the source cell so the renderer can track it', () => {
+    for (const l of buildLampPositions([{ x: 4, y: 7, roadType: RoadType.TWO_LANE, roadFlags: NE }])) {
+      expect(l.srcX).toBe(4);
+      expect(l.srcY).toBe(7);
+    }
   });
 });

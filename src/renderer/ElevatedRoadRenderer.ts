@@ -2,7 +2,6 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { type ElevationManager } from '../core/elevation/ElevationManager';
 import { type ElevatedSegment } from '../core/elevation/types';
-import { SIDEWALK_WIDTH } from '../core/traffic/SidewalkGraph';
 import { Grid } from '../core/grid/Grid';
 import { TerrainType } from '../core/grid/types';
 import { RoadType, RoadDirection, ROAD_CONFIGS } from '../core/road/types';
@@ -12,7 +11,9 @@ import {
   MAX_LANE_MARKINGS_PER_CELL,
   buildRoadStrips,
   buildSidewalkStrips,
+  buildLampPositions,
   BEND_ARC_SEGMENTS,
+  BEND_KERB_SEGMENTS,
   buildLaneMarkingData,
   buildCenterLineData,
   buildCurvedCenterLineData,
@@ -34,7 +35,7 @@ const RAMP_ANGLE = Math.atan2(LEVEL_HEIGHT, 1.0);
 const RAMP_LENGTH = Math.sqrt(1.0 + LEVEL_HEIGHT * LEVEL_HEIGHT);
 /** Max elevated cells per level (pre-allocated capacity). */
 const MAX_PER_LEVEL = 500;
-const CAP = { road: Math.max(3, BEND_ARC_SEGMENTS), sidewalk: Math.max(4, BEND_ARC_SEGMENTS), marking: MAX_LANE_MARKINGS_PER_CELL, centerLine: 2, curvedCL: 1, lamp: 4, lampGlow: 4 } as const;
+const CAP = { road: Math.max(3, BEND_ARC_SEGMENTS), sidewalk: Math.max(4, BEND_KERB_SEGMENTS), marking: MAX_LANE_MARKINGS_PER_CELL, centerLine: 2, curvedCL: 1, lamp: 4, lampGlow: 4 } as const;
 
 interface ElevatedCell {
   x: number;
@@ -466,19 +467,10 @@ export class ElevatedRoadRenderer {
       if (!targetKeys.has(key)) continue;
       if (ld.lampTracker.hasCell(key)) continue; // already added
 
-      const hasN = (c.seg.roadFlags & RoadDirection.NORTH) !== 0;
-      const hasS = (c.seg.roadFlags & RoadDirection.SOUTH) !== 0;
-      const hasE = (c.seg.roadFlags & RoadDirection.EAST) !== 0;
-      const hasW = (c.seg.roadFlags & RoadDirection.WEST) !== 0;
-      const ownW = ROAD_WIDTHS[c.seg.roadType] ?? 0.6;
-      const half = ownW / 2 + SIDEWALK_WIDTH / 2;
       const lampY = c.seg.isRamp ? baseY - LEVEL_HEIGHT * 0.5 : baseY;
-
-      const lamps: { lx: number; lz: number }[] = [];
-      if (!hasN) lamps.push({ lx: c.x, lz: c.y - half });
-      if (!hasS) lamps.push({ lx: c.x, lz: c.y + half });
-      if (!hasW) lamps.push({ lx: c.x - half, lz: c.y });
-      if (!hasE) lamps.push({ lx: c.x + half, lz: c.y });
+      const lamps = buildLampPositions([
+        { x: c.x, y: c.y, roadType: c.seg.roadType, roadFlags: c.seg.roadFlags },
+      ]);
 
       if (lamps.length > 0) {
         const ls = ld.lampTracker.addCell(key, lamps.length);
@@ -489,9 +481,9 @@ export class ElevatedRoadRenderer {
         } else {
           for (let i = 0; i < lamps.length; i++) {
             const p = lamps[i]!;
-            matrix.identity(); matrix.setPosition(p.lx, lampY + SIDEWALK_Y, p.lz);
+            matrix.identity(); matrix.setPosition(p.x, lampY + SIDEWALK_Y, p.z);
             ld.lampMesh.setMatrixAt(ls + i, matrix);
-            matrix.setPosition(p.lx, lampY + 0.055, p.lz);
+            matrix.setPosition(p.x, lampY + 0.055, p.z);
             ld.lampGlowMesh.setMatrixAt(gs + i, matrix);
           }
         }
@@ -559,7 +551,11 @@ export class ElevatedRoadRenderer {
     roadMesh.count = 0; roadMesh.receiveShadow = true; roadMesh.castShadow = true; roadMesh.frustumCulled = false;
     grp.add(roadMesh);
 
+    // 路緣是一張零厚度的平面，法線朝上。陰影圖預設畫的是**背面**，所以從頭頂的
+    // 太陽看過去它整片被剔除，一點影子都沒有 —— 而旁邊的路面是個盒子，底面就是
+    // 背面，一直都有影子。兩者並排，缺的那一條特別明顯。
     const swMat = new THREE.MeshLambertMaterial({ color: 0x707070 });
+    swMat.shadowSide = THREE.DoubleSide;
     const swMesh = new THREE.InstancedMesh(geo.sidewalk, swMat, cap * CAP.sidewalk);
     swMesh.count = 0; swMesh.receiveShadow = true; swMesh.castShadow = true; swMesh.frustumCulled = false;
     grp.add(swMesh);

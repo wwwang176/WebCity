@@ -109,6 +109,19 @@ function countBits(n: number): number {
  */
 export const BEND_ARC_SEGMENTS = 5;
 
+/**
+ * 路緣要更細。
+ *
+ * 每一段是直的長方形貼著圓弧，所以**兩端的角**會凸到圓外面，凸出量是
+ * `R×(1/cos(θ/2)−1)`。路緣的半徑比路面大（0.94 對 0.8），而它自己只有 0.14 寬 ——
+ * 五段的話凸出 0.012，接近路緣寬的一成，接在直路那條筆直的路緣上就是一圈看得見的
+ * 扇貝邊。十段把它壓到 0.003。
+ *
+ * 柏油不需要這麼多段:它凸出的部分被路緣蓋住。段數分開才不會白花實例 —— 兩邊都是
+ * 從同一池預留的實例拿的。
+ */
+export const BEND_KERB_SEGMENTS = 10;
+
 /** 剛好兩個方向且不是對開的一組 —— 也就是 L 形彎。 */
 function isLBend(flags: number): boolean {
   if (countBits(flags) !== 2) return false;
@@ -141,13 +154,13 @@ function isLBend(flags: number): boolean {
  * 落在柏油正中間。
  */
 function arcBand(
-  r: RoadCell, radius: number, width: number,
+  r: RoadCell, radius: number, width: number, segments: number,
 ): { x: number; z: number; sx: number; sz: number; rotY: number }[] {
   const hasN = (r.roadFlags & RoadDirection.NORTH) !== 0;
   const hasE = (r.roadFlags & RoadDirection.EAST) !== 0;
   const { dirX, dirZ, cornerX, cornerZ } = getLBendParams(hasN, hasE);
 
-  const theta = (Math.PI / 2) / BEND_ARC_SEGMENTS;
+  const theta = (Math.PI / 2) / segments;
   const cosHalf = Math.cos(theta / 2);
   const outer = radius + width / 2;
   const inner = radius - (radius * (1 - cosHalf) + (width / 2) * cosHalf);
@@ -156,7 +169,7 @@ function arcBand(
   const halfLen = outer * Math.tan(theta / 2);
   const out: { x: number; z: number; sx: number; sz: number; rotY: number }[] = [];
 
-  for (let k = 0; k < BEND_ARC_SEGMENTS; k++) {
+  for (let k = 0; k < segments; k++) {
     const a = (k + 0.5) * theta;
     const cosA = Math.cos(a);
     const sinA = Math.sin(a);
@@ -220,7 +233,7 @@ export function buildRoadStrips(
     // 彎道的柏油走圓弧。半徑 0.5 = 彎心到路心線，帶寬就是路寬 —— 兩端剛好接上
     // 北邊界與東邊界（各在 ±半幅之內），跟鄰格對得起來。
     if (isLBend(r.roadFlags)) {
-      for (const seg of arcBand(r, 0.5, ownW)) {
+      for (const seg of arcBand(r, 0.5, ownW, BEND_ARC_SEGMENTS)) {
         strips.push({ ...seg, roadType: r.roadType, srcX: r.x, srcY: r.y });
       }
       continue;
@@ -293,7 +306,7 @@ export function buildSidewalkStrips(cells: RoadCell[]): SidewalkStrip[] {
     // 與直路的 `capH`／`capV` 是同一個算法。
     if (isLBend(r.roadFlags)) {
       const radius = 0.5 + ownW / 2 + SIDEWALK_WIDTH / 2;
-      for (const seg of arcBand(r, radius, SIDEWALK_WIDTH)) {
+      for (const seg of arcBand(r, radius, SIDEWALK_WIDTH, BEND_KERB_SEGMENTS)) {
         strips.push({ ...seg, srcX: r.x, srcY: r.y });
       }
       continue;
@@ -336,6 +349,61 @@ function dividerCount(roadType: number): number {
 export const MAX_LANE_MARKINGS_PER_CELL = DASHES_PER_DIVIDER * Math.max(
   ...Object.keys(ROAD_WIDTHS).map(t => dividerCount(Number(t))),
 );
+
+export interface LampPosition {
+  x: number;
+  z: number;
+  srcX: number;
+  srcY: number;
+}
+
+/**
+ * 路燈站在哪。
+ *
+ * 兩個 renderer（地面與高架）本來各寫一份一模一樣的內嵌邏輯 —— 而彎道要改的正是
+ * 這段，改一邊就會漂走。搬到這裡順便可以測。
+ *
+ * 直路:每一個沒有路的方向擺一盞，位置在那一側路緣的正中央。
+ * 彎道:兩盞都擺在**外側的圓弧上**。照直路的規則擺的話，燈會落在南邊界與西邊界的
+ * 中點，離彎心 1.003 —— 而路緣只到 0.87，燈整個站到草地上去。
+ */
+export function buildLampPositions(cells: RoadCell[]): LampPosition[] {
+  const lamps: LampPosition[] = [];
+
+  for (const r of cells) {
+    const ownW = ROAD_WIDTHS[r.roadType] ?? 0.6;
+    const half = ownW / 2 + SIDEWALK_WIDTH / 2;
+
+    if (isLBend(r.roadFlags)) {
+      const hasN = (r.roadFlags & RoadDirection.NORTH) !== 0;
+      const hasE = (r.roadFlags & RoadDirection.EAST) !== 0;
+      const { dirX, dirZ, cornerX, cornerZ } = getLBendParams(hasN, hasE);
+      const radius = 0.5 + half;
+      // 四分之一圓上的 1/4 與 3/4 處。直路是一側一盞，彎道的外側只有一條弧，
+      // 擺兩盞才不會讓轉角變暗。
+      for (const t of [0.25, 0.75]) {
+        const a = t * (Math.PI / 2);
+        lamps.push({
+          x: r.x + cornerX + dirX * radius * Math.cos(a),
+          z: r.y + cornerZ + dirZ * radius * Math.sin(a),
+          srcX: r.x, srcY: r.y,
+        });
+      }
+      continue;
+    }
+
+    const hasN = (r.roadFlags & RoadDirection.NORTH) !== 0;
+    const hasS = (r.roadFlags & RoadDirection.SOUTH) !== 0;
+    const hasE = (r.roadFlags & RoadDirection.EAST) !== 0;
+    const hasW = (r.roadFlags & RoadDirection.WEST) !== 0;
+    if (!hasN) lamps.push({ x: r.x, z: r.y - half, srcX: r.x, srcY: r.y });
+    if (!hasS) lamps.push({ x: r.x, z: r.y + half, srcX: r.x, srcY: r.y });
+    if (!hasW) lamps.push({ x: r.x - half, z: r.y, srcX: r.x, srcY: r.y });
+    if (!hasE) lamps.push({ x: r.x + half, z: r.y, srcX: r.x, srcY: r.y });
+  }
+
+  return lamps;
+}
 
 /** Generate lane marking positions for road cells. */
 export function buildLaneMarkingData(cells: RoadCell[]): LaneMarking[] {

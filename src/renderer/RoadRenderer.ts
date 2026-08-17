@@ -1,17 +1,17 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { Grid } from '../core/grid/Grid';
-import { RoadType, RoadDirection, ROAD_CONFIGS } from '../core/road/types';
+import { RoadType, ROAD_CONFIGS } from '../core/road/types';
 import { ViewMode, VIEW_MODE_OPACITY } from '../core/ViewMode';
 import { injectHighlightShader, addHighlightAttribute } from './HighlightManager';
 import { setMeshDim } from './ViewModeDim';
-import { SIDEWALK_WIDTH } from '../core/traffic/SidewalkGraph';
 import {
-  ROAD_WIDTHS,
   MAX_LANE_MARKINGS_PER_CELL,
   buildRoadStrips,
   buildSidewalkStrips,
+  buildLampPositions,
   BEND_ARC_SEGMENTS,
+  BEND_KERB_SEGMENTS,
   buildLaneMarkingData,
   buildCenterLineData,
   buildCurvedCenterLineData,
@@ -30,7 +30,7 @@ import { ROAD_Y, SIDEWALK_Y, ROAD_SLAB_THICKNESS } from './surfaceHeights';
 const MARKING_Y = 0.052;
 
 /** Multipliers for max capacity per mesh type (relative to maxRoads). */
-const CAP = { road: Math.max(3, BEND_ARC_SEGMENTS), sidewalk: Math.max(4, BEND_ARC_SEGMENTS), marking: MAX_LANE_MARKINGS_PER_CELL, centerLine: 2, curvedCL: 1, crosswalk: 6, stopLine: 2, lamp: 4, lampGlow: 4 } as const;
+const CAP = { road: Math.max(3, BEND_ARC_SEGMENTS), sidewalk: Math.max(4, BEND_KERB_SEGMENTS), marking: MAX_LANE_MARKINGS_PER_CELL, centerLine: 2, curvedCL: 1, crosswalk: 6, stopLine: 2, lamp: 4, lampGlow: 4 } as const;
 
 /**
  * 路燈的桿高（格）。
@@ -500,19 +500,7 @@ export class RoadRenderer {
       const key = toPosKey(r.x, r.y);
       if (!targetKeys.has(key)) continue;
 
-      const hasN = (r.roadFlags & RoadDirection.NORTH) !== 0;
-      const hasS = (r.roadFlags & RoadDirection.SOUTH) !== 0;
-      const hasE = (r.roadFlags & RoadDirection.EAST) !== 0;
-      const hasW = (r.roadFlags & RoadDirection.WEST) !== 0;
-
-      const ownW = ROAD_WIDTHS[r.roadType] ?? 0.6;
-      const half = ownW / 2 + SIDEWALK_WIDTH / 2;
-
-      const lamps: { lx: number; lz: number }[] = [];
-      if (!hasN) lamps.push({ lx: r.x, lz: r.y - half });
-      if (!hasS) lamps.push({ lx: r.x, lz: r.y + half });
-      if (!hasW) lamps.push({ lx: r.x - half, lz: r.y });
-      if (!hasE) lamps.push({ lx: r.x + half, lz: r.y });
+      const lamps = buildLampPositions([r]);
 
       if (lamps.length > 0 && this.lampTracker && this.lampGlowTracker) {
         const lampStart = this.lampTracker.addCell(key, lamps.length);
@@ -524,9 +512,9 @@ export class RoadRenderer {
           for (let i = 0; i < lamps.length; i++) {
             const p = lamps[i]!;
             matrix.identity();
-            matrix.setPosition(p.lx, SIDEWALK_Y, p.lz);
+            matrix.setPosition(p.x, SIDEWALK_Y, p.z);
             this.lampMesh!.setMatrixAt(lampStart + i, matrix);
-            matrix.setPosition(p.lx, 0.055, p.lz);
+            matrix.setPosition(p.x, 0.055, p.z);
             this.lampGlowMesh!.setMatrixAt(glowStart + i, matrix);
           }
         }
