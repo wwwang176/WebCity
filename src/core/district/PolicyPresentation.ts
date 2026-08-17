@@ -1,6 +1,6 @@
 import { PolicyType } from './types';
 import { POLICY_CONFIG, IMPLEMENTED_POLICY_TYPES, maxLevel } from './PolicyManager';
-import { isDistrictScoped } from './PolicyScope';
+import { isDistrictScoped, POLICY_SCOPE, type PolicyScopeKind } from './PolicyScope';
 import { policyCost, type PolicyScale } from './PolicyBilling';
 
 /**
@@ -127,4 +127,88 @@ export function districtPolicyTotal(
  */
 export function districtOfferedPolicies(): PolicyType[] {
   return [...IMPLEMENTED_POLICY_TYPES].filter(isDistrictScoped);
+}
+
+/**
+ * 條例的分類。
+ *
+ * 16 條擺成一排的話玩家找不到東西，而且看不出哪幾條在回答同一個問題。分類是
+ * 「這條條例在管什麼」——「在哪裡蓋什麼」「錢從哪來」「晚上安不安全」「排出去
+ * 的東西」。
+ *
+ * `Retired` 不在這張表裡:它不是一種主題，而是「這條條例已經沒有效果了」的狀態，
+ * 只有舊存檔帶得出來。
+ */
+export const POLICY_CATEGORY: Record<PolicyType, string> = {
+  [PolicyType.NO_HEAVY_INDUSTRY]: 'Land use',
+  [PolicyType.HIGH_DENSITY_BAN]: 'Land use',
+  [PolicyType.HERITAGE_PRESERVATION]: 'Land use',
+
+  [PolicyType.TOURISM]: 'Economy',
+  [PolicyType.ORGANIC_FOOD]: 'Economy',
+  [PolicyType.LEGALIZE_GAMBLING]: 'Economy',
+  [PolicyType.NIGHT_ECONOMY]: 'Economy',
+  [PolicyType.INDUSTRY_SUBSIDY]: 'Economy',
+
+  [PolicyType.CURFEW]: 'Safety',
+  [PolicyType.SURVEILLANCE_NETWORK]: 'Safety',
+
+  [PolicyType.ENCOURAGE_RECYCLING]: 'Environment',
+  [PolicyType.PAY_AS_YOU_THROW]: 'Environment',
+  [PolicyType.ENERGY_REGULATION]: 'Environment',
+  [PolicyType.WATER_CONSERVATION]: 'Environment',
+  [PolicyType.SEWAGE_STANDARDS]: 'Environment',
+  [PolicyType.INDUSTRIAL_EMISSION_CONTROL]: 'Environment',
+};
+
+/** 面板上分類出現的順序。 */
+export const CATEGORY_ORDER = ['Land use', 'Economy', 'Safety', 'Environment'] as const;
+
+/** 已下架的條例集中在這一組。 */
+export const RETIRED_CATEGORY = 'Retired';
+
+export interface PolicyGroup {
+  category: string;
+  policies: PolicyType[];
+}
+
+/**
+ * 某個範圍的面板該顯示的條例，依分類分組。
+ *
+ * `alsoCarried` 是這個分區存檔裡已經有的條例 —— 沒有它的話，舊存檔裡已下架的條例
+ * 會從畫面上消失，玩家就再也關不掉它。已下架的集中放在 `Retired` 那一組，跟還在
+ * 生效的分開。
+ *
+ * 空的分類不會出現。全城面板沒有 Land use 也沒有 Economy —— 「在哪裡蓋什麼」跟
+ * 「哪一區補貼」本來就都是分區的問題。
+ */
+export function policiesByCategory(
+  scope: PolicyScopeKind,
+  alsoCarried: readonly PolicyType[] = [],
+): PolicyGroup[] {
+  const offered = [...IMPLEMENTED_POLICY_TYPES]
+    .filter(t => POLICY_SCOPE[t] === scope);
+  const offeredSet = new Set(offered);
+
+  const byCategory = new Map<string, PolicyType[]>();
+  for (const t of offered) {
+    const c = POLICY_CATEGORY[t];
+    if (!byCategory.has(c)) byCategory.set(c, []);
+    byCategory.get(c)!.push(t);
+  }
+
+  const retired: PolicyType[] = [];
+  for (const t of alsoCarried) {
+    if (offeredSet.has(t)) continue;
+    if (retired.includes(t)) continue;
+    retired.push(t);
+  }
+
+  const groups: PolicyGroup[] = [];
+  for (const c of CATEGORY_ORDER) {
+    const policies = byCategory.get(c);
+    if (policies?.length) groups.push({ category: c, policies });
+  }
+  if (retired.length) groups.push({ category: RETIRED_CATEGORY, policies: retired });
+  return groups;
 }

@@ -2,8 +2,7 @@ import { createSignal, createEffect, For, Show } from 'solid-js';
 import { gameSignals, getGame } from '../store/gameStore';
 import { Modal } from './Modal';
 import { POLICY_CONFIG, maxLevel } from '../../core/district/PolicyManager';
-import { POLICY_SCOPE } from '../../core/district/PolicyScope';
-import { policyEffectSummary } from '../../core/district/PolicyPresentation';
+import { policyEffectSummary, policiesByCategory } from '../../core/district/PolicyPresentation';
 import { policyCost } from '../../core/district/PolicyBilling';
 import { PolicyType } from '../../core/district/types';
 
@@ -16,8 +15,8 @@ import { PolicyType } from '../../core/district/types';
  * 效果與代價寫在名稱底下同一列，不是 tooltip —— 取捨是玩法，藏起來就沒有取捨。
  */
 
-const CITY_ORDINANCES = (Object.values(PolicyType) as PolicyType[])
-  .filter(t => POLICY_SCOPE[t] === 'city');
+// 分類分組在 core，那裡測得到 —— 寫在這裡的話，分錯組不會有任何測試轉紅。
+const ORDINANCE_GROUPS = policiesByCategory('city');
 
 /** 三級條例的按鈕標籤。按鈕只有 28px 寬，放得下一個字母。 */
 const TIER_LABELS = ['L', 'M', 'H'];
@@ -58,7 +57,13 @@ export function CityOrdinanceModal(props: { open: boolean; onClose: () => void }
       <div style="display:flex;justify-content:flex-end;font-size:12px;color:#ce93d8;margin-bottom:8px">
         This cycle: ${grandTotal()}
       </div>
-      <For each={CITY_ORDINANCES}>
+      <For each={ORDINANCE_GROUPS}>
+        {(group) => (
+          <div style="margin-bottom:10px">
+            <div style="font-size:10px;color:#777;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">
+              {group.category}
+            </div>
+      <For each={group.policies}>
         {(type) => {
           const level = () => { version(); return ordinances().getLevel(type); };
           const max = maxLevel(type);
@@ -104,6 +109,9 @@ export function CityOrdinanceModal(props: { open: boolean; onClose: () => void }
             </div>
           );
         }}
+      </For>
+          </div>
+        )}
       </For>
       <div style="font-size:11px;color:#777;margin-top:4px">
         City ordinances are billed per resident — the bill grows with the city.

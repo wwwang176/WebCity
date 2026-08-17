@@ -4,7 +4,7 @@ import { Modal } from './Modal';
 import { POLICY_CONFIG, isPolicyImplemented } from '../../core/district/PolicyManager';
 import {
   nextPolicyLevel, policyButtonText, policyEffectSummary, districtPolicyTotal,
-  districtOfferedPolicies,
+  policiesByCategory,
 } from '../../core/district/PolicyPresentation';
 import type { PolicyType } from '../../core/district/types';
 
@@ -24,8 +24,7 @@ import type { PolicyType } from '../../core/district/types';
  * was the third and fourth copy of data POLICY_CONFIG already holds.
  */
 // 全城條例不列在這裡 —— 列出來玩家會按，按了沒反應（setPolicyLevel 會擋），
-// 那比看不到更糟。它們在 City Ordinances 面板。清單本身在 core，那裡測得到。
-const OFFERED_POLICY_TYPES = districtOfferedPolicies();
+// 那比看不到更糟。它們在 City Ordinances 面板。清單與分組都在 core，那裡測得到。
 
 function retiredLabel(pt: PolicyType): string {
   return `${POLICY_CONFIG[pt]?.name ?? pt} (retired — no effect)`;
@@ -87,13 +86,13 @@ export function DistrictModal(props: { open: boolean; onClose: () => void }) {
               return (d.policies as { type: PolicyType; level: number }[])
                 .find(p => p.type === pt)?.level ?? 0;
             };
-            // Offered ∪ whatever this district already carries — the union is
-            // what lets a retired policy from an old save be switched off.
-            const listedPolicies = () => {
+            // 依分類分組。提供中的 ∪ 這個分區已經帶著的 —— 後者是舊存檔裡已下架
+            // 的條例還關得掉的原因，它們集中在最後一組。分組本身在 core，那裡
+            // 測得到。
+            const groups = () => {
               version();
-              const seen = new Set<PolicyType>(OFFERED_POLICY_TYPES);
-              for (const p of d.policies as { type: PolicyType }[]) seen.add(p.type);
-              return [...seen];
+              return policiesByCategory(
+                'district', (d.policies as { type: PolicyType }[]).map(p => p.type));
             };
             // The header needs the same treatment for the same reason: the row
             // body never re-runs, so `{d.name}` and `{d.cells.size}` were read
@@ -126,8 +125,14 @@ export function DistrictModal(props: { open: boolean; onClose: () => void }) {
                     <span style="font-size:11px;color:#ce93d8">${total()}/cycle</span>
                   </Show>
                 </div>
-                <div style="display:flex;flex-wrap:wrap;gap:4px">
-                  <For each={listedPolicies()}>
+                <For each={groups()}>
+                  {(group) => (
+                    <div style="margin-bottom:6px">
+                      <div style="font-size:10px;color:#777;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px">
+                        {group.category}
+                      </div>
+                      <div style="display:flex;flex-wrap:wrap;gap:4px">
+                  <For each={group.policies}>
                     {(pt) => {
                       const level = () => levelOf(pt);
                       const isActive = () => level() > 0;
@@ -160,7 +165,10 @@ export function DistrictModal(props: { open: boolean; onClose: () => void }) {
                       );
                     }}
                   </For>
-                </div>
+                      </div>
+                    </div>
+                  )}
+                </For>
               </div>
             );
           }}

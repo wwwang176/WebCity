@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { POLICY_EFFECTS, POLICY_CONFIG, maxLevel } from '../PolicyManager';
+import { POLICY_EFFECTS, POLICY_CONFIG, maxLevel, type PolicyEffect } from '../PolicyManager';
 import { POLICY_BILLING } from '../PolicyBilling';
 import { POLICY_SCOPE } from '../PolicyScope';
 import { policyEffectSummary } from '../PolicyPresentation';
@@ -37,9 +37,117 @@ describe('目錄的完整性', () => {
     }
   });
 
-  it('should offer a meaningful number of policies', () => {
-    // 條例數量少的話，這整套機制跟原本的價目表沒有差別。
-    expect(Object.values(PolicyType).length, '目錄太小').toBeGreaterThanOrEqual(11);
+  it('should carry exactly the catalogue that was designed', () => {
+    // 寫死一份清單，不是「至少幾條」。只驗數量的話，刪掉夜間經濟再加一條別的
+    // 也會過 —— 而且沒有任何測試直接引用夜間經濟。
+    expect(new Set(Object.values(PolicyType))).toEqual(new Set([
+      PolicyType.NO_HEAVY_INDUSTRY, PolicyType.HIGH_DENSITY_BAN,
+      PolicyType.ENCOURAGE_RECYCLING, PolicyType.ORGANIC_FOOD, PolicyType.TOURISM,
+      PolicyType.ENERGY_REGULATION,
+      PolicyType.LEGALIZE_GAMBLING, PolicyType.NIGHT_ECONOMY, PolicyType.CURFEW,
+      PolicyType.HERITAGE_PRESERVATION, PolicyType.INDUSTRY_SUBSIDY,
+      PolicyType.SURVEILLANCE_NETWORK, PolicyType.PAY_AS_YOU_THROW,
+      PolicyType.WATER_CONSERVATION, PolicyType.SEWAGE_STANDARDS,
+      PolicyType.INDUSTRIAL_EMISSION_CONTROL,
+    ]));
+  });
+
+  it('should put every policy in the scope it was designed for', () => {
+    // 刻意重複一份 POLICY_SCOPE 的內容。分類與一致性測試都是從那張表推導預期再
+    // 回頭驗那張表 —— 那守得住「表彼此一致」，守不住「範圍是當初決定的那個」。
+    // 這一份是產品契約，不是資料的第二份來源。
+    const DESIGNED: Record<PolicyType, 'district' | 'city'> = {
+      [PolicyType.NO_HEAVY_INDUSTRY]: 'district',
+      [PolicyType.HIGH_DENSITY_BAN]: 'district',
+      [PolicyType.ENCOURAGE_RECYCLING]: 'district',
+      [PolicyType.ORGANIC_FOOD]: 'district',
+      [PolicyType.TOURISM]: 'district',
+      [PolicyType.LEGALIZE_GAMBLING]: 'district',
+      [PolicyType.NIGHT_ECONOMY]: 'district',
+      [PolicyType.CURFEW]: 'district',
+      [PolicyType.HERITAGE_PRESERVATION]: 'district',
+      [PolicyType.INDUSTRY_SUBSIDY]: 'district',
+      [PolicyType.INDUSTRIAL_EMISSION_CONTROL]: 'district',
+      [PolicyType.ENERGY_REGULATION]: 'city',
+      [PolicyType.SURVEILLANCE_NETWORK]: 'city',
+      [PolicyType.PAY_AS_YOU_THROW]: 'city',
+      [PolicyType.WATER_CONSERVATION]: 'city',
+      [PolicyType.SEWAGE_STANDARDS]: 'city',
+    };
+    for (const type of Object.values(PolicyType)) {
+      expect(POLICY_SCOPE[type], `${type} 的範圍跟當初的設計不一樣`).toBe(DESIGNED[type]);
+    }
+  });
+});
+
+/**
+ * 逐級的方向。
+ *
+ * 多數條例只有某一級被個別測到 —— 把第二級的收入改成負的、或把宵禁第二級的犯罪
+ * 改成正的，都不會有任何測試轉紅。這一組是跨全表的不變量。
+ */
+describe('逐級的方向', () => {
+  /** 減量型的槓桿:乘數 < 1 是好處，> 1 是代價。 */
+  const REDUCERS = ['garbage', 'waterDemand', 'sewageLoad', 'industrialPollution',
+    'powerDemand'] as const;
+
+  const benefits = (e: PolicyEffect): number => {
+    let n = 0;
+    for (const k of REDUCERS) if (e[k] !== undefined && e[k]! < 1) n++;
+    if (e.landValue !== undefined && e.landValue > 0) n++;
+    if (e.crime !== undefined && e.crime < 0) n++;
+    if (e.revenue !== undefined && e.revenue > 1) n++;
+    for (const m of Object.values(e.revenueByZone ?? {})) if (m > 1) n++;
+    return n;
+  };
+
+  const costs = (e: PolicyEffect): number => {
+    let n = 0;
+    for (const k of REDUCERS) if (e[k] !== undefined && e[k]! > 1) n++;
+    if (e.landValue !== undefined && e.landValue < 0) n++;
+    if (e.crime !== undefined && e.crime > 0) n++;
+    if (e.revenue !== undefined && e.revenue < 1) n++;
+    for (const m of Object.values(e.revenueByZone ?? {})) if (m < 1) n++;
+    return n;
+  };
+
+  it('should give every tier both a benefit and a price', () => {
+    for (const [type, tiers] of Object.entries(POLICY_EFFECTS)) {
+      tiers!.forEach((tier, i) => {
+        expect(benefits(tier), `${type} 第 ${i + 1} 級沒有好處`).toBeGreaterThan(0);
+        expect(costs(tier), `${type} 第 ${i + 1} 級沒有代價`).toBeGreaterThan(0);
+      });
+    }
+  });
+
+  it('should never go backwards as the tier goes up', () => {
+    for (const [type, tiers] of Object.entries(POLICY_EFFECTS)) {
+      for (let i = 1; i < tiers!.length; i++) {
+        const prev = tiers![i - 1]!;
+        const cur = tiers![i]!;
+        for (const k of REDUCERS) {
+          if (prev[k] === undefined || cur[k] === undefined) continue;
+          expect(cur[k]!, `${type} 第 ${i + 1} 級的 ${k} 沒有比前一級更省`)
+            .toBeLessThan(prev[k]!);
+        }
+        if (prev.crime !== undefined && cur.crime !== undefined) {
+          expect(Math.sign(cur.crime), `${type} 第 ${i + 1} 級的犯罪方向跟前一級相反`)
+            .toBe(Math.sign(prev.crime));
+          expect(Math.abs(cur.crime), `${type} 第 ${i + 1} 級的犯罪效果沒有比前一級強`)
+            .toBeGreaterThan(Math.abs(prev.crime));
+        }
+        for (const z of Object.keys(cur.revenueByZone ?? {})) {
+          const zone = Number(z) as ZoneType;
+          const a = prev.revenueByZone?.[zone];
+          const b = cur.revenueByZone![zone]!;
+          if (a === undefined) continue;
+          expect(Math.sign(b - 1), `${type} 第 ${i + 1} 級對分區類型 ${z} 的收入方向反了`)
+            .toBe(Math.sign(a - 1));
+          expect(Math.abs(b - 1), `${type} 第 ${i + 1} 級對分區類型 ${z} 的收入效果沒有更強`)
+            .toBeGreaterThan(Math.abs(a - 1));
+        }
+      }
+    }
   });
 });
 
