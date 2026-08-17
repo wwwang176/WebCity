@@ -1,7 +1,8 @@
-import { createEffect, onMount } from 'solid-js';
+import { createEffect, createSignal, onMount } from 'solid-js';
 import { UI_COLORS } from '../constants';
 import { bucketChartSeries, type ChartHistory, type ChartRange } from '../../core/economy/ChartSeries';
 import { fitCanvas } from './fitCanvas';
+import { drawChartTooltip, drawChartCursor, hoveredIndex } from './chartTooltip';
 
 
 /**
@@ -23,6 +24,7 @@ const BAND_GAP = 6;
 
 export function EconChart(props: { history: ChartHistory; range: ChartRange }) {
   let canvas: HTMLCanvasElement | undefined;
+  const [hover, setHover] = createSignal<{ x: number; y: number } | null>(null);
 
   const draw = () => {
     if (!canvas) return;
@@ -88,23 +90,39 @@ export function EconChart(props: { history: ChartHistory; range: ChartRange }) {
     ctx.lineTo(w, zeroY + 0.5);
     ctx.stroke();
 
-    ctx.font = '9px sans-serif';
-    ctx.fillStyle = UI_COLORS.ACCENT;
-    ctx.fillText('Funds', 4, 10);
-    ctx.fillStyle = UI_COLORS.STATUS_GOOD;
-    ctx.fillText('Income', 50, 10);
-    ctx.fillStyle = UI_COLORS.STATUS_BAD;
-    ctx.fillText('Expenses', 100, 10);
+    // 讀數畫在最後，蓋在線與長條上面。原本三個名字寫在左上角，線就從字上面穿過去。
+    const at = hover();
+    const i = hoveredIndex(at?.x ?? null, w, series.funds.length) ?? series.funds.length - 1;
+    if (at) drawChartCursor(ctx, i * slot + slot / 2, h);
+    const money = (v: number) => `$${Math.round(v).toLocaleString()}`;
+    drawChartTooltip(ctx, w, h, `Day ${series.days[i] ?? 0}`, [
+      { color: UI_COLORS.ACCENT, label: 'Funds', value: money(series.funds[i] ?? 0) },
+      { color: UI_COLORS.STATUS_GOOD, label: 'Income', value: money(series.income[i] ?? 0) },
+      { color: UI_COLORS.STATUS_BAD, label: 'Expenses', value: money(series.expenses[i] ?? 0) },
+    ], at);
   };
 
   onMount(() => draw());
   createEffect(() => {
-    // 追蹤:歷史整包換掉（每天一次）與範圍切換都要重畫。
+    // 追蹤:歷史整包換掉（每天一次）、範圍切換、游標移動都要重畫。
     props.history;
     props.range;
+    hover();
     draw();
   });
 
+  const onMove = (e: MouseEvent) => {
+    const r = (e.currentTarget as HTMLCanvasElement).getBoundingClientRect();
+    setHover({ x: e.clientX - r.left, y: e.clientY - r.top });
+  };
+
   // 尺寸由 CSS 決定，點陣圖由 `fitCanvas` 對齊。
-  return <canvas ref={canvas} class="modal-chart" />;
+  return (
+    <canvas
+      ref={canvas}
+      class="modal-chart"
+      onMouseMove={onMove}
+      onMouseLeave={() => setHover(null)}
+    />
+  );
 }

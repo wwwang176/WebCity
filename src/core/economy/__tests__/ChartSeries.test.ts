@@ -106,6 +106,17 @@ describe('併成要畫的點', () => {
     expect(out.pop.every(v => Number.isFinite(v)), '出現了 NaN').toBe(true);
   });
 
+  it('should say which day each bucket ends on', () => {
+    // 滑到某一根長條上要說得出「這是什麼時候」。沒有時間軸的話那個提示只能寫
+    // 「第 3 根」，而玩家關心的是第幾天。
+    const week = bucketChartSeries(fill(30), 'week');
+    expect(week.days).toEqual([23, 24, 25, 26, 27, 28, 29]);
+
+    const year = bucketChartSeries(fill(360), 'year');
+    expect(year.days.length, '時間軸跟資料的長度對不上').toBe(year.pop.length);
+    expect(year.days[year.days.length - 1], '最後一根的日期不是最新的那天').toBe(359);
+  });
+
   it('should return nothing when nothing has been recorded', () => {
     const out = bucketChartSeries(emptyChartHistory(), 'month');
     expect(out.pop).toEqual([]);

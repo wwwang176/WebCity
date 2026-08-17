@@ -1,10 +1,14 @@
-import { createEffect, onMount } from 'solid-js';
+import { createEffect, createSignal, onMount } from 'solid-js';
 import { UI_COLORS } from '../constants';
 import { fitCanvas } from './fitCanvas';
+import { drawChartTooltip, drawChartCursor, hoveredIndex } from './chartTooltip';
 import { bucketChartSeries, type ChartHistory, type ChartRange } from '../../core/economy/ChartSeries';
+
+const HAPPY_COLOR = '#ffd54f';
 
 export function PopChart(props: { history: ChartHistory; range: ChartRange }) {
   let canvas: HTMLCanvasElement | undefined;
+  const [hover, setHover] = createSignal<{ x: number; y: number } | null>(null);
 
   const draw = () => {
     if (!canvas) return;
@@ -34,7 +38,7 @@ export function PopChart(props: { history: ChartHistory; range: ChartRange }) {
     }
     ctx.stroke();
 
-    ctx.strokeStyle = '#ffd54f';
+    ctx.strokeStyle = HAPPY_COLOR;
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     for (let i = 0; i < series.happiness.length; i++) {
@@ -44,22 +48,39 @@ export function PopChart(props: { history: ChartHistory; range: ChartRange }) {
     }
     ctx.stroke();
 
-    ctx.font = '9px sans-serif';
-    ctx.fillStyle = UI_COLORS.STATUS_GOOD;
-    ctx.fillText(`Pop: ${Math.round(series.pop[series.pop.length - 1] ?? 0)}`, 4, 10);
-    ctx.fillStyle = '#ffd54f';
-    ctx.fillText(`Happy: ${Math.round(series.happiness[series.happiness.length - 1] ?? 0)}%`, 80, 10);
+    // 讀數畫在最後，蓋在線上面。原本寫在左上角的字會被線壓住 —— 而那是圖上唯一
+    // 寫著數字的地方。
+    const at = hover();
+    const i = hoveredIndex(at?.x ?? null, w, series.pop.length) ?? series.pop.length - 1;
+    if (at) drawChartCursor(ctx, (i / span) * w, h);
+    drawChartTooltip(ctx, w, h, `Day ${series.days[i] ?? 0}`, [
+      { color: UI_COLORS.STATUS_GOOD, label: 'Pop', value: `${Math.round(series.pop[i] ?? 0)}` },
+      { color: HAPPY_COLOR, label: 'Happy', value: `${Math.round(series.happiness[i] ?? 0)}%` },
+    ], at);
   };
 
   onMount(() => draw());
   createEffect(() => {
-    // 追蹤:歷史整包換掉（每天一次）與範圍切換都要重畫。
+    // 追蹤:歷史整包換掉（每天一次）、範圍切換、游標移動都要重畫。
     props.history;
     props.range;
+    hover();
     draw();
   });
 
+  const onMove = (e: MouseEvent) => {
+    const r = (e.currentTarget as HTMLCanvasElement).getBoundingClientRect();
+    setHover({ x: e.clientX - r.left, y: e.clientY - r.top });
+  };
+
   // 不給 width/height —— 尺寸由 CSS 決定，點陣圖由 `fitCanvas` 對齊。寫在這裡
   // 只會多一個對不上的真相來源（原本寫 80，而 CSS 是 100）。
-  return <canvas ref={canvas} class="modal-chart" />;
+  return (
+    <canvas
+      ref={canvas}
+      class="modal-chart"
+      onMouseMove={onMove}
+      onMouseLeave={() => setHover(null)}
+    />
+  );
 }

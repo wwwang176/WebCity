@@ -83,6 +83,9 @@ export function appendChartDay(
   return next;
 }
 
+/** 併好的資料。`days` 是每一根結束在哪一天，跟其餘序列等長。 */
+export type BucketedSeries = { days: number[] } & Record<ChartSeriesKey, number[]>;
+
 /**
  * 併成這個範圍要畫的點。最新的在右邊 —— 玩家讀圖是從左讀到右。
  *
@@ -92,11 +95,12 @@ export function appendChartDay(
 export function bucketChartSeries(
   history: ChartHistory,
   range: ChartRange,
-): Record<ChartSeriesKey, number[]> {
+): BucketedSeries {
   const spec = CHART_RANGES[range];
-  const out = {
-    pop: [] as number[], happiness: [] as number[], funds: [] as number[],
-    income: [] as number[], expenses: [] as number[],
+  const out: BucketedSeries = {
+    days: [],
+    pop: [], happiness: [], funds: [],
+    income: [], expenses: [],
   };
   const n = history.days.length;
   if (n === 0) return out;
@@ -114,6 +118,8 @@ export function bucketChartSeries(
   for (let b = 0; b < buckets; b++) {
     const lo = from + b * spec.bucketDays;
     const hi = lo + spec.bucketDays;
+    // 這一根結束在哪一天。滑上去的提示要說得出「這是什麼時候」。
+    out.days.push(history.days[hi - 1]!);
     for (const key of CHART_SERIES_KEYS) {
       let sum = 0;
       for (let i = lo; i < hi; i++) sum += history[key][i]!;
