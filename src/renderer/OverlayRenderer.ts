@@ -87,7 +87,17 @@ export class OverlayRenderer {
 
     const w = grid.width;
     const h = grid.height;
-    const geometry = new THREE.PlaneGeometry(w, h, w, h);
+    // 一格一個頂點，頂點落在格子**中心**上。
+    //
+    // 顏色是逐頂點給的，所以頂點在哪裡，那個顏色就出現在哪裡。原本鋪的是
+    // `PlaneGeometry(w, h, w, h)` —— (w+1)×(h+1) 個頂點落在格子的**角**上
+    // （世界座標 `i-0.5`），卻塞進格 (i,j) 的顏色，於是整張色場往 −x、−z 各偏
+    // 半格，在等角視角下看起來就是整片往西北挪了半格。
+    //
+    // 少一段就讓頂點正好落在 0..w-1 的整數上，跟建築、游標、分區外框同一套座標。
+    // 代價是最外圈半格沒有色塊 —— 色塊鋪到邊界格的中心線為止。四邊對稱，而往
+    // 東南推半格的另一種修法會讓半格懸在地形外面（地形只鋪到 w-0.5）。
+    const geometry = new THREE.PlaneGeometry(w - 1, h - 1, w - 1, h - 1);
     geometry.rotateX(-Math.PI / 2);
 
     // 頂點色帶第四個分量。three.js 看到 itemSize 4 的 color 屬性就會啟用逐頂點
@@ -97,14 +107,12 @@ export class OverlayRenderer {
     // 濃度是二元的，不隨數值等比縮放：多數圖層的數值是分類而非強度 —— 缺電是
     // 15、供電不足是 50、正常是 100。等比縮放會讓最該看到的紅色警告淡到幾乎
     // 不見，而「一切正常」反而最顯眼。
-    const colors = new Float32Array((w + 1) * (h + 1) * 4);
+    const colors = new Float32Array(w * h * 4);
 
-    for (let j = 0; j <= h; j++) {
-      for (let i = 0; i <= w; i++) {
-        const idx = (j * (w + 1) + i) * 4;
-        const gx = Math.min(i, w - 1);
-        const gy = Math.min(j, h - 1);
-        const value = data?.get(`${gx},${gy}`) ?? 0;
+    for (let j = 0; j < h; j++) {
+      for (let i = 0; i < w; i++) {
+        const idx = (j * w + i) * 4;
+        const value = data?.get(`${i},${j}`) ?? 0;
         const normalized = Math.min(1, Math.max(0, value / 100));
 
         const color = this.getColor(type, normalized);
@@ -125,7 +133,7 @@ export class OverlayRenderer {
     });
 
     this.mesh = new THREE.Mesh(geometry, material);
-    this.mesh.position.set(w / 2 - 0.5, 0.1, h / 2 - 0.5);
+    this.mesh.position.set((w - 1) / 2, 0.1, (h - 1) / 2);
     this.mesh.renderOrder = OverlayRenderer.GROUND_RENDER_ORDER;
     scene.add(this.mesh);
 

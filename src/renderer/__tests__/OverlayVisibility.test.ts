@@ -21,10 +21,10 @@ import { Grid } from '../../core/grid/Grid';
 const W = 16;
 const H = 16;
 
-/** 讀回頂點色。頂點 (i,j) 取樣的是格 (min(i,w-1), min(j,h-1))，邊緣以外一對一。 */
+/** 讀回頂點色。一格一個頂點，頂點 (i,j) 就是格 (i,j)（對位由 `OverlayAlignment` 守著）。 */
 function sample(geometry: THREE.BufferGeometry, x: number, y: number) {
   const attr = geometry.getAttribute('color');
-  const idx = y * (W + 1) + x;
+  const idx = y * W + x;
   return {
     r: attr.getX(idx),
     g: attr.getY(idx),
