@@ -86,6 +86,11 @@ const EFFECT_SUMMARY: Partial<Record<PolicyType, readonly string[]>> = {
     'Garbage \u221222%  \u00B7  Land value \u22123',
     'Garbage \u221242%  \u00B7  Land value \u22127',
   ],
+  [PolicyType.WATER_CONSERVATION]: [
+    'Water demand \u22128%  \u00B7  Commercial revenue \u22121%, industrial \u22122%',
+    'Water demand \u221218%  \u00B7  Commercial revenue \u22123%, industrial \u22126%',
+    'Water demand \u221230%  \u00B7  Commercial revenue \u22126%, industrial \u221212%',
+  ],
 };
 
 /** 這個條例這一級做什麼。等級 0 回空字串。 */

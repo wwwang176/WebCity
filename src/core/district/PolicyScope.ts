@@ -36,6 +36,7 @@ export const POLICY_SCOPE: Record<PolicyType, PolicyScopeKind> = {
   // 垃圾費也不會只向某一區收。套到全城永遠不會更糟，那就該是全城的。
   [PolicyType.SURVEILLANCE_NETWORK]: 'city',
   [PolicyType.PAY_AS_YOU_THROW]: 'city',
+  [PolicyType.WATER_CONSERVATION]: 'city',
 };
 
 /** 這個條例畫在分區上有意義嗎？ */

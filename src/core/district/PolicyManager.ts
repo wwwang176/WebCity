@@ -28,6 +28,7 @@ export const POLICY_CONFIG: Record<PolicyType, PolicyTypeConfig> = {
   [PolicyType.INDUSTRY_SUBSIDY]: { name: 'Industry Subsidy' },
   [PolicyType.SURVEILLANCE_NETWORK]: { name: 'Surveillance Network' },
   [PolicyType.PAY_AS_YOU_THROW]: { name: 'Pay As You Throw' },
+  [PolicyType.WATER_CONSERVATION]: { name: 'Water Conservation' },
 };
 
 /**
@@ -80,6 +81,8 @@ export interface PolicyEffect {
    * 電網，所以「在哪裡」不是決策。帶這個欄位的條例必然是全城範圍。
    */
   powerDemand?: number;
+  /** 全城逐格用水需求乘數。 */
+  waterDemand?: number;
 }
 
 /**
@@ -156,6 +159,13 @@ export const POLICY_EFFECTS: Partial<Record<PolicyType, readonly PolicyEffect[]>
   [PolicyType.PAY_AS_YOU_THROW]: [
     { garbage: 0.78, landValue: -3 },
     { garbage: 0.58, landValue: -7 },
+  ],
+  // 省下來的水是實打實的:逐格需求變小，同一座水廠的預算就送得到更遠的地方。
+  // 代價落在業者身上 —— 工業的製程用水改造比商業換一批省水龍頭貴得多。
+  [PolicyType.WATER_CONSERVATION]: [
+    { waterDemand: 0.92, revenueByZone: { [ZoneType.COMMERCIAL_LOW]: 0.99, [ZoneType.COMMERCIAL_HIGH]: 0.99, [ZoneType.INDUSTRIAL]: 0.98 } },
+    { waterDemand: 0.82, revenueByZone: { [ZoneType.COMMERCIAL_LOW]: 0.97, [ZoneType.COMMERCIAL_HIGH]: 0.97, [ZoneType.INDUSTRIAL]: 0.94 } },
+    { waterDemand: 0.70, revenueByZone: { [ZoneType.COMMERCIAL_LOW]: 0.94, [ZoneType.COMMERCIAL_HIGH]: 0.94, [ZoneType.INDUSTRIAL]: 0.88 } },
   ],
 };
 

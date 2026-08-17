@@ -86,6 +86,8 @@ export class WaterNetwork {
   private supplied = new Set<string>();
   private fullCoverage = new Set<string>();
   private totalDemand = 0;
+  /** 節水法規的逐格乘數。1 = 沒有條例。 */
+  private demandMultiplier = 1;
   /** Injected road lookup for level-aware BFS (DIP). */
   private roadLookup: import('../road/UnifiedRoadLookup').UnifiedRoadLookup | null = null;
 
@@ -121,15 +123,23 @@ export class WaterNetwork {
     return this.supplied;
   }
 
-  calculateDemand(grid: Grid): void {
+  /**
+   * 重算總需求，並記下這一輪的節水乘數。
+   *
+   * 乘數存在物件上而不是只乘在 `totalDemand` 上，是因為決定哪一格有水的是
+   * `calculateCoverage` 的預算式 BFS，而它問的是 `getCellDemandAt`。只降帳面數字的
+   * 話 `getSupplyRatio()` 會變好看，缺水的建築卻一棟也不會恢復供水 —— 而玩家買的
+   * 正是那個。
+   *
+   * 兩個呼叫端都是「先 calculateDemand 再 calculateCoverage」，順序反過來的話
+   * BFS 會用到上一輪的乘數。
+   */
+  calculateDemand(grid: Grid, demandMultiplier = 1): void {
+    this.demandMultiplier = demandMultiplier;
     let demand = 0;
-    grid.forEachCell((cell) => {
+    grid.forEachCell((cell, x, y) => {
       if (cell.buildingId <= 0) return;
-      const bt = getBuildingType(cell.buildingId);
-      demand += calculateUtilityCellDemand(
-        WATER_DEMAND_CONFIG, cell.buildingId, cell.zoneType as ZoneType,
-        bt?.residents ?? 0, bt?.workers ?? 0, cell.reserved,
-      );
+      demand += this.getCellDemandAt(grid, x, y);
     });
     this.totalDemand = demand;
   }
@@ -176,7 +186,7 @@ export class WaterNetwork {
     return calculateUtilityCellDemand(
       WATER_DEMAND_CONFIG, cell.buildingId, cell.zoneType as ZoneType,
       bt?.residents ?? 0, bt?.workers ?? 0, cell.reserved,
-    );
+    ) * this.demandMultiplier;
   }
 
   // BFS methods extracted to NetworkCoverage.ts (bfsRoadNetworkFlood / bfsBudgetDrainFlood)

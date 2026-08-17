@@ -62,6 +62,11 @@ export class CityOrdinances {
     return this.effect(e => e.powerDemand, 1, (a, b) => a * b);
   }
 
+  /** 全城條例對每一格用水需求的乘數。 */
+  getWaterDemandMultiplier(): number {
+    return this.effect(e => e.waterDemand, 1, (a, b) => a * b);
+  }
+
   /** 全城條例加到犯罪率上的量。正值是代價。 */
   getCrimeBonus(): number {
     return this.effect(e => e.crime, 0, (a, b) => a + b);

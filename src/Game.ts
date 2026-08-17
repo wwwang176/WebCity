@@ -673,7 +673,8 @@ export class Game {
       steps.push({ label: 'Connecting utilities...', run: () => {
         this.state.power.calculateDemand(this.state.grid, this.state.ordinances.getPowerDemandMultiplier());
         this.state.power.calculateCoverage(this.state.grid);
-        this.state.water.calculateDemand(this.state.grid);
+        this.state.water.calculateDemand(
+          this.state.grid, this.state.ordinances.getWaterDemandMultiplier());
         this.state.water.calculateCoverage(this.state.grid);
       }});
       steps.push({ label: 'Planning traffic routes...', run: async (onSub) => {

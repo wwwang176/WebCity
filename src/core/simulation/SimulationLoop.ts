@@ -1930,7 +1930,8 @@ export class SimulationLoop {
     for (const p of this.state.sewage.getTreatmentPlants()) this.infraPositions.add(toPosKey(p.x, p.y));
     this.state.power.calculateDemand(this.state.grid, this.state.ordinances.getPowerDemandMultiplier());
     this.state.power.calculateCoverage(this.state.grid, this.infraPositions);
-    this.state.water.calculateDemand(this.state.grid);
+    this.state.water.calculateDemand(
+      this.state.grid, this.state.ordinances.getWaterDemandMultiplier());
     this.state.water.calculateCoverage(this.state.grid, this.infraPositions);
     this.state.sewage.calculateDemand(this.state.grid);
     this.state.sewage.calculateCoverage(this.state.grid, this.infraPositions);
