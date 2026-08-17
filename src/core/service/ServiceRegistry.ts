@@ -117,7 +117,10 @@ export function tickAllCivicServices(state: GameState): void {
     state.sewage,
     (x, y) => residentsByPos.get(toPosKey(x, y)) ?? 0,
     (x, y) => workersByPos.get(toPosKey(x, y)) ?? 0,
-    (x, y) => state.policies.getGarbageMultiplier(state.districts.getDistrictAt(x, y)?.id ?? null),
+    // 分區與全城的乘數相乘。全城的對每一格都生效，包含不屬於任何分區的格子 ——
+    // 那正是它「全城」的意思。
+    (x, y) => state.policies.getGarbageMultiplier(state.districts.getDistrictAt(x, y)?.id ?? null)
+      * state.ordinances.getGarbageMultiplier(),
   );
   state.garbage.tick();
   state.sewage.tick(production.sewage);

@@ -62,6 +62,21 @@ export class CityOrdinances {
     return this.effect(e => e.powerDemand, 1, (a, b) => a * b);
   }
 
+  /** 全城條例加到犯罪率上的量。正值是代價。 */
+  getCrimeBonus(): number {
+    return this.effect(e => e.crime, 0, (a, b) => a + b);
+  }
+
+  /** 全城條例加到地價上的量。 */
+  getLandValueBonus(): number {
+    return this.effect(e => e.landValue, 0, (a, b) => a + b);
+  }
+
+  /** 全城條例對每一格垃圾產生量的乘數。 */
+  getGarbageMultiplier(): number {
+    return this.effect(e => e.garbage, 1, (a, b) => a * b);
+  }
+
   /** 全城條例對這個分區類型的收入乘數。 */
   getRevenueMultiplier(zoneType: ZoneType): number {
     return this.effect((e) => {

@@ -1153,8 +1153,18 @@ export class SimulationLoop {
         noise: pollution.noise * pollutionFactor,
         // 條例可以往兩個方向動這一格:加地價（有機食品）也加犯罪（觀光）。
         // 分區只查一次 —— 這是逐格跑的。
-        crimeRate: this.getAvgCrime() + this.state.policies.getCrimeBonus(districtId),
-        policyBonus: this.state.policies.getLandValueBonus(districtId),
+        //
+        // 分區與全城的效果相加 —— 兩個範圍是獨立的決策，不是二選一。
+        //
+        // 犯罪率夾在 0 以上:`calculateLandValue` 是 `value -= crimeRate *
+        // CRIME_PENALTY`，負的犯罪率會直接變成地價加成。宵禁疊上監視器網路就能
+        // 把犯罪壓成負數，那時候「治安好」會變成「憑空多出地價」，而且疊越多層
+        // 賺越多。
+        crimeRate: Math.max(0, this.getAvgCrime()
+          + this.state.policies.getCrimeBonus(districtId)
+          + this.state.ordinances.getCrimeBonus()),
+        policyBonus: this.state.policies.getLandValueBonus(districtId)
+          + this.state.ordinances.getLandValueBonus(),
       });
 
       // Write land value, service coverage, and noise to grid (avoid temp object)
