@@ -75,6 +75,14 @@ export interface GameState {
   sidewalkGraph: SidewalkGraph;
   pedestrianManager: PedestrianManager;
   highwayConnection: HighwayConnection;
+  /**
+   * 這座城市的身分數字，開局時由地圖種子決定。
+   *
+   * 只用來當作程序生成的鹽 —— 市民與建築的名字都是從流水號算出來的，不加這個的話
+   * 每一座城市的第一個市民、第一棟房子都叫同一個名字。存進存檔，所以讀檔前後是
+   * 同一批人；舊存檔沒有這個欄位，讀回來是 0。
+   */
+  citySeed: number;
 }
 
 /** Default game world dimensions */
@@ -149,5 +157,6 @@ export function createGameState(width = DEFAULT_GRID_SIZE, height = DEFAULT_GRID
     sidewalkGraph,
     pedestrianManager,
     highwayConnection: new HighwayConnection(),
+    citySeed: 0,
   };
 }

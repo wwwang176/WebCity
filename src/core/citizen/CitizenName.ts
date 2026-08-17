@@ -1,9 +1,13 @@
 /**
  * 市民的名字。
  *
- * 從 id 算出來，不存進存檔:名字是純粹的裝飾，而市民數量是以萬計的，每人多背一個
- * 字串就是幾百 KB 的存檔與記憶體。從 id 算還有一個好處 —— 舊存檔一載入就有名字，
- * 不必寫遷移。
+ * 從 id 與**城市種子**算出來，不存進存檔:名字是純粹的裝飾，而市民數量是以萬計的，
+ * 每人多背一個字串就是幾百 KB 的存檔與記憶體。從 id 算還有一個好處 —— 舊存檔一載入
+ * 就有名字，不必寫遷移。
+ *
+ * 城市種子非帶不可。市民 id 是每一局各自從頭數的流水號，只看 id 的話每一座新城市的
+ * 第一個市民都叫同一個名字 —— 那是同一份名單重播，不是隨機取名。種子存在存檔裡
+ * （`GameState.citySeed`），所以同一座城市讀檔前後叫的是同一個人。
  *
  * 代價是名字會重複。名字表能組出 GIVEN × FAMILY 種組合，超過就一定撞 —— 這是接受
  * 的:一座大城市裡有兩個 John Whitaker 本來就很正常，而 id 仍然是唯一的，介面上也
@@ -52,26 +56,29 @@ export const FAMILY_NAMES: readonly string[] = [
  * 的住戶會照名字表的順序排下來，一看就是假的。這是 splitmix32 的 finalizer，把低位
  * 的變化擴散到所有位元上。
  */
-function scramble(id: number, salt: number): number {
+function scramble(id: number, salt: number, citySeed: number): number {
   // 位元運算自己會做 ToInt32，負數、小數、超過 32 位元的 id 都在這裡被收乾淨 ——
   // 所以沒有另外夾一次範圍。夾了也沒有測試守得到，只是換一個名字而已。
-  let h = (id ^ salt) >>> 0;
+  //
+  // 城市種子先乘一顆奇質數再混進去。直接相加的話，種子只差 1 的兩座城市會拿到
+  // 幾乎一樣的名單 —— id 也是連號的，兩邊的差會互相抵消。
+  let h = (Math.imul(citySeed, 0x27220a95) ^ id ^ salt) >>> 0;
   h = Math.imul(h ^ (h >>> 16), 0x21f0aaad) >>> 0;
   h = Math.imul(h ^ (h >>> 15), 0x735a2d97) >>> 0;
   return (h ^ (h >>> 15)) >>> 0;
 }
 
-/** 名。 */
-export function citizenGivenName(id: number): string {
-  return GIVEN_NAMES[scramble(id, 0x9e3779b9) % GIVEN_NAMES.length]!;
+/** 名。`citySeed` 見檔頭:同一個 id 在不同城市要是不同的人。 */
+export function citizenGivenName(id: number, citySeed = 0): string {
+  return GIVEN_NAMES[scramble(id, 0x9e3779b9, citySeed) % GIVEN_NAMES.length]!;
 }
 
 /** 姓。用另一顆鹽，不然姓與名會鎖在一起，兩張表只組得出 max(len) 種人。 */
-export function citizenFamilyName(id: number): string {
-  return FAMILY_NAMES[scramble(id, 0x85ebca6b) % FAMILY_NAMES.length]!;
+export function citizenFamilyName(id: number, citySeed = 0): string {
+  return FAMILY_NAMES[scramble(id, 0x85ebca6b, citySeed) % FAMILY_NAMES.length]!;
 }
 
 /** 「名 姓」。 */
-export function citizenName(id: number): string {
-  return `${citizenGivenName(id)} ${citizenFamilyName(id)}`;
+export function citizenName(id: number, citySeed = 0): string {
+  return `${citizenGivenName(id, citySeed)} ${citizenFamilyName(id, citySeed)}`;
 }

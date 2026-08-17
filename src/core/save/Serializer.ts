@@ -78,6 +78,8 @@ interface SerializedState {
   ferry?: ReturnType<FerrySystem['toJSON']>;
   airport?: ReturnType<AirportSystem['toJSON']>;
   highwayConnection?: ReturnType<HighwayConnection['toJSON']>;
+  /** 開局的地圖種子。舊存檔沒有，讀回來是 0。 */
+  citySeed?: number;
   districts?: ReturnType<DistrictManager['toJSON']>;
   policies?: ReturnType<PolicyManager['toJSON']>;
   ordinances?: ReturnType<CityOrdinances['toJSON']>;
@@ -158,6 +160,7 @@ export function snapshotGameState(
     ferry: state.ferry.toJSON(),
     airport: state.airport.toJSON(),
     highwayConnection: state.highwayConnection.toJSON(),
+    citySeed: state.citySeed,
     districts: state.districts.toJSON(),
     policies: state.policies.toJSON(),
     ordinances: state.ordinances.toJSON(),
@@ -275,6 +278,8 @@ export function deserializeGameState(json: string): GameState & { _extra?: Deser
   if (saved.airport) {
     state.airport = AirportSystem.fromJSON(saved.airport);
   }
+  state.citySeed = saved.citySeed ?? 0;
+
   if (saved.highwayConnection) {
     state.highwayConnection = HighwayConnection.fromJSON(saved.highwayConnection);
   }

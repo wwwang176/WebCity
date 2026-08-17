@@ -23,7 +23,7 @@ export function CitizenDetailPanel(props: { panelOrder?: number }) {
     <Show when={visible()}>
       <div id="citizen-detail-panel" class="g-panel visible" style={{ order: props.panelOrder ?? 0 }}>
         <div class="g-panel-header">
-          <span class="g-panel-title">{citizenName(citizenId()!)} #{citizenId()}</span>
+          <span class="g-panel-title">{citizenName(citizenId()!, getGame().getState().citySeed)} #{citizenId()}</span>
           <button
             style={{
               background: 'none', border: 'none', color: '#667a90', cursor: 'pointer',

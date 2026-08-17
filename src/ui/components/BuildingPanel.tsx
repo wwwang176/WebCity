@@ -323,7 +323,7 @@ function ZoneBuildingInfo(props: { sel: SelectedZoneBuilding }) {
           <Index each={citizens().residents}>
             {(c) => (
               <div class="bp-citizen" onClick={() => setSelectedCitizen(c().id)}>
-                {citizenName(c().id)} #{c().id} - {STAGE_NAMES[c().lifeStage] ?? c().lifeStage}
+                {citizenName(c().id, getGame().getState().citySeed)} #{c().id} - {STAGE_NAMES[c().lifeStage] ?? c().lifeStage}
               </div>
             )}
           </Index>
@@ -333,7 +333,7 @@ function ZoneBuildingInfo(props: { sel: SelectedZoneBuilding }) {
           <Index each={citizens().workers}>
             {(c) => (
               <div class="bp-citizen" onClick={() => setSelectedCitizen(c().id)}>
-                {citizenName(c().id)} #{c().id} - {STAGE_NAMES[c().lifeStage] ?? c().lifeStage}
+                {citizenName(c().id, getGame().getState().citySeed)} #{c().id} - {STAGE_NAMES[c().lifeStage] ?? c().lifeStage}
               </div>
             )}
           </Index>

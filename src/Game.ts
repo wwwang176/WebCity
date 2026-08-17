@@ -542,6 +542,9 @@ export class Game {
       if (mapConfig) {
         this.mapConfig = mapConfig;
         this.state.budget.funds = STARTING_FUNDS_MAP[mapConfig.startingFunds];
+        // 地圖種子同時當作這座城市的身分:名字都是從流水號算的，沒有這個的話每一
+        // 座城市的第一個市民都同名。`mapConfig` 不在存檔裡，所以抄進 GameState。
+        this.state.citySeed = mapConfig.seed;
       }
     }
     this.simLoop = new SimulationLoop(this.state);
