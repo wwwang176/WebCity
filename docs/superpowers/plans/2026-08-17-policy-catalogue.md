@@ -1,5 +1,39 @@
 # 條例目錄（第一批 + 第二批）Implementation Plan
 
+> **已完成（2026-08-17）。** 執行過程中改掉了計畫的四個決定，理由記在下面；
+> 逐條的實作細節以程式碼與 commit 為準，這份文件保留的是當初的推理。
+>
+> | Commit | 內容 |
+> |---|---|
+> | `f128a9d` | Task 1：crime / landValue / garbage 接上全城 |
+> | `7222238` | Task 2：五條分區條例 |
+> | `fc55e14` | Task 3：兩條全城條例 |
+> | `1939ca1` | BUG-290 犯罪補齊到四個出口、BUG-291 分區垃圾乘數的測試 |
+> | `8157ed5` | 夜生活三條互斥 |
+> | `36daf54` | Task 4：節水法規 |
+> | `2d7dab2` | Task 5：汙水處理標準 |
+> | `a60e40b` | Task 6：工業排放管制 |
+> | `710a9ad` | Task 7：分類分組 + 跨全表的方向不變量 |
+>
+> **跟計畫不一樣的四件事：**
+>
+> 1. **工業排放管制改成分區條例。** 計畫寫全城。汙染源是逐格的工業格，好處與代價
+>    也都落在工業格上 ——「管哪一片工廠」是有意義的決策，套到全城只會在沒有汙染
+>    問題的工業區白扣收入。照計畫自己的判準（全城套用永遠不會更糟才該是全城），
+>    它就不該是全城的。
+> 2. **節水法規的乘數不能只乘在 `totalDemand` 上。** 決定哪一格有水的是
+>    `calculateCoverage` 的預算式 BFS，它問的是 `getCellDemandAt`。計畫原本的接法
+>    會讓 `getSupplyRatio()` 變好看而缺水的建築一棟也不會恢復供水，而且計畫寫的
+>    測試（斷言 `getDemand()` 下降）守不住那個壞實作。
+> 3. **多了一層互斥組。** 計畫在目錄表格寫著「賭場與宵禁同一塊地只能選一邊」，
+>    但沒有任何一步實作它。現在做在 `setPolicyLevel` 與 `DistrictManager.fromJSON`
+>    兩道門上。
+> 4. **多了一輪「讓 crime 真的是犯罪」。** 條例的 crime 欄位原本只接到地價；
+>    面板寫著 Crime +12，犯罪圖層卻一片不動（BUG-290）。
+>
+> **沒有做的：** 移民吸引力那一條線（訊號被隨機性蓋過，寫不出守得住的測試）、
+> 兩個 modal 的 DOM 測試（專案沒有測試環境）、數值平衡。都在 `TODO.md`。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 把條例從 6 條擴充到 16 條，並讓 `crime` / `landValue` / `garbage` 這三個既有槓桿也能在全城範圍生效。
