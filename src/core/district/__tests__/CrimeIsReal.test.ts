@@ -1,0 +1,159 @@
+import { describe, it, expect } from 'vitest';
+import { createGameState, type GameState } from '../../simulation/GameState';
+import { SimulationLoop } from '../../simulation/SimulationLoop';
+import { buildOverlayValue, type OverlayBuildContext } from '../../overlay/OverlayBuilders';
+import { POLICY_EFFECTS, type PolicyEffect } from '../PolicyManager';
+import { PolicyType } from '../types';
+import { ZoneType } from '../../grid/types';
+import { toPosKey } from '../../grid/GridHelpers';
+
+/**
+ * 條例上寫著 Crime +12，玩家在犯罪圖層、幸福度、棄置壓力上卻一點也看不到 ——
+ * 那 UI 就是在說謊。犯罪原本只走到地價那一條線。
+ *
+ * 這裡量的是犯罪真正的四個出口，不是地價。
+ */
+
+/** Small House（RESIDENTIAL_LOW）。 */
+const HOUSE = 1;
+/** Small Shop（COMMERCIAL_LOW）。 */
+const SHOP = 7;
+
+function city(): { state: GameState; loop: SimulationLoop } {
+  const state = createGameState(30, 30);
+  for (let x = 5; x < 20; x++) state.grid.setCell(x, 10, { roadType: 1, roadFlags: 0b1111 });
+  for (let x = 6; x < 19; x++) {
+    state.grid.setCell(x, 11, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: HOUSE });
+    state.grid.setCell(x, 9, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: SHOP });
+    for (let i = 0; i < 4; i++) {
+      // 有家也有工作。失業的懲罰是 −15 起跳，會把幸福度壓在地板上 —— 那時候
+      // 犯罪的 −10 加不加都一樣，測試就量不到東西了。
+      state.citizens.restoreCitizen(
+        { homeId: toPosKey(x, 11), workplaceId: toPosKey(x, 9) }, 0);
+    }
+  }
+  // 要有電有水。缺一樣，幸福度就會掉到 0、房子就會自己被棄置 —— 兩個出口都被
+  // 壓到底之後，條例推不推得動就量不出來了。
+  state.power.addPlant({ x: 12, y: 8, output: 100000, pollution: 0, type: 'wind' });
+  state.water.addPlant({ x: 13, y: 8, output: 100000 });
+  return { state, loop: new SimulationLoop(state) };
+}
+
+/** 圖層的 ctx 就是 GameState 加兩個通勤統計欄位（見 `Game.buildOverlayData`）。 */
+function overlayCtx(state: GameState): OverlayBuildContext {
+  return Object.assign(Object.create(state) as OverlayBuildContext, {
+    commuteByHome: new Map<string, number>(),
+    commuteMax: 1,
+  });
+}
+
+/** 圖層鍵是字串 —— `OverlayType` 這個 enum 住在 renderer，core 不能 import。 */
+function crimeOverlayAt(state: GameState, x: number, y: number): number {
+  return buildOverlayValue(overlayCtx(state), 'crime', state.grid.getCell(x, y)!, x, y);
+}
+
+/** 暫時給全城條例塞一組效果。測的是接線，不是某一條條例現在的數字。 */
+function withCityCrime(state: GameState, crime: number, body: () => void) {
+  const type = PolicyType.ENERGY_REGULATION;
+  const saved = POLICY_EFFECTS[type];
+  (POLICY_EFFECTS as Record<string, unknown>)[type] = [{ crime } satisfies PolicyEffect];
+  state.ordinances.setLevel(type, 1);
+  try {
+    body();
+  } finally {
+    (POLICY_EFFECTS as Record<string, unknown>)[type] = saved;
+  }
+}
+
+/** 分區版本。賭場借來當載體 —— 測的是接線，不是賭場現在的數字。 */
+function withDistrictCrime(
+  state: GameState, districtId: string, crime: number, body: () => void,
+) {
+  const type = PolicyType.LEGALIZE_GAMBLING;
+  const saved = POLICY_EFFECTS[type];
+  (POLICY_EFFECTS as Record<string, unknown>)[type] = [{ crime } satisfies PolicyEffect];
+  state.policies.setPolicyLevel(districtId, type, 1);
+  try {
+    body();
+  } finally {
+    (POLICY_EFFECTS as Record<string, unknown>)[type] = saved;
+  }
+}
+
+describe('犯罪圖層看得到條例', () => {
+  it('should rise where a district legalises gambling', () => {
+    const { state } = city();
+    const before = crimeOverlayAt(state, 10, 11);
+    expect(before, '圖層本來就是 0，這條測試等於空轉').toBeGreaterThan(0);
+
+    const d = state.districts.createDistrict('D');
+    for (let x = 6; x < 12; x++) state.districts.addCellToDistrict(d.id, x, 11);
+    state.policies.setPolicyLevel(d.id, PolicyType.LEGALIZE_GAMBLING, 1);
+
+    expect(crimeOverlayAt(state, 10, 11), '賭場區的犯罪圖層沒有變高').toBeGreaterThan(before);
+    expect(crimeOverlayAt(state, 15, 11), '分區外的格子也跟著變高了').toBe(before);
+  });
+
+  it('should fall city-wide under a surveillance network', () => {
+    const { state } = city();
+    const before = crimeOverlayAt(state, 15, 11);
+    state.ordinances.setLevel(PolicyType.SURVEILLANCE_NETWORK, 2);
+    expect(crimeOverlayAt(state, 15, 11), '監視器網路沒有降低犯罪圖層').toBeLessThan(before);
+  });
+});
+
+describe('犯罪走到幸福度', () => {
+  it('should make residents unhappier', () => {
+    // 直接叫那一輪的幸福度計算，不跑整個 tick —— 建築成長與棄置都帶隨機取樣，
+    // 混進來的話兩次執行的差異就不一定來自犯罪了。既有測試也是這樣戳私有方法
+    // （見 `BuildingAbandonment.test.ts`）。
+    const avgHappinessWith = (crime: number) => {
+      const { state, loop } = city();
+      const update = () =>
+        (loop as unknown as { updateCitizenHappiness: () => void }).updateCitizenHappiness();
+      if (crime !== 0) withCityCrime(state, crime, () => { for (let i = 0; i < 8; i++) update(); });
+      else for (let i = 0; i < 8; i++) update();
+      const cs = state.citizens.getCitizens();
+      return cs.reduce((s, c) => s + c.happiness, 0) / cs.length;
+    };
+    const plain = avgHappinessWith(0);
+    const withCrime = avgHappinessWith(60);
+    expect(plain, '幸福度已經是 0，再低也看不出來').toBeGreaterThan(0);
+    // 要求一個明確的差距，不是「比較小」就好:通勤時間帶 ±0.8 的隨機抖動，
+    // 兩個平均值本來就不會相等，只寫 toBeLessThan 的話沒有接線也有一半機率會過。
+    // 犯罪的幸福度懲罰上限是 −10，遠大於那個抖動。
+    expect(plain - withCrime, '犯罪飆高，居民卻一樣開心').toBeGreaterThan(5);
+  });
+});
+
+describe('犯罪走到棄置壓力', () => {
+  // 棄置的犯罪門檻是 30 —— 一座小城的基礎犯罪遠低於它，所以只有條例推得過去。
+  const abandonedAfter = (
+    withPolicy: (state: GameState, districtId: string, run: () => void) => void,
+  ) => {
+    const { state, loop } = city();
+    const d = state.districts.createDistrict('D');
+    for (let x = 6; x < 19; x++) state.districts.addCellToDistrict(d.id, x, 11);
+    withPolicy(state, d.id, () => { for (let i = 0; i < 120; i++) loop.tick(); });
+    let n = 0;
+    state.grid.forEachCell((cell) => {
+      if (cell.buildingId === HOUSE && cell.reserved !== 0) n++;
+    });
+    return n;
+  };
+
+  it('should stay standing when no ordinance is in force', () => {
+    expect(abandonedAfter((_state, _id, run) => run()),
+      '什麼都沒開就有房子被棄置，量不到條例的影響').toBe(0);
+  });
+
+  it('should push buildings towards abandonment city-wide', () => {
+    expect(abandonedAfter((state, _id, run) => withCityCrime(state, 200, run)),
+      '全城條例把犯罪飆到 200 也沒有房子撐不住').toBeGreaterThan(0);
+  });
+
+  it('should push buildings towards abandonment inside the district that asked for it', () => {
+    expect(abandonedAfter((state, id, run) => withDistrictCrime(state, id, 200, run)),
+      '分區條例把犯罪飆到 200 也沒有房子撐不住').toBeGreaterThan(0);
+  });
+});

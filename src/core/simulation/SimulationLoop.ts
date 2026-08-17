@@ -718,6 +718,9 @@ export class SimulationLoop {
       avgHappiness,
       taxRate: this.state.taxRates.residential ?? DEFAULT_TAX_RATE,
       pollution: this.getAvgPollution(),
+      // 這裡刻意是基礎值而不是 `getCityCrime()`。條例的犯罪效果走幸福度到得了
+      // 移民 —— 住得不開心的人會走。直接接上吸引力這條線寫得出來，但移民是機率
+      // 性的，在測試規模下訊號被隨機性蓋過，寫不出守得住的測試。
       crimeRate: this.getAvgCrime(),
       unemploymentRate,
       hasUniversity: this.state.education.getTotalCapacity('university') > 0,
@@ -764,7 +767,7 @@ export class SimulationLoop {
       // total, which is what the pollution overlay should show.
       avgPollution: this.getAvgPollutionExcludingNoise(),
       avgNoise: this.getAvgNoise(),
-      avgCrime: this.getAvgCrime(),
+      avgCrime: this.getCityCrime(),
       residentialBuildingCount: countZoneBuildings(this.state.grid, isResidentialZone),
       serviceRatios: this.getServiceRatios(),
     });
@@ -972,6 +975,19 @@ export class SimulationLoop {
       this.state.citizens.getPopulation(),
       this.state.police.getStations().length,
     );
+  }
+
+  /**
+   * 全城的有效犯罪率 —— 基礎值加上全城條例。
+   *
+   * 幸福度、移民吸引力、棄置壓力看的都是這個數字。少了條例那一項的話，面板上
+   * 寫著 Crime −13，居民卻一點感覺也沒有。
+   *
+   * 夾在 0 以上:負的犯罪率在下游會變成加分（地價那條線最明顯，`calculateLandValue`
+   * 是 `value -= crimeRate * CRIME_PENALTY`），疊越多層賺越多。
+   */
+  private getCityCrime(): number {
+    return Math.max(0, this.getAvgCrime() + this.state.ordinances.getCrimeBonus());
   }
 
   private countVacantHomes(): number {
@@ -1232,13 +1248,14 @@ export class SimulationLoop {
       isZoneBuilding,
       getBuildingLevel: (bid) => getBuildingType(bid)?.level ?? 0,
       getPollution: (x, y) => this.state.pollution.getPollutionAt(x, y),
-      getCrimeReduction: (x, y) => this.state.police.getCrimeReduction(x, y),
+      getCrimeReduction: (x, y) => this.state.police.getCrimeReduction(x, y)
+        + this.state.policies.getCrimeBonus(this.state.districts.getDistrictAt(x, y)?.id ?? null),
       getServiceScore: (x, y, isRes) => getCellServiceCostScore(this.state, x, y, isRes),
       isPowered: (x, y) => this.state.power.isPowered(x, y),
       isWatered: (x, y) => this.state.water.isSupplied(x, y),
       getFreightSupplyRatio: (x, y) => this.state.freight.getSupplyStatus(x, y).ratio,
       getFreightSurplusRatio: () => this.state.freight.getSurplusRatio(),
-      baseCrime: this.getAvgCrime(),
+      baseCrime: this.getCityCrime(),
       businessTax: this.state.taxRates.business ?? DEFAULT_TAX_RATE,
       residentialTax: this.state.taxRates.residential ?? DEFAULT_TAX_RATE,
       stressMap: this.abandonmentStress,

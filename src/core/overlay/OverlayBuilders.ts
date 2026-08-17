@@ -25,6 +25,8 @@ export interface OverlayBuildContext {
   parks: { getCoverage(x: number, y: number): boolean };
   garbage: { getCoverage(x: number, y: number): boolean };
   districts: { getDistrictAt(x: number, y: number): { id: string } | null };
+  policies: { getCrimeBonus(districtId: string | null): number };
+  ordinances: { getCrimeBonus(): number };
   /** 住宅格 → 住戶的平均通勤時間（tick）。查不到代表那一格沒有通勤人口。 */
   commuteByHome: ReadonlyMap<string, number>;
   /** 通勤時間超過這個值就是滿格的紅色。 */
@@ -119,7 +121,11 @@ export const OVERLAY_BUILDERS: Record<string, OverlayBuilder> = {
   crime: (ctx, cell, x, y) => {
     if (cell.buildingId <= 0) return 0;
     const reduction = ctx.police.getCrimeReduction(x, y);
-    return Math.max(0, O.CRIME_BASE + reduction);
+    // 條例算進來 —— 條例上寫著 Crime +12，圖層卻只畫警察局的涵蓋範圍的話，
+    // 玩家沒有辦法看見自己剛才買下的代價。
+    const districtId = ctx.districts.getDistrictAt(x, y)?.id ?? null;
+    const policy = ctx.policies.getCrimeBonus(districtId) + ctx.ordinances.getCrimeBonus();
+    return Math.max(0, O.CRIME_BASE + reduction + policy);
   },
 
   district: (ctx, _cell, x, y) => {

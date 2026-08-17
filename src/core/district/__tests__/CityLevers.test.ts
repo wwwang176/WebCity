@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { CityOrdinances } from '../CityOrdinances';
 import { POLICY_EFFECTS, type PolicyEffect } from '../PolicyManager';
 import { PolicyType } from '../types';
-import { createGameState } from '../../simulation/GameState';
+import { createGameState, type GameState } from '../../simulation/GameState';
 import { SimulationLoop } from '../../simulation/SimulationLoop';
 import { ZoneType } from '../../grid/types';
 import { toPosKey } from '../../grid/GridHelpers';
@@ -71,43 +71,52 @@ function cityWithShops() {
   return { state, loop };
 }
 
+/**
+ * 跑一段模擬，期間讓某條全城條例帶著指定的效果。
+ *
+ * 還原寫在 `finally` 裡:tick 途中拋錯的話，被改過的 `POLICY_EFFECTS` 會留給同一
+ * 個檔案後面的測試。
+ */
+function simulateWithCityEffect(
+  state: GameState, loop: SimulationLoop, tiers: PolicyEffect[] | null, ticks: number,
+): void {
+  if (!tiers) {
+    for (let i = 0; i < ticks; i++) loop.tick();
+    return;
+  }
+  const type = PolicyType.ENERGY_REGULATION;
+  const saved = POLICY_EFFECTS[type];
+  (POLICY_EFFECTS as Record<string, unknown>)[type] = tiers;
+  state.ordinances.setLevel(type, 1);
+  try {
+    for (let i = 0; i < ticks; i++) loop.tick();
+  } finally {
+    (POLICY_EFFECTS as Record<string, unknown>)[type] = saved;
+  }
+}
+
 describe('三個槓桿真的接進模擬', () => {
   // 建築直接種進格子:updateLandValue 與垃圾產生都跳過 buildingId === 0，而建築
   // 成長要求該格有電有水。
 
+  const landValueWith = (tiers: PolicyEffect[] | null) => {
+    const { state, loop } = cityWithShops();
+    simulateWithCityEffect(state, loop, tiers, 6);
+    return state.grid.getCell(10, 11)!.landValue;
+  };
+
   it('should let a city ordinance move land value', () => {
-    const valueWith = (tiers: PolicyEffect[] | null) => {
-      const { state, loop } = cityWithShops();
-      if (tiers) {
-        const saved = POLICY_EFFECTS[PolicyType.ENERGY_REGULATION];
-        (POLICY_EFFECTS as Record<string, unknown>)[PolicyType.ENERGY_REGULATION] = tiers;
-        state.ordinances.setLevel(PolicyType.ENERGY_REGULATION, 1);
-        for (let i = 0; i < 6; i++) loop.tick();
-        (POLICY_EFFECTS as Record<string, unknown>)[PolicyType.ENERGY_REGULATION] = saved;
-      } else {
-        for (let i = 0; i < 6; i++) loop.tick();
-      }
-      return state.grid.getCell(10, 11)!.landValue;
-    };
-    const plain = valueWith(null);
+    const plain = landValueWith(null);
     expect(plain, '地價沒有被算過，這條測試等於空轉').toBeGreaterThan(0);
-    expect(valueWith([{ landValue: -20 }]), '全城條例的地價效果沒有進到格子')
+    expect(landValueWith([{ landValue: -20 }]), '全城條例的地價效果沒有進到格子')
       .toBeLessThan(plain);
   });
 
   it('should let a city ordinance move crime', () => {
-    // 犯罪只透過地價看得見（crimeRate 是 calculateLandValue 的輸入），所以量的
-    // 是同一個出口 —— 但走的是不同的欄位。
-    const valueWith = (crime: number) => {
-      const { state, loop } = cityWithShops();
-      const saved = POLICY_EFFECTS[PolicyType.ENERGY_REGULATION];
-      (POLICY_EFFECTS as Record<string, unknown>)[PolicyType.ENERGY_REGULATION] = [{ crime }];
-      state.ordinances.setLevel(PolicyType.ENERGY_REGULATION, 1);
-      for (let i = 0; i < 6; i++) loop.tick();
-      (POLICY_EFFECTS as Record<string, unknown>)[PolicyType.ENERGY_REGULATION] = saved;
-      return state.grid.getCell(10, 11)!.landValue;
-    };
-    expect(valueWith(20), '全城條例的犯罪效果沒有進到地價').toBeLessThan(valueWith(0));
+    // 犯罪走到地價的那一條線。犯罪還有另外三個出口（圖層、幸福度、棄置壓力），
+    // 由 `CrimeIsReal.test.ts` 守著。
+    expect(landValueWith([{ crime: 20 }]), '全城條例的犯罪效果沒有進到地價')
+      .toBeLessThan(landValueWith([{ crime: 0 }]));
   });
 
   it('should not let a crime reduction create land value out of nothing', () => {
@@ -116,33 +125,42 @@ describe('三個槓桿真的接進模擬', () => {
     //
     // 驗的是「壓過頭沒有額外好處」:兩個不同深度的負值必須落在同一個地價，
     // 因為兩者都該被夾成 0。沒有夾值的話，−100 會比 −50 多出 20 點地價。
-    const valueWith = (crime: number) => {
-      const { state, loop } = cityWithShops();
-      const saved = POLICY_EFFECTS[PolicyType.ENERGY_REGULATION];
-      (POLICY_EFFECTS as Record<string, unknown>)[PolicyType.ENERGY_REGULATION] = [{ crime }];
-      state.ordinances.setLevel(PolicyType.ENERGY_REGULATION, 1);
-      for (let i = 0; i < 6; i++) loop.tick();
-      (POLICY_EFFECTS as Record<string, unknown>)[PolicyType.ENERGY_REGULATION] = saved;
-      return state.grid.getCell(10, 11)!.landValue;
-    };
-    expect(valueWith(-100), '犯罪壓成負數之後還在繼續加地價').toBe(valueWith(-50));
+    expect(landValueWith([{ crime: -100 }]), '犯罪壓成負數之後還在繼續加地價')
+      .toBe(landValueWith([{ crime: -50 }]));
+  });
+
+  /**
+   * 四種組合的垃圾量:什麼都沒開、只有分區、只有全城、兩個都開。
+   *
+   * 這一組是被突變測試逼出來的 —— 把 `ServiceRegistry` 那一行的分區乘數整項刪掉，
+   * 只留全城的，5916 條測試全部照樣綠。只比較「有沒有變少」的話，兩個乘數少掉
+   * 任何一個都還是會變少;要驗合成，就得要求兩個一起開比任何一個單獨開更少。
+   */
+  const garbageWith = (district: boolean, city: boolean) => {
+    const { state, loop } = cityWithShops();
+    if (district) {
+      const d = state.districts.createDistrict('D');
+      for (let x = 6; x < 14; x++) state.districts.addCellToDistrict(d.id, x, 11);
+      state.policies.setPolicyLevel(d.id, PolicyType.ENCOURAGE_RECYCLING, 3);
+    }
+    simulateWithCityEffect(state, loop, city ? [{ garbage: 0.5 }] : null, 60);
+    return state.garbage.getUncollected();
+  };
+
+  it('should let a district policy move garbage production', () => {
+    const plain = garbageWith(false, false);
+    expect(plain, '沒有垃圾可比，這條測試等於空轉').toBeGreaterThan(0);
+    expect(garbageWith(true, false), '分區的回收政策沒有減少垃圾').toBeLessThan(plain);
   });
 
   it('should let a city ordinance move garbage production', () => {
-    const garbageWith = (mult: number) => {
-      const { state, loop } = cityWithShops();
-      const saved = POLICY_EFFECTS[PolicyType.ENERGY_REGULATION];
-      (POLICY_EFFECTS as Record<string, unknown>)[PolicyType.ENERGY_REGULATION] = [{ garbage: mult }];
-      if (mult !== 1) state.ordinances.setLevel(PolicyType.ENERGY_REGULATION, 1);
-      // 垃圾產生跑在 slowSlot 2，也就是每 6 tick 一次 —— 12 tick 只會跑兩輪，
-      // 累積量還湊不滿一個袋子。
-      for (let i = 0; i < 60; i++) loop.tick();
-      (POLICY_EFFECTS as Record<string, unknown>)[PolicyType.ENERGY_REGULATION] = saved;
-      // 沒有垃圾場，所以產出全部堆在 getUncollected 裡。
-      return state.garbage.getUncollected();
-    };
-    const plain = garbageWith(1);
-    expect(plain, '沒有垃圾可比，這條測試等於空轉').toBeGreaterThan(0);
-    expect(garbageWith(0.3), '全城條例沒有減少垃圾').toBeLessThan(plain);
+    expect(garbageWith(false, true), '全城條例沒有減少垃圾')
+      .toBeLessThan(garbageWith(false, false));
+  });
+
+  it('should multiply the two scopes together', () => {
+    const both = garbageWith(true, true);
+    expect(both, '兩個都開沒有比只開分區更少').toBeLessThan(garbageWith(true, false));
+    expect(both, '兩個都開沒有比只開全城更少').toBeLessThan(garbageWith(false, true));
   });
 });

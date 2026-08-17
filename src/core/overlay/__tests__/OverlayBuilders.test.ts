@@ -25,6 +25,8 @@ function makeCtx(overrides: Partial<OverlayBuildContext> = {}): OverlayBuildCont
     parks: { getCoverage: () => false },
     garbage: { getCoverage: () => false },
     districts: { getDistrictAt: () => null },
+    policies: { getCrimeBonus: () => 0 },
+    ordinances: { getCrimeBonus: () => 0 },
     grid: { getCell: () => null },
     commuteByHome: new Map<string, number>(),
     commuteMax: 60,
@@ -132,6 +134,21 @@ describe('buildOverlayValue', () => {
     const ctx = makeCtx({ police: { getCrimeReduction: () => -10, getCoverage: () => false } });
     const cell = makeCell({ buildingId: 1 });
     expect(buildOverlayValue(ctx, 'crime', cell, 0, 0)).toBe(O.CRIME_BASE - 10);
+  });
+
+  it('crime: carries the policies a district switched on', () => {
+    // 圖層只畫警察局的話，條例上寫的 Crime +12 在畫面上完全看不見。
+    const ctx = makeCtx({
+      districts: { getDistrictAt: () => ({ id: 'strip' }) },
+      policies: { getCrimeBonus: (id) => (id === 'strip' ? 12 : 0) },
+    });
+    expect(buildOverlayValue(ctx, 'crime', makeCell({ buildingId: 1 }), 0, 0))
+      .toBe(O.CRIME_BASE + 12);
+  });
+
+  it('crime: carries the city ordinances too, and never goes negative', () => {
+    const ctx = makeCtx({ ordinances: { getCrimeBonus: () => -1000 } });
+    expect(buildOverlayValue(ctx, 'crime', makeCell({ buildingId: 1 }), 0, 0)).toBe(0);
   });
 
   it('crime: returns 0 for empty cells', () => {
