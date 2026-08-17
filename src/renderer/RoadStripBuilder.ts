@@ -357,6 +357,13 @@ export const MAX_LANE_MARKINGS_PER_CELL = DASHES_PER_DIVIDER * Math.max(
 export interface LampPosition {
   x: number;
   z: number;
+  /**
+   * 光往哪一邊灑。局部 +Z 轉過這個角度之後指向路面。
+   *
+   * 地面的路燈是一整圈光暈，因為它四周都是地。高架的燈站在橋面邊緣，整圈的話
+   * 有一半會灑到橋外的空中 —— 所以那邊畫的是半圓，而半圓往哪邊開就靠這個角度。
+   */
+  rotY: number;
   srcX: number;
   srcY: number;
 }
@@ -387,9 +394,13 @@ export function buildLampPositions(cells: RoadCell[]): LampPosition[] {
       // 擺兩盞才不會讓轉角變暗。
       for (const t of [0.25, 0.75]) {
         const a = t * (Math.PI / 2);
+        const ux = dirX * Math.cos(a);
+        const uz = dirZ * Math.sin(a);
         lamps.push({
-          x: r.x + cornerX + dirX * radius * Math.cos(a),
-          z: r.y + cornerZ + dirZ * radius * Math.sin(a),
+          x: r.x + cornerX + radius * ux,
+          z: r.y + cornerZ + radius * uz,
+          // 內側是彎心的方向，不是某一個座標軸。
+          rotY: Math.atan2(-ux, -uz),
           srcX: r.x, srcY: r.y,
         });
       }
@@ -400,10 +411,11 @@ export function buildLampPositions(cells: RoadCell[]): LampPosition[] {
     const hasS = (r.roadFlags & RoadDirection.SOUTH) !== 0;
     const hasE = (r.roadFlags & RoadDirection.EAST) !== 0;
     const hasW = (r.roadFlags & RoadDirection.WEST) !== 0;
-    if (!hasN) lamps.push({ x: r.x, z: r.y - half, srcX: r.x, srcY: r.y });
-    if (!hasS) lamps.push({ x: r.x, z: r.y + half, srcX: r.x, srcY: r.y });
-    if (!hasW) lamps.push({ x: r.x - half, z: r.y, srcX: r.x, srcY: r.y });
-    if (!hasE) lamps.push({ x: r.x + half, z: r.y, srcX: r.x, srcY: r.y });
+    // rotY 一律指回格子中心 —— 燈在哪一側，光就往哪一側的反方向灑。
+    if (!hasN) lamps.push({ x: r.x, z: r.y - half, rotY: 0, srcX: r.x, srcY: r.y });
+    if (!hasS) lamps.push({ x: r.x, z: r.y + half, rotY: Math.PI, srcX: r.x, srcY: r.y });
+    if (!hasW) lamps.push({ x: r.x - half, z: r.y, rotY: Math.PI / 2, srcX: r.x, srcY: r.y });
+    if (!hasE) lamps.push({ x: r.x + half, z: r.y, rotY: -Math.PI / 2, srcX: r.x, srcY: r.y });
   }
 
   return lamps;

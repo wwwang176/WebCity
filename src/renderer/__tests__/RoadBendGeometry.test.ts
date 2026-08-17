@@ -359,3 +359,50 @@ describe('彎道的路緣石看起來要跟直路一樣寬', () => {
     }
   });
 });
+
+describe('高架路燈的光只灑在橋面上', () => {
+  /** 這盞燈的光往哪個方向開。局部 +Z 轉過 rotY。 */
+  const facing = (l: { rotY: number }) => ({ x: Math.sin(l.rotY), z: Math.cos(l.rotY) });
+
+  /** a 指向 b 的單位向量。 */
+  function towards(a: { x: number; z: number }, bx: number, bz: number) {
+    const dx = bx - a.x, dz = bz - a.z;
+    const len = Math.hypot(dx, dz);
+    return { x: dx / len, z: dz / len };
+  }
+
+  it('should face a straight road`s lamp inwards, across the carriageway', () => {
+    // 高架的光暈是半圓不是整圓 —— 燈站在橋面邊緣，光不該灑到橋外的空中去。
+    // 半圓往哪邊開由 rotY 決定，而它必須指向路面。
+    for (const l of buildLampPositions([cell(NS)])) {
+      const f = facing(l);
+      const inward = towards(l, 0, 0);
+      expect(f.x * inward.x + f.z * inward.z).toBeCloseTo(1, 6);
+    }
+  });
+
+  it.each([[NE], [NW], [SE], [SW]])('should face a bend`s lamps at the centre of the turn (%i)', (flags) => {
+    // 彎道上「內側」不是某一個座標軸，是彎心的方向 —— 兩盞燈各自朝內，合起來
+    // 就是一條沿著弧的光帶。
+    const c = turnCentre(flags);
+    for (const l of buildLampPositions([cell(flags)])) {
+      const f = facing(l);
+      const inward = towards(l, c.cx, c.cz);
+      expect(f.x * inward.x + f.z * inward.z).toBeCloseTo(1, 6);
+    }
+  });
+
+  it('should face every side of a dead end back at the road', () => {
+    // 死路除了來的那一面都要燈。三盞各自朝向格子中心 —— 共用一個角度的話會有兩盞
+    // 把光打到橋外面去。只檢查角度互不相同是不夠的:那三個角度剛好各不相同，卻
+    // 可以全部指錯邊。
+    const lamps = buildLampPositions([cell(RoadDirection.NORTH)]);
+    expect(lamps).toHaveLength(3);
+    for (const l of lamps) {
+      const f = facing(l);
+      const inward = towards(l, 0, 0);
+      expect(f.x * inward.x + f.z * inward.z, `(${l.x}, ${l.z}) 的光打到橋外面`)
+        .toBeCloseTo(1, 6);
+    }
+  });
+});

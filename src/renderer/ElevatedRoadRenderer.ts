@@ -100,8 +100,17 @@ function getSharedGeo() {
   const pole = new THREE.CylinderGeometry(0.008, 0.01, poleH, 4); pole.translate(0, poleH / 2, 0);
   const head = new THREE.SphereGeometry(0.018, 4, 3); head.translate(0, poleH + 0.01, 0);
   const lamp = mergeGeometries([pole, head])!; pole.dispose(); head.dispose();
+  // 高架的光暈是**半圓**，不是整圓。
+  //
+  // 地面的路燈四周都是地，整圈的光暈落在地上沒有問題。高架的燈站在橋面邊緣 ——
+  // 整圈的話有一半會灑到橋外的空中，看起來像一片浮在半空的黃霧。
+  //
+  // `thetaStart = π、thetaLength = π` 那半圈在 `rotateX(-π/2)` 之後落在局部 +Z
+  // 那一側，而 `LampPosition.rotY` 給的正是「+Z 要轉去指著路面」的角度。彎道的
+  // 兩盞各自朝彎心，合起來就是一條沿著弧的光帶。
   const glowR = 0.4, glowS = 12;
-  const glowGeo = new THREE.CircleGeometry(glowR, glowS); glowGeo.rotateX(-Math.PI / 2);
+  const glowGeo = new THREE.CircleGeometry(glowR, glowS, Math.PI, Math.PI);
+  glowGeo.rotateX(-Math.PI / 2);
   const posA = glowGeo.attributes.position!;
   const vc = new Float32Array(posA.count * 3);
   for (let i = 0; i < posA.count; i++) {
@@ -483,7 +492,9 @@ export class ElevatedRoadRenderer {
             const p = lamps[i]!;
             matrix.identity(); matrix.setPosition(p.x, lampY + SIDEWALK_Y, p.z);
             ld.lampMesh.setMatrixAt(ls + i, matrix);
-            matrix.setPosition(p.x, lampY + 0.055, p.z);
+            // 光暈是半圓，要轉去對著路面 —— 燈柱本身是圓的，不必轉。
+            rot.makeRotationY(p.rotY);
+            matrix.copy(rot); matrix.setPosition(p.x, lampY + 0.055, p.z);
             ld.lampGlowMesh.setMatrixAt(gs + i, matrix);
           }
         }
