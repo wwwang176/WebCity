@@ -26,6 +26,8 @@ export interface Strip {
   z: number;
   sx: number;
   sz: number;
+  /** 繞 Y 軸轉幾弧度。直路是 0，只有彎道的圓弧段會用到。 */
+  rotY: number;
   roadType: number;
   srcX: number;
   srcY: number;
@@ -36,6 +38,8 @@ export interface SidewalkStrip {
   z: number;
   sx: number;
   sz: number;
+  /** 繞 Y 軸轉幾弧度。直路是 0，只有彎道的圓弧段會用到。 */
+  rotY: number;
   srcX: number;
   srcY: number;
 }
@@ -97,6 +101,62 @@ function countBits(n: number): number {
 }
 
 /**
+ * 九十度彎用幾段折線逼近四分之一圓。
+ *
+ * 五段每段 18°，外緣的凹陷（矢高）是 R×(1−cos9°) ≈ 0.012 格 —— 比路緣本身還窄，
+ * 眼睛看不出來。再多段就只是白花實例數:路面與路緣都是共用一池預留的實例，
+ * `RoadInstanceTracker` 滿了會靜靜地整格跳過。
+ */
+export const BEND_ARC_SEGMENTS = 5;
+
+/** 剛好兩個方向且不是對開的一組 —— 也就是 L 形彎。 */
+function isLBend(flags: number): boolean {
+  if (countBits(flags) !== 2) return false;
+  const hasN = (flags & RoadDirection.NORTH) !== 0;
+  const hasS = (flags & RoadDirection.SOUTH) !== 0;
+  const hasE = (flags & RoadDirection.EAST) !== 0;
+  const hasW = (flags & RoadDirection.WEST) !== 0;
+  return !(hasN && hasS) && !(hasE && hasW);
+}
+
+/**
+ * 沿著彎道鋪一圈等寬的帶子。
+ *
+ * 每一段都是切線段:段長取 `2R·tan(θ/2)`，相鄰兩段的端點就落在同一個地方，
+ * 帶子上不會有縫。段的中心放在真正的圓弧上，所以帶子是以圓弧為中線的。
+ *
+ * 幾何與 `emitLBendDashes` 同一套 —— 彎心在格子的角上，角度 0 指向進入的那一邊，
+ * π/2 指向離開的那一邊。虛線與雙黃線早就繞著這個圓心畫了，路面跟上之後線才會
+ * 落在柏油正中間。
+ */
+function arcBand(
+  r: RoadCell, radius: number, width: number,
+): { x: number; z: number; sx: number; sz: number; rotY: number }[] {
+  const hasN = (r.roadFlags & RoadDirection.NORTH) !== 0;
+  const hasE = (r.roadFlags & RoadDirection.EAST) !== 0;
+  const { dirX, dirZ, cornerX, cornerZ } = getLBendParams(hasN, hasE);
+
+  const theta = (Math.PI / 2) / BEND_ARC_SEGMENTS;
+  const segLen = 2 * radius * Math.tan(theta / 2);
+  const out: { x: number; z: number; sx: number; sz: number; rotY: number }[] = [];
+
+  for (let k = 0; k < BEND_ARC_SEGMENTS; k++) {
+    const a = (k + 0.5) * theta;
+    const cosA = Math.cos(a);
+    const sinA = Math.sin(a);
+    out.push({
+      x: r.x + cornerX + dirX * radius * cosA,
+      z: r.y + cornerZ + dirZ * radius * sinA,
+      sx: width,
+      sz: segLen,
+      // 切線方向。與 `emitLBendDashes` 的算法一致。
+      rotY: Math.atan2(-dirX * sinA, dirZ * cosA),
+    });
+  }
+  return out;
+}
+
+/**
  * Generate road surface strips from cells.
  * Two-strip method: each cell emits 1-2 strips whose width comes from
  * the neighboring road type in that axis.
@@ -141,13 +201,22 @@ export function buildRoadStrips(
       horizW = ROAD_WIDTHS[(nE ?? nW)?.roadType ?? r.roadType] ?? ownW;
     }
 
+    // 彎道的柏油走圓弧。半徑 0.5 = 彎心到路心線，帶寬就是路寬 —— 兩端剛好接上
+    // 北邊界與東邊界（各在 ±半幅之內），跟鄰格對得起來。
+    if (isLBend(r.roadFlags)) {
+      for (const seg of arcBand(r, 0.5, ownW)) {
+        strips.push({ ...seg, roadType: r.roadType, srcX: r.x, srcY: r.y });
+      }
+      continue;
+    }
+
     // Vertical (N-S) strip
     if (hasVert || !hasHoriz) {
       const w = hasVert ? vertW : ownW;
       const half = w / 2;
       const zMin = hasN ? -0.5 : -half;
       const zMax = hasS ? 0.5 : half;
-      strips.push({ x: r.x, z: r.y + (zMin + zMax) / 2, sx: w, sz: zMax - zMin, roadType: r.roadType, srcX: r.x, srcY: r.y });
+      strips.push({ x: r.x, z: r.y + (zMin + zMax) / 2, sx: w, sz: zMax - zMin, rotY: 0, roadType: r.roadType, srcX: r.x, srcY: r.y });
     }
 
     // Horizontal (E-W) strip
@@ -156,16 +225,16 @@ export function buildRoadStrips(
       const half = w / 2;
       const xMin = hasW ? -0.5 : -half;
       const xMax = hasE ? 0.5 : half;
-      strips.push({ x: r.x + (xMin + xMax) / 2, z: r.y, sx: xMax - xMin, sz: w, roadType: r.roadType, srcX: r.x, srcY: r.y });
+      strips.push({ x: r.x + (xMin + xMax) / 2, z: r.y, sx: xMax - xMin, sz: w, rotY: 0, roadType: r.roadType, srcX: r.x, srcY: r.y });
     }
 
     // Edge extension
     if (edgeExtend > 0 && mapW > 0 && mapH > 0) {
       const ext = edgeExtend;
-      if (r.y === 0 && hasN) strips.push({ x: r.x, z: r.y - 0.5 - ext / 2, sx: ownW, sz: ext, roadType: r.roadType, srcX: r.x, srcY: r.y });
-      if (r.y === mapH - 1 && hasS) strips.push({ x: r.x, z: r.y + 0.5 + ext / 2, sx: ownW, sz: ext, roadType: r.roadType, srcX: r.x, srcY: r.y });
-      if (r.x === 0 && hasW) strips.push({ x: r.x - 0.5 - ext / 2, z: r.y, sx: ext, sz: ownW, roadType: r.roadType, srcX: r.x, srcY: r.y });
-      if (r.x === mapW - 1 && hasE) strips.push({ x: r.x + 0.5 + ext / 2, z: r.y, sx: ext, sz: ownW, roadType: r.roadType, srcX: r.x, srcY: r.y });
+      if (r.y === 0 && hasN) strips.push({ x: r.x, z: r.y - 0.5 - ext / 2, sx: ownW, sz: ext, rotY: 0, roadType: r.roadType, srcX: r.x, srcY: r.y });
+      if (r.y === mapH - 1 && hasS) strips.push({ x: r.x, z: r.y + 0.5 + ext / 2, sx: ownW, sz: ext, rotY: 0, roadType: r.roadType, srcX: r.x, srcY: r.y });
+      if (r.x === 0 && hasW) strips.push({ x: r.x - 0.5 - ext / 2, z: r.y, sx: ext, sz: ownW, rotY: 0, roadType: r.roadType, srcX: r.x, srcY: r.y });
+      if (r.x === mapW - 1 && hasE) strips.push({ x: r.x + 0.5 + ext / 2, z: r.y, sx: ext, sz: ownW, rotY: 0, roadType: r.roadType, srcX: r.x, srcY: r.y });
     }
   }
 
@@ -204,6 +273,16 @@ export function buildSidewalkStrips(cells: RoadCell[]): SidewalkStrip[] {
       horizW = (hasE || hasW) ? (ROAD_WIDTHS[(nE ?? nW)?.roadType ?? r.roadType] ?? ownW) : ownW;
     }
 
+    // 彎道只有外側需要路緣 —— 內側兩邊都是路。半徑取到柏油外緣再加半條路緣，
+    // 與直路的 `capH`／`capV` 是同一個算法。
+    if (isLBend(r.roadFlags)) {
+      const radius = 0.5 + ownW / 2 + SIDEWALK_WIDTH / 2;
+      for (const seg of arcBand(r, radius, SIDEWALK_WIDTH)) {
+        strips.push({ ...seg, srcX: r.x, srcY: r.y });
+      }
+      continue;
+    }
+
     const hHalf = horizW / 2;
     const vHalf = vertW / 2;
     const capH = hHalf + SIDEWALK_WIDTH / 2;
@@ -213,10 +292,10 @@ export function buildSidewalkStrips(cells: RoadCell[]): SidewalkStrip[] {
     const te = hasN ? 0.5 : capV;
     const be = hasS ? 0.5 : capV;
 
-    if (!hasN) strips.push({ x: r.x + (re - le) / 2, z: r.y - hHalf, sx: le + re, sz: SIDEWALK_WIDTH, srcX: r.x, srcY: r.y });
-    if (!hasS) strips.push({ x: r.x + (re - le) / 2, z: r.y + hHalf, sx: le + re, sz: SIDEWALK_WIDTH, srcX: r.x, srcY: r.y });
-    if (!hasW) strips.push({ x: r.x - vHalf, z: r.y + (be - te) / 2, sx: SIDEWALK_WIDTH, sz: te + be, srcX: r.x, srcY: r.y });
-    if (!hasE) strips.push({ x: r.x + vHalf, z: r.y + (be - te) / 2, sx: SIDEWALK_WIDTH, sz: te + be, srcX: r.x, srcY: r.y });
+    if (!hasN) strips.push({ x: r.x + (re - le) / 2, z: r.y - hHalf, sx: le + re, sz: SIDEWALK_WIDTH, rotY: 0, srcX: r.x, srcY: r.y });
+    if (!hasS) strips.push({ x: r.x + (re - le) / 2, z: r.y + hHalf, sx: le + re, sz: SIDEWALK_WIDTH, rotY: 0, srcX: r.x, srcY: r.y });
+    if (!hasW) strips.push({ x: r.x - vHalf, z: r.y + (be - te) / 2, sx: SIDEWALK_WIDTH, sz: te + be, rotY: 0, srcX: r.x, srcY: r.y });
+    if (!hasE) strips.push({ x: r.x + vHalf, z: r.y + (be - te) / 2, sx: SIDEWALK_WIDTH, sz: te + be, rotY: 0, srcX: r.x, srcY: r.y });
   }
 
   return strips;

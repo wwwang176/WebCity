@@ -12,6 +12,7 @@ import {
   MAX_LANE_MARKINGS_PER_CELL,
   buildRoadStrips,
   buildSidewalkStrips,
+  BEND_ARC_SEGMENTS,
   buildLaneMarkingData,
   buildCenterLineData,
   buildCurvedCenterLineData,
@@ -34,7 +35,7 @@ const RAMP_ANGLE = Math.atan2(LEVEL_HEIGHT, 1.0);
 const RAMP_LENGTH = Math.sqrt(1.0 + LEVEL_HEIGHT * LEVEL_HEIGHT);
 /** Max elevated cells per level (pre-allocated capacity). */
 const MAX_PER_LEVEL = 500;
-const CAP = { road: 3, sidewalk: 4, marking: MAX_LANE_MARKINGS_PER_CELL, centerLine: 2, curvedCL: 1, lamp: 4, lampGlow: 4 } as const;
+const CAP = { road: Math.max(3, BEND_ARC_SEGMENTS), sidewalk: Math.max(4, BEND_ARC_SEGMENTS), marking: MAX_LANE_MARKINGS_PER_CELL, centerLine: 2, curvedCL: 1, lamp: 4, lampGlow: 4 } as const;
 
 interface ElevatedCell {
   x: number;
@@ -250,6 +251,7 @@ export class ElevatedRoadRenderer {
         for (let i = 0; i < cellStrips.length; i++) {
           const s = cellStrips[i]!;
           matrix.makeScale(s.sx, 1, s.sz);
+          if (s.rotY !== 0) { rot.makeRotationY(s.rotY); matrix.premultiply(rot); }
           matrix.setPosition(s.x, baseY + ROAD_Y, s.z);
           ld.roadMesh.setMatrixAt(start + i, matrix);
           const cfg = ROAD_CONFIGS[s.roadType as RoadType];
@@ -273,6 +275,7 @@ export class ElevatedRoadRenderer {
         for (let i = 0; i < cellSw.length; i++) {
           const s = cellSw[i]!;
           matrix.makeScale(s.sx, 1, s.sz);
+          if (s.rotY !== 0) { rot.makeRotationY(s.rotY); matrix.premultiply(rot); }
           matrix.setPosition(s.x, baseY + SIDEWALK_Y, s.z);
           ld.sidewalkMesh.setMatrixAt(start + i, matrix);
         }

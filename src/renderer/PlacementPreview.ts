@@ -196,6 +196,7 @@ export class PlacementPreview {
       for (const s of strips) {
         const m = new THREE.Mesh(geo, ghostMat);
         matrix.makeScale(s.sx, 1, s.sz);
+        if (s.rotY !== 0) matrix.premultiply(new THREE.Matrix4().makeRotationY(s.rotY));
         matrix.setPosition(s.x, baseY + ROAD_Y, s.z);
         m.applyMatrix4(matrix);
         this.group.add(m);
@@ -211,6 +212,7 @@ export class PlacementPreview {
       for (const s of swStrips) {
         const m = new THREE.Mesh(geo, sidewalkMat);
         matrix.makeScale(s.sx, 1, s.sz);
+        if (s.rotY !== 0) matrix.premultiply(new THREE.Matrix4().makeRotationY(s.rotY));
         matrix.setPosition(s.x, baseY + SIDEWALK_Y, s.z);
         m.applyMatrix4(matrix);
         this.group.add(m);

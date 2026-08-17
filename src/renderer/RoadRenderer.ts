@@ -11,6 +11,7 @@ import {
   MAX_LANE_MARKINGS_PER_CELL,
   buildRoadStrips,
   buildSidewalkStrips,
+  BEND_ARC_SEGMENTS,
   buildLaneMarkingData,
   buildCenterLineData,
   buildCurvedCenterLineData,
@@ -30,7 +31,7 @@ const SIDEWALK_Y = 0.028;
 const MARKING_Y = 0.052;
 
 /** Multipliers for max capacity per mesh type (relative to maxRoads). */
-const CAP = { road: 3, sidewalk: 4, marking: MAX_LANE_MARKINGS_PER_CELL, centerLine: 2, curvedCL: 1, crosswalk: 6, stopLine: 2, lamp: 4, lampGlow: 4 } as const;
+const CAP = { road: Math.max(3, BEND_ARC_SEGMENTS), sidewalk: Math.max(4, BEND_ARC_SEGMENTS), marking: MAX_LANE_MARKINGS_PER_CELL, centerLine: 2, curvedCL: 1, crosswalk: 6, stopLine: 2, lamp: 4, lampGlow: 4 } as const;
 
 /**
  * 路燈的桿高（格）。
@@ -346,6 +347,7 @@ export class RoadRenderer {
       for (let i = 0; i < cellStrips.length; i++) {
         const s = cellStrips[i]!;
         matrix.makeScale(s.sx, 1, s.sz);
+        if (s.rotY !== 0) { rot.makeRotationY(s.rotY); matrix.premultiply(rot); }
         matrix.setPosition(s.x, ROAD_Y, s.z);
         this.roadMesh!.setMatrixAt(start + i, matrix);
         const cfg = ROAD_CONFIGS[s.roadType as keyof typeof ROAD_CONFIGS];
@@ -371,6 +373,7 @@ export class RoadRenderer {
       for (let i = 0; i < cellSw.length; i++) {
         const s = cellSw[i]!;
         matrix.makeScale(s.sx, 1, s.sz);
+        if (s.rotY !== 0) { rot.makeRotationY(s.rotY); matrix.premultiply(rot); }
         matrix.setPosition(s.x, SIDEWALK_Y, s.z);
         this.sidewalkMesh!.setMatrixAt(start + i, matrix);
       }
