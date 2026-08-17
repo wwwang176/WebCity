@@ -1,6 +1,7 @@
 import { Policy, PolicyType, type District } from './types';
 import { ZoneType } from '../grid/types';
 import { isDistrictScoped } from './PolicyScope';
+import { conflictsWith } from './PolicyExclusion';
 
 /** Minimal interface for district lookup (DIP). */
 export interface DistrictLookup {
@@ -258,6 +259,15 @@ export class PolicyManager {
     const district = this.districtLookup.getDistrict(districtId);
     if (!district) return;
     const clamped = clampLevel(level, maxLevel(policyType));
+
+    // 開一條就把同組的其他條關掉。只在真的開啟時做 —— 關閉一條不該把同組的別條
+    // 也掃掉，那會讓「關閉」變成一顆會誤傷的按鈕。
+    if (clamped > 0) {
+      for (const other of conflictsWith(policyType)) {
+        const p = district.policies.find((x) => x.type === other);
+        if (p) p.level = 0;
+      }
+    }
 
     const existing = district.policies.find((p) => p.type === policyType);
     if (existing) {

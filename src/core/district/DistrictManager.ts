@@ -1,8 +1,9 @@
 import { toPosKey } from '../grid/GridHelpers';
 import { recoverNextId } from '../utils/recoverNextId';
-import { District, Policy, Specialization } from './types';
+import { District, Policy, PolicyType, Specialization } from './types';
 import { clampLevel, levelForLegacyActive, maxLevel } from './PolicyManager';
 import { isDistrictScoped } from './PolicyScope';
+import { conflictsWith } from './PolicyExclusion';
 import type { TaxRates } from '../economy/Tax';
 
 /**
@@ -177,6 +178,15 @@ export class DistrictManager {
         })),
         specialization: sd.specialization ?? Specialization.NONE,
       };
+      // 互斥組在存檔這條路上也要重跑。`setPolicyLevel` 擋得住正常操作，但手改一次
+      // 存檔就能讓賭場與宵禁同時生效 —— 那是效果表算不出來的組合。
+      // 保留宣告順序上的第一條，其餘關掉:規則要是確定的，不能看存檔的排列順序。
+      const seenGroups = new Set<PolicyType>();
+      for (const p of district.policies) {
+        if (p.level === 0) continue;
+        if (seenGroups.has(p.type)) { p.level = 0; continue; }
+        for (const other of conflictsWith(p.type)) seenGroups.add(other);
+      }
       mgr.districts.set(district.id, district);
       // Rebuild the reverse index rather than persisting it — it is pure derived state.
       for (const cell of district.cells) {
