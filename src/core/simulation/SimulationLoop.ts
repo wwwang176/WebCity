@@ -718,10 +718,7 @@ export class SimulationLoop {
       avgHappiness,
       taxRate: this.state.taxRates.residential ?? DEFAULT_TAX_RATE,
       pollution: this.getAvgPollution(),
-      // 這裡刻意是基礎值而不是 `getCityCrime()`。條例的犯罪效果走幸福度到得了
-      // 移民 —— 住得不開心的人會走。直接接上吸引力這條線寫得出來，但移民是機率
-      // 性的，在測試規模下訊號被隨機性蓋過，寫不出守得住的測試。
-      crimeRate: this.getAvgCrime(),
+      crimeRate: this.getCityCrime(),
       unemploymentRate,
       hasUniversity: this.state.education.getTotalCapacity('university') > 0,
       officeRatio: officeJobs / totalWorkplaces,
