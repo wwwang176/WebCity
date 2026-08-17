@@ -122,8 +122,19 @@ function isLBend(flags: number): boolean {
 /**
  * 沿著彎道鋪一圈等寬的帶子。
  *
- * 每一段都是切線段:段長取 `2R·tan(θ/2)`，相鄰兩段的端點就落在同一個地方，
- * 帶子上不會有縫。段的中心放在真正的圓弧上，所以帶子是以圓弧為中線的。
+ * 每一段是一個貼著圓弧的**直的**長方形。直的長方形蓋不滿彎的環面，所以要補 ——
+ * 而缺口全部在**內側**，補的方向因此是單邊的:
+ *
+ * - 一段負責 θ 的角度。它兩端在半徑方向只夠到 `(R−w/2)·cos(θ/2)`，比環面的內緣
+ *   還淺 —— 隔壁那一段對稱地也只夠到同一個地方，於是**兩段都蓋不到**那個角落。
+ *   外側相反:δ=0 時剛好夠到 `R+w/2`，兩端還更遠。
+ * - 所以外緣就放在 `R+w/2`（一分不多），內緣往內退到蓋得滿為止，長方形的中心
+ *   因此不在 R 上而是略微偏內。
+ * - 長度量到**外緣**的交點，不是中線的。用中線算的話外緣會張開一個楔形的洞 ——
+ *   中線是整條帶子上唯一沒有縫的線，而那正是原本那條測試唯一檢查的地方。
+ *
+ * 結果:外側輪廓完全準確，多出來的部分朝內，藏在隔壁那條帶子底下（路緣往內咬進
+ * 柏油 0.01 格，反而把殘留的接縫蓋掉）。
  *
  * 幾何與 `emitLBendDashes` 同一套 —— 彎心在格子的角上，角度 0 指向進入的那一邊，
  * π/2 指向離開的那一邊。虛線與雙黃線早就繞著這個圓心畫了，路面跟上之後線才會
@@ -137,7 +148,12 @@ function arcBand(
   const { dirX, dirZ, cornerX, cornerZ } = getLBendParams(hasN, hasE);
 
   const theta = (Math.PI / 2) / BEND_ARC_SEGMENTS;
-  const segLen = 2 * radius * Math.tan(theta / 2);
+  const cosHalf = Math.cos(theta / 2);
+  const outer = radius + width / 2;
+  const inner = radius - (radius * (1 - cosHalf) + (width / 2) * cosHalf);
+  const mid = (outer + inner) / 2;
+  const halfW = (outer - inner) / 2;
+  const halfLen = outer * Math.tan(theta / 2);
   const out: { x: number; z: number; sx: number; sz: number; rotY: number }[] = [];
 
   for (let k = 0; k < BEND_ARC_SEGMENTS; k++) {
@@ -145,10 +161,10 @@ function arcBand(
     const cosA = Math.cos(a);
     const sinA = Math.sin(a);
     out.push({
-      x: r.x + cornerX + dirX * radius * cosA,
-      z: r.y + cornerZ + dirZ * radius * sinA,
-      sx: width,
-      sz: segLen,
+      x: r.x + cornerX + dirX * mid * cosA,
+      z: r.y + cornerZ + dirZ * mid * sinA,
+      sx: halfW * 2,
+      sz: halfLen * 2,
       // 切線方向。與 `emitLBendDashes` 的算法一致。
       rotY: Math.atan2(-dirX * sinA, dirZ * cosA),
     });

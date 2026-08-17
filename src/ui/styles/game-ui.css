@@ -281,6 +281,17 @@
 }
 #building-panel.visible { display: block; }
 #citizen-detail-panel { min-width: 180px; }
+/*
+ * 市民面板的標題是一個**人名**，不是版面上的區塊標籤。
+ *
+ * `.g-panel-title` 的全大寫加 1.2px 字距是給「TRANSFER ROUTE」那種標籤用的，
+ * 套在名字上會把它拉得又寬又扁。比照建築面板的標題 —— 那裡放的也是名字。
+ */
+#citizen-detail-panel .g-panel-title {
+  font-size: 13px; font-weight: 600;
+  text-transform: none; letter-spacing: normal;
+  color: #e4eaf4;
+}
 #building-panel .bp-title {
   font-size: 14px; font-weight: 600; color: #e4eaf4;
 }

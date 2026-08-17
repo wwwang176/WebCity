@@ -40,12 +40,22 @@ describe('L 形彎的路面', () => {
     expect(buildRoadStrips([cell(NE)])).toHaveLength(BEND_ARC_SEGMENTS);
   });
 
-  it('should keep every piece the same distance from the centre of the turn', () => {
-    // 半徑 0.5 —— 彎心在格子的角上，路心線就是那個四分之一圓。車道虛線用的
-    // 也是這個半徑，所以線會落在柏油正中間。
+  it('should put the outer edge exactly where the road ends', () => {
+    // 外緣是看得見的那一條。長方形蓋不滿彎的環面，補的部分全部朝**內**塞 ——
+    // 朝外補的話柏油會凸出路緣，那正是玩家會看到的破綻。
+    const half = ROAD_WIDTHS[RoadType.TWO_LANE]! / 2;
     const c = turnCentre(NE);
     for (const s of buildRoadStrips([cell(NE)])) {
-      expect(radius(s, c)).toBeCloseTo(0.5, 9);
+      expect(radius(s, c) + s.sx / 2).toBeCloseTo(0.5 + half, 9);
+    }
+  });
+
+  it('should keep every piece on the arc', () => {
+    // 彎心在格子的角上，路心線就是那個四分之一圓。車道虛線用的也是這個半徑，
+    // 所以線會落在柏油上。中心略偏內是補內側留下的，不到千分之二格。
+    const c = turnCentre(NE);
+    for (const s of buildRoadStrips([cell(NE)])) {
+      expect(Math.abs(radius(s, c) - 0.5)).toBeLessThan(0.01);
     }
   });
 
@@ -81,37 +91,74 @@ describe('L 形彎的路面', () => {
     expect(angles[angles.length - 1]).toBeCloseTo(Math.PI / 2 - step / 2, 9);
   });
 
-  it('should leave no seams between the pieces', () => {
-    // 段長要取切線長。取弦長的話每一段都只連到圓上的兩點，段與段之間留下一個
-    // 楔形的空隙 —— 柏油上會出現一排規律的細縫，路緣上更明顯。
+  it('should cover the whole quarter-ring, with no holes anywhere in it', () => {
+    // 這一條原本問錯了問題。舊版只檢查相鄰兩段的**中線端點**有沒有接上 ——
+    // 接上了，可是每一段都是直的長方形，兩段夾角 θ，於是外緣張開一個楔形的洞、
+    // 內緣互相重疊。中線是唯一沒有縫的那條線，所以測試全綠而路面是破的。
+    //
+    // 改成直接問「這個環面上每一點有沒有被蓋到」，那才是玩家看到的東西。
+    const half = ROAD_WIDTHS[RoadType.TWO_LANE]! / 2;
+    const c = turnCentre(NE);
     const strips = buildRoadStrips([cell(NE)]);
-    for (let k = 0; k < strips.length - 1; k++) {
-      const a = strips[k]!, b = strips[k + 1]!;
-      const endOf = (s: typeof a, sign: number) => ({
-        x: s.x + sign * (s.sz / 2) * Math.sin(s.rotY),
-        z: s.z + sign * (s.sz / 2) * Math.cos(s.rotY),
-      });
-      // 弧是往哪個方向長的無所謂，兩段共用的端點就是彼此最近的那一對。
-      const gap = Math.min(...[1, -1].flatMap(sa => [1, -1].map(sb => {
-        const p = endOf(a, sa), q = endOf(b, sb);
-        return Math.hypot(p.x - q.x, p.z - q.z);
-      })));
-      expect(gap, `第 ${k} 段與第 ${k + 1} 段之間有縫`).toBeLessThan(1e-9);
+    const eps = 1e-6;
+
+    for (const rad of [0.5 - half + eps, 0.5 - half / 2, 0.5, 0.5 + half / 2, 0.5 + half - eps]) {
+      for (let i = 0; i <= 240; i++) {
+        const a = (i / 240) * (Math.PI / 2);
+        // NE 彎:dirX = -1、dirZ = +1（見 emitLBendDashes）。
+        const px = c.cx - rad * Math.cos(a);
+        const pz = c.cz + rad * Math.sin(a);
+        const covered = strips.some(s => {
+          // 換到這一段自己的座標系:局部 +Z 是長邊，+X 是寬邊。
+          const dx = px - s.x, dz = pz - s.z;
+          const along = dx * Math.sin(s.rotY) + dz * Math.cos(s.rotY);
+          const across = dx * Math.cos(s.rotY) - dz * Math.sin(s.rotY);
+          return Math.abs(along) <= s.sz / 2 + 1e-9 && Math.abs(across) <= s.sx / 2 + 1e-9;
+        });
+        expect(covered, `半徑 ${rad.toFixed(3)}、角度 ${(a * 180 / Math.PI).toFixed(1)}° 沒有柏油`)
+          .toBe(true);
+      }
     }
   });
 
-  it('should carry the full road width across the turn', () => {
+  it('should cover the whole kerb band too', () => {
+    const half = ROAD_WIDTHS[RoadType.TWO_LANE]! / 2;
+    const c = turnCentre(NE);
+    const strips = buildSidewalkStrips([cell(NE)]);
+    const mid = 0.5 + half + SIDEWALK_WIDTH / 2;
+    const eps = 1e-6;
+
+    for (const rad of [mid - SIDEWALK_WIDTH / 2 + eps, mid, mid + SIDEWALK_WIDTH / 2 - eps]) {
+      for (let i = 0; i <= 240; i++) {
+        const a = (i / 240) * (Math.PI / 2);
+        const px = c.cx - rad * Math.cos(a);
+        const pz = c.cz + rad * Math.sin(a);
+        const covered = strips.some(s => {
+          const dx = px - s.x, dz = pz - s.z;
+          const along = dx * Math.sin(s.rotY) + dz * Math.cos(s.rotY);
+          const across = dx * Math.cos(s.rotY) - dz * Math.sin(s.rotY);
+          return Math.abs(along) <= s.sz / 2 + 1e-9 && Math.abs(across) <= s.sx / 2 + 1e-9;
+        });
+        expect(covered, `路緣在 ${(a * 180 / Math.PI).toFixed(1)}° 破了`).toBe(true);
+      }
+    }
+  });
+
+  it('should carry at least the full road width across the turn', () => {
+    // 至少要有路寬，才接得上兩頭的直路;多出來的是補內側的量，不該多到看得出來。
     for (const type of [RoadType.RURAL, RoadType.TWO_LANE, RoadType.FOUR_LANE, RoadType.HIGHWAY]) {
       for (const s of buildRoadStrips([cell(NE, type)])) {
-        expect(s.sx, `${type}`).toBeCloseTo(ROAD_WIDTHS[type]!, 9);
+        expect(s.sx, `${type} too narrow`).toBeGreaterThanOrEqual(ROAD_WIDTHS[type]! - 1e-9);
+        expect(s.sx, `${type} overshoots`).toBeLessThan(ROAD_WIDTHS[type]! + 0.02);
       }
     }
   });
 
   it.each([[NE], [NW], [SE], [SW]])('should turn around the right corner (%i)', (flags) => {
+    const half = ROAD_WIDTHS[RoadType.TWO_LANE]! / 2;
     const c = turnCentre(flags);
     for (const s of buildRoadStrips([cell(flags)])) {
-      expect(radius(s, c)).toBeCloseTo(0.5, 9);
+      expect(radius(s, c) + s.sx / 2).toBeCloseTo(0.5 + half, 9);
     }
   });
 
@@ -126,21 +173,26 @@ describe('L 形彎的路面', () => {
 describe('L 形彎的路緣', () => {
   it('should follow the same arc, just further out', () => {
     const half = ROAD_WIDTHS[RoadType.TWO_LANE]! / 2;
-    const expected = 0.5 + half + SIDEWALK_WIDTH / 2;
     const c = turnCentre(NE);
     const strips = buildSidewalkStrips([cell(NE)]);
     expect(strips).toHaveLength(BEND_ARC_SEGMENTS);
     for (const s of strips) {
-      expect(radius(s, c)).toBeCloseTo(expected, 9);
-      expect(s.sx).toBeCloseTo(SIDEWALK_WIDTH, 9);
+      // 外緣準確 —— 路緣的外側就是玩家看到的街廓邊界。
+      expect(radius(s, c) + s.sx / 2).toBeCloseTo(0.5 + half + SIDEWALK_WIDTH, 9);
+      expect(s.sx).toBeGreaterThanOrEqual(SIDEWALK_WIDTH - 1e-9);
+      expect(s.sx).toBeLessThan(SIDEWALK_WIDTH + 0.03);
     }
   });
 
-  it('should stay outside the asphalt', () => {
+  it('should sit on the outside, only just overlapping the asphalt', () => {
+    // 內緣往內咬進柏油一點點是**故意的** —— 補內側的量往那裡塞，順便把兩條帶子
+    // 之間可能殘留的接縫蓋掉。咬太深就變成路緣壓在車道上了。
     const half = ROAD_WIDTHS[RoadType.TWO_LANE]! / 2;
     const c = turnCentre(NE);
     for (const s of buildSidewalkStrips([cell(NE)])) {
-      expect(radius(s, c) - s.sx / 2).toBeGreaterThanOrEqual(0.5 + half - 1e-9);
+      const innerEdge = radius(s, c) - s.sx / 2;
+      expect(innerEdge).toBeGreaterThan(0.5 + half - 0.02);
+      expect(innerEdge).toBeLessThanOrEqual(0.5 + half + 1e-9);
     }
   });
 
@@ -158,7 +210,7 @@ describe('L 形彎的路緣', () => {
     const strips = buildSidewalkStrips([cell(flags)]);
     expect(strips).toHaveLength(BEND_ARC_SEGMENTS);
     for (const s of strips) {
-      expect(radius(s, c)).toBeCloseTo(0.5 + half + SIDEWALK_WIDTH / 2, 9);
+      expect(radius(s, c) + s.sx / 2).toBeCloseTo(0.5 + half + SIDEWALK_WIDTH, 9);
     }
   });
 

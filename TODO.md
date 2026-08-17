@@ -2095,6 +2095,8 @@ BUG-219（升級把庭院的樹一起拉高 1.75 倍）、BUG-220（辦公區 15
   倒的是不同的組合:`BuildingAppearance` / `BuildingCapacity` / `BuildingMaterial` /
   `GroundPropLayer` / `GroundProps` / `MassingGeometry` / `civic/CivicPlans` /
   `civic/models/Airport`。這些測試在建幾何，單獨跑都是毫秒級。
+  模擬那邊也有:`Simulation` 與 `Integration` 的「跑一千 tick」、`WarmupCost`、
+  以及原本就知道的 `BirthAfterAgeing`。同樣單獨跑全過。
   要處理的話有兩條路:把 timeout 調高（治標，但那些測試本來就不該花 5 秒），或找出
   慢在哪裡。在那之前，跑全套前先把跑著遊戲的瀏覽器分頁關掉。
 
