@@ -95,6 +95,11 @@ const EFFECT_SUMMARY: Partial<Record<PolicyType, readonly string[]>> = {
     'Sewage \u221215%  \u00B7  Industrial revenue \u22124%',
     'Sewage \u221230%  \u00B7  Industrial revenue \u221210%',
   ],
+  [PolicyType.INDUSTRIAL_EMISSION_CONTROL]: [
+    'Industrial ground pollution \u221220%  \u00B7  Industrial revenue \u22125%',
+    'Industrial ground pollution \u221240%  \u00B7  Industrial revenue \u221212%',
+    'Industrial ground pollution \u221260%  \u00B7  Industrial revenue \u221222%',
+  ],
 };
 
 /** 這個條例這一級做什麼。等級 0 回空字串。 */

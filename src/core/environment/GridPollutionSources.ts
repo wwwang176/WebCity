@@ -58,6 +58,13 @@ export function forEachGridPollutionSource(
    * ROAD_SPEED_FACTOR[NONE] is 0, so the amount would come out 0 anyway.
    */
   getElevatedRoadType?: (x: number, y: number) => number,
+  /**
+   * 這一格工業地面汙染的乘數 —— 工業排放管制。預設 1。
+   *
+   * 只乘在地面汙染上，工業噪音與道路噪音都不動:洗滌塔處理的是排放，不是機具的
+   * 聲音，而道路噪音跟工業條例沒有關係。
+   */
+  getIndustrialPollutionMultiplier?: (x: number, y: number) => number,
 ): void {
   grid.forEachCell((cell, x, y) => {
     // isActiveZoneCell, not `buildingId > 0`: a factory that has burned down
@@ -72,7 +79,9 @@ export function forEachGridPollutionSource(
     // comment claimed the pollution was never cleared and the ruin poisoned the
     // land permanently; both halves were wrong.)
     if (isActiveZoneCell(cell) && cell.zoneType === ZoneType.INDUSTRIAL) {
-      emit({ x, y, amount: GRID_POLLUTION.INDUSTRIAL_GROUND, type: 'ground', radius: GRID_POLLUTION.INDUSTRIAL_GROUND_RADIUS });
+      const ground = GRID_POLLUTION.INDUSTRIAL_GROUND
+        * (getIndustrialPollutionMultiplier?.(x, y) ?? 1);
+      emit({ x, y, amount: ground, type: 'ground', radius: GRID_POLLUTION.INDUSTRIAL_GROUND_RADIUS });
       emit({ x, y, amount: GRID_POLLUTION.INDUSTRIAL_NOISE, type: 'noise', radius: GRID_POLLUTION.INDUSTRIAL_NOISE_RADIUS });
     }
     if (cell.trafficDensity > 0) {

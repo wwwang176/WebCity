@@ -38,6 +38,9 @@ export const POLICY_SCOPE: Record<PolicyType, PolicyScopeKind> = {
   [PolicyType.PAY_AS_YOU_THROW]: 'city',
   [PolicyType.WATER_CONSERVATION]: 'city',
   [PolicyType.SEWAGE_STANDARDS]: 'city',
+  // 汙染源是逐格的工業格，好處與代價也都落在工業格上 ——「管哪一片工廠」是
+  // 有意義的決策，套到全城只會在沒有汙染問題的工業區白扣收入。
+  [PolicyType.INDUSTRIAL_EMISSION_CONTROL]: 'district',
 };
 
 /** 這個條例畫在分區上有意義嗎？ */

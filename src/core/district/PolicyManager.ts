@@ -30,6 +30,7 @@ export const POLICY_CONFIG: Record<PolicyType, PolicyTypeConfig> = {
   [PolicyType.PAY_AS_YOU_THROW]: { name: 'Pay As You Throw' },
   [PolicyType.WATER_CONSERVATION]: { name: 'Water Conservation' },
   [PolicyType.SEWAGE_STANDARDS]: { name: 'Sewage Standards' },
+  [PolicyType.INDUSTRIAL_EMISSION_CONTROL]: { name: 'Industrial Emission Control' },
 };
 
 /**
@@ -86,6 +87,8 @@ export interface PolicyEffect {
   waterDemand?: number;
   /** 全城逐格汙水排放乘數。 */
   sewageLoad?: number;
+  /** 工業格的地面汙染乘數。 */
+  industrialPollution?: number;
 }
 
 /**
@@ -175,6 +178,13 @@ export const POLICY_EFFECTS: Partial<Record<PolicyType, readonly PolicyEffect[]>
   [PolicyType.SEWAGE_STANDARDS]: [
     { sewageLoad: 0.85, revenueByZone: { [ZoneType.INDUSTRIAL]: 0.96 } },
     { sewageLoad: 0.70, revenueByZone: { [ZoneType.INDUSTRIAL]: 0.90 } },
+  ],
+  // 只降地面汙染。工廠的噪音來自機具，不是排放 —— 把噪音也一起降的話，這條就
+  // 變成一顆萬用的「工業變乾淨」按鈕，而不是一個取捨。
+  [PolicyType.INDUSTRIAL_EMISSION_CONTROL]: [
+    { industrialPollution: 0.80, revenueByZone: { [ZoneType.INDUSTRIAL]: 0.95 } },
+    { industrialPollution: 0.60, revenueByZone: { [ZoneType.INDUSTRIAL]: 0.88 } },
+    { industrialPollution: 0.40, revenueByZone: { [ZoneType.INDUSTRIAL]: 0.78 } },
   ],
 };
 
@@ -377,6 +387,10 @@ export class PolicyManager {
   }
 
   /** 該區因條例而增加的犯罪率。沒有分區就是 0。 */
+  getIndustrialPollutionMultiplier(districtId: string | null): number {
+    return this.effect(districtId, e => e.industrialPollution, 1, (a, b) => a * b);
+  }
+
   getCrimeBonus(districtId: string | null): number {
     return this.effect(districtId, e => e.crime, 0, (a, b) => a + b);
   }

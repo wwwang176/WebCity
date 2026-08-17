@@ -1111,7 +1111,8 @@ export class SimulationLoop {
       // Loudest by NOISE, not by enum ordinal: ONE_WAY sorts above HIGHWAY
       // numerically while being far quieter.
       return em.getHighestRoadType(x, y, t => GRID_POLLUTION.ROAD_SPEED_FACTOR[t] ?? 0);
-    });
+    }, (x, y) => this.state.policies.getIndustrialPollutionMultiplier(
+      this.state.districts.getDistrictAt(x, y)?.id ?? null));
     // OCP: service-based pollution sources via registry — adding new sources only needs registry update
     forEachServicePollutionSource(this.state, (src) => pm.addPollutionSource(src));
 

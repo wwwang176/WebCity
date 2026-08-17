@@ -43,6 +43,7 @@ export const POLICY_BILLING: Partial<Record<PolicyType, {
   [PolicyType.PAY_AS_YOU_THROW]: { basis: 'population', perUnit: [0.05, 0.12] },
   [PolicyType.WATER_CONSERVATION]: { basis: 'population', perUnit: [0.07, 0.18, 0.42] },
   [PolicyType.SEWAGE_STANDARDS]: { basis: 'population', perUnit: [0.09, 0.24] },
+  [PolicyType.INDUSTRIAL_EMISSION_CONTROL]: { basis: 'districtCells', perUnit: [2, 5, 11] },
 };
 
 function unitsOf(basis: BillingBasis, scale: PolicyScale): number {
