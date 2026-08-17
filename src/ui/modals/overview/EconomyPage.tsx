@@ -1,10 +1,14 @@
-import { createSignal, createEffect, createMemo, Index, Show } from 'solid-js';
+import { createSignal, createEffect, createMemo, For, Index, Show } from 'solid-js';
 import { listPolicyExpenses } from '../../../core/economy/ExpenseCalculator';
 import { POLICY_CONFIG } from '../../../core/district/PolicyManager';
 import { policyLevelLabel } from '../../../core/district/PolicyPresentation';
+import { CHART_RANGES, type ChartRange } from '../../../core/economy/ChartSeries';
 import { gameSignals, getGame } from '../../store/gameStore';
 import { PopChart } from '../../charts/PopChart';
 import { EconChart } from '../../charts/EconChart';
+
+/** 按時間長短排。物件的鍵沒有語意上的順序，按鈕的順序有。 */
+const CHART_RANGE_ORDER: readonly ChartRange[] = ['week', 'month', 'year'];
 
 interface EconomyPageProps {
   open: boolean;
@@ -15,6 +19,7 @@ export function EconomyPage(props: EconomyPageProps) {
   const [businessTax, setBusinessTax] = createSignal(9);
   const [version, setVersion] = createSignal(0);
   const [policyOpen, setPolicyOpen] = createSignal(false);
+  const [range, setRange] = createSignal<ChartRange>('month');
 
   createEffect(() => {
     if (props.open) {
@@ -198,11 +203,36 @@ export function EconomyPage(props: EconomyPageProps) {
         <button class="loan-btn" onClick={() => repayLoan(5000)}>Repay $5,000</button>
       </div>
 
-      <div class="section-title">Population History</div>
-      <PopChart history={gameSignals.chartHistory()} />
+      {/* 一個範圍管兩張圖。兩張讀的是同一段時間，各自一個選擇只會做出
+          「人口看年、收支看週」這種對不起來的畫面。 */}
+      <div class="section-title" style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+        <span>History</span>
+        <div style="display:flex;gap:4px">
+          <For each={CHART_RANGE_ORDER}>
+            {(r) => (
+              <button
+                onClick={() => setRange(r)}
+                aria-pressed={range() === r}
+                style={{
+                  'font-size': '10px', padding: '2px 9px', 'border-radius': '4px',
+                  cursor: 'pointer', 'text-transform': 'none', 'letter-spacing': '0',
+                  border: `1px solid ${range() === r ? '#42a5f5' : '#334'}`,
+                  background: range() === r ? 'rgba(66,165,245,0.18)' : 'transparent',
+                  color: range() === r ? '#90caf9' : '#667a90',
+                }}
+              >
+                {CHART_RANGES[r].label}
+              </button>
+            )}
+          </For>
+        </div>
+      </div>
 
-      <div class="section-title">Economic History</div>
-      <EconChart history={gameSignals.econHistory()} />
+      <div style="font-size:10px;color:#667a90;margin:-4px 0 2px">Population</div>
+      <PopChart history={gameSignals.chartHistory()} range={range()} />
+
+      <div style="font-size:10px;color:#667a90;margin:-4px 0 2px">Funds, income and expenses</div>
+      <EconChart history={gameSignals.chartHistory()} range={range()} />
     </>
   );
 }

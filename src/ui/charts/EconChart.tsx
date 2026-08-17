@@ -1,8 +1,8 @@
 import { createEffect, onMount } from 'solid-js';
-import { CHART_HISTORY_LENGTH, UI_COLORS } from '../constants';
+import { UI_COLORS } from '../constants';
+import { bucketChartSeries, type ChartHistory, type ChartRange } from '../../core/economy/ChartSeries';
 import { fitCanvas } from './fitCanvas';
 
-const ECON_MAX = CHART_HISTORY_LENGTH;
 
 /**
  * 資金與收支的歷史。
@@ -21,7 +21,7 @@ const LEGEND_H = 14;
 const FUNDS_RATIO = 0.55;
 const BAND_GAP = 6;
 
-export function EconChart(props: { history: { funds: number[]; income: number[]; expenses: number[] } }) {
+export function EconChart(props: { history: ChartHistory; range: ChartRange }) {
   let canvas: HTMLCanvasElement | undefined;
 
   const draw = () => {
@@ -32,7 +32,8 @@ export function EconChart(props: { history: { funds: number[]; income: number[];
     const { ctx, w, h } = fit;
     ctx.clearRect(0, 0, w, h);
 
-    if (props.history.funds.length < 2) {
+    const series = bucketChartSeries(props.history, props.range);
+    if (series.funds.length < 2) {
       ctx.fillStyle = '#667a90';
       ctx.font = '11px sans-serif';
       ctx.fillText('Collecting data...', w / 2 - 40, h / 2);
@@ -47,31 +48,32 @@ export function EconChart(props: { history: { funds: number[]; income: number[];
     const zeroY = flowTop + flowH / 2;
 
     // ── 資金:一條線 ────────────────────────────────────────────────
-    const maxFunds = Math.max(1000, ...props.history.funds);
-    const minFunds = Math.min(0, ...props.history.funds);
+    const maxFunds = Math.max(1000, ...series.funds);
+    const minFunds = Math.min(0, ...series.funds);
     const fundsRange = maxFunds - minFunds || 1;
 
     ctx.strokeStyle = UI_COLORS.ACCENT;
     ctx.lineWidth = 2;
     ctx.beginPath();
-    for (let i = 0; i < props.history.funds.length; i++) {
-      const x = (i / (ECON_MAX - 1)) * w;
-      const y = fundsTop + fundsH - ((props.history.funds[i]! - minFunds) / fundsRange) * fundsH;
+    const span = Math.max(1, series.funds.length - 1);
+    for (let i = 0; i < series.funds.length; i++) {
+      const x = (i / span) * w;
+      const y = fundsTop + fundsH - ((series.funds[i]! - minFunds) / fundsRange) * fundsH;
       if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
     }
     ctx.stroke();
 
     // ── 收支:以零線為中心的長條 ────────────────────────────────────
-    const maxFlow = Math.max(1, ...props.history.income, ...props.history.expenses);
+    const maxFlow = Math.max(1, ...series.income, ...series.expenses);
     const half = flowH / 2;
-    const slot = w / ECON_MAX;
+    const slot = w / series.income.length;
     // 每格之間留一點縫。太窄就不留 —— 一像素的縫會讓整排看起來像雜訊。
     const barW = Math.max(1, slot > 3 ? slot - 1.5 : slot);
 
-    for (let i = 0; i < props.history.income.length; i++) {
+    for (let i = 0; i < series.income.length; i++) {
       const x = i * slot + (slot - barW) / 2;
-      const up = (props.history.income[i]! / maxFlow) * half;
-      const down = (props.history.expenses[i]! / maxFlow) * half;
+      const up = (series.income[i]! / maxFlow) * half;
+      const down = (series.expenses[i]! / maxFlow) * half;
       ctx.fillStyle = UI_COLORS.STATUS_GOOD;
       ctx.fillRect(x, zeroY - up, barW, up);
       ctx.fillStyle = UI_COLORS.STATUS_BAD;
@@ -97,8 +99,9 @@ export function EconChart(props: { history: { funds: number[]; income: number[];
 
   onMount(() => draw());
   createEffect(() => {
-    props.history.funds.length;
-    props.history.income.length;
+    // 追蹤:歷史整包換掉（每天一次）與範圍切換都要重畫。
+    props.history;
+    props.range;
     draw();
   });
 

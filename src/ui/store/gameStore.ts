@@ -1,7 +1,9 @@
 import { createSignal, batch } from 'solid-js';
 import type { Game, ToolType, SelectedBuilding, PlacementMode } from '../../Game';
 import { ViewMode } from '../../core/ViewMode';
-import { CHART_HISTORY_LENGTH } from '../constants';
+import {
+  emptyChartHistory, appendChartDay, type ChartHistory,
+} from '../../core/economy/ChartSeries';
 import { Season } from '../../core/climate/Climate';
 import { OverlayType } from '../../renderer/OverlayRenderer';
 import { calculateBalance } from '../../core/economy/Budget';
@@ -36,19 +38,23 @@ const [activeDistrictId, setActiveDistrictId] = createSignal<string | null>(null
 const [tick, setTick] = createSignal(0);
 let lastTickTime = 0;
 const TICK_INTERVAL_MS = 160; // ~6 updates/sec
+/** 同一天之內，最後那一筆最多多久更新一次。 */
+let lastChartSampleTime = 0;
 
-// --- Chart history (accumulated over time) ---
-const CHART_MAX = CHART_HISTORY_LENGTH;
-const ECON_MAX = CHART_HISTORY_LENGTH;
-const [chartHistory, setChartHistory] = createSignal<{ pop: number[]; happiness: number[] }>({ pop: [], happiness: [] });
-const [econHistory, setEconHistory] = createSignal<{ funds: number[]; income: number[]; expenses: number[] }>({ funds: [], income: [], expenses: [] });
+// --- Chart history ---
+//
+// 一天一筆，不是一幀一筆。原本是每次 UI 更新就 append，於是六十個點一秒就跑完，
+// 而那個速度只反映了 FPS 跟遊戲速度，不是玩家看得懂的時間。
+const [chartHistory, setChartHistory] = createSignal<ChartHistory>(emptyChartHistory());
+/** 上一次記錄的是哪一天。同一天之內只覆蓋最後一筆。 */
+let lastChartDay = -1;
 
 // --- Export read-only signals for components ---
 export const gameSignals = {
   date, funds, population, balance, happiness,
   currentTool, previewCost, paused, speed,
   selectedBuilding, notification, currentOverlay,
-  currentRotation, rciDemand, chartHistory, econHistory,
+  currentRotation, rciDemand, chartHistory,
   viewMode, tick, powerSupply, powerDemand, placementMode, elevationLevel, selectedTransferRoute,
   selectedCitizenId, setSelectedCitizenId,
   districtPaintMode, activeDistrictId,
@@ -119,19 +125,26 @@ export function initGameStore(game: Game): void {
         });
       }
 
-      // Accumulate chart history
-      const prevChart = chartHistory();
-      const newPop = [...prevChart.pop, pop];
-      const newHappiness = [...prevChart.happiness, avgHappy > 0 ? avgHappy : 50];
-      if (newPop.length > CHART_MAX) { newPop.shift(); newHappiness.shift(); }
-      setChartHistory({ pop: newPop, happiness: newHappiness });
-
-      const prevEcon = econHistory();
-      const newFunds = [...prevEcon.funds, state.budget.funds];
-      const newIncome = [...prevEcon.income, state.budget.income];
-      const newExpenses = [...prevEcon.expenses, state.budget.expenses];
-      if (newFunds.length > ECON_MAX) { newFunds.shift(); newIncome.shift(); newExpenses.shift(); }
-      setEconHistory({ funds: newFunds, income: newIncome, expenses: newExpenses });
+      // 圖表:一天一筆。同一天之內只更新最後那一筆，所以進行中的那一天也是活的。
+      const day = clock.getDay();
+      const sample = {
+        pop,
+        happiness: avgHappy > 0 ? avgHappy : 50,
+        funds: state.budget.funds,
+        income: state.budget.income,
+        expenses: state.budget.expenses,
+      };
+      if (day !== lastChartDay) {
+        lastChartDay = day;
+        setChartHistory(h => appendChartDay(h, day, sample));
+      } else {
+        // 同一天內每秒最多改六次。每一幀都重建一次三百多天的陣列是白花的。
+        const now = performance.now();
+        if (now - lastChartSampleTime >= TICK_INTERVAL_MS) {
+          lastChartSampleTime = now;
+          setChartHistory(h => appendChartDay(h, day, sample));
+        }
+      }
 
       // Throttled tick for modal live-refresh (time-based, FPS-independent)
       const now = performance.now();

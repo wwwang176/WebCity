@@ -1,12 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { CHART_HISTORY_LENGTH } from '../constants';
 import { PALETTE, toCSS } from '../../ColorPalette';
 
-describe('UI constants', () => {
-  it('CHART_HISTORY_LENGTH should be 60', () => {
-    expect(CHART_HISTORY_LENGTH).toBe(60);
-  });
-});
 
 describe('ColorPalette', () => {
   it('toCSS should convert numeric hex to CSS string', () => {
