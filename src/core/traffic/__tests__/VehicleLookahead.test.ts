@@ -29,7 +29,7 @@ describe('findGapAhead', () => {
     const edges = [makeEdge('e1', 'A', 'B', 2.0)];
     const v = makeVehicle({ id: 1 });
     const idx = new Map<string, EdgeEntry[]>();
-    idx.set('e1', [{ vid: 1, progress: 0, halfLen: 0.11 }]);
+    idx.set('e1', [{ vid: 1, progress: 0, halfLen: 0.11, queueing: false }]);
 
     expect(findGapAhead(v, edges, idx)).toBe(Infinity);
   });
@@ -39,8 +39,8 @@ describe('findGapAhead', () => {
     const v = makeVehicle({ id: 1, edgeProgress: 0 });
     const idx = new Map<string, EdgeEntry[]>();
     idx.set('e1', [
-      { vid: 1, progress: 0, halfLen: 0.11 },
-      { vid: 2, progress: 1.0, halfLen: 0.11 },
+      { vid: 1, progress: 0, halfLen: 0.11, queueing: false },
+      { vid: 2, progress: 1.0, halfLen: 0.11, queueing: false },
     ]);
 
     // gap = (1.0 - 0) - 0.11 - 0.11 = 0.78
@@ -54,8 +54,8 @@ describe('findGapAhead', () => {
     ];
     const v = makeVehicle({ id: 1, edgeIndex: 0, edgeProgress: 0.5 });
     const idx = new Map<string, EdgeEntry[]>();
-    idx.set('e1', [{ vid: 1, progress: 0.5, halfLen: 0.11 }]);
-    idx.set('e2', [{ vid: 2, progress: 0.3, halfLen: 0.11 }]);
+    idx.set('e1', [{ vid: 1, progress: 0.5, halfLen: 0.11, queueing: false }]);
+    idx.set('e2', [{ vid: 2, progress: 0.3, halfLen: 0.11, queueing: false }]);
 
     // distAhead after e1 = 1.0 - 0.5 = 0.5
     // gap = 0.5 + 0.3 - 0.11 - 0.11 = 0.58
@@ -67,9 +67,9 @@ describe('findGapAhead', () => {
     const v = makeVehicle({ id: 1, edgeProgress: 0 });
     const idx = new Map<string, EdgeEntry[]>();
     idx.set('e1', [
-      { vid: 1, progress: 0, halfLen: 0.11 },
-      { vid: 2, progress: 1.0, halfLen: 0.11 },
-      { vid: 3, progress: 2.0, halfLen: 0.11 },
+      { vid: 1, progress: 0, halfLen: 0.11, queueing: false },
+      { vid: 2, progress: 1.0, halfLen: 0.11, queueing: false },
+      { vid: 3, progress: 2.0, halfLen: 0.11, queueing: false },
     ]);
 
     // closest = vid 2 at 1.0: gap = 1.0 - 0.11 - 0.11 = 0.78
@@ -81,8 +81,8 @@ describe('findGapAhead', () => {
     const v = makeVehicle({ id: 2, edgeProgress: 1.5 });
     const idx = new Map<string, EdgeEntry[]>();
     idx.set('e1', [
-      { vid: 1, progress: 0.5, halfLen: 0.11 },
-      { vid: 2, progress: 1.5, halfLen: 0.11 },
+      { vid: 1, progress: 0.5, halfLen: 0.11, queueing: false },
+      { vid: 2, progress: 1.5, halfLen: 0.11, queueing: false },
     ]);
 
     expect(findGapAhead(v, edges, idx)).toBe(Infinity);

@@ -29,6 +29,16 @@ export interface Vehicle {
   speedMultiplier: number; // random 0.8–1.0, prevents vehicles from bunching at same speed
   currentSpeed: number;  // current speed in world-units/sec (used for gradual accel/decel)
   stallTime: number;  // accumulated seconds at zero movement; despawned when exceeding threshold
+  /**
+   * 上一幀有沒有被前方的東西煞住（跟車、紅燈、路口）。
+   *
+   * 「路口出不出得去」問的是前面那台車**會不會在我穿越路口的期間停下來**。用
+   * 「它現在停了沒」判斷太晚 —— 車隊是往後長的，等它真的停住，我已經進去了。
+   * 用速度門檻又會被路型綁架:轉彎與低速限道路的巡航速度本來就低。
+   *
+   * 「它正在為前方的東西減速」與這兩者都無關，而且正是車隊在形成的訊號。
+   */
+  braking: boolean;
   citizenId?: number;  // present only for commute vehicles (prevents duplicate spawning)
   sourceBuildingKey?: string;  // present only for freight vehicles (origin building "x,y")
   busState?: BusVehicleState;  // present only for bus vehicles
@@ -187,6 +197,7 @@ export class TrafficSimulation {
       speedMultiplier: TRAFFIC.SPEED_MULTIPLIER_MIN + Math.random() * TRAFFIC.SPEED_MULTIPLIER_RANGE,
       currentSpeed: 0,
       stallTime: stallJitter ? -(Math.random() * TRAFFIC.STALL_JITTER) : 0,
+      braking: false,
     };
     this.vehicles.push(vehicle);
     const startCell = edgePath[0]?.from.cellKey;
@@ -416,7 +427,7 @@ export class TrafficSimulation {
       if (!edge) continue;
       let arr = edgeIndex.get(edge.id);
       if (!arr) { arr = []; edgeIndex.set(edge.id, arr); }
-      arr.push({ vid: v.id, progress: v.edgeProgress, halfLen: v.length / 2 });
+      arr.push({ vid: v.id, progress: v.edgeProgress, halfLen: v.length / 2, queueing: v.braking });
     }
 
     // Build spatial hash for cross-edge collision detection.
@@ -475,6 +486,8 @@ export class TrafficSimulation {
       // Bus dwelling: count down timer, skip movement
       if (v.busState?.dwelling) {
         v.busState.dwellTimer -= dtSeconds;
+        // 停靠中的公車就是擋在那裡，別讓後車以為它馬上會走。
+        v.braking = true;
         if (v.busState.dwellTimer <= 0) {
           const bs = v.busState;
           bs.segmentIndex = (bs.segmentIndex + 1) % bs.segments.length;
@@ -516,8 +529,18 @@ export class TrafficSimulation {
       // Not subject to the follow-the-leader override above: the whole point is
       // that the leader is close and we must stop at the line anyway, so that
       // the box stays clear for the cross direction.
-      const junctionStop = findBlockedJunctionDistance(v, ep, gapRoom);
+      //
+      // Fed `gap` rather than `gapRoom` for clarity and for the shortcut's sake,
+      // not for the answer: `gapRoom` folds in `crossGap`, which measures
+      // proximity to vehicles merging into the same connection point — a merge
+      // conflict, not a full exit lane. Passing the smaller number cannot change
+      // the verdict (see the parameter's doc), only cost a scan, so NOTHING
+      // GUARDS THIS CHOICE. It mattered when the rule judged on distance alone.
+      const junctionStop = findBlockedJunctionDistance(v, ep, edgeIndex, gap, MIN_GAP);
       const obstacle = Math.min(gapRoom, effectiveRedLight, junctionStop);
+
+      // 前後車是由前往後處理的，所以後車這一幀讀到的是剛算好的值。
+      v.braking = obstacle < BRAKE_DISTANCE;
 
       let targetSpeed: number;
       if (obstacle <= 0) {
@@ -614,13 +637,16 @@ export class TrafficSimulation {
         // Add to new edge
         let newArr = edgeIndex.get(newEdge.id);
         if (!newArr) { newArr = []; edgeIndex.set(newEdge.id, newArr); }
-        newArr.push({ vid: v.id, progress: v.edgeProgress, halfLen: myHalfLen });
+        newArr.push({ vid: v.id, progress: v.edgeProgress, halfLen: myHalfLen, queueing: v.braking });
       } else if (oldEdge) {
         // Same edge, just update progress
         const arr = edgeIndex.get(oldEdge.id);
         if (arr) {
           const entry = arr.find(e => e.vid === v.id);
-          if (entry) entry.progress = v.edgeProgress;
+          if (entry) {
+            entry.progress = v.edgeProgress;
+            entry.queueing = v.braking;
+          }
         }
       }
     }

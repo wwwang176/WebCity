@@ -11,6 +11,13 @@ export interface EdgeEntry {
   vid: number;
   progress: number;
   halfLen: number;
+  /**
+   * Held back by something ahead — following, a red light, or a junction.
+   *
+   * Only queueing traffic can block a junction. A car that is merely close but
+   * running free will be long gone by the time anyone reaches it.
+   */
+  queueing: boolean;
 }
 
 /** Minimal vehicle state needed for lookahead calculations. */
@@ -82,17 +89,24 @@ export function findGapAhead(
  * exactly when `room >= exit + halfLen`. Otherwise stop at the same stop line
  * a red light would use.
  *
- * `room` is the caller's already-computed following distance, so the common
- * free-flowing case costs one comparison — there is no walk at all unless a
- * vehicle is close enough ahead to matter.
+ * `gap` is the caller's already-computed following distance and is used ONLY to
+ * skip work: free-flowing traffic returns after one comparison. It is a lower
+ * bound on how far the nearest vehicle of any kind is, so passing too small a
+ * number only forfeits the shortcut — the verdict comes from the scan below,
+ * which reads the queueing flag and cannot be reached by a shortcut that fires.
  */
 export function findBlockedJunctionDistance(
   v: LookaheadVehicle,
   edgePath: readonly LaneEdge[],
-  room: number,
+  edgeIndex: ReadonlyMap<string, readonly EdgeEntry[]>,
+  gap: number,
+  minGap: number,
 ): number {
-  if (room >= LOOKAHEAD_DISTANCE) return Infinity;
+  if (gap >= LOOKAHEAD_DISTANCE) return Infinity;
 
+  const halfLen = v.length / 2;
+
+  // 1. 前方第一個路口在哪裡。純走訪，不查表。
   let dist = 0;
   let enter = -1;
   let exit = 0;
@@ -110,8 +124,47 @@ export function findBlockedJunctionDistance(
   }
 
   if (enter <= 0) return Infinity;  // 前方沒有路口，或者車已經在路口裡了 —— 只能開出去
-  if (room >= exit + v.length / 2) return Infinity;
-  return Math.max(0, enter - v.length / 2 - STOP_LINE_OFFSET);
+
+  // 車身中心要走到這裡，車尾才算離開路口。
+  const needed = exit + halfLen;
+  // 連車流裡最近的那台都擋不到，就不必再查是誰了。
+  if (gap - minGap >= needed) return Infinity;
+
+  // 2. 只有**正在排隊**的車算佔用。
+  //
+  // 用 findGapAhead 的距離（不分動靜）判斷的話，兩格的正常車距就會讓每一台車
+  // 在每一個路口前煞一次 —— 實測整條路的通過量掉一成，而那時候路上根本沒有
+  // 塞車。
+  //
+  // 而「它現在停了沒」又太晚:車隊是往後長的，等前車真的停住，後車已經進了
+  // 路口，然後就困在裡面。所以看的是**它正在為前方的東西減速**。
+  let d = 0;
+  for (let ei = v.edgeIndex; ei < edgePath.length; ei++) {
+    const edge = edgePath[ei]!;
+    const entries = edgeIndex.get(edge.id);
+    if (entries) {
+      for (const e of entries) {
+        if (e.vid === v.id || !e.queueing) continue;
+        let at: number;
+        if (ei === v.edgeIndex) {
+          if (e.progress < v.edgeProgress) continue;
+          if (e.progress === v.edgeProgress && e.vid > v.id) continue;
+          at = e.progress - v.edgeProgress;
+        } else {
+          at = d + e.progress;
+        }
+        // 這台排隊中的車讓我的中心最多只能走到這裡。
+        if (at - halfLen - e.halfLen - minGap < needed) {
+          return Math.max(0, enter - halfLen - STOP_LINE_OFFSET);
+        }
+      }
+    }
+    d += edge.length - (ei === v.edgeIndex ? v.edgeProgress : 0);
+    // 後面每一台的 `at` 都不小於 d，而 e.halfLen >= 0 —— 再遠就擋不到了。
+    if (d - halfLen - minGap >= needed) break;
+  }
+
+  return Infinity;
 }
 
 /**

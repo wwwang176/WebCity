@@ -5,7 +5,7 @@ import { RoadBuilder } from '../../road/RoadBuilder';
 import { RoadType } from '../../road/types';
 import { UnifiedRoadLookup } from '../../road/UnifiedRoadLookup';
 import { LaneGraph, isIntersectionCell, type LaneEdge } from '../LaneGraph';
-import { STOP_LINE_OFFSET, findBlockedJunctionDistance } from '../VehicleLookahead';
+import { STOP_LINE_OFFSET, findBlockedJunctionDistance, type EdgeEntry } from '../VehicleLookahead';
 
 /**
  * 不要把車停在路口裡。
@@ -125,34 +125,104 @@ describe('路口要淨空', () => {
 });
 
 describe('進去之前的那一問', () => {
-  // 車隊測試量得到「有沒有人停在路口裡」，但量不到**差幾公分**:兩個判斷的差
+  // 車隊測試量得到「有沒有人停在路口裡」，但量不到**差幾公分**:判斷的邊界差
   // 只有一個車身長，剛好被排隊的間距蓋過去。這裡直接餵數字。
   const CAR = { id: 1, length: 0.22, edgeIndex: 0, edgeProgress: 0 };
   const ROUTE = path(6, 1);   // 路口是第 1 段，所以車身中心到路口是 [1, 2]
   const ENTER = 1, EXIT = 2, HALF = CAR.length / 2;
+  const MIN_GAP = TRAFFIC.MIN_GAP;
 
-  it('should let the car in when its tail can clear the far side', () => {
-    expect(findBlockedJunctionDistance(CAR, ROUTE, EXIT + HALF + 0.05)).toBe(Infinity);
+  /**
+   * 在車身中心**前方** `d` 處擺一台車，問這台車能不能進路口。
+   *
+   * 位置要相對於 `car` 算 —— 從路徑起點算的話，測「已經在路口裡」那一條會把
+   * 阻擋者擺到車子後面去，於是掃描找不到人，判斷就空轉了。
+   */
+  function ask(d: number, queueing: boolean, route = ROUTE, car = CAR): number {
+    const at = car.edgeIndex + car.edgeProgress + d;   // 每段長 1，索引即距離
+    const ei = Math.floor(at);
+    const index = new Map<string, EdgeEntry[]>([
+      [route[ei]!.id, [{ vid: 2, progress: at - ei, halfLen: HALF, queueing }]],
+    ]);
+    return findBlockedJunctionDistance(car, route, index, d - HALF * 2, MIN_GAP);
+  }
+
+  /** 要讓我的中心能走到 `r`，前面那台車得擺在多遠。 */
+  const distFor = (r: number) => r + HALF * 2 + MIN_GAP;
+
+  it('should let the car in when the queue still leaves room for its tail', () => {
+    expect(ask(distFor(EXIT + HALF + 0.05), true)).toBe(Infinity);
   });
 
-  it('should keep it out when only the nose fits', () => {
+  it('should keep it out when the queue only leaves room for its nose', () => {
     // 車頭出得去、車尾還在裡面 —— 這樣停下來一樣擋住橫向車流。
-    // 兩者只差一個車身長，所以判斷的是 `exit + 半車身`，不是 `exit - 半車身`。
-    const noseOnly = EXIT - HALF + 0.01;
-    expect(findBlockedJunctionDistance(CAR, ROUTE, noseOnly))
-      .toBeCloseTo(ENTER - HALF - STOP_LINE_OFFSET, 9);
+    //
+    // 距離要挑在 `exit - 半車身` 與 `exit + 半車身` 之間，兩者只差一個車身長:
+    // 挑在區間外的話，判斷寫成減半車身也會給出同樣的答案。
+    expect(ask(distFor(EXIT), true)).toBeCloseTo(ENTER - HALF - STOP_LINE_OFFSET, 9);
+  });
+
+  it('should ignore a car that is still moving', () => {
+    // 這是規則原本最大的毛病:`findGapAhead` 不分排隊還是行進，於是「前方兩格內
+    // 有車」就擋人 —— 而兩格是正常車距。
+    expect(ask(distFor(EXIT), false), '被一台還在開的車擋住了').toBe(Infinity);
   });
 
   it('should never brake a car that is already inside the box', () => {
     // 已經進去了就只能開出去。在裡面煞停正是這條規則要防的畫面。
-    const committed = { ...CAR, edgeIndex: 1, edgeProgress: 0.5 };
-    expect(findBlockedJunctionDistance(committed, ROUTE, 0.3)).toBe(Infinity);
+    expect(ask(distFor(0.2), true, ROUTE, { ...CAR, edgeIndex: 1, edgeProgress: 0.5 })).toBe(Infinity);
   });
 
   it('should not look at all when the road ahead is empty', () => {
     // 自由車流是絕大多數的情況，要在第一行就回頭 —— 這是這條規則不花錢的原因。
-    expect(findBlockedJunctionDistance(CAR, ROUTE, 99)).toBe(Infinity);
-    expect(findBlockedJunctionDistance(CAR, path(6, -1), 0.1)).toBe(Infinity);
+    const empty = new Map<string, EdgeEntry[]>();
+    expect(findBlockedJunctionDistance(CAR, ROUTE, empty, Infinity, MIN_GAP)).toBe(Infinity);
+    expect(ask(distFor(0.5), true, path(6, -1))).toBe(Infinity);
+  });
+});
+
+
+/** 每 `every` 段一個路口的路線。 */
+function pathEvery(n: number, every: number): LaneEdge[] {
+  const edges = path(n, -1);
+  if (every > 0) for (let i = every; i < n; i += every) edges[i]!.insideJunction = true;
+  return edges;
+}
+
+/** 一隊等速行進的車，跑 `seconds` 秒之後總共走了多遠。 */
+function distanceCovered(every: number, seconds: number): number {
+  const sim = new TrafficSimulation();
+  const cars = [];
+  for (let i = 0; i < 24; i++) {
+    const v = sim.addVehicleOnEdges(pathEvery(200, every));
+    // addVehicleOnEdges 會隨機挑車型與速度倍率，這裡要的是可重現的一列。
+    v.length = 0.22; v.width = 0.09;
+    v.speedMultiplier = 1;
+    v.stallTime = 0;
+    v.edgeIndex = i * 2;
+    cars.push(v);
+  }
+  for (let t = 0; t < seconds / 0.02; t++) sim.advanceEdgeVehicles(0.02, () => true);
+  return cars.reduce((sum, v) => sum + v.edgeIndex + v.edgeProgress, 0);
+}
+
+describe('路口不該拖慢正常車流', () => {
+  it('should not cost a moving stream any distance at all', () => {
+    // 兩格的車距是**正常車距**，不是塞車。原本的規則不分停著還是在開，於是
+    // 這一列車每經過一個路口就煞一次 —— 使用者看到的「右轉車也在停止線上等」
+    // 主要就是這個。
+    const withJunctions = distanceCovered(4, 20);
+    const plain = distanceCovered(0, 20);
+    expect(withJunctions / plain, `有路口跑了 ${withJunctions.toFixed(1)}，沒路口 ${plain.toFixed(1)}`)
+      .toBeGreaterThan(0.99);
+  });
+
+  it('fixture sanity: the stream really does pass junctions, packed close', () => {
+    // 上面那條可以靠「車距大到規則永遠不觸發」或「路上根本沒有路口」空轉。
+    const route = pathEvery(200, 4);
+    expect(route.filter(e => e.insideJunction).length, '路線上沒有路口').toBeGreaterThan(10);
+    // 車距 2 格 —— 小於原本規則要求的淨空（exit + 半車身，約 2.1 格）。
+    expect(2 - 0.22, '車距大到原本的規則也不會觸發，這條測不出東西').toBeLessThan(2.11);
   });
 });
 
