@@ -103,13 +103,15 @@ export function idealTurnLane(edge: LaneEdge, laneCount: number): number | null 
 
 /**
  * Cost added to a turn taken from the wrong lane (BUG-214). See `TurnLane.ts`
- * for the measurements this is calibrated against.
+ * for the measurements this is calibrated against, and for why a plain bend is
+ * charged nothing.
  */
 export function turnLanePenalty(edge: LaneEdge, laneCount: number): number {
   return turnLanePenaltyInt(
     DIR_CODES[edge.from.direction], pointCode(edge.from), edge.from.lane,
     DIR_CODES[edge.to.direction], pointCode(edge.to),
     laneCount,
+    edge.insideJunction === true,
   );
 }
 

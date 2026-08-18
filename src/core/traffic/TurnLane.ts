@@ -100,6 +100,17 @@ export function idealTurnLaneInt(
  * right turn begun in an inner lane sweeps over the through path beside it. A
  * lane change that turns at the same time is charged too — its arc starts in
  * the same place and crosses the same traffic.
+ *
+ * `throughJunction` is the whole justification, so nothing is charged without
+ * it. A plain bend has no through traffic to cut across: a two-direction cell
+ * emits turn edges only, and the generator wires lane L to lane L, so the arcs
+ * are concentric and never meet. Charging there bought nothing and cost a lane
+ * change each way — on an S-shaped road the vehicle swung out for every right
+ * bend and cut straight back in, five changes on a staircase of six (BUG-317).
+ *
+ * The condition is a parameter rather than a caller-side guard on purpose: two
+ * engines call this, and a rule taught to one and not the other is a rule the
+ * player never sees. That is why the arithmetic lives in this module at all.
  */
 export function turnLanePenaltyInt(
   fromDir: number,
@@ -108,7 +119,9 @@ export function turnLanePenaltyInt(
   toDir: number,
   toType: number,
   laneCount: number,
+  throughJunction: boolean,
 ): number {
+  if (!throughJunction) return 0;
   if (laneCount <= 1) return 0;
   const ideal = idealTurnLaneInt(fromDir, fromType, toDir, toType, laneCount);
   if (ideal === NO_PREFERRED_LANE) return 0;

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { LaneGraph, type LaneEdge, turnLanePenalty, idealTurnLane } from '../LaneGraph';
+import { LaneGraph, type LaneEdge, turnLanePenalty, idealTurnLane, isIntersectionCell } from '../LaneGraph';
 import { findLanePath } from '../LaneGraphPathfinder';
 import { Grid } from '../../grid/Grid';
 import { UnifiedRoadLookup } from '../../road/UnifiedRoadLookup';
@@ -34,7 +34,7 @@ const CAR_WIDTH = 0.09;
 interface Road { from: { x: number; y: number }; to: { x: number; y: number } }
 
 function cityWith(type: RoadType, roads: Road[]) {
-  const grid = new Grid(16, 16);
+  const grid = new Grid(24, 24);
   const net = new RoadNetwork();
   const builder = new RoadBuilder(grid, net);
   for (const r of roads) builder.buildRoad(r.from, r.to, type, 1e9);
@@ -45,33 +45,41 @@ function cityWith(type: RoadType, roads: Road[]) {
   return { grid, lookup, graph, lanes: getLaneCount(type) };
 }
 
-/** An L: south down x=5 to y=5, then west along y=5. Southbound → westbound is a RIGHT turn. */
-const RIGHT_TURN_CITY: Road[] = [
-  { from: { x: 5, y: 0 }, to: { x: 5, y: 5 } },
-  { from: { x: 0, y: 5 }, to: { x: 5, y: 5 } },
-];
-
-/** An L: south down x=5 to y=5, then east along y=5. Southbound → eastbound is a LEFT turn. */
-const LEFT_TURN_CITY: Road[] = [
-  { from: { x: 5, y: 0 }, to: { x: 5, y: 5 } },
-  { from: { x: 5, y: 5 }, to: { x: 10, y: 5 } },
-];
-
 /**
  * A full four-way crossing at (5,5): both arms carry on past the junction, so
- * traffic going straight through exists to be cut across. An L-bend has none,
- * which is why the clearance case cannot use the fixtures above.
+ * traffic going straight through exists to be cut across.
+ *
+ * Southbound → westbound is a RIGHT turn, southbound → eastbound a LEFT one.
+ *
+ * Every case below uses a real junction. An L-bend has no through traffic —
+ * every lane rounds the bend concentrically and no two paths cross — so the
+ * preference does not apply there at all (see `只有路口才需要站位` below).
  */
 const CROSSROADS_CITY: Road[] = [
   { from: { x: 5, y: 0 }, to: { x: 5, y: 10 } },
   { from: { x: 0, y: 5 }, to: { x: 10, y: 5 } },
 ];
 
-/** A Z: south, then east (left turn), then south again (right turn). */
-const BOTH_TURNS_CITY: Road[] = [
+/** Two four-way crossings: south, left (east) at (5,5), right (south) at (10,5). */
+const TWO_JUNCTION_CITY: Road[] = [
+  { from: { x: 5, y: 0 }, to: { x: 5, y: 10 } },
+  { from: { x: 0, y: 5 }, to: { x: 15, y: 5 } },
+  { from: { x: 10, y: 0 }, to: { x: 10, y: 10 } },
+];
+
+/** A staircase of plain bends — no junction anywhere on it. */
+const STAIRCASE_CITY: Road[] = [
+  { from: { x: 2, y: 4 }, to: { x: 8, y: 4 } },
+  { from: { x: 8, y: 4 }, to: { x: 8, y: 8 } },
+  { from: { x: 8, y: 8 }, to: { x: 14, y: 8 } },
+  { from: { x: 14, y: 8 }, to: { x: 14, y: 12 } },
+  { from: { x: 14, y: 12 }, to: { x: 20, y: 12 } },
+];
+
+/** A single L-bend, nothing else. */
+const BEND_CITY: Road[] = [
   { from: { x: 5, y: 0 }, to: { x: 5, y: 5 } },
-  { from: { x: 5, y: 5 }, to: { x: 10, y: 5 } },
-  { from: { x: 10, y: 5 }, to: { x: 10, y: 10 } },
+  { from: { x: 0, y: 5 }, to: { x: 5, y: 5 } },
 ];
 
 /** Sample an edge's path — quadratic Bézier when it has a control point, else a segment. */
@@ -112,7 +120,7 @@ function turningEdges(path: LaneEdge[]): LaneEdge[] {
 
 describe('a turn is taken from the lane it belongs in', () => {
   it('should make a right turn from the outermost lane, not the one it is in', () => {
-    const { graph, lookup, lanes } = cityWith(RoadType.FOUR_LANE, RIGHT_TURN_CITY);
+    const { graph, lookup, lanes } = cityWith(RoadType.FOUR_LANE, CROSSROADS_CITY);
     const path = findLanePath(graph, lookup, { x: 5, y: 0 }, { x: 0, y: 5 });
     expect(path, 'no lane path was found at all').not.toBeNull();
 
@@ -123,7 +131,7 @@ describe('a turn is taken from the lane it belongs in', () => {
   });
 
   it('should make a left turn from the innermost lane', () => {
-    const { graph, lookup } = cityWith(RoadType.FOUR_LANE, LEFT_TURN_CITY);
+    const { graph, lookup } = cityWith(RoadType.FOUR_LANE, CROSSROADS_CITY);
     const path = findLanePath(graph, lookup, { x: 5, y: 0 }, { x: 10, y: 5 });
     expect(path).not.toBeNull();
 
@@ -136,7 +144,7 @@ describe('a turn is taken from the lane it belongs in', () => {
     // Left then right: the vehicle finishes the left turn in an inner lane and
     // has to move out again. Before the preference existed it simply stayed
     // put and took the right turn from the inner lane.
-    const { graph, lookup, lanes } = cityWith(RoadType.FOUR_LANE, BOTH_TURNS_CITY);
+    const { graph, lookup, lanes } = cityWith(RoadType.FOUR_LANE, TWO_JUNCTION_CITY);
     const path = findLanePath(graph, lookup, { x: 5, y: 0 }, { x: 10, y: 10 });
     expect(path).not.toBeNull();
 
@@ -176,7 +184,7 @@ describe('the preference is a preference, not a rule', () => {
   it('should still route when there is no room to reach the right lane', () => {
     // Six lanes each way and the junction one cell from the origin: reaching
     // the outermost lane needs two changes and there is room for none.
-    const { graph, lookup } = cityWith(RoadType.SIX_LANE, RIGHT_TURN_CITY);
+    const { graph, lookup } = cityWith(RoadType.SIX_LANE, CROSSROADS_CITY);
     const path = findLanePath(graph, lookup, { x: 5, y: 4 }, { x: 0, y: 5 });
     expect(path, 'a vehicle with no room to move over was left with no route')
       .not.toBeNull();
@@ -184,7 +192,7 @@ describe('the preference is a preference, not a rule', () => {
   });
 
   it('should leave one-lane-per-direction roads completely alone', () => {
-    const { graph, lookup } = cityWith(RoadType.TWO_LANE, RIGHT_TURN_CITY);
+    const { graph, lookup } = cityWith(RoadType.TWO_LANE, CROSSROADS_CITY);
     const path = findLanePath(graph, lookup, { x: 5, y: 0 }, { x: 0, y: 5 });
     expect(path).not.toBeNull();
     expect(path!.every(e => e.from.lane === 0 && e.to.lane === 0),
@@ -194,9 +202,56 @@ describe('the preference is a preference, not a rule', () => {
   });
 });
 
+describe('只有路口才需要站位', () => {
+  /**
+   * 轉向車道的理由是「轉彎的弧線會切過旁邊的直行車道」。彎道沒有直行車道 ——
+   * 兩個方向的格子只生得出轉彎邊，而且產生器連的是 lane L → lane L，各車道的
+   * 弧是同心的、永遠不相交。規則在那裡買不到任何東西，只換來一次換道。
+   *
+   * 原本 `idealTurnLaneInt` 只算進出方向的外積，從不看那一格有幾個方向，所以
+   * 一條 S 型的路每個右彎都要「先切到外側、再切回內側」，一個彎兩次換道。
+   */
+  it('should charge nothing at a plain bend, whatever lane the car is in', () => {
+    const { graph } = cityWith(RoadType.FOUR_LANE, BEND_CITY);
+    const bends = graph.getAllEdges().filter(e => idealTurnLane(e, 3) !== null);
+    expect(bends.length, '這張圖上沒有彎道，測不出東西').toBeGreaterThan(0);
+    for (const e of bends) {
+      for (let lane = 0; lane < 3; lane++) {
+        expect(turnLanePenalty({ ...e, from: { ...e.from, lane } }, 3),
+          `彎道對 lane ${lane} 收了錢`).toBe(0);
+      }
+    }
+  });
+
+  it('fixture sanity: the bend really is a bend and the crossroads really a junction', () => {
+    // 兩張圖如果都被判成同一種，上面那條跟下面那些會有一邊空轉。
+    const bend = cityWith(RoadType.FOUR_LANE, BEND_CITY);
+    const cross = cityWith(RoadType.FOUR_LANE, CROSSROADS_CITY);
+    expect(isIntersectionCell(bend.lookup.getCellByKey('5,5')!.roadFlags), '彎道被當成路口')
+      .toBe(false);
+    expect(isIntersectionCell(cross.lookup.getCellByKey('5,5')!.roadFlags), '十字沒被當成路口')
+      .toBe(true);
+  });
+
+  it('should stop weaving along a road that only bends', () => {
+    // 使用者回報的畫面:S 型多車道路上，車在每個右彎前切出去、彎完切回來。
+    // 實測改之前是 5 次換道。
+    //
+    // 不是斷言 0 —— 起點在建築旁的外側車道，而 LANE_SPEED_DECAY 仍然讓內側便宜
+    // 5%，所以上路之後靠一次內側是這條規則管不到的（那是另一個決定）。要釘的是
+    // **彎道自己不再製造換道**。
+    const { graph, lookup } = cityWith(RoadType.FOUR_LANE, STAIRCASE_CITY);
+    const path = findLanePath(graph, lookup, { x: 3, y: 2 }, { x: 19, y: 14 });
+    expect(path, '階梯路上找不到路線').not.toBeNull();
+    const changes = path!.filter(e => e.type === 'lane_change');
+    expect(changes.length, `在只有彎道的路上換了 ${changes.length} 次道`)
+      .toBeLessThanOrEqual(1);
+  });
+});
+
 describe('the penalty itself', () => {
-  const { graph } = cityWith(RoadType.FOUR_LANE, BOTH_TURNS_CITY);
-  const turns = graph.getAllEdges().filter(e => idealTurnLane(e, 2) !== null);
+  const { graph } = cityWith(RoadType.FOUR_LANE, CROSSROADS_CITY);
+  const turns = graph.getAllEdges().filter(e => e.insideJunction && idealTurnLane(e, 2) !== null);
 
   it('should charge nothing on a road with one lane each way', () => {
     for (const e of turns) expect(turnLanePenalty(e, 1)).toBe(0);

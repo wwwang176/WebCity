@@ -49,6 +49,23 @@ function crossroads(roadType: RoadType): Cells {
   return cells;
 }
 
+/**
+ * An L-bend at (5,5): south down x=5, then west along y=5.
+ *
+ * Two directions, so no through traffic — the preference has nothing to protect
+ * and must charge nothing. `crossroads` above gives every cell all four
+ * directions, so it cannot show this.
+ */
+function bend(roadType: RoadType): Cells {
+  const cells: Cells = new Map();
+  const NS = RoadDirection.NORTH | RoadDirection.SOUTH;
+  const EW = RoadDirection.EAST | RoadDirection.WEST;
+  for (let y = 0; y < 5; y++) cells.set(toPosKey(5, y), { roadType, roadFlags: NS });
+  cells.set(toPosKey(5, 5), { roadType, roadFlags: RoadDirection.NORTH | RoadDirection.WEST });
+  for (let x = 0; x < 5; x++) cells.set(toPosKey(x, 5), { roadType, roadFlags: EW });
+  return cells;
+}
+
 /** A straight east-west road, `length` cells long. */
 function straight(roadType: RoadType, length: number): Cells {
   const cells: Cells = new Map();
@@ -114,6 +131,39 @@ describe('the buffer carries what the rule needs', () => {
     const { mapping, reader } = workerSetup(crossroads(RoadType.TWO_LANE), RoadType.TWO_LANE);
     const someIdx = [...mapping.pointIdToIndex.values()][0]!;
     expect(reader.getPoint(someIdx).laneCount).toBe(1);
+  });
+});
+
+describe('the worker leaves plain bends alone, like the main thread does', () => {
+  it('should carry the junction flag on every edge', () => {
+    // 直接守住 buffer 那一格。旗標沒寫進去的話，worker 會以為全世界都是彎道，
+    // 連路口都不再站位 —— 而下面那條行為測試看不出差別（它本來就期待不換道）。
+    const cross = workerSetup(crossroads(RoadType.FOUR_LANE), RoadType.FOUR_LANE);
+    const flat = workerSetup(bend(RoadType.FOUR_LANE), RoadType.FOUR_LANE);
+    const anyFlagged = (w: ReturnType<typeof workerSetup>) => {
+      for (let i = 0; i < w.reader.getEdgeCount(); i++) {
+        if (w.reader.getEdgeInsideJunction(i)) return true;
+      }
+      return false;
+    };
+    expect(anyFlagged(cross), '十字路口的邊沒有被標成路口').toBe(true);
+    expect(anyFlagged(flat), '彎道的邊被標成路口了').toBe(false);
+  });
+
+  it('should not move over for a bend the way it does for a junction', () => {
+    // 起始車道要釘死，否則多起點 A* 會直接從理想車道出發，換不換道看不出來。
+    const roadType = RoadType.FOUR_LANE;
+    const { mapping, reader, astar } = workerSetup(bend(roadType), roadType);
+    const starts = exitsInLane(mapping, toPosKey(5, 0), 0);   // 內側出發
+    const { ends } = endpoints(mapping, toPosKey(5, 0), toPosKey(0, 5));
+    expect(starts.length, '找不到內側車道的起點').toBeGreaterThan(0);
+
+    const path = astar.findPath(reader, starts, ends, { x: 0, y: 5 });
+    expect(path, 'the worker found no route at all').not.toBeNull();
+
+    // EDGE_TYPE_TO_INT: 2 = lane_change
+    const changes = path!.filter(i => reader.getEdgeType(i) === 2);
+    expect(changes, `worker 為了一個彎道換了 ${changes.length} 次道`).toHaveLength(0);
   });
 });
 

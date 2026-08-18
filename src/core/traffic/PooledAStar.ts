@@ -280,10 +280,13 @@ export class PooledAStar {
         // A turn taken from the wrong lane cuts across the through traffic
         // beside it, and nothing downstream stops it — findCrossEdgeGap only
         // compares vehicles that share a destination point (BUG-214). The main
-        // thread's laneAStar charges the same, from the same module.
+        // thread's laneAStar charges the same, from the same module — including
+        // the junction condition, which is why that is a parameter and not a
+        // caller-side guard (BUG-317).
         cost += turnLanePenaltyInt(
           currentPoint.dir, currentPoint.type, currentPoint.lane,
           neighborPoint.dir, neighborPoint.type, currentPoint.laneCount,
+          reader.getEdgeInsideJunction(edgeIdx),
         );
 
         if (usePenalty) {

@@ -42,7 +42,11 @@ export const POINT_STRIDE = 20;
  *   toIdx: Uint32 (4)
  *   length: Float32 (8)
  *   type: Uint8 (12)    — 0=straight,1=turn,2=lane_change,3=merge
- *   pad: Uint8[3] (13-15)
+ *   insideJunction: Uint8 (13) — 1 when the edge traverses a cell with 3+ road
+ *                               directions. The turn-lane preference is charged
+ *                               only there (BUG-317); a plain bend has no
+ *                               through traffic to cut across.
+ *   pad: Uint8[2] (14-15)
  */
 export const EDGE_STRIDE = 16;
 
@@ -179,6 +183,11 @@ export class GraphReader {
   }
 
   /** Get raw edge type without creating an object. */
+  /** Does this edge traverse a junction? See the turn-lane preference. */
+  getEdgeInsideJunction(edgeIdx: number): boolean {
+    return this.view.getUint8(this.edgesOffset + edgeIdx * EDGE_STRIDE + 13) === 1;
+  }
+
   getEdgeType(edgeIdx: number): number {
     return this.view.getUint8(this.edgesOffset + edgeIdx * EDGE_STRIDE + 12);
   }
@@ -316,6 +325,7 @@ export class LaneGraphBuffer {
       this.view.setUint32(off + 4, toIdx, true);
       this.view.setFloat32(off + 8, edge.length, true);
       this.view.setUint8(off + 12, EDGE_TYPE_TO_INT[edge.type] ?? 0);
+      this.view.setUint8(off + 13, edge.insideJunction ? 1 : 0);
 
       outgoing[fromIdx]!.push(i);
     }
@@ -417,6 +427,7 @@ export class LaneGraphBuffer {
       this.view.setUint32(off + 4, toIdx, true);
       this.view.setFloat32(off + 8, edge.length, true);
       this.view.setUint8(off + 12, EDGE_TYPE_TO_INT[edge.type] ?? 0);
+      this.view.setUint8(off + 13, edge.insideJunction ? 1 : 0);
 
       outgoing[fromIdx]!.push(i);
     }
