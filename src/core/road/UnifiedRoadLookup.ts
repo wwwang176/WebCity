@@ -139,6 +139,20 @@ export class UnifiedRoadLookup {
     return toPosKey(x, y);
   }
 
+  /**
+   * Is a ramp standing on this cell?
+   *
+   * A ramp climbs from the ground to the deck ACROSS its own cell, so its
+   * structure occupies the ground there — unlike a viaduct, which passes
+   * overhead with clearance.
+   */
+  hasRampAt(x: number, y: number): boolean {
+    for (let lv = MIN_ELEVATION_LEVEL; lv <= MAX_ELEVATION_LEVEL; lv++) {
+      if (this.em.get(x, y, lv)?.isRamp) return true;
+    }
+    return false;
+  }
+
   /** Get ALL road cell keys (ground + elevated). */
   getAllCellKeys(): string[] {
     const keys: string[] = [];

@@ -24,6 +24,10 @@ function makeRoadLookup(cellKeys: string[]): UnifiedRoadLookup {
       const groundKey = `${x},${y}`;
       return keySet.has(groundKey) ? groundKey : null;
     },
+    // 這個 stub 是 `as unknown as UnifiedRoadLookup` 轉進去的，所以型別檢查抓不到
+    // 少掉的方法 —— 少一個就是執行期 TypeError。findBuildingAccessPoints 每加一
+    // 條規則，這裡就要補一次。
+    hasRampAt(): boolean { return false; },
     getCellByKey(): null { return null; },
   } as unknown as UnifiedRoadLookup;
 }

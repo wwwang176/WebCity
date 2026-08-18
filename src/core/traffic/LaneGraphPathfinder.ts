@@ -8,7 +8,7 @@
  * Returns LaneEdge[] directly usable by TrafficSimulation.
  */
 
-import { type LaneGraph, type LaneEdge, type ConnectionPoint, turnLanePenalty } from './LaneGraph';
+import { type LaneGraph, type LaneEdge, type ConnectionPoint, turnLanePenalty, isIntersectionCell } from './LaneGraph';
 import { ROAD_CONFIGS, RoadType, getLaneCount } from '../road/types';
 import { parsePosKeyUnsafe, parseLevelFromKey, toPosKey } from '../grid/GridHelpers';
 import { ZONE_ROAD_REACH } from '../grid/constants';
@@ -37,10 +37,21 @@ const VARIANT_COUNT = 4;
  * miss inner-ring homes/workplaces and make their commute path generation fail.
  * We instead scan a (2·reach+1)² box around the building cell.
  *
- * Elevated levels are excluded. A viaduct has no driveways: the only way on or
- * off it is a ramp, and the deck is not connected to the cell underneath it at
- * all. Taking every level here let a house beside a bridge attach straight to
- * the deck, so its car appeared in mid-air and drove off (BUG-312).
+ * Three kinds of cell are excluded, all for the same reason — you cannot put a
+ * driveway there:
+ *
+ *  - **Elevated levels.** A viaduct has no driveways: the only way on or off it
+ *    is a ramp, and the deck is not connected to the cell underneath it at all.
+ *    Taking every level here let a house beside a bridge attach straight to the
+ *    deck, so its car appeared in mid-air and drove off (BUG-312).
+ *  - **The ground under a ramp.** A ramp climbs across its own cell, so its
+ *    structure sits on the ground there. `RAMP_OVER_ROAD` stops you building a
+ *    ramp over an existing street, but nothing stops the reverse, so the two can
+ *    end up sharing a cell (BUG-316).
+ *  - **Junctions.** Nobody's garage opens onto the middle of a crossroads.
+ *
+ * The building keeps every other ground cell in reach, so this only costs it a
+ * car when it has nothing else — which is the case where it should not have one.
  *
  * Both path producers go through this — `findLanePath` here, and the worker
  * batch's `collectPointIndices` in SimulationLoop — so the rule lives once.
@@ -56,6 +67,9 @@ export function findBuildingAccessPoints(
     for (let dx = -ZONE_ROAD_REACH; dx <= ZONE_ROAD_REACH; dx++) {
       const key = lookup.getGroundKeyAtPosition(bx + dx, by + dy);
       if (!key) continue;
+      if (lookup.hasRampAt(bx + dx, by + dy)) continue;
+      const cell = lookup.getCellByKey(key);
+      if (cell && isIntersectionCell(cell.roadFlags)) continue;
       const pts = graph.getConnectionPoints(key);
       for (const pt of pts) {
         if (pt.type === pointType) results.push(pt);
