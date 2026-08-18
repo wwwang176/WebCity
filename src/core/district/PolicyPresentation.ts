@@ -117,6 +117,10 @@ const EFFECT_SUMMARY: Partial<Record<PolicyType, readonly string[]>> = {
   [PolicyType.SMOKING_BAN]: [
     'Deaths \u22126% citywide  \u00B7  Commercial revenue \u221212%',
   ],
+  [PolicyType.CONGESTION_CHARGE]: [
+    'Driving here costs 30% more  \u00B7  Commercial revenue \u22125%',
+    'Driving here costs 75% more  \u00B7  Commercial revenue \u221212%',
+  ],
 };
 
 /** 這個條例這一級做什麼。等級 0 回空字串。 */
@@ -204,10 +208,13 @@ export const POLICY_CATEGORY: Record<PolicyType, string> = {
   [PolicyType.COMPULSORY_EDUCATION]: 'Welfare',
   [PolicyType.FREE_CLINIC]: 'Welfare',
   [PolicyType.SMOKING_BAN]: 'Welfare',
+
+  [PolicyType.CONGESTION_CHARGE]: 'Transport',
 };
 
 /** 面板上分類出現的順序。 */
-export const CATEGORY_ORDER = ['Land use', 'Economy', 'Safety', 'Welfare', 'Environment'] as const;
+export const CATEGORY_ORDER =
+  ['Land use', 'Economy', 'Transport', 'Safety', 'Welfare', 'Environment'] as const;
 
 /** 已下架的條例集中在這一組。 */
 export const RETIRED_CATEGORY = 'Retired';

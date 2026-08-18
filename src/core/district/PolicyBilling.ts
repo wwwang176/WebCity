@@ -117,6 +117,11 @@ export const POLICY_BILLING: Partial<Record<PolicyType, {
   [PolicyType.FREE_CLINIC]: { basis: 'clinicPatients', perUnit: [0.35, 0.85] },
   // 禁菸令只有稽查成本。它真正的代價在商業收入那一欄。
   [PolicyType.SMOKING_BAN]: { basis: 'population', perUnit: [0.02] },
+  // 門架與稽查是沿著收費區的邊界佈的，區畫得越大就越多。
+  //
+  // 收上來的錢沒有回到市庫 —— 整條計費管線只會扣錢，而「每一級要更貴」是有測試
+  // 釘住的不變量，負數會把它整個翻過來。記在 TODO.md。
+  [PolicyType.CONGESTION_CHARGE]: { basis: 'districtCells', perUnit: [2.5, 6] },
 };
 
 /**

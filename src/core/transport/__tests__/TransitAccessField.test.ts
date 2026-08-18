@@ -7,7 +7,7 @@ import { walkRangeFor, WALK_RANGE_BY_TYPE } from '../WalkRange';
 
 /** 中性的模式選擇參數：走路一格一 tick、不加不情願權重。 */
 function neutral(congestionLevel: number) {
-  return { congestionLevel, walkSpeed: 1, walkWeight: 1 };
+  return { congestionLevel, walkSpeed: 1, walkWeight: 1 , driveDeterrence: 1};
 }
 
 

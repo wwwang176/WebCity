@@ -16,7 +16,7 @@ import type { MultiLegRoute } from '../MultiModalRouter';
  */
 
 const WALK_SPEED = 0.15;
-const NEUTRAL = { walkSpeed: WALK_SPEED, walkWeight: 1, congestionLevel: 0 };
+const NEUTRAL = { walkSpeed: WALK_SPEED, walkWeight: 1, congestionLevel: 0 , driveDeterrence: 1};
 
 function transit(estimatedTime: number, walkTime: number): AvailableTransport {
   return { type: TransportType.BUS, estimatedTime, walkTime };
@@ -56,9 +56,9 @@ describe('步行的不情願權重', () => {
     // 加權只用於比較。回報的必須是實際花掉的時間，否則通勤圖層上會出現一個
     // 沒有任何人真的花掉的數字。
     const patient = chooseModeMultiModal(home, work, [transit(30, 20)], [],
-      { ...NEUTRAL, walkWeight: 1 });
+      { ...NEUTRAL, walkWeight: 1 , driveDeterrence: 1});
     const impatient = chooseModeMultiModal(home, work, [transit(30, 20)], [],
-      { ...NEUTRAL, walkWeight: 2.5 });
+      { ...NEUTRAL, walkWeight: 2.5 , driveDeterrence: 1});
 
     expect(patient.mode).toBe(TransportMode.BUS);
     expect(patient.time).toBe(30);
@@ -71,12 +71,12 @@ describe('步行的不情願權重', () => {
     const mostlyWalking = [transit(30, 25)];
 
     expect(
-      chooseModeMultiModal(home, work, mostlyWalking, [], { ...NEUTRAL, walkWeight: 1 }).mode,
+      chooseModeMultiModal(home, work, mostlyWalking, [], { ...NEUTRAL, walkWeight: 1 , driveDeterrence: 1}).mode,
       '不加權時本來就不搭，這條測試等於沒測',
     ).toBe(TransportMode.BUS);
 
     expect(
-      chooseModeMultiModal(home, work, mostlyWalking, [], { ...NEUTRAL, walkWeight: 2.5 }).mode,
+      chooseModeMultiModal(home, work, mostlyWalking, [], { ...NEUTRAL, walkWeight: 2.5 , driveDeterrence: 1}).mode,
       '一趟通勤有八成在走路，還是照搭不誤',
     ).toBe(TransportMode.DRIVE);
   });
@@ -85,7 +85,7 @@ describe('步行的不情願權重', () => {
     // 同樣 30 tick，但只有 3 tick 在走路 —— 加權幾乎不影響。
     const mostlyRiding = [transit(30, 3)];
     expect(
-      chooseModeMultiModal(home, work, mostlyRiding, [], { ...NEUTRAL, walkWeight: 2.5 }).mode,
+      chooseModeMultiModal(home, work, mostlyRiding, [], { ...NEUTRAL, walkWeight: 2.5 , driveDeterrence: 1}).mode,
       '走幾步就到站的路線也被權重趕跑了',
     ).toBe(TransportMode.BUS);
   });
@@ -93,10 +93,10 @@ describe('步行的不情願權重', () => {
   it('should apply to transfer routes too', () => {
     const walky = multiLeg(30, 25);
     expect(
-      chooseModeMultiModal(home, work, [], [walky], { ...NEUTRAL, walkWeight: 1 }).mode,
+      chooseModeMultiModal(home, work, [], [walky], { ...NEUTRAL, walkWeight: 1 , driveDeterrence: 1}).mode,
     ).toBe(TransportMode.METRO);
     expect(
-      chooseModeMultiModal(home, work, [], [walky], { ...NEUTRAL, walkWeight: 2.5 }).mode,
+      chooseModeMultiModal(home, work, [], [walky], { ...NEUTRAL, walkWeight: 2.5 , driveDeterrence: 1}).mode,
       '轉乘路線的步行段沒有被加權',
     ).toBe(TransportMode.DRIVE);
   });
@@ -106,7 +106,7 @@ describe('步行的不情願權重', () => {
     const single = transit(32, 4);
     const transfer = multiLeg(30, 24);
     const choice = chooseModeMultiModal(home, work, [single], [transfer],
-      { ...NEUTRAL, walkWeight: 2.5 });
+      { ...NEUTRAL, walkWeight: 2.5 , driveDeterrence: 1});
 
     expect(choice.multiLeg, '兩種走法沒有放在同一把尺上比').toBeNull();
     expect(choice.mode).toBe(TransportMode.BUS);

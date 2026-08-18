@@ -135,6 +135,14 @@ export interface ModeChoiceParams {
    * 通勤統計與通勤圖層上會出現一個沒有任何人真的花掉的數字。
    */
   walkWeight: number;
+  /**
+   * 開車在市民心裡要乘上幾倍（壅塞費）。1 = 沒有收費。
+   *
+   * 跟 `walkWeight` 同一個道理:只影響**比較**，回報的 `time` 一律是實際花掉的
+   * 時間。乘進回報值的話，通勤統計與通勤圖層上會出現一個沒有任何人真的花掉的
+   * 數字，而收費本來就不會讓車開得比較慢。
+   */
+  driveDeterrence: number;
 }
 
 /** 一種走法在市民心裡的成本 —— 走路那一段多收一份不情願。 */
@@ -153,7 +161,7 @@ export function chooseModeMultiModal(
   multiModalRoutes: MultiLegRoute[],
   params: ModeChoiceParams,
 ): MultiModalChoice {
-  const { congestionLevel, walkSpeed, walkWeight } = params;
+  const { congestionLevel, walkSpeed, walkWeight, driveDeterrence } = params;
   const dx = Math.abs(destination.x - origin.x);
   const dy = Math.abs(destination.y - origin.y);
   const distance = dx + dy;
@@ -167,7 +175,9 @@ export function chooseModeMultiModal(
   }
 
   const driveTime = distance * (1 + congestionLevel);
-  const threshold = driveTime * MODE_CHOICE.TRANSIT_TIME_MULTIPLIER_THRESHOLD;
+  // 心裡的成本要收費，路上的時間不收 —— 下面回報 DRIVE 時用的是 driveTime。
+  const driveCost = driveTime * driveDeterrence;
+  const threshold = driveCost * MODE_CHOICE.TRANSIT_TIME_MULTIPLIER_THRESHOLD;
 
   // 比較用加權後的成本，回報用實際時間 —— 兩個數字要分開帶著。
   let bestCost = Infinity;

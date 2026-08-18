@@ -58,6 +58,7 @@ describe('目錄的完整性', () => {
       PolicyType.INDUSTRIAL_EMISSION_CONTROL,
       PolicyType.CHILDCARE_SUBSIDY, PolicyType.COMPULSORY_EDUCATION,
       PolicyType.FREE_CLINIC, PolicyType.SMOKING_BAN,
+      PolicyType.CONGESTION_CHARGE,
     ]));
   });
 
@@ -86,6 +87,7 @@ describe('目錄的完整性', () => {
       [PolicyType.COMPULSORY_EDUCATION]: 'city',
       [PolicyType.FREE_CLINIC]: 'city',
       [PolicyType.SMOKING_BAN]: 'city',
+      [PolicyType.CONGESTION_CHARGE]: 'district',
     };
     for (const type of Object.values(PolicyType)) {
       expect(POLICY_SCOPE[type], `${type} 的範圍跟當初的設計不一樣`).toBe(DESIGNED[type]);
@@ -111,7 +113,7 @@ describe('逐級的方向', () => {
    * 而漏標的那一條會被當成「沒有這個欄位」靜靜跳過 —— 一條純好處的條例就這樣
    * 從這個不變量底下溜過去了。
    */
-  const INCREASERS = ['fertility'] as const;
+  const INCREASERS = ['fertility', 'driveDeterrence'] as const;
 
   /**
    * 計數型的槓桿:原值是 0，> 0 就是好處，而且逐級要更多。

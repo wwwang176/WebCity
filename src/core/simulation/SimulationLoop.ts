@@ -64,6 +64,7 @@ import { calculateZoneIncomes } from '../economy/IncomeCalculator';
 import { buildIncomeCalcDeps } from '../economy/IncomeCalcAdapter';
 import { totalPolicyExpense, calculateTotalExpenses } from '../economy/ExpenseCalculator';
 import { computeCityScales, type CityScales } from '../district/PolicyBilling';
+import { tripDriveDeterrence } from '../district/PolicyManager';
 import { calculateElevatedMaintenance } from '../elevation/ElevationMaintenance';
 import { randomInt } from '../utils/random';
 import { findAvailableTransit } from '../transport/TransitAvailability';
@@ -177,7 +178,7 @@ export class SimulationLoop {
     const b = parsePosKey(toPos);
     if (!a || !b) return null;
     return estimateCommuteTime(
-      a, b, this.modeChoiceFor(),
+      a, b, this.modeChoiceFor(undefined, this.driveDeterrenceFor(a, b)),
       this.transitAccess, this.flatRoutes, SIMULATION.AVERAGE_WAIT_FACTOR,
     );
   };
@@ -188,14 +189,28 @@ export class SimulationLoop {
    * 沒有指定市民時用預設的不情願權重 —— 住房評分是拿「一間房子對這一位市民好不好」
    * 在問，那裡確實有市民；而通勤統計是整城的分布，用哪一位的脾氣都不對，用平均。
    */
-  private modeChoiceFor(education?: EducationLevel): ModeChoiceParams {
+  private modeChoiceFor(education?: EducationLevel, driveDeterrence = 1): ModeChoiceParams {
     return {
       congestionLevel: this.state.traffic.getCongestionLevel(),
       walkSpeed: SIMULATION.WALK_SPEED,
       walkWeight: education === undefined
         ? WALK_DISUTILITY.FALLBACK
         : walkWeightOf(education),
+      driveDeterrence,
     };
+  }
+
+  /**
+   * 這一趟要多付幾倍的開車不情願（壅塞費）。
+   *
+   * 起點或終點任一端在收費區內就算 —— 收費是過關卡收的，開進去跟開出來是同一趟。
+   * 兩端都在收費區時取比較高的那一個，不是相乘:一趟只會過一次關卡。
+   */
+  private driveDeterrenceFor(from: { x: number; y: number }, to: { x: number; y: number }): number {
+    const at = (p: { x: number; y: number }) =>
+      this.state.policies.getDriveDeterrence(
+        this.state.districts.getDistrictAt(p.x, p.y)?.id ?? null);
+    return tripDriveDeterrence(at(from), at(to));
   }
   /** Transit structural version at the last transfer-graph rebuild. */
   private lastTransitVersion = -1;
@@ -604,7 +619,8 @@ export class SimulationLoop {
         const work = parsePosKey(c.workplaceId);
         if (!home || !work) return null;
         return estimateCommute(
-          home, work, this.modeChoiceFor(c.education),
+          home, work,
+          this.modeChoiceFor(c.education, this.driveDeterrenceFor(home, work)),
           this.transitAccess, this.flatRoutes, SIMULATION.AVERAGE_WAIT_FACTOR,
         );
       },
@@ -2392,7 +2408,7 @@ export class SimulationLoop {
       );
       const { mode, multiLeg, boardStop, alightStop } = chooseModeMultiModal(
         fromPos, toPos, availableTransport, multiModalRoutes,
-        this.modeChoiceFor(citizen.education),
+        this.modeChoiceFor(citizen.education, this.driveDeterrenceFor(fromPos, toPos)),
       );
 
       if (mode !== TransportMode.DRIVE) {

@@ -51,6 +51,8 @@ export const POLICY_SCOPE: Record<PolicyType, PolicyScopeKind> = {
   // 畫在純住宅區等於白拿健康 —— 那一區沒有商業可以付錢。
   [PolicyType.FREE_CLINIC]: 'city',
   [PolicyType.SMOKING_BAN]: 'city',
+  // 只在市中心收的壅塞費如果全城都收，就等於全面加稅 —— 那就沒有「收費區」可言了。
+  [PolicyType.CONGESTION_CHARGE]: 'district',
 };
 
 /** 這個條例畫在分區上有意義嗎？ */

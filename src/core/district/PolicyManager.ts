@@ -35,6 +35,7 @@ export const POLICY_CONFIG: Record<PolicyType, PolicyTypeConfig> = {
   [PolicyType.COMPULSORY_EDUCATION]: { name: 'Compulsory Education' },
   [PolicyType.FREE_CLINIC]: { name: 'Free Clinics' },
   [PolicyType.SMOKING_BAN]: { name: 'Smoking Ban' },
+  [PolicyType.CONGESTION_CHARGE]: { name: 'Congestion Charge' },
 };
 
 /**
@@ -123,6 +124,13 @@ export interface PolicyEffect {
    * 補強，不是替代品:要先有醫院，這條才有東西可以補。
    */
   coveredDeathRate?: number;
+  /**
+   * 開車在市民心裡要乘上幾倍（壅塞費）。1 = 沒有收費。
+   *
+   * 只影響**比較**，不影響實際的通勤時間 —— 收費不會讓車開得比較慢。所以有大眾
+   * 運輸可搭的人會改搭車，沒得搭的人照開，只是這一區的商業會少幾個客人。
+   */
+  driveDeterrence?: number;
 }
 
 /**
@@ -267,6 +275,17 @@ export const POLICY_EFFECTS: Partial<Record<PolicyType, readonly PolicyEffect[]>
   [PolicyType.SMOKING_BAN]: [
     { deathRate: 0.94, revenueByZone: { [ZoneType.COMMERCIAL_LOW]: 0.88, [ZoneType.COMMERCIAL_HIGH]: 0.88 } },
   ],
+
+  /**
+   * 壅塞費。代價落在收費區裡的商業 —— 開車來的客人少了。
+   *
+   * 它只有在**有東西可以改搭**的時候才減得了車:沒有大眾運輸的收費區，車照開，
+   * 商業照扣。那不是 bug，是這條條例真正的前提 —— 先蓋路網，再收費。
+   */
+  [PolicyType.CONGESTION_CHARGE]: [
+    { driveDeterrence: 1.30, revenueByZone: { [ZoneType.COMMERCIAL_LOW]: 0.95, [ZoneType.COMMERCIAL_HIGH]: 0.95 } },
+    { driveDeterrence: 1.75, revenueByZone: { [ZoneType.COMMERCIAL_LOW]: 0.88, [ZoneType.COMMERCIAL_HIGH]: 0.88 } },
+  ],
 };
 
 /**
@@ -344,6 +363,22 @@ export function clampLevel(level: number, max: number): Policy['level'] {
  */
 export function maxLevel(type: PolicyType): number {
   return POLICY_EFFECTS[type]?.length ?? 1;
+}
+
+/**
+ * 一趟路要多付幾倍的開車不情願（壅塞費）。
+ *
+ * 起點或終點任一端在收費區內就算 —— 收費是過關卡收的，開進去跟開出來是同一趟。
+ *
+ * 兩端都在收費區時取比較高的那一個，**不是相乘**:整趟都在區內的人只過一次關卡，
+ * 相乘等於向他收兩次，而且那個人正是最沒有替代方案的那一個（他家跟公司都在區內，
+ * 附近不見得有站牌）。
+ *
+ * 抽成獨立函式是因為呼叫端只有一個座標查詢，兩端都在區內的情形在那裡看不出差別 ——
+ * 乘法與取最大在單邊收費時給出完全一樣的答案。
+ */
+export function tripDriveDeterrence(fromDeterrence: number, toDeterrence: number): number {
+  return Math.max(fromDeterrence, toDeterrence);
 }
 
 export class PolicyManager {
@@ -470,6 +505,15 @@ export class PolicyManager {
   /** 該區因條例而增加的犯罪率。沒有分區就是 0。 */
   getIndustrialPollutionMultiplier(districtId: string | null): number {
     return this.effect(districtId, e => e.industrialPollution, 1, (a, b) => a * b);
+  }
+
+  /**
+   * 開車成本的乘數（壅塞費）。1 = 這一區沒有收費。
+   *
+   * 這是市民心裡的成本，不是路上的時間 —— 消費端只拿它比較，不拿它回報通勤時間。
+   */
+  getDriveDeterrence(districtId: string | null): number {
+    return this.effect(districtId, e => e.driveDeterrence, 1, (a, b) => a * b);
   }
 
   getCrimeBonus(districtId: string | null): number {

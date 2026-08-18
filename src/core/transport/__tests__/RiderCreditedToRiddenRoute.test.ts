@@ -76,7 +76,7 @@ describe('搭乘記在他真正搭的那條路線上', () => {
     // 距離 19，開車 19、門檻 28.5；這條路線約 18，會被選中。
     const picked = chooseModeMultiModal(
       HOME, WORK, options(), [],
-      { congestionLevel: 0, walkSpeed: WALK_SPEED, walkWeight: 1 },
+      { congestionLevel: 0, walkSpeed: WALK_SPEED, walkWeight: 1 , driveDeterrence: 1},
     );
 
     expect(picked.mode, '這組數字下應該選公車').toBe(TransportMode.BUS);
@@ -89,7 +89,7 @@ describe('搭乘記在他真正搭的那條路線上', () => {
     // 一個他根本沒去的站。
     const picked = chooseModeMultiModal(
       HOME, { x: 200, y: 200 }, [], [],
-      { congestionLevel: 0, walkSpeed: WALK_SPEED, walkWeight: 1 },
+      { congestionLevel: 0, walkSpeed: WALK_SPEED, walkWeight: 1 , driveDeterrence: 1},
     );
 
     expect(picked.mode).toBe(TransportMode.DRIVE);

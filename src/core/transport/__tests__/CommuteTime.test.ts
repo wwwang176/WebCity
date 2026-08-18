@@ -10,7 +10,7 @@ import type { MultiLegRoute, TransitLeg } from '../MultiModalRouter';
  * `WalkCostInModeChoice.test.ts` 單獨驗。
  */
 function neutral(congestionLevel: number) {
-  return { congestionLevel, walkSpeed: 1, walkWeight: 1 };
+  return { congestionLevel, walkSpeed: 1, walkWeight: 1 , driveDeterrence: 1};
 }
 
 
