@@ -3,6 +3,8 @@ import { gameSignals, getGame } from '../../store/gameStore';
 import { getTransitSystems } from '../../../core/transport/TransportRegistry';
 import { TransportType } from '../../../core/transport/types';
 import { UI_COLORS } from '../../constants';
+import { formatRouteUsage, routeLoadStatus, type RouteLoadStatus }
+  from '../../../core/transport/RouteLoad';
 import { COMMUTE_BUCKET_EDGES } from '../../../core/citizen/CommuteStats';
 
 const TYPE_LABELS: Record<string, string> = {
@@ -46,6 +48,20 @@ interface SystemRow {
   totalCost: number;
   routeRows: RouteRow[];
 }
+
+/** 載重的顏色。三段的分界不是隨手挑的，見 `routeLoadStatus`。 */
+const USAGE_COLOR: Record<RouteLoadStatus, string> = {
+  comfortable: UI_COLORS.STATUS_GOOD,
+  crowded: UI_COLORS.STATUS_WARN,
+  refusing: UI_COLORS.STATUS_BAD,
+};
+
+/** 滑過去才看得到的說明 —— 顏色告訴你有問題，這句告訴你發生了什麼事。 */
+const USAGE_HINT: Record<RouteLoadStatus, string> = {
+  comfortable: 'Waits are unaffected at this load.',
+  crowded: 'Riders are waiting longer — packed vehicles go past.',
+  refusing: 'Full. This route is no longer offered to commuters — add vehicles.',
+};
 
 export function TrafficPage(props: { onClose?: () => void }) {
   const [expanded, setExpanded] = createSignal<Set<string>>(new Set());
@@ -336,7 +352,15 @@ export function TrafficPage(props: { onClose?: () => void }) {
                             <td class="td-value" style="text-align:right;font-size:11px">{route.stops}</td>
                             <td class="td-value" style="text-align:right;font-size:11px">{route.vehicles}</td>
                             <td class="td-value" style="text-align:right;font-size:11px">{Math.round(route.riders * 7)}</td>
-                            <td class="td-value" style={`text-align:right;font-size:11px;color:${route.capacity > 0 && route.riders / route.capacity > 0.8 ? UI_COLORS.STATUS_BAD : route.capacity > 0 && route.riders / route.capacity > 0.5 ? UI_COLORS.STATUS_WARN : UI_COLORS.STATUS_GOOD}`}>{route.capacity > 0 ? `${Math.min(100, Math.round(route.riders / route.capacity * 100))}%` : '—'}</td>
+                            {/* 不夾在 100%:一條 105% 跟一條 400% 的路線要看得出差別，
+                                那是「該加幾台車」的唯一依據。顏色照模擬真正的三段分 ——
+                                黃燈是「等車開始變久」，紅燈是「真的擠不上去，這條路線
+                                已經從那些人的選項裡消失了」。 */}
+                            <td
+                              class="td-value"
+                              style={`text-align:right;font-size:11px;color:${USAGE_COLOR[routeLoadStatus(route.capacity > 0 ? route.riders / route.capacity : 0)]}`}
+                              title={USAGE_HINT[routeLoadStatus(route.capacity > 0 ? route.riders / route.capacity : 0)]}
+                            >{formatRouteUsage(route.riders, route.capacity)}</td>
                             <td class="td-expense" style="text-align:right;font-size:11px">${route.cost}</td>
                           </tr>
                         )}

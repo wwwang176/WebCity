@@ -93,6 +93,39 @@ export function crowdingWaitMultiplier(loadFactor: number): number {
   return 1 + over * (CROWDING.MAX_WAIT_MULTIPLIER - 1);
 }
 
+/**
+ * 載重的三個階段。顏色與文案照這個分，不是照隨手挑的門檻。
+ *
+ * 三段各自對應模擬裡一件**真的會發生的事**:
+ * - `comfortable`：等車時間不受影響。
+ * - `crowded`：等車時間開始拉長（`crowdingWaitMultiplier`）。
+ * - `refusing`：真的擠不上去，這條路線從那個人的選項裡消失（`isOverCapacity`）。
+ *
+ * 抽出來是為了讓面板跟模擬讀同一組數字 —— 各寫一份的話，玩家看到黃燈卻發現沒有
+ * 人搭得上去。
+ */
+export type RouteLoadStatus = 'comfortable' | 'crowded' | 'refusing';
+
+export function routeLoadStatus(loadFactor: number): RouteLoadStatus {
+  if (loadFactor >= CROWDING.REFUSE_LOAD) return 'refusing';
+  if (loadFactor >= CROWDING.COMFORT_LOAD) return 'crowded';
+  return 'comfortable';
+}
+
+/**
+ * 面板上那一欄的字。**不夾在 100%**。
+ *
+ * 夾住的話，一條 105% 的路線跟一條 400% 的路線長得一模一樣 —— 而前者加一台車就
+ * 夠，後者要加三倍。那一欄是玩家決定「該加幾台車」的唯一依據，夾住等於把要做
+ * 決定的那個資訊藏起來。
+ *
+ * 沒有運能的路線印 `—` 而不是 0%：0% 會讓玩家以為它很空。
+ */
+export function formatRouteUsage(riders: number, capacity: number): string {
+  if (capacity <= 0) return '\u2014';
+  return `${Math.round((riders / capacity) * 100)}%`;
+}
+
 /** 真的擠不上去了 —— 這條路線對這個人不存在。 */
 export function isOverCapacity(loadFactor: number): boolean {
   return loadFactor >= CROWDING.REFUSE_LOAD;
