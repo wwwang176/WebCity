@@ -80,9 +80,10 @@ describe('vehicle sorting does not recompute prefix sums per comparison', () => 
 
     sim.advanceEdgeVehicles(0.01, () => false);
 
-    const progress = (sim as unknown as { sortProgress: Map<number, number> }).sortProgress;
+    // 排序鍵寫在車上，比較器直接讀 —— 每比一次就查一次 Map 的話，871 台車一幀要
+    // 查上萬次。讀的就是比較器讀的那個值。
     // back: no completed edges + 0.25. front: two 1-length edges + 0.5.
-    expect(progress.get(back.id)).toBeCloseTo(0.25, 5);
-    expect(progress.get(front.id)).toBeCloseTo(2.5, 5);
+    expect(back.sortKey).toBeCloseTo(0.25, 5);
+    expect(front.sortKey).toBeCloseTo(2.5, 5);
   });
 });

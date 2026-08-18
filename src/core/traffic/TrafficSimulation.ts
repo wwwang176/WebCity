@@ -40,6 +40,14 @@ export interface Vehicle {
    * 「它正在為前方的東西減速」與這兩者都無關，而且正是車隊在形成的訊號。
    */
   braking: boolean;
+  /**
+   * 這一幀的排序鍵:沿著自己的路徑走了多遠。
+   *
+   * 只在 `advanceEdgeVehicles` 的排序期間有意義，每幀重寫一次 —— 不要當成車輛
+   * 狀態去讀。放在車上是因為比較器每比一次就要讀兩個值，改用 Map 的話一幀要查
+   * 上萬次（871 台車約 8 500 次比較）。
+   */
+  sortKey: number;
   citizenId?: number;  // present only for commute vehicles (prevents duplicate spawning)
   sourceBuildingKey?: string;  // present only for freight vehicles (origin building "x,y")
   busState?: BusVehicleState;  // present only for bus vehicles
@@ -220,7 +228,6 @@ export class TrafficSimulation {
   /** Reusable edge index map (cleared each frame instead of re-allocated). */
   private edgeIndexMap = new Map<string, EdgeEntry[]>();
   /** Reusable per-frame sort key store (see advanceEdgeVehicles). */
-  private sortProgress = new Map<number, number>();
   /** Reusable spatial hash for cross-edge collision detection. */
   /**
    * 每個匯流點上有哪些車 —— key 是那條邊終點連接點的 id。
@@ -273,6 +280,7 @@ export class TrafficSimulation {
       currentSpeed: 0,
       stallTime: stallJitter ? -(Math.random() * TRAFFIC.STALL_JITTER) : 0,
       braking: false,
+      sortKey: 0,
     };
     this.vehicles.push(vehicle);
     const startCell = edgePath[0]?.from.cellKey;
@@ -615,13 +623,9 @@ export class TrafficSimulation {
     // paths tens of edges long that is millions of iterations — every render
     // frame, since advanceEdgeVehicles is driven by the frame loop rather than
     // the simulation tick (BUG-106).
-    const progressById = this.sortProgress;
-    progressById.clear();
-    for (const v of edgeVehicles) progressById.set(v.id, this.edgeTotalProgress(v));
+    for (const v of edgeVehicles) v.sortKey = this.edgeTotalProgress(v);
     edgeVehicles.sort((a, b) => {
-      const aTotal = progressById.get(a.id)!;
-      const bTotal = progressById.get(b.id)!;
-      if (bTotal !== aTotal) return bTotal - aTotal;
+      if (b.sortKey !== a.sortKey) return b.sortKey - a.sortKey;
       return a.id - b.id; // lower ID = ahead = processed first
     });
 
