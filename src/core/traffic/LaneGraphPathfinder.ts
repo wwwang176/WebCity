@@ -53,6 +53,15 @@ const VARIANT_COUNT = 4;
  * The building keeps every other ground cell in reach, so this only costs it a
  * car when it has nothing else — which is the case where it should not have one.
  *
+ * Only the OUTERMOST lane of each cell is offered. A driveway opens onto the
+ * kerb, so that is the lane a car joins from and the one it pulls into at the
+ * other end; a car has no way to appear in the middle of the carriageway. Lane
+ * offsets run rightward from the travel direction, so the outermost lane is the
+ * highest index present in the cell.
+ *
+ * Which lane to use in BETWEEN is deliberately not decided here — it costs the
+ * same either way, and pinning it is what produced the weaving (BUG-317).
+ *
  * Both path producers go through this — `findLanePath` here, and the worker
  * batch's `collectPointIndices` in SimulationLoop — so the rule lives once.
  */
@@ -71,8 +80,10 @@ export function findBuildingAccessPoints(
       const cell = lookup.getCellByKey(key);
       if (cell && isIntersectionCell(cell.roadFlags)) continue;
       const pts = graph.getConnectionPoints(key);
+      let kerbLane = 0;
+      for (const pt of pts) if (pt.lane > kerbLane) kerbLane = pt.lane;
       for (const pt of pts) {
-        if (pt.type === pointType) results.push(pt);
+        if (pt.type === pointType && pt.lane === kerbLane) results.push(pt);
       }
     }
   }

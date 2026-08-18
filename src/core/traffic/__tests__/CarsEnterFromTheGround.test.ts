@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { Grid } from '../../grid/Grid';
 import { RoadBuilder } from '../../road/RoadBuilder';
-import { RoadType, RoadDirection } from '../../road/types';
+import { RoadType, RoadDirection, getLaneCount } from '../../road/types';
 import { RailType } from '../../rail/types';
 import { ElevationManager } from '../../elevation/ElevationManager';
 import { ElevatedRoadBuilder } from '../../elevation/ElevatedRoadBuilder';
@@ -189,6 +189,51 @@ describe('路口不是出入口', () => {
     const cells = accessCells(graph, lookup, 6, 6);
     expect(cells, '路口旁邊的房子完全沒有出口了').toContain('6,5');
     expect(cells).toContain('5,6');
+  });
+});
+/** 一條多車道的直街，加一條垂直的街讓路線有轉彎。 */
+function twoLaneEachWay(type = RoadType.FOUR_LANE) {
+  const grid = new Grid(30, 20);
+  const rb = new RoadBuilder(grid);
+  rb.buildRoad({ x: 2, y: 8 }, { x: 26, y: 8 }, type, 1e9);
+  return { grid, lanes: getLaneCount(type), ...graphOf(grid) };
+}
+
+describe('車從靠建築那一側上路', () => {
+  it('should offer only the outermost lane of each cell', () => {
+    // 車庫開在路邊，車頭出來就是最外側那條 —— 它不會憑空出現在內線。
+    // 車道由行進方向往右編號，所以最外側是編號最大的那條。
+    const { graph, lookup, lanes } = twoLaneEachWay();
+    for (const type of ['entry', 'exit'] as const) {
+      const pts = findBuildingAccessPoints(graph, 10, 6, lookup, type);
+      expect(pts.length, `${type} 一個都沒有，這條測不出東西`).toBeGreaterThan(0);
+      for (const p of pts) {
+        expect(p.lane, `${type} 掛到了內線 ${p.cellKey} lane ${p.lane}`).toBe(lanes - 1);
+      }
+    }
+  });
+
+  it('fixture sanity: the road really has more than one lane each way', () => {
+    // 單車道的路上「最外側」就是唯一一條，上面那條會空轉。
+    expect(twoLaneEachWay().lanes).toBeGreaterThan(1);
+  });
+
+  it('should start and end a whole trip on the outermost lane', () => {
+    // 端到端。中段愛走哪一道都行 —— 這條只釘兩頭。
+    const { graph, lookup, lanes } = twoLaneEachWay();
+    const path = findLanePath(graph, lookup, { x: 5, y: 6 }, { x: 23, y: 6 });
+    expect(path, '找不到路線').not.toBeNull();
+    expect(path![0]!.from.lane, '車從內線出發').toBe(lanes - 1);
+    expect(path![path!.length - 1]!.to.lane, '車停在內線').toBe(lanes - 1);
+  });
+
+  it('should still leave one-lane roads alone', () => {
+    // 反向對照:單車道的路上最外側就是 lane 0，不能因此變成沒有出入口。
+    const { graph, lookup, lanes } = twoLaneEachWay(RoadType.TWO_LANE);
+    expect(lanes).toBe(1);
+    const pts = findBuildingAccessPoints(graph, 10, 6, lookup, 'exit');
+    expect(pts.length, '單車道的路變得沒有出入口了').toBeGreaterThan(0);
+    for (const p of pts) expect(p.lane).toBe(0);
   });
 });
 

@@ -31,7 +31,8 @@ import { LANE_CHANGE_COST } from '../Pathfinding';
 /** Widest car body in TrafficSimulation's dimension table. */
 const CAR_WIDTH = 0.09;
 
-interface Road { from: { x: number; y: number }; to: { x: number; y: number } }
+interface Pos { x: number; y: number }
+interface Road { from: Pos; to: Pos }
 
 function cityWith(type: RoadType, roads: Road[]) {
   const grid = new Grid(24, 24);
@@ -74,6 +75,11 @@ const STAIRCASE_CITY: Road[] = [
   { from: { x: 8, y: 8 }, to: { x: 14, y: 8 } },
   { from: { x: 14, y: 8 }, to: { x: 14, y: 12 } },
   { from: { x: 14, y: 12 }, to: { x: 20, y: 12 } },
+];
+
+/** A dead straight road, as long as the staircase's total run. */
+const STRAIGHT_CITY: Road[] = [
+  { from: { x: 2, y: 4 }, to: { x: 22, y: 4 } },
 ];
 
 /** A single L-bend, nothing else. */
@@ -233,19 +239,25 @@ describe('只有路口才需要站位', () => {
       .toBe(true);
   });
 
-  it('should stop weaving along a road that only bends', () => {
+  it('should need no more lane changes than a dead straight road', () => {
     // 使用者回報的畫面:S 型多車道路上，車在每個右彎前切出去、彎完切回來。
     // 實測改之前是 5 次換道。
     //
-    // 不是斷言 0 —— 起點在建築旁的外側車道，而 LANE_SPEED_DECAY 仍然讓內側便宜
-    // 5%，所以上路之後靠一次內側是這條規則管不到的（那是另一個決定）。要釘的是
-    // **彎道自己不再製造換道**。
-    const { graph, lookup } = cityWith(RoadType.FOUR_LANE, STAIRCASE_CITY);
-    const path = findLanePath(graph, lookup, { x: 3, y: 2 }, { x: 19, y: 14 });
-    expect(path, '階梯路上找不到路線').not.toBeNull();
-    const changes = path!.filter(e => e.type === 'lane_change');
-    expect(changes.length, `在只有彎道的路上換了 ${changes.length} 次道`)
-      .toBeLessThanOrEqual(1);
+    // 但不能直接斷言 0 或 1 —— 起訖點釘在建築旁的外側車道，而 LANE_SPEED_DECAY
+    // 仍讓內側便宜 5%，所以「上路靠內側、下車前靠回外側」這兩次是這條規則管不到
+    // 的（那是另一個還沒做的決定）。
+    //
+    // 跟同樣長的直路比，那兩次就在兩邊互相抵銷，剩下的差額**只可能是彎道造成的**。
+    const changesOn = (roads: Road[], from: Pos, to: Pos) => {
+      const { graph, lookup } = cityWith(RoadType.FOUR_LANE, roads);
+      const path = findLanePath(graph, lookup, from, to);
+      expect(path, '找不到路線').not.toBeNull();
+      return path!.filter(e => e.type === 'lane_change').length;
+    };
+    const bendy = changesOn(STAIRCASE_CITY, { x: 3, y: 2 }, { x: 19, y: 14 });
+    const straight = changesOn(STRAIGHT_CITY, { x: 3, y: 2 }, { x: 21, y: 6 });
+    expect(bendy, `階梯路換了 ${bendy} 次，同樣長的直路只要 ${straight} 次`)
+      .toBeLessThanOrEqual(straight);
   });
 });
 
