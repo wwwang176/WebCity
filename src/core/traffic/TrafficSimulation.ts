@@ -78,17 +78,6 @@ export const TRUCK_DIMS = { length: 0.45, width: 0.125 };
 export const BUS_DIMS = { length: 0.60, width: 0.125 };
 
 /**
- * 路上最長那台車的半個車身。
- *
- * 跟車查詢靠它提前收工（見 `findGapAhead`）:找到一台之後，只有比它更長的車才可能
- * 在更遠的地方留下更小的空隙 —— 空隙扣的是**兩台車**的半個車身。
- *
- * 只能大不能小:估大了只是多掃一條邊，估小了會讓查詢跳過真正該讓的那台車。
- * `VehicleDimensions.test.ts` 會對照所有車身表，加了更長的車種就會紅。
- */
-export const MAX_VEHICLE_HALF_LEN = BUS_DIMS.length / 2;
-
-/**
  * 生成點多近算被佔著。世界單位，一格 = 1。
  *
  * 兩個方向分開量，而且不看佔位那台車實際多長多寬 —— 差別在畫面上看不出來，
@@ -633,6 +622,13 @@ export class TrafficSimulation {
     // Reuse persistent Map (clear instead of re-allocate each frame).
     const edgeIndex = this.edgeIndexMap;
     edgeIndex.clear();
+    // 跟車查詢提前收工要用「路上最長的那台車」當門檻（見 `findGapAhead`）。
+    //
+    // 這是**這一幀路上實際的**最大值，不是照車身表寫死的常數 —— 常數等於一條
+    // 沒有東西強制得了的前提:`Vehicle.length` 與 `traffic.vehicles` 都是公開可改的，
+    // 有人放進一台比表上更長的車，查詢就會安靜地跳過它。逐幀算沒有這個前提，
+    // 代價是這個本來就要跑的迴圈裡多一次比較。
+    let maxHalfLen = 0;
     for (const v of edgeVehicles) {
       if (v.arrived) continue;
       const ep = v.edgePath;
@@ -640,7 +636,9 @@ export class TrafficSimulation {
       if (!edge) continue;
       let arr = edgeIndex.get(edge.id);
       if (!arr) { arr = []; edgeIndex.set(edge.id, arr); }
-      arr.push({ vid: v.id, progress: v.edgeProgress, halfLen: v.length / 2, queueing: v.braking });
+      const halfLen = v.length / 2;
+      if (halfLen > maxHalfLen) maxHalfLen = halfLen;
+      arr.push({ vid: v.id, progress: v.edgeProgress, halfLen, queueing: v.braking });
     }
 
     // Build spatial hash for cross-edge collision detection.
@@ -717,7 +715,7 @@ export class TrafficSimulation {
       const ep = v.edgePath;
 
       // 1. Gap to nearest vehicle ahead on the SAME edge path
-      const gap = findGapAhead(v, ep, edgeIndex, MAX_VEHICLE_HALF_LEN);
+      const gap = findGapAhead(v, ep, edgeIndex, maxHalfLen);
       const myHalfLen = v.length / 2;
 
       // 1b. Gap to nearest vehicle on a DIFFERENT edge (cross-edge spatial check)
@@ -854,6 +852,8 @@ export class TrafficSimulation {
         // Add to new edge
         let newArr = edgeIndex.get(newEdge.id);
         if (!newArr) { newArr = []; edgeIndex.set(newEdge.id, newArr); }
+        // 這一筆是迴圈中途才進索引的。它的半車身早就算進 `maxHalfLen` 了
+        // （上面那個建表迴圈走過每一台），所以門檻不必再動。
         newArr.push({ vid: v.id, progress: v.edgeProgress, halfLen: myHalfLen, queueing: v.braking });
       } else if (oldEdge) {
         // Same edge, just update progress

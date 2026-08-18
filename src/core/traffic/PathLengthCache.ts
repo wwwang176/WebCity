@@ -19,7 +19,10 @@ export class PathLengthCache {
   /**
    * 走到 `edgePath[edgeIndex]` 的 `edgeProgress` 處，總共走了多遠。
    *
-   * `edgeIndex` 超出路徑範圍時當成走完整條 —— 車開到盡頭時它會停在 `length`。
+   * `edgeIndex` 超出路徑範圍時，前綴取整條路徑的長度，`edgeProgress` **照樣加上去**
+   * —— 車開到盡頭時它會停在 `edgeIndex = length - 1`、`edgeProgress = 最後一段的長度`，
+   * 那一筆本來就該算成走完全程。這與原本逐次累加的寫法同義（那個迴圈的上界也是
+   * `min(edgeIndex, length)`），不是新的行為。
    */
   totalProgress(edgePath: readonly LaneEdge[], edgeIndex: number, edgeProgress: number): number {
     if (edgePath.length === 0) return edgeProgress;

@@ -32,9 +32,15 @@ describe('跟車讀到的是這一幀的位置', () => {
     const sim = new TrafficSimulation();
     const route = straight(20);
 
+    // 車型與速度差異是隨機的 —— 釘死，失敗才重現得出來。
+    const pin = <T extends { length: number; speedMultiplier: number; stallTime: number }>(v: T): T => {
+      v.length = 0.22; v.speedMultiplier = 1; v.stallTime = 0;
+      return v;
+    };
     const leader = sim.addVehicleOnEdges(route);
+    pin(leader);
     leader.edgeProgress = 0.5;
-    const follower = sim.addVehicleOnEdges(route);
+    const follower = pin(sim.addVehicleOnEdges(route));
 
     for (let f = 0; f < 240; f++) sim.advanceEdgeVehicles(1 / 60);
 

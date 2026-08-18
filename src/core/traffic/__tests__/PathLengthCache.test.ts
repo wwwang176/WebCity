@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { PathLengthCache } from '../PathLengthCache';
 import type { LaneEdge } from '../LaneGraph';
 
+
 /**
  * 「這台車總共走了多遠」每幀每台車都要算一次（車輛要由前往後處理，那是排序的鍵）。
  * 原本每次都從路徑開頭重加一次前面所有邊的長度 —— 12 288 人的存檔實測，每幀為了
@@ -51,6 +52,33 @@ describe('走了多遠', () => {
     const p = path([1.0, 2.0]);
     expect(cache.totalProgress(p, 99, 0), '超出範圍的 edgeIndex 算爆了')
       .toBeCloseTo(3.0, 10);
+    // 進度不是 0 的時候照樣加上去 —— 註解說「當成走完整條」容易讀成「無視進度」。
+    expect(cache.totalProgress(p, 99, 0.5), '超出範圍時把進度吃掉了')
+      .toBeCloseTo(naive(p, 99, 0.5), 10);
+  });
+
+  it('should read each edge length only once per path', () => {
+    // 「第二次答案一樣」即使每次都重加一遍也會過。真正要守的是**不再重算** ——
+    // 那是這個類別存在的唯一理由。用 getter 數 `length` 被讀了幾次。
+    const cache = new PathLengthCache();
+    const raw = path([1.0, 0.7, 1.3]);
+    let reads = 0;
+    const counted = raw.map(e => {
+      const { length, ...rest } = e;
+      return Object.defineProperty({ ...rest } as LaneEdge, 'length', {
+        get() { reads++; return length; }, enumerable: true,
+      });
+    });
+
+    cache.totalProgress(counted, 3, 0);
+    const afterFirst = reads;
+    expect(afterFirst, '第一次就該把整條路徑掃過一遍').toBe(counted.length);
+
+    // 同一條路徑再問幾次 —— 換不同的車、不同的位置，都不該再讀。
+    cache.totalProgress(counted, 1, 0.2);
+    cache.totalProgress(counted, 2, 0.9);
+    cache.totalProgress(counted, 3, 0);
+    expect(reads, '同一條路徑又被重新累加了一遍').toBe(afterFirst);
   });
 
   it('should give the same answer on the second call', () => {

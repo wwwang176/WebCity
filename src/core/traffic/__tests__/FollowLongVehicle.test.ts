@@ -9,6 +9,9 @@ import type { LaneEdge } from '../LaneGraph';
  * `findGapAhead` 的單元測試守得住那道算式，但那個「最長車身」是呼叫端傳進去的。
  * 傳錯（例如傳 0）的話查詢會提前收工，車就照著小客車那個比較寬鬆的空隙開進公車
  * 尾巴 —— 而單元測試一個都不會紅。
+ *
+ * 門檻是**每幀照路上實際的車算**，不是照車身表寫死的常數。寫死的話等於一條沒有
+ * 東西強制得了的前提:`Vehicle.length` 與 `traffic.vehicles` 都是公開可改的。
  */
 
 function edge(id: string, fx: number, tx: number): LaneEdge {
@@ -26,18 +29,25 @@ function edge(id: string, fx: number, tx: number): LaneEdge {
   };
 }
 
+/** 把一台車的隨機欄位釘死。 */
+function pin<T extends { length: number; speedMultiplier: number; stallTime: number }>(
+  v: T, length: number,
+): T {
+  v.length = length;
+  v.speedMultiplier = 1;
+  v.stallTime = 0;
+  return v;
+}
+
 describe('前面那台是公車的時候', () => {
   it('should come to rest behind the bus, not behind the car in between', () => {
     const sim = new TrafficSimulation();
     const route = [edge('e1', 0, 1), edge('e2', 1, 2)];
 
-    const me = sim.addVehicleOnEdges(route);
-    me.length = 0.22;                       // 車型是隨機的，這裡要固定才量得準
-
-    const car = sim.addVehicleOnEdges(route);
-    car.length = 0.22;                      // 同一條邊、前方 0.9 → 空隙 0.68
-
-    const bus = sim.addBusVehicle([route], 1);   // 車身 0.60
+    // 車型、速度差異、停滯計時都是隨機的 —— 全部釘死，失敗才重現得出來。
+    const me = pin(sim.addVehicleOnEdges(route), 0.22);
+    const car = pin(sim.addVehicleOnEdges(route), 0.22);   // 前方 0.9 → 空隙 0.68
+    const bus = pin(sim.addBusVehicle([route], 1), 0.60);
 
     // 一幀只走幾公分，跑到停下來才看得出停在哪。前面兩台每幀釘回原位 ——
     // 模擬一列不會前進的車隊，這樣「我停在哪」只取決於查到的是哪一台。
@@ -55,5 +65,28 @@ describe('前面那台是公車的時候', () => {
       .toBeLessThan(0.48);
     expect(me.edgeProgress, '停得比公車留下的空隙還遠 —— 這個案例失去意義')
       .toBeGreaterThan(0.40);
+  });
+
+  it('should handle a vehicle longer than every dimension table', () => {
+    // 門檻若是照車身表寫死的常數（最長 0.60 → 半身 0.30），一台被塞進來的更長的車
+    // 就會被跳過:小客車的空隙 0.58 落在 1.0 - 0.11 - 0.30 = 0.59 以內，查詢提前
+    // 收工，回傳 0.58 —— 而那台長車留下的其實只有 1.0 - 0.11 - 0.50 = 0.39。
+    const sim = new TrafficSimulation();
+    const route = [edge('e1', 0, 1), edge('e2', 1, 2)];
+
+    const me = pin(sim.addVehicleOnEdges(route), 0.22);
+    const car = pin(sim.addVehicleOnEdges(route), 0.22);
+    const longOne = pin(sim.addVehicleOnEdges(route), 1.0);   // 比表上任何一種都長
+
+    for (let f = 0; f < 200; f++) {
+      car.edgeIndex = 0; car.edgeProgress = 0.8; car.currentSpeed = 0;
+      longOne.edgeIndex = 1; longOne.edgeProgress = 0; longOne.currentSpeed = 0;
+      sim.advanceEdgeVehicles(1 / 60);
+    }
+
+    // 再扣一個 MIN_GAP(0.15):長車 0.39 - 0.15 = 0.24；小客車 0.58 - 0.15 = 0.43。
+    expect(me.edgeIndex, '這一幀就衝過了整條邊 —— 這個案例失去意義').toBe(0);
+    expect(me.edgeProgress, '照著小客車的空隙開進了那台長車')
+      .toBeLessThan(0.34);
   });
 });
