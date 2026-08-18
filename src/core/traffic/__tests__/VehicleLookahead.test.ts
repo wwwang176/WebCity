@@ -89,6 +89,43 @@ describe('findGapAhead', () => {
   });
 });
 
+describe('findGapAhead 的提前收工', () => {
+  /**
+   * 找的是**最近**的那一台。找到之後，再往前的邊上不可能有更近的 —— 除非那台車
+   * 比較長:空隙扣的是兩台車的半個車身，公車的車身是小客車的兩倍多。
+   *
+   * 所以提前收工的門檻要用路上最長的那台算。用眼前這台的長度算的話，一台停在
+   * 更後面的公車會被跳過，而它留下的空隙其實更小 —— 車就這樣開進公車尾巴。
+   */
+  it('should still find a longer vehicle further along that leaves a smaller gap', () => {
+    const edges = [makeEdge('e1', 'A', 'B', 1.0), makeEdge('e2', 'B', 'C', 1.0)];
+    const idx = new Map<string, EdgeEntry[]>([
+      ['e1', [{ vid: 2, progress: 0.9, halfLen: 0.11, queueing: false }]],   // 小客車:空隙 0.68
+      ['e2', [{ vid: 3, progress: 0.0, halfLen: 0.30, queueing: false }]],   // 公車:空隙 0.59
+    ]);
+    const v = makeVehicle({ id: 1 });
+
+    expect(findGapAhead(v, edges, idx, 0.30), '提前收工，漏掉了空隙更小的公車')
+      .toBeCloseTo(0.59, 5);
+  });
+
+  it('should agree with the exhaustive scan', () => {
+    // 提前收工不能改變答案。不給最長車身時不收工 —— 兩個結果要一樣。
+    const edges = [
+      makeEdge('e1', 'A', 'B', 1.0), makeEdge('e2', 'B', 'C', 1.0),
+      makeEdge('e3', 'C', 'D', 1.0), makeEdge('e4', 'D', 'E', 1.0),
+    ];
+    const idx = new Map<string, EdgeEntry[]>([
+      ['e2', [{ vid: 2, progress: 0.4, halfLen: 0.11, queueing: false }]],
+      ['e3', [{ vid: 3, progress: 0.1, halfLen: 0.30, queueing: false }]],
+    ]);
+    const v = makeVehicle({ id: 1, edgeProgress: 0.5 });
+
+    expect(findGapAhead(v, edges, idx, 0.30), '提前收工改變了答案')
+      .toBeCloseTo(findGapAhead(v, edges, idx), 10);
+  });
+});
+
 // ── findRedLightDistance ──
 
 describe('findRedLightDistance', () => {

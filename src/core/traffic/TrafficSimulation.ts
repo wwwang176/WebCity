@@ -5,6 +5,7 @@ import { findGapAhead, findRedLightDistance, findBlockedJunctionDistance, type E
 import { SpatialHash, type SpatialEntry } from './SpatialHash';
 import { findCrossEdgeGap } from './CrossEdgeCollision';
 import { pickWeighted } from '../utils/random';
+import { PathLengthCache } from './PathLengthCache';
 
 export interface BusVehicleState {
   routeId: number;           // owning bus route ID
@@ -57,13 +58,27 @@ export const SERVICE_VEHICLE_DIMS: Record<ServiceVehicleType, { length: number; 
 };
 
 /** Vehicle dimensions for commute/random traffic (car + van only; trucks use addFreightVehicle) */
-const VEHICLE_DIMS = [
+export const VEHICLE_DIMS = [
   { weight: 0.80, length: 0.22, width: 0.09 },   // car
   { weight: 0.20, length: 0.26, width: 0.10 },   // van
 ];
 
 /** Fixed truck dimensions for freight vehicles. */
-const TRUCK_DIMS = { length: 0.45, width: 0.125 };
+export const TRUCK_DIMS = { length: 0.45, width: 0.125 };
+
+/** 公車的車身。路上最長的一種。 */
+export const BUS_DIMS = { length: 0.60, width: 0.125 };
+
+/**
+ * 路上最長那台車的半個車身。
+ *
+ * 跟車查詢靠它提前收工（見 `findGapAhead`）:找到一台之後，只有比它更長的車才可能
+ * 在更遠的地方留下更小的空隙 —— 空隙扣的是**兩台車**的半個車身。
+ *
+ * 只能大不能小:估大了只是多掃一條邊，估小了會讓查詢跳過真正該讓的那台車。
+ * `VehicleDimensions.test.ts` 會對照所有車身表，加了更長的車種就會紅。
+ */
+export const MAX_VEHICLE_HALF_LEN = BUS_DIMS.length / 2;
 
 /**
  * 生成點多近算被佔著。世界單位，一格 = 1。
@@ -229,6 +244,8 @@ export class TrafficSimulation {
   private readonly _tanOut = { x: 0, y: 0 };
   private readonly _headingOut = { hx: 0, hy: 0 };
   private readonly _spawnTan2 = { x: 0, y: 0 };
+  /** 路徑前綴和 —— 排序用的「走了多遠」每幀每台車都要問一次。 */
+  private readonly pathLengths = new PathLengthCache();
   /** `queryNearbyInto` 的收件陣列 —— 每次呼叫重用，不要每次配置。 */
   private readonly spawnNearbyScratch: SpawnSlot[] = [];
 
@@ -280,7 +297,7 @@ export class TrafficSimulation {
   addBusVehicle(segments: LaneEdge[][], routeId: number, startSegment = 0): Vehicle {
     const segIdx = startSegment % segments.length;
     const seg = segments[segIdx]!;
-    const vehicle = this.createBaseVehicle(0.60, 0.125, seg, false);
+    const vehicle = this.createBaseVehicle(BUS_DIMS.length, BUS_DIMS.width, seg, false);
     vehicle.busState = {
       routeId,
       segmentIndex: segIdx,
@@ -696,7 +713,7 @@ export class TrafficSimulation {
       const ep = v.edgePath;
 
       // 1. Gap to nearest vehicle ahead on the SAME edge path
-      const gap = findGapAhead(v, ep, edgeIndex);
+      const gap = findGapAhead(v, ep, edgeIndex, MAX_VEHICLE_HALF_LEN);
       const myHalfLen = v.length / 2;
 
       // 1b. Gap to nearest vehicle on a DIFFERENT edge (cross-edge spatial check)
@@ -878,11 +895,7 @@ export class TrafficSimulation {
 
   /** Total distance traveled along edge path (for sorting). */
   private edgeTotalProgress(v: Vehicle): number {
-    let total = 0;
-    for (let i = 0; i < v.edgeIndex && i < v.edgePath.length; i++) {
-      total += v.edgePath[i]!.length;
-    }
-    return total + v.edgeProgress;
+    return this.pathLengths.totalProgress(v.edgePath, v.edgeIndex, v.edgeProgress);
   }
 
   /** World position for a vehicle (writes to reusable object — caller must read immediately). */
