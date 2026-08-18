@@ -267,6 +267,7 @@ export class OverlayRenderer {
       // 疊在色塊上方一點，不然會被地面 z-fight 吃掉。
       // 格子中心落在整數上（建築、游標、分區外框都是），不是 +0.5 的角上。
       sprite.position.set(label.x, LABEL_HEIGHT, label.y);
+      sprite.renderOrder = LABEL_RENDER_ORDER;
       scene.add(sprite);
       this.labelSprites.push(sprite);
     }
@@ -315,6 +316,23 @@ export class OverlayRenderer {
 
 /** 標籤浮在地面上方的高度。低於色塊的話會被地面吃掉。 */
 const LABEL_HEIGHT = 1.2;
+
+/**
+ * 標籤畫在整座城市之後。
+ *
+ * 材質已經是 `depthTest: false`，但那只保證它不會被**先畫**的東西擋住 —— 擋不住
+ * **後畫**的東西塗回來。而建築的材質是 `transparent: true`，跟標籤同一條佇列，
+ * `renderOrder` 又都是 0，於是先後由 three.js 的深度排序決定。
+ *
+ * 那個排序用的是**物件原點**的視空間深度，不是它實際佔的範圍:整座城市是一個
+ * `InstancedMesh`，原點留在世界原點（地圖西北角），所以它排在「西北角那麼遠」的
+ * 位置;基礎設施則是各自 `position` 在自己那一格的 Group，照真實位置排。兩者都會
+ * 在某些相機角度排到標籤後面，地圖越大、離原點越遠的標籤越容易中（BUG-315）。
+ *
+ * 900 是刻意留在 `BuildingRenderer` 的斷水斷電警示（999）之下 —— 那些圖示小，
+ * 被半透明的名牌蓋住會比名牌被樓蓋住更糟。
+ */
+const LABEL_RENDER_ORDER = 900;
 
 /**
  * 標籤在**參考可視範圍**下的世界高度（格）。
