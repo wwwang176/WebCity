@@ -32,6 +32,7 @@ export const POLICY_CONFIG: Record<PolicyType, PolicyTypeConfig> = {
   [PolicyType.SEWAGE_STANDARDS]: { name: 'Sewage Standards' },
   [PolicyType.INDUSTRIAL_EMISSION_CONTROL]: { name: 'Industrial Emission Control' },
   [PolicyType.CHILDCARE_SUBSIDY]: { name: 'Childcare Subsidy' },
+  [PolicyType.COMPULSORY_EDUCATION]: { name: 'Compulsory Education' },
 };
 
 /**
@@ -97,6 +98,14 @@ export interface PolicyEffect {
    * 一個沒有半個育齡成人的城市也會生出小孩。
    */
   fertility?: number;
+  /**
+   * 國民教育辦到學制的第幾階。1 = 國小,2 = 到高中,3 = 到大學。
+   *
+   * 存階數而不是速度乘數:分級要分的是**辦到哪裡**,不是辦得多用力。三級各給一個
+   * 乘數的話,「義務到國小」與「義務到大學」會變成同一件事的輕重版,大學生也跟著
+   * 被加速 —— 那就沒有「辦到哪一階」可言了。
+   */
+  compulsorySchooling?: number;
 }
 
 /**
@@ -205,6 +214,18 @@ export const POLICY_EFFECTS: Partial<Record<PolicyType, readonly PolicyEffect[]>
   [PolicyType.CHILDCARE_SUBSIDY]: [
     { fertility: 1.25, revenueByZone: { [ZoneType.COMMERCIAL_LOW]: 0.98, [ZoneType.COMMERCIAL_HIGH]: 0.98, [ZoneType.INDUSTRIAL]: 0.98 } },
     { fertility: 1.55, revenueByZone: { [ZoneType.COMMERCIAL_LOW]: 0.95, [ZoneType.COMMERCIAL_HIGH]: 0.95, [ZoneType.INDUSTRIAL]: 0.95 } },
+  ],
+
+  /**
+   * 義務教育。三級對應學制的三階 —— 遊戲沒有獨立的國中,國小之上就是高中。
+   *
+   * 代價只落在工業:學歷拉高之後願意進工廠的人變少。而且每一級的代價跳得比上一級
+   * 多（3% → 7% → 14%）,所以「一路辦到大學」不會自動是最佳解。
+   */
+  [PolicyType.COMPULSORY_EDUCATION]: [
+    { compulsorySchooling: 1, revenueByZone: { [ZoneType.INDUSTRIAL]: 0.97 } },
+    { compulsorySchooling: 2, revenueByZone: { [ZoneType.INDUSTRIAL]: 0.93 } },
+    { compulsorySchooling: 3, revenueByZone: { [ZoneType.INDUSTRIAL]: 0.86 } },
   ],
 };
 

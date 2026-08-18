@@ -46,6 +46,8 @@ export const POLICY_BILLING: Partial<Record<PolicyType, {
   [PolicyType.INDUSTRIAL_EMISSION_CONTROL]: { basis: 'districtCells', perUnit: [2, 5, 11] },
   // 補貼是直接發到家戶手上的錢,人越多發得越多 —— 這是全表最貴的一類。
   [PolicyType.CHILDCARE_SUBSIDY]: { basis: 'population', perUnit: [0.12, 0.30] },
+  // 辦到哪一階就付到哪一階。跳得比線性快 —— 大學的單位成本本來就比國小高。
+  [PolicyType.COMPULSORY_EDUCATION]: { basis: 'population', perUnit: [0.08, 0.20, 0.45] },
 };
 
 function unitsOf(basis: BillingBasis, scale: PolicyScale): number {

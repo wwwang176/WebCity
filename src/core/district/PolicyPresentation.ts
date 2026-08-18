@@ -104,6 +104,11 @@ const EFFECT_SUMMARY: Partial<Record<PolicyType, readonly string[]>> = {
     'Births +25%  \u00B7  Commercial and industrial revenue \u22122%',
     'Births +55%  \u00B7  Commercial and industrial revenue \u22125%',
   ],
+  [PolicyType.COMPULSORY_EDUCATION]: [
+    'Schooling compulsory through elementary  \u00B7  Industrial revenue \u22123%',
+    'Compulsory through high school  \u00B7  Industrial revenue \u22127%',
+    'Compulsory through university  \u00B7  Industrial revenue \u221214%',
+  ],
 };
 
 /** 這個條例這一級做什麼。等級 0 回空字串。 */
@@ -188,6 +193,7 @@ export const POLICY_CATEGORY: Record<PolicyType, string> = {
   [PolicyType.INDUSTRIAL_EMISSION_CONTROL]: 'Environment',
 
   [PolicyType.CHILDCARE_SUBSIDY]: 'Welfare',
+  [PolicyType.COMPULSORY_EDUCATION]: 'Welfare',
 };
 
 /** 面板上分類出現的順序。 */

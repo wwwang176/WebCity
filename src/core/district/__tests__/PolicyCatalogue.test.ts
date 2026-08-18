@@ -49,7 +49,7 @@ describe('目錄的完整性', () => {
       PolicyType.SURVEILLANCE_NETWORK, PolicyType.PAY_AS_YOU_THROW,
       PolicyType.WATER_CONSERVATION, PolicyType.SEWAGE_STANDARDS,
       PolicyType.INDUSTRIAL_EMISSION_CONTROL,
-      PolicyType.CHILDCARE_SUBSIDY,
+      PolicyType.CHILDCARE_SUBSIDY, PolicyType.COMPULSORY_EDUCATION,
     ]));
   });
 
@@ -75,6 +75,7 @@ describe('目錄的完整性', () => {
       [PolicyType.WATER_CONSERVATION]: 'city',
       [PolicyType.SEWAGE_STANDARDS]: 'city',
       [PolicyType.CHILDCARE_SUBSIDY]: 'city',
+      [PolicyType.COMPULSORY_EDUCATION]: 'city',
     };
     for (const type of Object.values(PolicyType)) {
       expect(POLICY_SCOPE[type], `${type} 的範圍跟當初的設計不一樣`).toBe(DESIGNED[type]);
@@ -102,10 +103,19 @@ describe('逐級的方向', () => {
    */
   const INCREASERS = ['fertility'] as const;
 
+  /**
+   * 計數型的槓桿:原值是 0，> 0 就是好處，而且逐級要更多。
+   *
+   * 跟 INCREASERS 分開是因為原值不同 —— 拿 `> 1` 去驗「辦到國小」（值 1）會把它
+   * 判成沒有好處。
+   */
+  const COUNTERS = ['compulsorySchooling'] as const;
+
   const benefits = (e: PolicyEffect): number => {
     let n = 0;
     for (const k of REDUCERS) if (e[k] !== undefined && e[k]! < 1) n++;
     for (const k of INCREASERS) if (e[k] !== undefined && e[k]! > 1) n++;
+    for (const k of COUNTERS) if (e[k] !== undefined && e[k]! > 0) n++;
     if (e.landValue !== undefined && e.landValue > 0) n++;
     if (e.crime !== undefined && e.crime < 0) n++;
     if (e.revenue !== undefined && e.revenue > 1) n++;
@@ -143,7 +153,7 @@ describe('逐級的方向', () => {
           expect(cur[k]!, `${type} 第 ${i + 1} 級的 ${k} 沒有比前一級更省`)
             .toBeLessThan(prev[k]!);
         }
-        for (const k of INCREASERS) {
+        for (const k of [...INCREASERS, ...COUNTERS]) {
           if (prev[k] === undefined || cur[k] === undefined) continue;
           expect(cur[k]!, `${type} 第 ${i + 1} 級的 ${k} 沒有比前一級更強`)
             .toBeGreaterThan(prev[k]!);

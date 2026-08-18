@@ -418,7 +418,7 @@ export class SimulationLoop {
       this.state.citizens.educateTick((x, y, schoolKey) => {
         const type = SCHOOL_KEY_TO_TYPE[schoolKey];
         return this.state.education.getCoverage(x, y, type);
-      }, capacity);
+      }, capacity, this.state.ordinances.getCompulsorySchoolingStages());
       this.updateCitizenHappiness();
       this.updateCitizenHealth();
       this.updateHospitalLoads();

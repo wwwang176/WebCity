@@ -72,6 +72,14 @@ export function getLearningSpeed(age: number): number {
   return LEARNING_SPEED.SENIOR;
 }
 
+/**
+ * 義務教育階段的學習速度加成。
+ *
+ * 全日、強制出席跟有一天沒一天地來上課的差別 —— 同一間學校、同一個老師，把學生
+ * 推得比較快。
+ */
+export const COMPULSORY_SPEED_BONUS = 1.5;
+
 /** Jitter range for per-tick learning speed (80%~120%) to stagger graduations. */
 export const LEARNING_JITTER = { MIN: 0.8, MAX: 1.2 } as const;
 
@@ -327,13 +335,21 @@ export class CitizenManager {
   educateTick(
     isSchoolCovered: (x: number, y: number, schoolKey: EducationRule['schoolKey']) => boolean,
     capacityBySchoolKey: Record<EducationRule['schoolKey'], number>,
+    /**
+     * 國民教育辦到學制的第幾階（義務教育條例）。0 = 沒有。
+     *
+     * 站在第 `rung` 階（0 起算）的學生，只有 `rung < compulsoryStages` 時才享有
+     * 加成 —— 那一階在義務範圍之內。範圍之外的自己唸自己的。
+     */
+    compulsoryStages = 0,
   ): void {
     const enrolledCount: Record<EducationRule['schoolKey'], number> = { elementary: 0, highSchool: 0, university: 0 };
 
     // Phase 1 — advance enrolled students, pause if homeless/uncovered (never reset progress)
     for (const c of this.citizens) {
       if (c.educationProgress <= 0) continue;
-      const matched = EDUCATION_PROGRESSION.find(r => c.education === r.requiredEducation);
+      const rung = EDUCATION_PROGRESSION.findIndex(r => c.education === r.requiredEducation);
+      const matched = rung >= 0 ? EDUCATION_PROGRESSION[rung] : undefined;
       if (!matched) continue;
       // Graduate immediately if already past threshold (handles save migration threshold changes)
       if (c.educationProgress >= GRADUATION_TICKS[matched.schoolKey]) {
@@ -344,7 +360,8 @@ export class CitizenManager {
       if (c.age < MIN_SCHOOL_AGE || !c.homeId) continue; // paused, keep progress
       const pos = parsePosKeyUnsafe(c.homeId);
       if (!isSchoolCovered(pos.x, pos.y, matched.schoolKey)) continue; // paused, keep progress
-      c.educationProgress += jitteredSpeed(getLearningSpeed(c.age));
+      c.educationProgress += jitteredSpeed(
+        getLearningSpeed(c.age) * (rung < compulsoryStages ? COMPULSORY_SPEED_BONUS : 1));
       if (c.educationProgress >= GRADUATION_TICKS[matched.schoolKey]) {
         c.education = matched.nextEducation;
         c.educationProgress = 0; // only graduation resets progress
@@ -362,11 +379,13 @@ export class CitizenManager {
 
     for (const c of this.citizens) {
       if (!c.homeId || c.educationProgress > 0 || c.age < MIN_SCHOOL_AGE) continue;
-      const rule = EDUCATION_PROGRESSION.find(r => c.education === r.requiredEducation);
+      const rung = EDUCATION_PROGRESSION.findIndex(r => c.education === r.requiredEducation);
+      const rule = rung >= 0 ? EDUCATION_PROGRESSION[rung] : undefined;
       if (rule && remaining[rule.schoolKey] > 0) {
         const pos = parsePosKeyUnsafe(c.homeId);
         if (isSchoolCovered(pos.x, pos.y, rule.schoolKey)) {
-          c.educationProgress = jitteredSpeed(getLearningSpeed(c.age));
+          c.educationProgress = jitteredSpeed(
+            getLearningSpeed(c.age) * (rung < compulsoryStages ? COMPULSORY_SPEED_BONUS : 1));
           remaining[rule.schoolKey]--;
         }
       }

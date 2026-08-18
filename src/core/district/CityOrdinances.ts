@@ -92,6 +92,15 @@ export class CityOrdinances {
     return this.effect(e => e.fertility, 1, (a, b) => a * b);
   }
 
+  /**
+   * 國民教育辦到學制的第幾階。0 = 沒有義務教育。
+   *
+   * 疊起來取最高的那一階，不是相加 —— 兩條各辦到國小的條例合起來還是辦到國小。
+   */
+  getCompulsorySchoolingStages(): number {
+    return this.effect(e => e.compulsorySchooling, 0, (a, b) => Math.max(a, b));
+  }
+
   /** 全城條例對這個分區類型的收入乘數。 */
   getRevenueMultiplier(zoneType: ZoneType): number {
     return this.effect((e) => {

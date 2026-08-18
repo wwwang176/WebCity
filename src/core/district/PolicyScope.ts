@@ -44,6 +44,9 @@ export const POLICY_SCOPE: Record<PolicyType, PolicyScopeKind> = {
   // 生育率是全城一個數字。只在某一區補貼的話,決策會退化成「把分區畫在住宅密度
   // 最高的地方」—— 那是找最大的那一塊,不是取捨。
   [PolicyType.CHILDCARE_SUBSIDY]: 'city',
+  // 國民教育的階數是一部法律,不是一塊地的屬性。只在某一區義務到大學的話,決策會
+  // 退化成「把分區畫在學校旁邊」。
+  [PolicyType.COMPULSORY_EDUCATION]: 'city',
 };
 
 /** 這個條例畫在分區上有意義嗎？ */
