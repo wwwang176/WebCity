@@ -1653,7 +1653,7 @@ export class SimulationLoop {
       });
       pathsComputed++;
 
-      this.state.traffic.addVehicleOnEdges(path, c.id);
+      this.state.traffic.spawnVehicleOnEdges(path, c.id);
       vehiclesSpawned++;
     }
 
@@ -2454,7 +2454,7 @@ export class SimulationLoop {
         const variants = this.commuteCache.getRouteVariants(routeKey);
         if (variants && variants.length > 0) {
           const edgePath = variants[Math.floor(Math.random() * variants.length)]!;
-          this.state.traffic.addVehicleOnEdges(edgePath, citizen.id);
+          this.state.traffic.spawnVehicleOnEdges(edgePath, citizen.id);
           spawned++;
           continue;
         }
@@ -2483,7 +2483,7 @@ export class SimulationLoop {
         : null;
 
       if (edgePath && edgePath.length > 0) {
-        this.state.traffic.addVehicleOnEdges(edgePath, citizen.id);
+        this.state.traffic.spawnVehicleOnEdges(edgePath, citizen.id);
 
         const existingRoute = this.commuteCache.get(citizen.id);
         const isRoadChange = existingRoute != null && existingRoute.generation !== this.commuteCache.roadGeneration;
@@ -2609,7 +2609,7 @@ export class SimulationLoop {
           }
         } else {
           const edgePath = variants[Math.floor(Math.random() * variants.length)]!;
-          if (edgePath && edgePath.length > 0) this.state.traffic.addVehicleOnEdges(edgePath);
+          if (edgePath && edgePath.length > 0) this.state.traffic.spawnVehicleOnEdges(edgePath);
         }
       } else {
         const startRoad = findNearRoad(grid, bp.x, bp.y, ZONE_ROAD_REACH);
@@ -2624,7 +2624,7 @@ export class SimulationLoop {
           }
         } else {
           const edgePath = variants[Math.floor(Math.random() * variants.length)]!;
-          if (edgePath && edgePath.length > 0) this.state.traffic.addVehicleOnEdges(edgePath);
+          if (edgePath && edgePath.length > 0) this.state.traffic.spawnVehicleOnEdges(edgePath);
         }
       }
     }
@@ -2690,7 +2690,7 @@ export class SimulationLoop {
           : null;
       },
       addFreightVehicle: (edgePath, sourceKey) => {
-        this.state.traffic.addFreightVehicle(edgePath, sourceKey);
+        this.state.traffic.spawnFreightVehicle(edgePath, sourceKey);
       },
       freightTrucksPerThroughput: SIMULATION.FREIGHT_TRUCKS_PER_THROUGHPUT,
     });

@@ -189,8 +189,12 @@ export class ServiceVehicleManager {
 
       const edgePath = this.findEdgePath(startRoad, destPos, laneGraph, roadLookup);
       if (edgePath && edgePath.length > 0) {
-        const vehicle = traffic.addServiceVehicle(edgePath, type);
-        this.tracked.push({ vehicleId: vehicle.id, serviceType: type });
+        // 車位被佔著就這一趟不出勤 —— 追蹤清單不能記一台不存在的車，
+        // 那會讓這個設施永遠以為自己已經派滿了。
+        // 車位被佔著就這一趟不出勤 —— 追蹤清單不能記一台不存在的車，
+        // 那會讓這個設施永遠以為自己已經派滿了。
+        const vehicle = traffic.spawnServiceVehicle(edgePath, type);
+        if (vehicle) this.tracked.push({ vehicleId: vehicle.id, serviceType: type });
       }
     }
   }

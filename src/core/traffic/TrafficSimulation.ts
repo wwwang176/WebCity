@@ -207,8 +207,15 @@ export class TrafficSimulation {
     return vehicle;
   }
 
-  /** Add a bus vehicle that follows multi-segment LaneEdge paths (one per route leg).
-   *  startSegment places the bus at the beginning of that segment (a stop). */
+  /**
+   * Add a bus vehicle that follows multi-segment LaneEdge paths (one per route
+   * leg). startSegment places the bus at the beginning of that segment (a stop).
+   *
+   * There is deliberately no `spawnBusVehicle`: a bus that is not created is
+   * unrecoverable, because busVehicleIds and route.vehicles would still count it
+   * and nothing reconciles them against traffic.vehicles, leaving the route
+   * permanently short (BUG-115). A bus takes the spot whatever is standing there.
+   */
   addBusVehicle(segments: LaneEdge[][], routeId: number, startSegment = 0): Vehicle {
     const segIdx = startSegment % segments.length;
     const seg = segments[segIdx]!;
@@ -247,7 +254,54 @@ export class TrafficSimulation {
     this.vehicles.length = write;
   }
 
-  /** Add a service vehicle (police car, fire truck, ambulance, garbage truck) on a LaneEdge path. */
+  /** Reusable scratch for the spawn-overlap test (no per-spawn allocation). */
+  private readonly _spawnPos = { x: 0, y: 0 };
+  private readonly _spawnTan = { x: 0, y: 0 };
+  private readonly _otherPos = { x: 0, y: 0 };
+
+  /**
+   * Is a vehicle already standing where this one would appear?
+   *
+   * Every new vehicle is placed at `edgePath[0]`, progress 0. Commute routes are
+   * SHARED — CommuteCache hands the same LaneEdge[] to every citizen making that
+   * trip — so everyone setting off on the same tick landed on the same point,
+   * and the pile was on screen before car-following ever pushed them apart.
+   *
+   * Oriented, not a radius: a body is 0.22-0.26 long and 0.09 wide, so a circle
+   * of half the LENGTH reaches well into the next lane and would refuse a spawn
+   * over a car nowhere near it. Forward and lateral are measured separately
+   * against the spawn edge's tangent, the way `findCrossEdgeGap` separates them.
+   *
+   * Position, not edge identity: the car in the way need not share an edge with
+   * the newcomer — it may simply be driving past the driveway.
+   */
+  private isSpawnBlocked(edgePath: LaneEdge[], length: number, width: number): boolean {
+    const first = edgePath[0];
+    if (!first) return false;
+    interpolateEdgePositionInto(first, 0, this._spawnPos);
+    interpolateEdgeTangentInto(first, 0, this._spawnTan);
+    const tl = Math.sqrt(this._spawnTan.x * this._spawnTan.x + this._spawnTan.y * this._spawnTan.y) || 1;
+    const hx = this._spawnTan.x / tl, hy = this._spawnTan.y / tl;
+    const halfLen = length / 2, halfWidth = width / 2;
+
+    for (const v of this.vehicles) {
+      const idx = Math.min(v.edgeIndex, v.edgePath.length - 1);
+      const edge = v.edgePath[idx];
+      if (!edge) continue;
+      const t = edge.length > 0 ? Math.min(v.edgeProgress / edge.length, 1) : 0;
+      interpolateEdgePositionInto(edge, t, this._otherPos);
+      const dx = this._otherPos.x - this._spawnPos.x;
+      const dy = this._otherPos.y - this._spawnPos.y;
+      if (Math.abs(dx * hx + dy * hy) >= halfLen + v.length / 2) continue;
+      if (Math.abs(-hy * dx + hx * dy) < halfWidth + v.width / 2) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Add a service vehicle (police car, fire truck, ambulance, garbage truck) on
+   * a LaneEdge path. Null when the spot is taken — see `isSpawnBlocked`.
+   */
   addServiceVehicle(edgePath: LaneEdge[], serviceType: ServiceVehicleType): Vehicle {
     const dims = SERVICE_VEHICLE_DIMS[serviceType];
     const vehicle = this.createBaseVehicle(dims.length, dims.width, edgePath);
@@ -358,7 +412,17 @@ export class TrafficSimulation {
     return count;
   }
 
-  /** Add a vehicle that follows a LaneEdge path. */
+  /**
+   * Place a vehicle on a LaneEdge path, unconditionally.
+   *
+   * This is the primitive: it puts a vehicle exactly where it is told, which is
+   * what a test constructing a situation wants — and overlapping vehicles are a
+   * state the simulation has to survive anyway, since a rebuilt lane graph can
+   * re-seat two of them on the same ground.
+   *
+   * Anything in the RUNNING GAME that sets a car off from a building wants
+   * `spawnVehicleOnEdges` instead: it refuses a spot that is already taken.
+   */
   addVehicleOnEdges(edgePath: LaneEdge[], citizenId?: number): Vehicle {
     const dims = pickWeighted(VEHICLE_DIMS, 1.0, e => e.weight);
     const vehicle = this.createBaseVehicle(dims.length, dims.width, edgePath);
@@ -366,11 +430,37 @@ export class TrafficSimulation {
     return vehicle;
   }
 
-  /** Add a freight truck that follows a LaneEdge path. Always uses truck dimensions. */
+  /** Place a freight truck on a LaneEdge path, unconditionally. Always uses truck dimensions. */
   addFreightVehicle(edgePath: LaneEdge[], sourceBuildingKey?: string): Vehicle {
     const vehicle = this.createBaseVehicle(TRUCK_DIMS.length, TRUCK_DIMS.width, edgePath);
     vehicle.sourceBuildingKey = sourceBuildingKey;
     return vehicle;
+  }
+
+  // ── 從建築出發 ──
+  //
+  // 生成點被佔著就這一趟不出門。`addXxx` 是「放一台車在這裡」，這三支是「有人
+  // 開車出門了」—— 遊戲裡所有自動生成的車都走這裡。
+
+  /** A citizen sets off. Null when a vehicle is already standing on the spot. */
+  spawnVehicleOnEdges(edgePath: LaneEdge[], citizenId?: number): Vehicle | null {
+    // 車型是隨機的，但長度差 0.04，用最長的判斷才不會偶爾漏掉。
+    const longest = VEHICLE_DIMS.reduce((a, b) => (b.length > a.length ? b : a));
+    if (this.isSpawnBlocked(edgePath, longest.length, longest.width)) return null;
+    return this.addVehicleOnEdges(edgePath, citizenId);
+  }
+
+  /** A factory sends a truck out. Null when the spot is taken. */
+  spawnFreightVehicle(edgePath: LaneEdge[], sourceBuildingKey?: string): Vehicle | null {
+    if (this.isSpawnBlocked(edgePath, TRUCK_DIMS.length, TRUCK_DIMS.width)) return null;
+    return this.addFreightVehicle(edgePath, sourceBuildingKey);
+  }
+
+  /** A depot sends a service vehicle out. Null when the spot is taken. */
+  spawnServiceVehicle(edgePath: LaneEdge[], serviceType: ServiceVehicleType): Vehicle | null {
+    const dims = SERVICE_VEHICLE_DIMS[serviceType];
+    if (this.isSpawnBlocked(edgePath, dims.length, dims.width)) return null;
+    return this.addServiceVehicle(edgePath, serviceType);
   }
 
   /**
