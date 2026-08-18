@@ -936,6 +936,18 @@
 
 ## 待修正項目（開發過程中發現）
 
+- [ ] **每 tick 的生成量分散（`SPAWN_SPREAD_TICKS`）沒有測試守住** — `spawnCommuteVehicles` 的
+  `maxPerTick = max(5, ceil(eligible/8))` 把一天的通勤分散到 8 個 tick。把它改成
+  `eligible.length` 之後全套測試仍然全過:車流上限會把總量擋在同一個位置，只是
+  「一口氣衝滿」而不是慢慢長 —— 那是觀感，現有的斷言看不到。要守的話需要一個
+  看「成長速率」而不是看「最終數量」的案例。
+- [ ] **`Game.getTrafficStats()` 的接線沒有測試守住** — 面板的通勤車數量是在 `Game.ts`
+  裡選擇要傳哪一支計數器（`getCommuteVehicleCount` vs `getVehicleCount`）。`Game.ts`
+  會 import Three.js，core 測試碰不到。目前只靠 `TrafficStatsContext` 的欄位名
+  （`commuteVehicleCount`）表明意圖，接錯不會變紅。
+- [ ] **`src/ui/modals/TrafficModal.tsx` 是死碼** — `GameUI.tsx` 沒有掛載它，交通面板走的是
+  `overview/TrafficPage.tsx`。兩邊各有一份摘要卡片，改動時要記得它不會被看到。
+
 - [x] 公園 land value 影響只看 FOREST 地形，未檢查 ParkService 設施（buildingId=248）→ 放置的公園不影響地價 — BUG-046 已修復
 - [x] Civic 建築（police/fire/hospital/school/park 等 buildingId 243-252）在 zoneType=NONE 的空地上放置時，渲染引擎已支援，拆除後清理正確（demolish 已處理所有 buildingId 243-254）
 - [x] 電力/水力覆蓋從 BFS 矩形改為 Euclidean 圓形 — BUG-051

@@ -3,7 +3,7 @@ import { getTrafficStats, type TrafficStatsContext } from '../TrafficStats';
 
 function makeCtx(overrides: Partial<TrafficStatsContext> = {}): TrafficStatsContext {
   return {
-    vehicleCount: overrides.vehicleCount ?? 0,
+    commuteVehicleCount: overrides.commuteVehicleCount ?? 0,
     topCongested: overrides.topCongested ?? [],
     avgPathLength: overrides.avgPathLength ?? 0,
     roadTileCount: overrides.roadTileCount ?? 0,
@@ -13,15 +13,15 @@ function makeCtx(overrides: Partial<TrafficStatsContext> = {}): TrafficStatsCont
 describe('getTrafficStats', () => {
   it('should return zeros for empty city', () => {
     const result = getTrafficStats(makeCtx());
-    expect(result.vehicleCount).toBe(0);
+    expect(result.commuteVehicleCount).toBe(0);
     expect(result.topCongested).toEqual([]);
     expect(result.avgPathLength).toBe(0);
     expect(result.totalRoads).toBe(0);
   });
 
-  it('should pass through vehicle count', () => {
-    const result = getTrafficStats(makeCtx({ vehicleCount: 42 }));
-    expect(result.vehicleCount).toBe(42);
+  it('should pass through the commute vehicle count', () => {
+    const result = getTrafficStats(makeCtx({ commuteVehicleCount: 42 }));
+    expect(result.commuteVehicleCount).toBe(42);
   });
 
   it('should pass through top congested segments', () => {

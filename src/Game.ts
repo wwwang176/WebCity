@@ -3363,7 +3363,7 @@ export class Game {
 
   getTrafficStats() {
     return computeTrafficStats({
-      vehicleCount: this.state.traffic.getVehicleCount(),
+      commuteVehicleCount: this.state.traffic.getCommuteVehicleCount(),
       topCongested: this.state.traffic.getTopCongested(8),
       avgPathLength: this.state.traffic.getAveragePathLength(),
       roadTileCount: countRoadTiles(this.state.grid),

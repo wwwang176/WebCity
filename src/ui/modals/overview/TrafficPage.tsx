@@ -173,9 +173,11 @@ export function TrafficPage(props: { onClose?: () => void }) {
   return (
     <>
       <div class="summary-grid">
-        <div class="summary-card">
-          <div class="sc-value stat-accent">{stats().vehicleCount}</div>
-          <div class="sc-label">Active Vehicles</div>
+        {/* 只數居民在開的車。過境車流、貨運、服務車輛跟運具選擇無關，加進來
+            的話政策把人趕上公車了，數字還是會被它們撐住。 */}
+        <div class="summary-card" title="Residents currently driving to or from work. Through traffic, freight and service vehicles are not counted.">
+          <div class="sc-value stat-accent">{stats().commuteVehicleCount}</div>
+          <div class="sc-label">Commuters Driving</div>
         </div>
         <div class="summary-card">
           <div class="sc-value">{stats().avgPathLength}</div>

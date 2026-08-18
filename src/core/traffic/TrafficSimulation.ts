@@ -403,6 +403,25 @@ export class TrafficSimulation {
     return set;
   }
 
+  /**
+   * 路上有幾台是居民在開車通勤。
+   *
+   * 路上的車有四種來源，只有這一種是居民選出來的:過境車流的量是 `人口 ÷ 100`，
+   * 貨運看工業產能，服務車輛是派工，三種都不看運具選擇。面板要回答「政策有沒有
+   * 把人趕上大眾運輸」就只能問這一種 —— 加總的話居民真的改搭公車了，數字還是會
+   * 被另外三種撐住。
+   *
+   * 車流上限走的是 `getVehicleCount()`（全部），跟這支無關 —— 上限管的是畫面上
+   * 能跑幾台，不是統計。
+   */
+  getCommuteVehicleCount(): number {
+    let count = 0;
+    for (const v of this.vehicles) {
+      if (v.citizenId !== undefined) count++;
+    }
+    return count;
+  }
+
   /** Count service vehicles, optionally filtered by type. */
   getServiceVehicleCount(serviceType?: ServiceVehicleType): number {
     let count = 0;

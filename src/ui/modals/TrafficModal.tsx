@@ -13,8 +13,8 @@ export function TrafficModal(props: { open: boolean; onClose: () => void }) {
     <Modal id="traffic-modal" title={'\u{1F697} Traffic Overview'} open={props.open} onClose={props.onClose}>
       <div class="summary-grid">
         <div class="summary-card">
-          <div class="sc-value">{stats().vehicleCount}</div>
-          <div class="sc-label">Active Vehicles</div>
+          <div class="sc-value">{stats().commuteVehicleCount}</div>
+          <div class="sc-label">Commuters Driving</div>
         </div>
         <div class="summary-card">
           <div class="sc-value">{stats().avgPathLength}</div>
