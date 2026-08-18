@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { scaleOf } from '../../__tests__/helpers/policyScale';
 import { PolicyType } from '../types';
 import { POLICY_CONFIG, POLICY_EFFECTS, IMPLEMENTED_POLICY_TYPES, POLICY_ZONE_RESTRICTIONS, isPolicyImplemented, PolicyManager } from '../PolicyManager';
 import { ZoneType } from '../../grid/types';
@@ -7,7 +8,7 @@ import { policyCost } from '../PolicyBilling';
 
 /** 計費夾具共用的規模。分區格數要跟 fixture 的 `cells.size` 一致。 */
 const POP = 1000;
-const SCALE = { population: POP, districtCells: 50 };
+const SCALE = scaleOf({ population: POP, districtCells: 50 });
 
 /**
  * Three of the five district policies — ENCOURAGE_RECYCLING, ORGANIC_FOOD and
@@ -58,7 +59,7 @@ describe('policies are charged only when they do something', () => {
       ],
     }];
 
-    expect(calculateDistrictPolicyCost(districts, POP))
+    expect(calculateDistrictPolicyCost(districts, SCALE))
       .toBeCloseTo(policyCost(PolicyType.TOURISM, 1, SCALE), 6);
   });
 
@@ -74,7 +75,7 @@ describe('policies are charged only when they do something', () => {
       ],
     }];
 
-    expect(calculateDistrictPolicyCost(districts, POP)).toBe(0);
+    expect(calculateDistrictPolicyCost(districts, SCALE)).toBe(0);
   });
 
   it('should still bill a policy that costs money', () => {
@@ -83,7 +84,7 @@ describe('policies are charged only when they do something', () => {
       cells: { size: 50 },
       policies: [{ level: 2, type: PolicyType.ENCOURAGE_RECYCLING }],
     }];
-    expect(calculateDistrictPolicyCost(districts, POP)).toBeGreaterThan(0);
+    expect(calculateDistrictPolicyCost(districts, SCALE)).toBeGreaterThan(0);
   });
 
   it('should not bill an inactive implemented policy', () => {
@@ -92,7 +93,7 @@ describe('policies are charged only when they do something', () => {
       policies: [{ level: 0, type: PolicyType.ENCOURAGE_RECYCLING }],
     }];
 
-    expect(calculateDistrictPolicyCost(districts, POP)).toBe(0);
+    expect(calculateDistrictPolicyCost(districts, SCALE)).toBe(0);
   });
 
   it('should leave construction untouched for every non-zoning policy', () => {

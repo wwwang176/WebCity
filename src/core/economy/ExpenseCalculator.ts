@@ -1,4 +1,4 @@
-import { policyCost } from '../district/PolicyBilling';
+import { policyCost, type CityScales } from '../district/PolicyBilling';
 import type { PolicyScopeKind } from '../district/PolicyScope';
 import { PolicyType } from '../district/types';
 
@@ -18,7 +18,7 @@ export function calculateDistrictPolicyCost(
     cells: { size: number };
     policies: readonly { level: number; type: PolicyType }[];
   }[],
-  population: number,
+  city: CityScales,
 ): number {
   let total = 0;
   for (const district of districts) {
@@ -28,7 +28,7 @@ export function calculateDistrictPolicyCost(
       // 那個前提由 `PolicyBilling.test.ts` 的
       // `should only bill policies the simulation actually reads` 守著。
       total += policyCost(policy.type, policy.level, {
-        population,
+        ...city,
         districtCells: district.cells.size,
       });
     }
@@ -47,10 +47,10 @@ export function totalPolicyExpense(
     cells: { size: number };
     policies: readonly { level: number; type: PolicyType }[];
   }[],
-  ordinances: { totalCost(population: number): number },
-  population: number,
+  ordinances: { totalCost(city: CityScales): number },
+  city: CityScales,
 ): number {
-  return calculateDistrictPolicyCost(districts, population) + ordinances.totalCost(population);
+  return calculateDistrictPolicyCost(districts, city) + ordinances.totalCost(city);
 }
 
 export interface ExpenseBreakdown {
@@ -98,19 +98,19 @@ export function listPolicyExpenses(
     policies: readonly { type: PolicyType; level: number }[];
   }[],
   ordinances: { getLevel(t: PolicyType): number },
-  population: number,
+  city: CityScales,
 ): PolicyExpenseLine[] {
   const out: PolicyExpenseLine[] = [];
   for (const d of districts) {
     for (const p of d.policies) {
-      const cost = policyCost(p.type, p.level, { population, districtCells: d.cells.size });
+      const cost = policyCost(p.type, p.level, { ...city, districtCells: d.cells.size });
       if (cost === 0) continue;
       out.push({ type: p.type, scope: 'district', districtName: d.name, level: p.level, cost });
     }
   }
   for (const type of Object.values(PolicyType)) {
     const level = ordinances.getLevel(type);
-    const cost = policyCost(type, level, { population, districtCells: 0 });
+    const cost = policyCost(type, level, { ...city, districtCells: 0 });
     if (cost === 0) continue;
     out.push({ type, scope: 'city', districtName: null, level, cost });
   }

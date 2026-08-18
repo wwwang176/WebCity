@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { createGameState, type GameState } from '../GameState';
 import { SimulationLoop } from '../SimulationLoop';
 import { buildEconomyBreakdownContext } from '../../economy/EconomyBreakdownContext';
+import { computeCityScales } from '../../district/PolicyBilling';
 import { PolicyType } from '../../district/types';
 import { ZoneType } from '../../grid/types';
 
@@ -55,7 +56,8 @@ describe('全城條例真的接進模擬', () => {
     const withOrdinance = policyExpense(state);
     expect(withOrdinance, '全城條例沒有進預算').toBeGreaterThan(plain);
     expect(withOrdinance - plain, '進預算的金額跟條例自己算的對不起來')
-      .toBeCloseTo(state.ordinances.totalCost(state.citizens.getPopulation()), 6);
+      .toBeCloseTo(state.ordinances.totalCost(
+        computeCityScales(state.citizens.getCitizens(), () => false)), 6);
   });
 
   it('should cost commercial and industrial revenue', () => {

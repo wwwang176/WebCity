@@ -4,6 +4,7 @@ import { PolicyManager, POLICY_CONFIG, POLICY_ZONE_RESTRICTIONS } from '../Polic
 import type { DistrictLookup } from '../PolicyManager';
 import { setSpecialization, getSpecialization, getSpecializationBonus, SPECIALIZATION_BONUSES } from '../Specialization';
 import { CitySpecialization, CitySpecType } from '../CitySpecialization';
+import { scaleOf } from '../../__tests__/helpers/policyScale';
 import { PolicyType, Specialization, type District } from '../types';
 import { POLICY_BILLING, policyCost } from '../PolicyBilling';
 import { ZoneType } from '../../grid/types';
@@ -212,8 +213,16 @@ describe('PolicyManager', () => {
   it('should charge a scale-dependent price for every billable policy', () => {
     // 取代舊的「每條政策都有一個正數價錢」。限制型條例現在刻意不收費，所以那個
     // 問法已經不成立 —— 改成問:凡是列了計費基數的，價錢就必須跟著規模動。
-    const small = { population: 100, districtCells: 10 };
-    const big = { population: 10_000, districtCells: 400 };
+    // 每一個計費基數都要給值。漏掉一個的話，用那個基數的條例會恆為 0，而這條
+    // 測試會把它讀成「這條條例不收錢」而紅 —— 那是對的，加基數就要補這裡。
+    const small = scaleOf({
+      population: 100, districtCells: 10,
+      babies: 4, children: 6, teens: 5, clinicPatients: 90,
+    });
+    const big = scaleOf({
+      population: 10_000, districtCells: 400,
+      babies: 400, children: 600, teens: 500, clinicPatients: 9_000,
+    });
     const billable = Object.keys(POLICY_BILLING) as PolicyType[];
     expect(billable.length, '沒有任何條例收費，這條測試等於空轉').toBeGreaterThan(0);
     for (const type of billable) {

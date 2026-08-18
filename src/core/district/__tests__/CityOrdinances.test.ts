@@ -5,6 +5,7 @@ import { DistrictManager } from '../DistrictManager';
 import { PolicyManager } from '../PolicyManager';
 import { policyCost } from '../PolicyBilling';
 import { PolicyType } from '../types';
+import { scaleOf } from '../../__tests__/helpers/policyScale';
 import { createGameState } from '../../simulation/GameState';
 import { serializeGameState, deserializeGameState } from '../../save/Serializer';
 
@@ -94,15 +95,15 @@ describe('全城條例', () => {
     // 的費用永遠是 0，所有相關測試都會變成空測試。
     const o = new CityOrdinances();
     o.setLevel(PolicyType.ENERGY_REGULATION, 2);
-    expect(o.totalCost(10_000), '全城條例不收錢').toBeGreaterThan(0);
-    expect(o.totalCost(10_000)).toBeCloseTo(
-      policyCost(PolicyType.ENERGY_REGULATION, 2, { population: 10_000, districtCells: 0 }), 6);
+    expect(o.totalCost(scaleOf({ population: 10_000 })), '全城條例不收錢').toBeGreaterThan(0);
+    expect(o.totalCost(scaleOf({ population: 10_000 }))).toBeCloseTo(
+      policyCost(PolicyType.ENERGY_REGULATION, 2, scaleOf({ population: 10_000 })), 6);
   });
 
   it('should scale with population', () => {
     const o = new CityOrdinances();
     o.setLevel(PolicyType.ENERGY_REGULATION, 2);
-    expect(o.totalCost(10_000)).toBeGreaterThan(o.totalCost(1_000) * 5);
+    expect(o.totalCost(scaleOf({ population: 10_000 }))).toBeGreaterThan(o.totalCost(scaleOf({ population: 1_000 })) * 5);
   });
 
   it('should lower the power demand multiplier as it gets stronger', () => {

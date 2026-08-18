@@ -1,6 +1,7 @@
 import { createSignal, createEffect, createMemo, For, Index, Show } from 'solid-js';
 import { listPolicyExpenses } from '../../../core/economy/ExpenseCalculator';
 import { POLICY_CONFIG } from '../../../core/district/PolicyManager';
+import { computeCityScales } from '../../../core/district/PolicyBilling';
 import { policyLevelLabel } from '../../../core/district/PolicyPresentation';
 import { CHART_RANGES, type ChartRange } from '../../../core/economy/ChartSeries';
 import { gameSignals, getGame } from '../../store/gameStore';
@@ -64,14 +65,16 @@ export function EconomyPage(props: EconomyPageProps) {
   };
   const balance = () => totalIncome() - totalExpenses();
 
-  // 逐條政策支出。人口與這一列的總額用同一個來源，兩者才加得起來。
+  // 逐條政策支出。規模與這一列的總額用同一個來源，兩者才加得起來 —— 補貼型條例
+  // 按實際受益人頭收費，所以規模不只是人口總數。
   //
   // 用 memo:同一次算出來的結果 JSX 裡讀三次（兩次 length、一次列表），而
   // `listPolicyExpenses` 每次都重新掃過所有分區的所有政策。
   const policyLines = createMemo(() => {
     const st = state();
     return listPolicyExpenses(
-      st.districts.getAllDistricts(), st.ordinances, st.citizens.getPopulation());
+      st.districts.getAllDistricts(), st.ordinances,
+      computeCityScales(st.citizens.getCitizens(), (x: number, y: number) => st.health.getCoverage(x, y)));
   });
 
   const onIncomeTaxChange = (e: Event) => {

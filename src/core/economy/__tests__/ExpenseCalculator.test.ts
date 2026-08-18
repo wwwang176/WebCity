@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { calculateDistrictPolicyCost, calculateTotalExpenses } from '../ExpenseCalculator';
+import { scaleOf } from '../../__tests__/helpers/policyScale';
 import { PolicyType } from '../../district/types';
 import { policyCost } from '../../district/PolicyBilling';
 
@@ -16,10 +17,10 @@ describe('ExpenseCalculator', () => {
     const POP = 1000;
     const CELLS = 50;
     const recyclingCost = (level: 1 | 2 | 3) =>
-      policyCost(PolicyType.ENCOURAGE_RECYCLING, level, { population: POP, districtCells: CELLS });
+      policyCost(PolicyType.ENCOURAGE_RECYCLING, level, scaleOf({ population: POP, districtCells: CELLS }));
 
     it('returns 0 when no districts exist', () => {
-      expect(calculateDistrictPolicyCost([], POP)).toBe(0);
+      expect(calculateDistrictPolicyCost([], scaleOf({ population: POP }))).toBe(0);
     });
 
     it('returns 0 when no policies are active', () => {
@@ -27,7 +28,7 @@ describe('ExpenseCalculator', () => {
         cells: { size: CELLS },
         policies: [{ type: PolicyType.ENCOURAGE_RECYCLING, level: 0 }],
       }] satisfies BillableDistrict[];
-      expect(calculateDistrictPolicyCost(districts, POP)).toBe(0);
+      expect(calculateDistrictPolicyCost(districts, scaleOf({ population: POP }))).toBe(0);
     });
 
     it('bills the same policy once it is switched on', () => {
@@ -37,7 +38,7 @@ describe('ExpenseCalculator', () => {
         cells: { size: CELLS },
         policies: [{ type: PolicyType.ENCOURAGE_RECYCLING, level: 2 }],
       }] satisfies BillableDistrict[];
-      expect(calculateDistrictPolicyCost(districts, POP)).toBeCloseTo(recyclingCost(2), 6);
+      expect(calculateDistrictPolicyCost(districts, scaleOf({ population: POP }))).toBeCloseTo(recyclingCost(2), 6);
     });
 
     it('sums costs of active policies across districts', () => {
@@ -55,7 +56,7 @@ describe('ExpenseCalculator', () => {
         },
       ] satisfies BillableDistrict[];
       // 禁高密度不收費，所以合計只有兩條回收。
-      expect(calculateDistrictPolicyCost(districts, POP))
+      expect(calculateDistrictPolicyCost(districts, scaleOf({ population: POP })))
         .toBeCloseTo(recyclingCost(1) + recyclingCost(3), 6);
     });
 
@@ -69,8 +70,8 @@ describe('ExpenseCalculator', () => {
         cells: { size: 20 },
         policies: [{ type: PolicyType.ENCOURAGE_RECYCLING, level: 2 }],
       }] satisfies BillableDistrict[];
-      expect(calculateDistrictPolicyCost(two, POP))
-        .toBeCloseTo(calculateDistrictPolicyCost(one, POP) * 2, 6);
+      expect(calculateDistrictPolicyCost(two, scaleOf({ population: POP })))
+        .toBeCloseTo(calculateDistrictPolicyCost(one, scaleOf({ population: POP })) * 2, 6);
     });
   });
 

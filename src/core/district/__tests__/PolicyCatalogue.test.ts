@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { POLICY_EFFECTS, POLICY_CONFIG, maxLevel, type PolicyEffect } from '../PolicyManager';
-import { POLICY_BILLING } from '../PolicyBilling';
+import { POLICY_BILLING, policyCost } from '../PolicyBilling';
+import { scaleOf } from '../../__tests__/helpers/policyScale';
 import { POLICY_SCOPE } from '../PolicyScope';
 import { policyEffectSummary } from '../PolicyPresentation';
 import { PolicyType } from '../types';
@@ -27,12 +28,18 @@ describe('目錄的完整性', () => {
   });
 
   it('should charge more for every step up', () => {
-    // 多級條例的單價必須嚴格遞增。持平或倒退的話，高等級會變成「白拿」——
-    // 那就不是取捨了。
+    // 高等級不能白拿。驗的是**費用**不是單價 —— 育兒補貼三級的單價相同，貴在
+    // 符合資格的孩子變多了，比單價會把那條誤判成「沒有比前一級貴」。
+    //
+    // 每一個計費基數都給正值，不然用那個基數的條例會恆為 0 而無聲通過。
+    const FULL = scaleOf({
+      population: 1000, districtCells: 100,
+      babies: 40, children: 60, teens: 50, clinicPatients: 900,
+    });
     for (const [type, billing] of Object.entries(POLICY_BILLING)) {
-      for (let i = 1; i < billing!.perUnit.length; i++) {
-        expect(billing!.perUnit[i]!, `${type} 第 ${i + 1} 級沒有比前一級貴`)
-          .toBeGreaterThan(billing!.perUnit[i - 1]!);
+      for (let lv = 2; lv <= billing!.perUnit.length; lv++) {
+        expect(policyCost(type as PolicyType, lv, FULL), `${type} 第 ${lv} 級沒有比前一級貴`)
+          .toBeGreaterThan(policyCost(type as PolicyType, lv - 1, FULL));
       }
     }
   });

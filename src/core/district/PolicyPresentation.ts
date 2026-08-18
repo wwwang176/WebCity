@@ -101,8 +101,9 @@ const EFFECT_SUMMARY: Partial<Record<PolicyType, readonly string[]>> = {
     'Industrial ground pollution \u221260%  \u00B7  Industrial revenue \u221222%',
   ],
   [PolicyType.CHILDCARE_SUBSIDY]: [
-    'Births +25%  \u00B7  Commercial and industrial revenue \u22122%',
-    'Births +55%  \u00B7  Commercial and industrial revenue \u22125%',
+    'Paid for infants  \u00B7  Births +20%  \u00B7  Business revenue \u22122%',
+    'Paid through childhood  \u00B7  Births +45%  \u00B7  Business revenue \u22125%',
+    'Paid through the teens  \u00B7  Births +70%  \u00B7  Business revenue \u22129%',
   ],
   [PolicyType.COMPULSORY_EDUCATION]: [
     'Schooling compulsory through elementary  \u00B7  Industrial revenue \u22123%',

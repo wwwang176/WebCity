@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { listPolicyExpenses } from '../ExpenseCalculator';
 import { CityOrdinances } from '../../district/CityOrdinances';
 import { PolicyType } from '../../district/types';
+import { scaleOf } from '../../__tests__/helpers/policyScale';
+import { computeCityScales } from '../../district/PolicyBilling';
 import { createGameState } from '../../simulation/GameState';
 import { SimulationLoop } from '../../simulation/SimulationLoop';
 import { buildEconomyBreakdownContext } from '../EconomyBreakdownContext';
@@ -23,7 +25,7 @@ describe('政策支出明細', () => {
     const ord = new CityOrdinances();
     ord.setLevel(PolicyType.ENERGY_REGULATION, 2);
     // 人口不能是 0 —— 節能法規按人口計費，人口 0 的話那一行的 cost 是 0 而被跳過。
-    const lines = listPolicyExpenses(districts(), ord, 1000);
+    const lines = listPolicyExpenses(districts(), ord, scaleOf({ population: 1000 }));
     expect(lines).toHaveLength(2);
     expect(lines.find(l => l.scope === 'district')!.districtName).toBe('Downtown');
     expect(lines.find(l => l.scope === 'city')!.districtName).toBeNull();
@@ -32,7 +34,7 @@ describe('政策支出明細', () => {
 
   it('should skip policies that are off', () => {
     const off = [{ name: 'D', cells: { size: 50 }, policies: [{ type: PolicyType.TOURISM, level: 0 }] }];
-    expect(listPolicyExpenses(off, new CityOrdinances(), 1000)).toHaveLength(0);
+    expect(listPolicyExpenses(off, new CityOrdinances(), scaleOf({ population: 1000 }))).toHaveLength(0);
   });
 
   it('should skip a restriction policy, which costs nothing', () => {
@@ -40,7 +42,7 @@ describe('政策支出明細', () => {
       name: 'D', cells: { size: 50 },
       policies: [{ type: PolicyType.NO_HEAVY_INDUSTRY, level: 1 }],
     }];
-    expect(listPolicyExpenses(banned, new CityOrdinances(), 1000)).toHaveLength(0);
+    expect(listPolicyExpenses(banned, new CityOrdinances(), scaleOf({ population: 1000 }))).toHaveLength(0);
   });
 
   it('should sum to exactly what the budget charges', () => {
@@ -71,7 +73,8 @@ describe('政策支出明細', () => {
     const lines = listPolicyExpenses(
       on.state.districts.getAllDistricts(),
       on.state.ordinances,
-      on.state.citizens.getPopulation(),
+      computeCityScales(on.state.citizens.getCitizens(),
+        (x, y) => on.state.health.getCoverage(x, y)),
     );
     const sum = lines.reduce((a, l) => a + l.cost, 0);
 
@@ -99,7 +102,8 @@ describe('明細與面板總額', () => {
 
     const panelTotal = buildEconomyBreakdownContext(state, null).policyCost ?? 0;
     const lines = listPolicyExpenses(
-      state.districts.getAllDistricts(), state.ordinances, state.citizens.getPopulation());
+      state.districts.getAllDistricts(), state.ordinances,
+      computeCityScales(state.citizens.getCitizens(), (x, y) => state.health.getCoverage(x, y)));
     const sum = lines.reduce((a, l) => a + l.cost, 0);
 
     expect(panelTotal, '面板的政策支出是 0，這條測試等於空轉').toBeGreaterThan(0);

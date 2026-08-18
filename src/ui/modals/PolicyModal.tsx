@@ -3,6 +3,7 @@ import { gameSignals, getGame } from '../store/gameStore';
 import { Modal } from './Modal';
 import { PolicyRow } from './PolicyRow';
 import { isPolicyImplemented } from '../../core/district/PolicyManager';
+import { computeCityScales } from '../../core/district/PolicyBilling';
 import {
   policiesByCategory, districtPolicyTotal, RETIRED_CATEGORY,
 } from '../../core/district/PolicyPresentation';
@@ -72,10 +73,19 @@ export function PolicyModal(props: {
 
   const isCity = () => pane().kind === 'city' || !selectedDistrict();
 
-  const scale = () => ({
-    population: population(),
-    districtCells: selectedDistrict()?.cells.size ?? 0,
-  });
+  /**
+   * 計費規模。育兒補貼與免費診所按實際受益人頭收費，所以要走一趟市民清單 ——
+   * 只在面板開著的時候算，關掉就不再走。
+   */
+  const scale = () => {
+    version();
+    const state = getGame().getState();
+    return {
+      ...computeCityScales(state.citizens.getCitizens(),
+        (x: number, y: number) => state.health.getCoverage(x, y)),
+      districtCells: selectedDistrict()?.cells.size ?? 0,
+    };
+  };
 
   const groups = () => {
     version();
@@ -99,7 +109,7 @@ export function PolicyModal(props: {
     gameSignals.tick();
     const d = selectedDistrict();
     const state = getGame().getState();
-    if (isCity() || !d) return Math.round(state.ordinances.totalCost(population()));
+    if (isCity() || !d) return Math.round(state.ordinances.totalCost(scale()));
     return Math.round(districtPolicyTotal(
       d.policies as { type: PolicyType; level: number }[], scale()));
   };

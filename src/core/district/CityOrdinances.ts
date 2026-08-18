@@ -2,7 +2,7 @@ import { ZoneType } from '../grid/types';
 import { PolicyType } from './types';
 import { POLICY_EFFECTS, clampLevel, maxLevel, type PolicyEffect } from './PolicyManager';
 import { isCityScoped } from './PolicyScope';
-import { policyCost } from './PolicyBilling';
+import { policyCost, type CityScales } from './PolicyBilling';
 
 /** 存檔裡的全城條例。 */
 export interface SerializedCityOrdinances {
@@ -112,10 +112,10 @@ export class CityOrdinances {
   }
 
   /** 全城條例本期的總支出。全城的沒有分區格數可言，所以 `districtCells` 是 0。 */
-  totalCost(population: number): number {
+  totalCost(city: CityScales): number {
     let total = 0;
     for (const [type, level] of this.levels) {
-      total += policyCost(type, level, { population, districtCells: 0 });
+      total += policyCost(type, level, { ...city, districtCells: 0 });
     }
     return total;
   }

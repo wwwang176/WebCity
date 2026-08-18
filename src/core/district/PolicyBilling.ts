@@ -1,15 +1,75 @@
 import { PolicyType } from './types';
 import { maxLevel } from './PolicyManager';
+import { LifeStage, type Citizen } from '../citizen/types';
+import { parsePosKey } from '../grid/GridHelpers';
 
 /** 費用跟著哪一個規模走。 */
-export type BillingBasis = 'flat' | 'population' | 'districtCells';
+export type BillingBasis =
+  | 'flat' | 'population' | 'districtCells' | 'childcareRecipients' | 'clinicPatients';
 
-/** 算費用要知道的規模。呼叫端負責填。 */
-export interface PolicyScale {
+/**
+ * 各生命階段對免費診所的看診權重。成人是 1。
+ *
+ * 老人與嬰幼兒吃掉大部分的醫療支出，這是現實裡醫療費用年齡分布的形狀。按總人口
+ * 計價的話，一座年輕城市與一座高齡城市的診所帳單一樣多 —— 而那正是這條條例最該
+ * 讓玩家感覺到的差別。
+ */
+export const CLINIC_AGE_WEIGHT: Record<LifeStage, number> = {
+  [LifeStage.BABY]: 2.5,
+  [LifeStage.CHILD]: 1.2,
+  [LifeStage.TEEN]: 0.8,
+  [LifeStage.ADULT]: 1,
+  [LifeStage.SENIOR]: 3,
+};
+
+/**
+ * 全城規模。補貼型條例按「真正領得到的人」計費。
+ *
+ * 只有一個「人口」的話，育兒補貼在一座沒有小孩的城市也要付全額 —— 那筆錢沒有任何
+ * 人領得到，玩家也看不出開了跟沒開差在哪。
+ */
+export interface CityScales {
   /** 全城人口。 */
   population: number;
+  babies: number;
+  children: number;
+  teens: number;
+  /**
+   * 醫院覆蓋範圍內的人口，依年齡加權。
+   *
+   * 覆蓋範圍外的人不算 —— 醫院蓋不到的地方，人根本沒去看病，補助也就沒發出去。
+   * 無家者同理:沒有家就沒有座標可查，判不出他在不在範圍內。
+   */
+  clinicPatients: number;
+}
+
+/** 算費用要知道的規模。呼叫端負責填。 */
+export interface PolicyScale extends CityScales {
   /** 這個條例所在分區的格數。全城條例填 0。 */
   districtCells: number;
+}
+
+/**
+ * 從市民清單算出全城規模。
+ *
+ * 一趟走完 —— 每個量各掃一次的話，一座十萬人的城市每個預算週期要多走四趟。
+ */
+export function computeCityScales(
+  citizens: readonly Citizen[],
+  isHealthCovered: (x: number, y: number) => boolean,
+): CityScales {
+  let babies = 0, children = 0, teens = 0, clinicPatients = 0;
+  for (const c of citizens) {
+    if (c.lifeStage === LifeStage.BABY) babies++;
+    else if (c.lifeStage === LifeStage.CHILD) children++;
+    else if (c.lifeStage === LifeStage.TEEN) teens++;
+
+    if (!c.homeId) continue;
+    const pos = parsePosKey(c.homeId);
+    if (!pos || !isHealthCovered(pos.x, pos.y)) continue;
+    clinicPatients += CLINIC_AGE_WEIGHT[c.lifeStage];
+  }
+  return { population: citizens.length, babies, children, teens, clinicPatients };
 }
 
 /**
@@ -44,17 +104,32 @@ export const POLICY_BILLING: Partial<Record<PolicyType, {
   [PolicyType.WATER_CONSERVATION]: { basis: 'population', perUnit: [0.07, 0.18, 0.42] },
   [PolicyType.SEWAGE_STANDARDS]: { basis: 'population', perUnit: [0.09, 0.24] },
   [PolicyType.INDUSTRIAL_EMISSION_CONTROL]: { basis: 'districtCells', perUnit: [2, 5, 11] },
-  // 補貼是直接發到家戶手上的錢,人越多發得越多 —— 這是全表最貴的一類。
-  [PolicyType.CHILDCARE_SUBSIDY]: { basis: 'population', perUnit: [0.12, 0.30] },
+  /**
+   * 育兒補貼是按人頭發的:每個符合資格的孩子每期領一樣多，所以三級的單價相同。
+   * 分級變的是**誰符合資格** —— 那才是這條條例在問的問題，而它反映在基數上，
+   * 不在單價上。
+   */
+  [PolicyType.CHILDCARE_SUBSIDY]: { basis: 'childcareRecipients', perUnit: [1.2, 1.2, 1.2] },
   // 辦到哪一階就付到哪一階。跳得比線性快 —— 大學的單位成本本來就比國小高。
   [PolicyType.COMPULSORY_EDUCATION]: { basis: 'population', perUnit: [0.08, 0.20, 0.45] },
 };
 
-function unitsOf(basis: BillingBasis, scale: PolicyScale): number {
+/**
+ * 這個基數在這個等級下有多少單位。
+ *
+ * `level` 是給「範圍會隨等級變寬」的基數用的:育兒補貼補到哪一階，就數到哪一階。
+ * 那個對應寫在這裡而不是效果表 —— 它是計費規則，不是模擬效果。
+ */
+function unitsOf(basis: BillingBasis, scale: PolicyScale, level: number): number {
   switch (basis) {
     case 'flat': return 1;
     case 'population': return scale.population;
     case 'districtCells': return scale.districtCells;
+    case 'childcareRecipients':
+      return scale.babies
+        + (level >= 2 ? scale.children : 0)
+        + (level >= 3 ? scale.teens : 0);
+    case 'clinicPatients': return scale.clinicPatients;
   }
 }
 
@@ -65,5 +140,5 @@ export function policyCost(type: PolicyType, level: number, scale: PolicyScale):
   if (!billing) return 0;
   const perUnit = billing.perUnit[Math.min(level, maxLevel(type)) - 1];
   if (perUnit === undefined) return 0;
-  return perUnit * unitsOf(billing.basis, scale);
+  return perUnit * unitsOf(billing.basis, scale, level);
 }

@@ -15,6 +15,7 @@ import { countRoadTiles } from '../grid/GridHelpers';
 import { getUtilityMaintenanceCost, getCivicMaintenanceCostExcludingUtilities } from '../service/ServiceRegistry';
 import { getTotalTransportOperatingCost } from '../transport/TransportRegistry';
 import { totalPolicyExpense } from './ExpenseCalculator';
+import { computeCityScales } from '../district/PolicyBilling';
 import { calculateElevatedMaintenance } from '../elevation/ElevationMaintenance';
 
 export function buildEconomyBreakdownContext(
@@ -36,7 +37,7 @@ export function buildEconomyBreakdownContext(
     policyCost: totalPolicyExpense(
       state.districts.getAllDistricts(),
       state.ordinances,
-      state.citizens.getPopulation(),
+      computeCityScales(state.citizens.getCitizens(), (x, y) => state.health.getCoverage(x, y)),
     ),
     elevatedMaintenance: elevationManager ? calculateElevatedMaintenance(elevationManager) : 0,
     revenueMultiplier: state.citySpec.getBonus().revenueMultiplier,

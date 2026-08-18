@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { CityOrdinances } from '../CityOrdinances';
+import { policyCost } from '../PolicyBilling';
 import { PolicyType } from '../types';
 import { ZoneType } from '../../grid/types';
 import { CitizenManager } from '../../citizen/CitizenManager';
@@ -72,13 +73,50 @@ describe('育兒補貼', () => {
     expect(o.getFertilityMultiplier(), '沒開條例卻不是原值 1').toBe(1);
   });
 
-  it('should raise the multiplier further at the higher tier', () => {
+  it('should raise the multiplier further at every tier', () => {
     const o = new CityOrdinances();
-    o.setLevel(PolicyType.CHILDCARE_SUBSIDY, 1);
-    const light = o.getFertilityMultiplier();
-    o.setLevel(PolicyType.CHILDCARE_SUBSIDY, 2);
-    expect(light, '第一級沒有提高生育率').toBeGreaterThan(1);
-    expect(o.getFertilityMultiplier(), '第二級沒有比第一級更強').toBeGreaterThan(light);
+    const at = (lv: number) => {
+      o.setLevel(PolicyType.CHILDCARE_SUBSIDY, lv);
+      return o.getFertilityMultiplier();
+    };
+    // 補得越久，家戶越敢生 —— 決定要不要生的是整段扶養期的預期支持，不是這個月
+    // 領多少。
+    expect(at(1), '補到嬰兒沒有提高生育率').toBeGreaterThan(1);
+    expect(at(2), '補到兒童沒有比補到嬰兒更強').toBeGreaterThan(at(1));
+    expect(at(3), '補到青少年沒有比補到兒童更強').toBeGreaterThan(at(2));
+  });
+
+  describe('費用跟著真正領到補貼的孩子走', () => {
+    // 這是分級的全部意義。按總人口收的話，「補到嬰兒」與「補到青少年」花一樣多，
+    // 玩家沒有理由不直接開最高級。
+    const scale = {
+      population: 1000, districtCells: 0,
+      babies: 40, children: 60, teens: 50, clinicPatients: 900,
+    };
+    const costAt = (lv: number) => policyCost(PolicyType.CHILDCARE_SUBSIDY, lv, scale);
+
+    it('should charge for babies only at the first tier', () => {
+      const perHead = costAt(1) / scale.babies;
+      expect(perHead, '第一級沒有收費').toBeGreaterThan(0);
+      expect(costAt(2), '補到兒童卻沒有把兒童算進帳單')
+        .toBeCloseTo(perHead * (scale.babies + scale.children), 6);
+      expect(costAt(3), '補到青少年卻沒有把青少年算進帳單')
+        .toBeCloseTo(perHead * (scale.babies + scale.children + scale.teens), 6);
+    });
+
+    it('should charge nothing in a city with no children at all', () => {
+      // 一座還沒有小孩的城市開這條條例，錢沒有任何人領得到，也就不該收。
+      const childless = { ...scale, babies: 0, children: 0, teens: 0 };
+      expect(policyCost(PolicyType.CHILDCARE_SUBSIDY, 3, childless),
+        '沒有小孩卻還在收育兒補貼的錢').toBe(0);
+    });
+
+    it('should not follow the total population', () => {
+      // 人口翻十倍但小孩沒變多，帳單不該動 —— 那是「按人頭發補貼」與「按人口編
+      // 預算」的差別。
+      expect(policyCost(PolicyType.CHILDCARE_SUBSIDY, 2, { ...scale, population: 10_000 }),
+        '育兒補貼跟著總人口變動').toBe(costAt(2));
+    });
   });
 
   it('should reach births through the simulation loop', () => {

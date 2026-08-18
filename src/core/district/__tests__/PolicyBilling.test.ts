@@ -4,14 +4,15 @@ import { POLICY_ZONE_RESTRICTIONS, isPolicyImplemented, maxLevel } from '../Poli
 import { calculateDistrictPolicyCost } from '../../economy/ExpenseCalculator';
 import { PolicyType } from '../types';
 import { POLICY_SCOPE, isDistrictScoped } from '../PolicyScope';
+import { scaleOf } from '../../__tests__/helpers/policyScale';
 
 /**
  * 固定費用在大城市等於免費 —— 早期是限制，後期是無感。改成跟著它服務的規模走，
  * 費用才有來由，而且「政策越成功越貴」本身就是一個要玩家自己決定何時收手的張力。
  */
 
-const SMALL = { population: 100, districtCells: 20 };
-const BIG = { population: 10_000, districtCells: 400 };
+const SMALL = scaleOf({ population: 100, districtCells: 20 });
+const BIG = scaleOf({ population: 10_000, districtCells: 400 });
 
 describe('條例的計費', () => {
   it('should cost nothing at level 0', () => {
@@ -69,23 +70,32 @@ describe('條例的計費', () => {
     //   免費。
     // - 分區條例用人口計費的話，畫一格跟畫一百格收一樣多，「跟著它服務的規模走」
     //   整個失效。
-    const base = { population: 100, districtCells: 100 };
-    const morePeople = { population: 1000, districtCells: 100 };
-    const moreCells = { population: 100, districtCells: 1000 };
+    // 「跟著人口走」已經不是唯一的全城基數 —— 育兒補貼跟著孩子人頭走，免費診所
+    // 跟著加權後的病人數走。所以驗的是**方向**:全城條例要跟著某一個全城的量變
+    // 動、而且完全不理會分區格數;分區條例反過來。
+    const base = scaleOf({
+      population: 100, districtCells: 100,
+      babies: 10, children: 10, teens: 10, clinicPatients: 100,
+    });
+    const biggerCity = scaleOf({
+      population: 1000, districtCells: 100,
+      babies: 100, children: 100, teens: 100, clinicPatients: 1000,
+    });
+    const moreCells = scaleOf({ ...base, districtCells: 1000 });
 
     const entries = Object.entries(POLICY_BILLING);
     expect(entries.length, '計費表是空的，這條測試等於空轉').toBeGreaterThan(0);
     for (const [type] of entries) {
       const t = type as PolicyType;
       const b = policyCost(t, 1, base);
-      const p = policyCost(t, 1, morePeople);
+      const p = policyCost(t, 1, biggerCity);
       const c = policyCost(t, 1, moreCells);
       if (POLICY_SCOPE[t] === 'city') {
-        expect(p, `${type} 是全城條例卻不隨人口變`).toBeGreaterThan(b);
+        expect(p, `${type} 是全城條例卻不隨城市規模變`).toBeGreaterThan(b);
         expect(c, `${type} 是全城條例卻隨分區格數變 —— 全城沒有格數可言`).toBe(b);
       } else {
         expect(c, `${type} 是分區條例卻不隨格數變`).toBeGreaterThan(b);
-        expect(p, `${type} 是分區條例卻隨人口變 —— 畫一格跟畫一百格會收一樣多`).toBe(b);
+        expect(p, `${type} 是分區條例卻隨城市規模變 —— 畫一格跟畫一百格會收一樣多`).toBe(b);
       }
     }
   });
@@ -107,14 +117,14 @@ describe('預算真的照這張表收錢', () => {
   }];
 
   it('should bill exactly what policyCost says', () => {
-    expect(calculateDistrictPolicyCost(districts, 10_000))
+    expect(calculateDistrictPolicyCost(districts, scaleOf({ population: 10_000 })))
       .toBeCloseTo(policyCost(PolicyType.ENCOURAGE_RECYCLING, 2, BIG), 6);
   });
 
   it('should charge nothing for a district with no cells', () => {
     // 分區格數是計費基數 —— 沒有格子就沒有東西要服務。
     const empty = [{ cells: { size: 0 }, policies: districts[0]!.policies }];
-    expect(calculateDistrictPolicyCost(empty, 10_000)).toBe(0);
+    expect(calculateDistrictPolicyCost(empty, scaleOf({ population: 10_000 }))).toBe(0);
   });
 
   it('should charge nothing for any district policy once the cells are gone', () => {
@@ -129,7 +139,7 @@ describe('預算真的照這張表收錢', () => {
       .toBeGreaterThan(5);
     for (const type of districtScoped) {
       for (let level = 1; level <= maxLevel(type); level++) {
-        expect(policyCost(type, level, { population: 10_000, districtCells: 0 }),
+        expect(policyCost(type, level, scaleOf({ population: 10_000, babies: 50, children: 50, teens: 50, clinicPatients: 900 })),
           `${type} Lv${level} 在沒有格子的分區上還在收費`).toBe(0);
       }
     }
@@ -140,6 +150,6 @@ describe('預算真的照這張表收錢', () => {
       cells: { size: 400 },
       policies: [{ type: PolicyType.ENCOURAGE_RECYCLING, level: 0 as const }],
     }];
-    expect(calculateDistrictPolicyCost(off, 10_000)).toBe(0);
+    expect(calculateDistrictPolicyCost(off, scaleOf({ population: 10_000 }))).toBe(0);
   });
 });

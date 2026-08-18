@@ -5,6 +5,7 @@ import {
 } from '../PolicyPresentation';
 import { maxLevel, POLICY_EFFECTS, POLICY_CONFIG } from '../PolicyManager';
 import { POLICY_SCOPE } from '../PolicyScope';
+import { scaleOf } from '../../__tests__/helpers/policyScale';
 import { PolicyType } from '../types';
 
 /**
@@ -12,7 +13,7 @@ import { PolicyType } from '../types';
  * —— 但「按一次進幾級」「按鈕上寫什麼」是真的會錯的規則，不該只靠肉眼。
  */
 
-const SCALE = { population: 1000, districtCells: 50 };
+const SCALE = scaleOf({ population: 1000, districtCells: 50 });
 
 describe('等級循環', () => {
   it('should walk every level then return to off', () => {
@@ -50,8 +51,8 @@ describe('按鈕上的字', () => {
   it('should show the current cost, not a fixed price', () => {
     // 費用寫在按鈕上而不是說明頁，是因為它會隨規模變動 —— 把分區畫大一倍數字就
     // 跳一倍，那是「依規模計費」最直接的回饋。
-    const small = policyButtonText(PolicyType.ENCOURAGE_RECYCLING, 2, { population: 1000, districtCells: 10 });
-    const big = policyButtonText(PolicyType.ENCOURAGE_RECYCLING, 2, { population: 1000, districtCells: 400 });
+    const small = policyButtonText(PolicyType.ENCOURAGE_RECYCLING, 2, scaleOf({ population: 1000, districtCells: 10 }));
+    const big = policyButtonText(PolicyType.ENCOURAGE_RECYCLING, 2, scaleOf({ population: 1000, districtCells: 400 }));
     expect(small, '兩個規模顯示同一個價錢').not.toBe(big);
   });
 

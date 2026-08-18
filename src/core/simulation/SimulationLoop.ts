@@ -63,6 +63,7 @@ import { collectTradePositions, type TradePosition } from '../traffic/FreightTra
 import { calculateZoneIncomes } from '../economy/IncomeCalculator';
 import { buildIncomeCalcDeps } from '../economy/IncomeCalcAdapter';
 import { totalPolicyExpense, calculateTotalExpenses } from '../economy/ExpenseCalculator';
+import { computeCityScales, type CityScales } from '../district/PolicyBilling';
 import { calculateElevatedMaintenance } from '../elevation/ElevationMaintenance';
 import { randomInt } from '../utils/random';
 import { findAvailableTransit } from '../transport/TransitAvailability';
@@ -1022,7 +1023,7 @@ export class SimulationLoop {
       policyCost: totalPolicyExpense(
         this.state.districts.getAllDistricts(),
         this.state.ordinances,
-        this.state.citizens.getPopulation(),
+        this.cityScales(),
       ),
       transportCost: getTotalTransportOperatingCost(this.state),
       elevatedMaintenance: this._elevationManager
@@ -1301,6 +1302,19 @@ export class SimulationLoop {
       getResidents: (homeId) => residentsAtHome(this.state.grid, homeId),
       fertilityMultiplier: this.state.ordinances.getFertilityMultiplier(),
     }, this.state.clock.tick);
+  }
+
+  /**
+   * 本期計費要用的全城規模。
+   *
+   * 補貼型條例按實際受益人頭收費，所以帳單要知道人口結構與醫院覆蓋，不只是人口
+   * 總數。
+   */
+  cityScales(): CityScales {
+    return computeCityScales(
+      this.state.citizens.getCitizens(),
+      (x, y) => this.state.health.getCoverage(x, y),
+    );
   }
 
   /** Get the abandonment stress for a building at (x, y). */

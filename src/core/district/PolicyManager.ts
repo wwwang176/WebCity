@@ -210,10 +210,15 @@ export const POLICY_EFFECTS: Partial<Record<PolicyType, readonly PolicyEffect[]>
    *
    * 多出來的嬰兒不會立刻變成稅基。他們佔著住宅容量、不工作,要等成年才進勞動
    * 市場 —— 那個時間差是這條條例真正的賭注,而它已經在模擬裡了,不必寫進這張表。
+   *
+   * 三級是**補到孩子幾歲**:嬰兒 / 到兒童 / 到青少年。現實裡的育兒津貼一定是年齡
+   * 有界的,預算也是按符合資格的孩子人頭編的 —— 沒有哪一個國家按總人口編一筆固定
+   * 的育兒預算。補得越久家戶越敢生,所以生育率跟著階數上去。
    */
   [PolicyType.CHILDCARE_SUBSIDY]: [
-    { fertility: 1.25, revenueByZone: { [ZoneType.COMMERCIAL_LOW]: 0.98, [ZoneType.COMMERCIAL_HIGH]: 0.98, [ZoneType.INDUSTRIAL]: 0.98 } },
-    { fertility: 1.55, revenueByZone: { [ZoneType.COMMERCIAL_LOW]: 0.95, [ZoneType.COMMERCIAL_HIGH]: 0.95, [ZoneType.INDUSTRIAL]: 0.95 } },
+    { fertility: 1.20, revenueByZone: { [ZoneType.COMMERCIAL_LOW]: 0.98, [ZoneType.COMMERCIAL_HIGH]: 0.98, [ZoneType.INDUSTRIAL]: 0.98 } },
+    { fertility: 1.45, revenueByZone: { [ZoneType.COMMERCIAL_LOW]: 0.95, [ZoneType.COMMERCIAL_HIGH]: 0.95, [ZoneType.INDUSTRIAL]: 0.95 } },
+    { fertility: 1.70, revenueByZone: { [ZoneType.COMMERCIAL_LOW]: 0.91, [ZoneType.COMMERCIAL_HIGH]: 0.91, [ZoneType.INDUSTRIAL]: 0.91 } },
   ],
 
   /**
