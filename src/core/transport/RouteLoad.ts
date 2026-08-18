@@ -94,20 +94,33 @@ export function crowdingWaitMultiplier(loadFactor: number): number {
 }
 
 /**
- * 載重的三個階段。顏色與文案照這個分，不是照隨手挑的門檻。
+ * 面板轉紅的載重。
  *
- * 三段各自對應模擬裡一件**真的會發生的事**:
- * - `comfortable`：等車時間不受影響。
- * - `crowded`：等車時間開始拉長（`crowdingWaitMultiplier`）。
- * - `refusing`：真的擠不上去，這條路線從那個人的選項裡消失（`isOverCapacity`）。
- *
- * 抽出來是為了讓面板跟模擬讀同一組數字 —— 各寫一份的話，玩家看到黃燈卻發現沒有
- * 人搭得上去。
+ * 這是一個**顯示用**的門檻，不是模擬常數 —— 模擬裡九成載重不會發生任何特別的事。
+ * 它存在的理由是提前警告:等到一五○%（`REFUSE_LOAD`，路線真的開始拒載）才變紅
+ * 的話，玩家看到紅燈時事情已經壞了。紅燈要說的是「現在該加車了」，不是
+ * 「已經來不及了」。
  */
-export type RouteLoadStatus = 'comfortable' | 'crowded' | 'refusing';
+export const USAGE_WARN_LOAD = 0.9;
+
+/**
+ * 載重的四個階段。顏色與文案照這個分。
+ *
+ * 前兩段與最後一段對應模擬裡**真的會發生的事**，中間那道是顯示用的提前警告:
+ * - `comfortable`（< 0.8）：等車時間不受影響。
+ * - `crowded`（0.8 ~ 0.9）：等車時間開始拉長（`crowdingWaitMultiplier`）。
+ * - `overloaded`（>= 0.9）：提前警告，該加車了。
+ * - `refusing`（>= 1.5）：真的擠不上去，這條路線從那個人的選項裡消失
+ *   （`isOverCapacity`）。顏色跟 `overloaded` 一樣紅，但文案不同 —— 玩家要看得出
+ *   「快滿了」跟「已經沒有人搭得上去了」的差別。
+ *
+ * 抽出來是為了讓面板跟模擬讀同一組數字 —— 各寫一份的話，兩邊會靜靜地分家。
+ */
+export type RouteLoadStatus = 'comfortable' | 'crowded' | 'overloaded' | 'refusing';
 
 export function routeLoadStatus(loadFactor: number): RouteLoadStatus {
   if (loadFactor >= CROWDING.REFUSE_LOAD) return 'refusing';
+  if (loadFactor >= USAGE_WARN_LOAD) return 'overloaded';
   if (loadFactor >= CROWDING.COMFORT_LOAD) return 'crowded';
   return 'comfortable';
 }

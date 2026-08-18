@@ -53,6 +53,8 @@ interface SystemRow {
 const USAGE_COLOR: Record<RouteLoadStatus, string> = {
   comfortable: UI_COLORS.STATUS_GOOD,
   crowded: UI_COLORS.STATUS_WARN,
+  overloaded: UI_COLORS.STATUS_BAD,
+  // 拒載跟超載同一個紅 —— 差別在文案，不在顏色。多一種紅只會讓人分不出來。
   refusing: UI_COLORS.STATUS_BAD,
 };
 
@@ -60,6 +62,7 @@ const USAGE_COLOR: Record<RouteLoadStatus, string> = {
 const USAGE_HINT: Record<RouteLoadStatus, string> = {
   comfortable: 'Waits are unaffected at this load.',
   crowded: 'Riders are waiting longer — packed vehicles go past.',
+  overloaded: 'Running out of room — add vehicles before riders start being turned away.',
   refusing: 'Full. This route is no longer offered to commuters — add vehicles.',
 };
 
