@@ -3,7 +3,7 @@ import type { LaneEdge } from './LaneGraph';
 import { interpolateEdgePosition, interpolateEdgeTangent, interpolateEdgePositionInto, interpolateEdgeTangentInto } from './EdgeInterpolation';
 import { findGapAhead, findRedLightDistance, findBlockedJunctionDistance, type EdgeEntry } from './VehicleLookahead';
 import { SpatialHash, type SpatialEntry } from './SpatialHash';
-import { findCrossEdgeGap, CROSS_EDGE } from './CrossEdgeCollision';
+import { findCrossEdgeGap } from './CrossEdgeCollision';
 import { pickWeighted } from '../utils/random';
 
 export interface BusVehicleState {
@@ -79,6 +79,9 @@ const TRUCK_DIMS = { length: 0.45, width: 0.125 };
  * 這兩條界線之間塞不下一個「單一半徑」——車身 0.26 就已經比車道間距 0.1375 寬了。
  * 所以是兩個數字而不是一個。
  */
+/** 生成點索引的格子大小（世界單位）。一格路面 = 1，跟地圖對齊最好查。 */
+const SPAWN_INDEX_CELL_SIZE = 1.0;
+
 export const SPAWN_CLEARANCE = {
   ALONG: 0.3,
   ACROSS: 0.10,
@@ -191,7 +194,7 @@ export class TrafficSimulation {
    * 到了清車之後還留著已經抵達的車。生成點正好就是別人的目的地，用那一份會把
    * 剛剛抵達、其實已經不存在的車當成佔位的。
    */
-  private spawnHash = new SpatialHash<SpawnSlot>(1.0);
+  private spawnHash = new SpatialHash<SpawnSlot>(SPAWN_INDEX_CELL_SIZE);
   /** `spawnHash` 的物件池 —— 每幀重建，不要每幀重新配置。 */
   private spawnSlots: SpawnSlot[] = [];
   private spawnSlotCount = 0;
@@ -204,13 +207,23 @@ export class TrafficSimulation {
   /** Reusable per-frame sort key store (see advanceEdgeVehicles). */
   private sortProgress = new Map<number, number>();
   /** Reusable spatial hash for cross-edge collision detection. */
-  private spatialHash = new SpatialHash<SpatialEntry>(CROSS_EDGE.CELL_SIZE);
+  /**
+   * 每個匯流點上有哪些車 —— key 是那條邊終點連接點的 id。
+   *
+   * `findCrossEdgeGap` 唯一在意的關係就是「會不會匯進同一個點」。原本是逐格的
+   * 空間雜湊，撈半徑 2.0 內的所有車再一台一台丟掉，撈回來的九成以上第一個條件
+   * 就被刷掉（12 365 人的存檔實測 68.6ms/tick）。照終點分組就是直接問對的問題。
+   *
+   * 陣列每幀清空重用，不重新配置。
+   */
+  private mergeGroups = new Map<string, SpatialEntry[]>();
+  /** 沒有同伴時回傳的空陣列 —— 免得每次都配一個新的。 */
+  private static readonly NO_SIBLINGS: readonly SpatialEntry[] = [];
   /** Reusable array for spatial entries (object pool — grows to high-water mark). */
   private spatialEntries: SpatialEntry[] = [];
   /** Reusable vid → SpatialEntry map (cleared each frame). */
   private vidToSpatialMap = new Map<number, SpatialEntry>();
   /** Reusable scratch array for queryNearbyInto (avoids per-call allocation). */
-  private nearbyScratch: SpatialEntry[] = [];
   /** Reusable output objects for per-vehicle position/heading (avoid per-call allocation). */
   private readonly _posOut = { x: 0, y: 0 };
   private readonly _tanOut = { x: 0, y: 0 };
@@ -612,8 +625,8 @@ export class TrafficSimulation {
     // Build spatial hash for cross-edge collision detection.
     // Positions are computed once at frame start (read-only during processing).
     // SpatialEntry objects are pooled: reuse existing slots, grow only when needed.
-    const spatialHash = this.spatialHash;
-    spatialHash.clear();
+    const mergeGroups = this.mergeGroups;
+    for (const arr of mergeGroups.values()) arr.length = 0;
     const spatialEntries = this.spatialEntries;
     const _posTemp = { x: 0, y: 0 };
     const _tanTemp = { x: 0, y: 0 };
@@ -649,7 +662,9 @@ export class TrafficSimulation {
         };
         spatialEntries.push(se);
       }
-      spatialHash.insert(se);
+      let group = mergeGroups.get(se.toId);
+      if (!group) { group = []; mergeGroups.set(se.toId, group); }
+      group.push(se);
       seCount++;
     }
     // Trim pool to active count (no dealloc — array capacity retained)
@@ -686,7 +701,9 @@ export class TrafficSimulation {
 
       // 1b. Gap to nearest vehicle on a DIFFERENT edge (cross-edge spatial check)
       const mySpatial = vidToSpatial.get(v.id);
-      const crossGap = mySpatial ? findCrossEdgeGap(mySpatial, spatialHash, this.nearbyScratch) : Infinity;
+      const crossGap = mySpatial
+        ? findCrossEdgeGap(mySpatial, mergeGroups.get(mySpatial.toId) ?? TrafficSimulation.NO_SIBLINGS)
+        : Infinity;
 
       // 2. Distance to nearest red light on path
       const redLightDist = canAdvance
