@@ -100,6 +100,10 @@ const EFFECT_SUMMARY: Partial<Record<PolicyType, readonly string[]>> = {
     'Industrial ground pollution \u221240%  \u00B7  Industrial revenue \u221212%',
     'Industrial ground pollution \u221260%  \u00B7  Industrial revenue \u221222%',
   ],
+  [PolicyType.CHILDCARE_SUBSIDY]: [
+    'Births +25%  \u00B7  Commercial and industrial revenue \u22122%',
+    'Births +55%  \u00B7  Commercial and industrial revenue \u22125%',
+  ],
 };
 
 /** 這個條例這一級做什麼。等級 0 回空字串。 */
@@ -182,10 +186,12 @@ export const POLICY_CATEGORY: Record<PolicyType, string> = {
   [PolicyType.WATER_CONSERVATION]: 'Environment',
   [PolicyType.SEWAGE_STANDARDS]: 'Environment',
   [PolicyType.INDUSTRIAL_EMISSION_CONTROL]: 'Environment',
+
+  [PolicyType.CHILDCARE_SUBSIDY]: 'Welfare',
 };
 
 /** 面板上分類出現的順序。 */
-export const CATEGORY_ORDER = ['Land use', 'Economy', 'Safety', 'Environment'] as const;
+export const CATEGORY_ORDER = ['Land use', 'Economy', 'Safety', 'Welfare', 'Environment'] as const;
 
 /** 已下架的條例集中在這一組。 */
 export const RETIRED_CATEGORY = 'Retired';

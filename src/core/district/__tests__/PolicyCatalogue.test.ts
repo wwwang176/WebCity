@@ -49,6 +49,7 @@ describe('目錄的完整性', () => {
       PolicyType.SURVEILLANCE_NETWORK, PolicyType.PAY_AS_YOU_THROW,
       PolicyType.WATER_CONSERVATION, PolicyType.SEWAGE_STANDARDS,
       PolicyType.INDUSTRIAL_EMISSION_CONTROL,
+      PolicyType.CHILDCARE_SUBSIDY,
     ]));
   });
 
@@ -73,6 +74,7 @@ describe('目錄的完整性', () => {
       [PolicyType.PAY_AS_YOU_THROW]: 'city',
       [PolicyType.WATER_CONSERVATION]: 'city',
       [PolicyType.SEWAGE_STANDARDS]: 'city',
+      [PolicyType.CHILDCARE_SUBSIDY]: 'city',
     };
     for (const type of Object.values(PolicyType)) {
       expect(POLICY_SCOPE[type], `${type} 的範圍跟當初的設計不一樣`).toBe(DESIGNED[type]);
@@ -91,9 +93,19 @@ describe('逐級的方向', () => {
   const REDUCERS = ['garbage', 'waterDemand', 'sewageLoad', 'industrialPollution',
     'powerDemand'] as const;
 
+  /**
+   * 增量型的槓桿:方向跟 REDUCERS 相反，乘數 > 1 才是好處。
+   *
+   * 分成兩張表而不是在每個槓桿身上標一個 `goodDirection`:標記會跟效果表分開放，
+   * 而漏標的那一條會被當成「沒有這個欄位」靜靜跳過 —— 一條純好處的條例就這樣
+   * 從這個不變量底下溜過去了。
+   */
+  const INCREASERS = ['fertility'] as const;
+
   const benefits = (e: PolicyEffect): number => {
     let n = 0;
     for (const k of REDUCERS) if (e[k] !== undefined && e[k]! < 1) n++;
+    for (const k of INCREASERS) if (e[k] !== undefined && e[k]! > 1) n++;
     if (e.landValue !== undefined && e.landValue > 0) n++;
     if (e.crime !== undefined && e.crime < 0) n++;
     if (e.revenue !== undefined && e.revenue > 1) n++;
@@ -104,6 +116,7 @@ describe('逐級的方向', () => {
   const costs = (e: PolicyEffect): number => {
     let n = 0;
     for (const k of REDUCERS) if (e[k] !== undefined && e[k]! > 1) n++;
+    for (const k of INCREASERS) if (e[k] !== undefined && e[k]! < 1) n++;
     if (e.landValue !== undefined && e.landValue < 0) n++;
     if (e.crime !== undefined && e.crime > 0) n++;
     if (e.revenue !== undefined && e.revenue < 1) n++;
@@ -129,6 +142,11 @@ describe('逐級的方向', () => {
           if (prev[k] === undefined || cur[k] === undefined) continue;
           expect(cur[k]!, `${type} 第 ${i + 1} 級的 ${k} 沒有比前一級更省`)
             .toBeLessThan(prev[k]!);
+        }
+        for (const k of INCREASERS) {
+          if (prev[k] === undefined || cur[k] === undefined) continue;
+          expect(cur[k]!, `${type} 第 ${i + 1} 級的 ${k} 沒有比前一級更強`)
+            .toBeGreaterThan(prev[k]!);
         }
         if (prev.crime !== undefined && cur.crime !== undefined) {
           expect(Math.sign(cur.crime), `${type} 第 ${i + 1} 級的犯罪方向跟前一級相反`)

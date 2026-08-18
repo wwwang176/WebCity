@@ -8,6 +8,13 @@ export interface BirthContext {
   happinessBonus: number;
   /** 查詢住宅容量的回調；未提供時使用固定上限 2 */
   getResidents?: (homeId: string) => number;
+  /**
+   * 生育機率的乘數（育兒補貼）。1 = 沒有條例。
+   *
+   * 乘在**最後**的機率上,不是 `baseFertilityRate` —— 那個欄位帶著一段「跟預設值
+   * 不同就當成測試覆寫」的判斷,乘進去會讓條例把測試的固定值也一起覆寫掉。
+   */
+  fertilityMultiplier: number;
 }
 
 /** 每 N 個住宅容量允許 1 個 BABY+CHILD，最低 2 */
@@ -16,6 +23,7 @@ export const CHILDREN_PER_RESIDENTS = 4;
 export const DEFAULT_CONTEXT: BirthContext = {
   baseFertilityRate: 0.04,  // per eligible citizen per month (called monthly)
   happinessBonus: 0.03,
+  fertilityMultiplier: 1,
 };
 
 export const BIRTH = {
@@ -94,6 +102,8 @@ export function birthTick(
         ? ctx.happinessBonus    // test override: use fixed bonus
         : fertility.happyBonus;
     }
+
+    rate *= ctx.fertilityMultiplier;
 
     // 隨機判定
     if (Math.random() < rate) {

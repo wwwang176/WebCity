@@ -41,6 +41,9 @@ export const POLICY_SCOPE: Record<PolicyType, PolicyScopeKind> = {
   // 汙染源是逐格的工業格，好處與代價也都落在工業格上 ——「管哪一片工廠」是
   // 有意義的決策，套到全城只會在沒有汙染問題的工業區白扣收入。
   [PolicyType.INDUSTRIAL_EMISSION_CONTROL]: 'district',
+  // 生育率是全城一個數字。只在某一區補貼的話,決策會退化成「把分區畫在住宅密度
+  // 最高的地方」—— 那是找最大的那一塊,不是取捨。
+  [PolicyType.CHILDCARE_SUBSIDY]: 'city',
 };
 
 /** 這個條例畫在分區上有意義嗎？ */

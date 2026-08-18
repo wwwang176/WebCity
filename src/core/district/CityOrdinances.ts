@@ -87,6 +87,11 @@ export class CityOrdinances {
     return this.effect(e => e.garbage, 1, (a, b) => a * b);
   }
 
+  /** 全城條例對生育機率的乘數。 */
+  getFertilityMultiplier(): number {
+    return this.effect(e => e.fertility, 1, (a, b) => a * b);
+  }
+
   /** 全城條例對這個分區類型的收入乘數。 */
   getRevenueMultiplier(zoneType: ZoneType): number {
     return this.effect((e) => {

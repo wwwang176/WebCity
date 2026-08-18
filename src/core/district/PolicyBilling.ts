@@ -44,6 +44,8 @@ export const POLICY_BILLING: Partial<Record<PolicyType, {
   [PolicyType.WATER_CONSERVATION]: { basis: 'population', perUnit: [0.07, 0.18, 0.42] },
   [PolicyType.SEWAGE_STANDARDS]: { basis: 'population', perUnit: [0.09, 0.24] },
   [PolicyType.INDUSTRIAL_EMISSION_CONTROL]: { basis: 'districtCells', perUnit: [2, 5, 11] },
+  // 補貼是直接發到家戶手上的錢,人越多發得越多 —— 這是全表最貴的一類。
+  [PolicyType.CHILDCARE_SUBSIDY]: { basis: 'population', perUnit: [0.12, 0.30] },
 };
 
 function unitsOf(basis: BillingBasis, scale: PolicyScale): number {

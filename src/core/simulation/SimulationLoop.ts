@@ -1299,6 +1299,7 @@ export class SimulationLoop {
       // FALLBACK_RESIDENTS (8) for an address with no building at all, which
       // that figure counts as 0 (BUG-164).
       getResidents: (homeId) => residentsAtHome(this.state.grid, homeId),
+      fertilityMultiplier: this.state.ordinances.getFertilityMultiplier(),
     }, this.state.clock.tick);
   }
 

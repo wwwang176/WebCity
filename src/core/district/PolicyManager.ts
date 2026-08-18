@@ -31,6 +31,7 @@ export const POLICY_CONFIG: Record<PolicyType, PolicyTypeConfig> = {
   [PolicyType.WATER_CONSERVATION]: { name: 'Water Conservation' },
   [PolicyType.SEWAGE_STANDARDS]: { name: 'Sewage Standards' },
   [PolicyType.INDUSTRIAL_EMISSION_CONTROL]: { name: 'Industrial Emission Control' },
+  [PolicyType.CHILDCARE_SUBSIDY]: { name: 'Childcare Subsidy' },
 };
 
 /**
@@ -89,6 +90,13 @@ export interface PolicyEffect {
   sewageLoad?: number;
   /** 工業格的地面汙染乘數。 */
   industrialPollution?: number;
+  /**
+   * 全城生育機率的乘數。
+   *
+   * 生育是逐個市民擲一次骰子,所以這裡乘的是機率本身,不是人數 —— 乘人數的話
+   * 一個沒有半個育齡成人的城市也會生出小孩。
+   */
+  fertility?: number;
 }
 
 /**
@@ -185,6 +193,18 @@ export const POLICY_EFFECTS: Partial<Record<PolicyType, readonly PolicyEffect[]>
     { industrialPollution: 0.80, revenueByZone: { [ZoneType.INDUSTRIAL]: 0.95 } },
     { industrialPollution: 0.60, revenueByZone: { [ZoneType.INDUSTRIAL]: 0.88 } },
     { industrialPollution: 0.40, revenueByZone: { [ZoneType.INDUSTRIAL]: 0.78 } },
+  ],
+
+  /**
+   * 育兒補貼。公托與津貼讓家戶敢生,財源是對雇主課的育兒基金 —— 所以代價落在
+   * 商業與工業,住宅不動:受益的正是住在裡面的那些人。
+   *
+   * 多出來的嬰兒不會立刻變成稅基。他們佔著住宅容量、不工作,要等成年才進勞動
+   * 市場 —— 那個時間差是這條條例真正的賭注,而它已經在模擬裡了,不必寫進這張表。
+   */
+  [PolicyType.CHILDCARE_SUBSIDY]: [
+    { fertility: 1.25, revenueByZone: { [ZoneType.COMMERCIAL_LOW]: 0.98, [ZoneType.COMMERCIAL_HIGH]: 0.98, [ZoneType.INDUSTRIAL]: 0.98 } },
+    { fertility: 1.55, revenueByZone: { [ZoneType.COMMERCIAL_LOW]: 0.95, [ZoneType.COMMERCIAL_HIGH]: 0.95, [ZoneType.INDUSTRIAL]: 0.95 } },
   ],
 };
 
