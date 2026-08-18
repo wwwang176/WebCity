@@ -14,8 +14,12 @@ import { STOP_LINE_OFFSET, findBlockedJunctionDistance, type EdgeEntry } from '.
  * 一路貼上去停在路口正中央 —— 綠燈換到對向，對向前面卡著一台不會動的車，整個
  * 十字就鎖死了。
  *
- * 正確的判斷是**進去之前先問出得來嗎**:車尾要能越過路口的另一邊，否則就停在
- * 停止線前等。
+ * 正確的判斷是**進去之前先問出得來嗎**:車身中心要能越過路口的另一邊，否則就停
+ * 在停止線前等。
+ *
+ * 用中心而不是車尾，是刻意留一點餘裕:真人開車本來就會把車頭探出去一點，而且
+ * 這樣車流看起來順得多。代價有上限 —— 最多半個車身留在路口裡（0.11 格，約 1.3
+ * 公尺，路口寬的一成）。
  */
 
 const J = 10;   // 路口那一段在 edgePath 裡的索引
@@ -71,10 +75,15 @@ function gridlock(junctionAt: number) {
 }
 
 describe('路口要淨空', () => {
-  it('should leave the junction empty when the queue beyond it is full', () => {
+  it('should let at most a nose into the junction when the queue beyond is full', () => {
+    // 放行的條件是**車身中心**過得了出口，所以留在路口裡的絕不會超過半個車身。
+    // 這是上限不是平均:整台車停在路口裡（中心還沒過出口）就會被抓到。
     const { cars } = gridlock(J);
-    const inside = cars.filter(v => overlaps(v, J, J + 1));
-    expect(inside.map(v => centre(v).toFixed(2)), '有車停在路口裡').toEqual([]);
+    for (const v of cars) {
+      if (!overlaps(v, J, J + 1)) continue;
+      expect(centre(v), `一台車的中心停在路口裡（${centre(v).toFixed(2)}）`)
+        .toBeGreaterThanOrEqual(J + 1 - 1e-6);
+    }
   });
 
   it('should still pack the queue tight where there is no junction', () => {
@@ -150,22 +159,23 @@ describe('進去之前的那一問', () => {
   /** 要讓我的中心能走到 `r`，前面那台車得擺在多遠。 */
   const distFor = (r: number) => r + HALF * 2 + MIN_GAP;
 
-  it('should let the car in when the queue still leaves room for its tail', () => {
-    expect(ask(distFor(EXIT + HALF + 0.05), true)).toBe(Infinity);
+  // 邊界要釘在 `exit` 上，而且要靠得比半個車身近 —— 判斷寫成 `exit ± 半車身`
+  // 時，離得遠的距離會給出同樣的答案，測不出東西。
+  const NEAR = 0.05;   // < HALF
+
+  it('should let the car in when its midpoint can clear the junction', () => {
+    expect(ask(distFor(EXIT + NEAR), true)).toBe(Infinity);
   });
 
-  it('should keep it out when the queue only leaves room for its nose', () => {
-    // 車頭出得去、車尾還在裡面 —— 這樣停下來一樣擋住橫向車流。
-    //
-    // 距離要挑在 `exit - 半車身` 與 `exit + 半車身` 之間，兩者只差一個車身長:
-    // 挑在區間外的話，判斷寫成減半車身也會給出同樣的答案。
-    expect(ask(distFor(EXIT), true)).toBeCloseTo(ENTER - HALF - STOP_LINE_OFFSET, 9);
+  it('should keep it out when it cannot even get its midpoint across', () => {
+    // 中心都過不去就是整台車卡在路口裡。
+    expect(ask(distFor(EXIT - NEAR), true)).toBeCloseTo(ENTER - HALF - STOP_LINE_OFFSET, 9);
   });
 
   it('should ignore a car that is still moving', () => {
     // 這是規則原本最大的毛病:`findGapAhead` 不分排隊還是行進，於是「前方兩格內
     // 有車」就擋人 —— 而兩格是正常車距。
-    expect(ask(distFor(EXIT), false), '被一台還在開的車擋住了').toBe(Infinity);
+    expect(ask(distFor(EXIT - NEAR), false), '被一台還在開的車擋住了').toBe(Infinity);
   });
 
   it('should never brake a car that is already inside the box', () => {
