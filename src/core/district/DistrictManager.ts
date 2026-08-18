@@ -1,4 +1,5 @@
-import { toPosKey } from '../grid/GridHelpers';
+import { toPosKey, parsePosKey } from '../grid/GridHelpers';
+import { RoadType } from '../road/types';
 import { recoverNextId } from '../utils/recoverNextId';
 import { District, Policy, PolicyType, Specialization } from './types';
 import { clampLevel, levelForLegacyActive, maxLevel } from './PolicyManager';
@@ -30,6 +31,43 @@ export interface SerializedDistrict {
 export interface SerializedDistrictManager {
   nextId: number;
   districts: SerializedDistrict[];
+}
+
+/**
+ * 這個分區裡有幾格是道路。
+ *
+ * 壅塞費的門架維運費照這個數字收 —— 門架是架在路上的，不是架在地上。用分區的
+ * 總格數計價的話，圈一片公園綠地跟圈一片密集路網要付一樣多，而前者根本沒有地方
+ * 可以架門架。
+ *
+ * 越界的格子不算:存檔是使用者能編輯的檔案，`getCell` 對越界回 null，當成有路的話
+ * 一個手改過的分區就能憑空生出門架費。
+ */
+export function countRoadCellsInDistrict(
+  grid: { getCell(x: number, y: number): { roadType: number } | null },
+  district: { cells: ReadonlySet<string> },
+): number {
+  let roads = 0;
+  for (const key of district.cells) {
+    const pos = parsePosKey(key);
+    if (!pos) continue;
+    const cell = grid.getCell(pos.x, pos.y);
+    if (cell && cell.roadType !== RoadType.NONE) roads++;
+  }
+  return roads;
+}
+
+/**
+ * 把分區清單補上計費要用的道路格數。
+ *
+ * 計費那一層只認得一個最小介面（格數、道路格數、政策），不認得 `District` —— 這裡
+ * 是兩者之間唯一的轉接點，所以「門架照道路算」這件事只有一個地方會寫錯。
+ */
+export function billableDistricts<T extends { cells: ReadonlySet<string> }>(
+  grid: { getCell(x: number, y: number): { roadType: number } | null },
+  districts: readonly T[],
+): (T & { roadCells: number })[] {
+  return districts.map(d => ({ ...d, roadCells: countRoadCellsInDistrict(grid, d) }));
 }
 
 export class DistrictManager {

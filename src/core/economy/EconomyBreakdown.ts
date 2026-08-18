@@ -17,6 +17,8 @@ export interface EconomyBreakdownContext extends IncomeCalcDeps {
   serviceCost?: number;
   /** District policy upkeep. */
   policyCost?: number;
+  /** 條例收到的規費（目前只有壅塞費的過路費）。 */
+  policyRevenue?: number;
   /** Elevated road/rail maintenance. */
   elevatedMaintenance?: number;
   /** City specialization revenue multiplier, applied to zone incomes. */
@@ -35,7 +37,18 @@ export interface EconomyBreakdownResult {
   transportCost: number;
   serviceCost: number;
   policyCost: number;
+  policyRevenue: number;
   elevatedMaintenance: number;
+}
+
+/**
+ * 面板上「總收入」那一格。
+ *
+ * 抽成函式而不是寫在 .tsx 的加法裡:漏加一項不會有任何測試轉紅，而漏加的那一項
+ * 正好是最新加進來的那一個 —— 條例的規費就是這樣一個新來的加項。
+ */
+export function panelIncomeTotal(b: EconomyBreakdownResult): number {
+  return b.residential + b.commercial + b.industrial + b.office + b.policyRevenue;
 }
 
 /** Round to 1 decimal place. */
@@ -62,6 +75,7 @@ export function getEconomyBreakdown(ctx: EconomyBreakdownContext): EconomyBreakd
     transportCost: ctx.transportOperatingCost,
     serviceCost: r1(ctx.serviceCost ?? 0),
     policyCost: r1(ctx.policyCost ?? 0),
+    policyRevenue: r1(ctx.policyRevenue ?? 0),
     elevatedMaintenance: r1(ctx.elevatedMaintenance ?? 0),
   };
 }

@@ -125,7 +125,8 @@ export class CityOrdinances {
   totalCost(city: CityScales): number {
     let total = 0;
     for (const [type, level] of this.levels) {
-      total += policyCost(type, level, { ...city, districtCells: 0 });
+      // 全城條例沒有分區可言 —— 格數與道路格數都是 0。
+      total += policyCost(type, level, { ...city, districtCells: 0, districtRoadCells: 0 });
     }
     return total;
   }

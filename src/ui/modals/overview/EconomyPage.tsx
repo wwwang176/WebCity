@@ -1,5 +1,7 @@
 import { createSignal, createEffect, createMemo, For, Index, Show } from 'solid-js';
 import { listPolicyExpenses } from '../../../core/economy/ExpenseCalculator';
+import { panelIncomeTotal } from '../../../core/economy/EconomyBreakdown';
+import { billableDistricts } from '../../../core/district/DistrictManager';
 import { POLICY_CONFIG } from '../../../core/district/PolicyManager';
 import { computeCityScales } from '../../../core/district/PolicyBilling';
 import { policyLevelLabel } from '../../../core/district/PolicyPresentation';
@@ -54,10 +56,7 @@ export function EconomyPage(props: EconomyPageProps) {
     return getGame().getState();
   };
 
-  const totalIncome = () => {
-    const b = breakdown();
-    return b.residential + b.commercial + b.industrial + b.office;
-  };
+  const totalIncome = () => panelIncomeTotal(breakdown());
   const totalExpenses = () => {
     const b = breakdown();
     return b.roadMaintenance + b.loanInterest + b.powerCost + b.waterCost + b.transportCost
@@ -73,8 +72,13 @@ export function EconomyPage(props: EconomyPageProps) {
   const policyLines = createMemo(() => {
     const st = state();
     return listPolicyExpenses(
-      st.districts.getAllDistricts(), st.ordinances,
-      computeCityScales(st.citizens.getCitizens(), (x: number, y: number) => st.health.getCoverage(x, y)));
+      billableDistricts(st.grid, st.districts.getAllDistricts()), st.ordinances, {
+        ...computeCityScales(st.citizens.getCitizens(),
+          (x: number, y: number) => st.health.getCoverage(x, y)),
+        // 付費人數來自通勤統計 —— 少了它，明細裡的過路費會恆為 0，跟上面那一列
+        // 的總額對不起來。
+        chargedDrivers: getGame().getCommuteStats().chargedDrivers,
+      });
   });
 
   const onIncomeTaxChange = (e: Event) => {
@@ -134,6 +138,11 @@ export function EconomyPage(props: EconomyPageProps) {
           <tr><td class="td-label">Business Tax (Commercial)</td><td class="td-value">{businessTax()}%</td><td class="td-income" style="text-align:right">+${breakdown().commercial.toFixed(1)}</td></tr>
           <tr><td class="td-label">Business Tax (Industrial)</td><td class="td-value">{businessTax()}%</td><td class="td-income" style="text-align:right">+${breakdown().industrial.toFixed(1)}</td></tr>
           <tr><td class="td-label">Business Tax (Office)</td><td class="td-value">{businessTax()}%</td><td class="td-income" style="text-align:right">+${breakdown().office.toFixed(1)}</td></tr>
+          {/* 條例的規費。目前只有壅塞費 —— 收費區裡還在開車的人越多收得越多，
+              所以這一列會隨著政策見效而**下降**。 */}
+          <Show when={breakdown().policyRevenue > 0}>
+            <tr><td class="td-label">Policy Charges</td><td class="td-value"></td><td class="td-income" style="text-align:right">+${breakdown().policyRevenue.toFixed(1)}</td></tr>
+          </Show>
         </tbody>
       </table>
 
@@ -172,8 +181,17 @@ export function EconomyPage(props: EconomyPageProps) {
                         圓點對應到面板上的哪一格。 */}
                     {' · '}{policyLevelLabel(line().type, line().level)}
                   </td>
-                  <td class="td-expense" style="text-align:right;color:#888;font-size:11px">
-                    -${line().cost.toFixed(1)}
+                  {/* 同一條條例可以兩邊都有。折成淨額的話，玩家看不出這個月
+                      由賺轉賠是因為車變少了還是因為收費區畫大了。 */}
+                  <td style="text-align:right;font-size:11px">
+                    <Show when={line().cost > 0}>
+                      <span class="td-expense" style="color:#888">-${line().cost.toFixed(1)}</span>
+                    </Show>
+                    <Show when={line().revenue > 0}>
+                      <span class="td-income" style="color:#66bb6a">
+                        {line().cost > 0 ? ' ' : ''}+${line().revenue.toFixed(1)}
+                      </span>
+                    </Show>
                   </td>
                 </tr>
               )}

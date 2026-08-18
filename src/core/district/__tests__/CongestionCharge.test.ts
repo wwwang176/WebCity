@@ -87,11 +87,12 @@ describe('壅塞費是分區條例', () => {
     // 只在市中心收的壅塞費如果全城都收，就等於全面加稅，失去它原本的意義。
     expect(POLICY_SCOPE[PolicyType.CONGESTION_CHARGE], '壅塞費不是分區條例')
       .toBe('district');
-    const small = scaleOf({ population: 5000, districtCells: 20 });
-    const big = scaleOf({ population: 5000, districtCells: 200 });
+    // 門架跟著**道路**格數走 —— 圈一片綠地不該產生任何維運費。
+    const small = scaleOf({ population: 5000, districtCells: 200, districtRoadCells: 20 });
+    const big = scaleOf({ population: 5000, districtCells: 200, districtRoadCells: 60 });
     expect(policyCost(PolicyType.CONGESTION_CHARGE, 1, small), '壅塞費不收門架維運費')
       .toBeGreaterThan(0);
-    expect(policyCost(PolicyType.CONGESTION_CHARGE, 1, big), '收費區畫大一倍門架卻沒有變多')
+    expect(policyCost(PolicyType.CONGESTION_CHARGE, 1, big), '路網密一倍門架卻沒有變多')
       .toBeGreaterThan(policyCost(PolicyType.CONGESTION_CHARGE, 1, small));
   });
 

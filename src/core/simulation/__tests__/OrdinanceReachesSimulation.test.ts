@@ -32,7 +32,7 @@ function city(): { state: GameState; loop: SimulationLoop } {
 
 /** `EconomyBreakdownContext.policyCost` 宣告成可選，面板自己也是當 0 處理。 */
 const policyExpense = (state: GameState) =>
-  buildEconomyBreakdownContext(state, null).policyCost ?? 0;
+  buildEconomyBreakdownContext(state, null, 0).policyCost ?? 0;
 
 describe('全城條例真的接進模擬', () => {
   it('should lower total power demand', () => {
@@ -79,14 +79,14 @@ describe('全城條例真的接進模擬', () => {
   it('should apply outside any district too', () => {
     // 全城條例對每一格都生效，包含不屬於任何分區的格子 —— 那正是它「全城」的意思。
     const { state } = city();
-    const deps = buildEconomyBreakdownContext(state, null);
+    const deps = buildEconomyBreakdownContext(state, null, 0);
     const outsideAnyDistrict = deps.getRevenueMultiplier!(7, 11, ZoneType.COMMERCIAL_LOW);
     expect(state.districts.getDistrictAt(7, 11), '這一格屬於某個分區，測不到要測的東西')
       .toBeNull();
     expect(outsideAnyDistrict, '沒開條例就已經不是 1').toBe(1);
 
     state.ordinances.setLevel(PolicyType.ENERGY_REGULATION, 3);
-    const after = buildEconomyBreakdownContext(state, null)
+    const after = buildEconomyBreakdownContext(state, null, 0)
       .getRevenueMultiplier!(7, 11, ZoneType.COMMERCIAL_LOW);
     expect(after, '分區外的格子沒有吃到全城條例').toBeLessThan(1);
   });

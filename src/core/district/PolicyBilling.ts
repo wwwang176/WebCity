@@ -5,7 +5,8 @@ import { parsePosKey } from '../grid/GridHelpers';
 
 /** 費用跟著哪一個規模走。 */
 export type BillingBasis =
-  | 'flat' | 'population' | 'districtCells' | 'childcareRecipients' | 'clinicPatients';
+  | 'flat' | 'population' | 'districtCells' | 'childcareRecipients' | 'clinicPatients'
+  | 'chargedDrivers' | 'districtRoadCells';
 
 /**
  * 各生命階段對免費診所的看診權重。成人是 1。
@@ -41,12 +42,26 @@ export interface CityScales {
    * 無家者同理:沒有家就沒有座標可查，判不出他在不在範圍內。
    */
   clinicPatients: number;
+  /**
+   * 付了壅塞費的通勤人數。
+   *
+   * 唯一一個**流量**基數 —— 其他都是存量（有多少人、多少格、多少病人）。收入要跟
+   * 著它走，條例才會「越成功賺越少」;跟著格數走的話，荒地上的大收費區會變成
+   * 印鈔機。
+   */
+  chargedDrivers: number;
 }
 
 /** 算費用要知道的規模。呼叫端負責填。 */
 export interface PolicyScale extends CityScales {
   /** 這個條例所在分區的格數。全城條例填 0。 */
   districtCells: number;
+  /**
+   * 這個分區裡的**道路**格數。全城條例填 0。
+   *
+   * 門架架在路上，不是架在地上 —— 圈一片綠地不該產生任何門架維運費。
+   */
+  districtRoadCells: number;
 }
 
 /**
@@ -69,7 +84,12 @@ export function computeCityScales(
     if (!pos || !isHealthCovered(pos.x, pos.y)) continue;
     clinicPatients += CLINIC_AGE_WEIGHT[c.lifeStage];
   }
-  return { population: citizens.length, babies, children, teens, clinicPatients };
+  return {
+    population: citizens.length, babies, children, teens, clinicPatients,
+    // 付費人數算不出來 —— 它要知道每個人選了什麼交通方式，那是通勤統計那一趟的
+    // 產物。呼叫端自己補上，沒補就是 0（不收錢，不是亂收）。
+    chargedDrivers: 0,
+  };
 }
 
 /**
@@ -117,11 +137,9 @@ export const POLICY_BILLING: Partial<Record<PolicyType, {
   [PolicyType.FREE_CLINIC]: { basis: 'clinicPatients', perUnit: [0.35, 0.85] },
   // 禁菸令只有稽查成本。它真正的代價在商業收入那一欄。
   [PolicyType.SMOKING_BAN]: { basis: 'population', perUnit: [0.02] },
-  // 門架與稽查是沿著收費區的邊界佈的，區畫得越大就越多。
-  //
-  // 收上來的錢沒有回到市庫 —— 整條計費管線只會扣錢，而「每一級要更貴」是有測試
-  // 釘住的不變量，負數會把它整個翻過來。記在 TODO.md。
-  [PolicyType.CONGESTION_CHARGE]: { basis: 'districtCells', perUnit: [2.5, 6] },
+  // 門架與稽查跟著**分區內的道路格數**走，不是總格數 —— 門架架在路上，圈一片
+  // 綠地不該產生任何維運費。
+  [PolicyType.CONGESTION_CHARGE]: { basis: 'districtRoadCells', perUnit: [2.5, 6] },
 };
 
 /**
@@ -140,15 +158,48 @@ function unitsOf(basis: BillingBasis, scale: PolicyScale, level: number): number
         + (level >= 2 ? scale.children : 0)
         + (level >= 3 ? scale.teens : 0);
     case 'clinicPatients': return scale.clinicPatients;
+    case 'chargedDrivers': return scale.chargedDrivers;
+    case 'districtRoadCells': return scale.districtRoadCells;
   }
+}
+
+/**
+ * 每個條例每一級**賺**多少。
+ *
+ * 跟計費表分開兩張，不是讓單價帶正負號 —— 一條條例可以同時兩邊都有:壅塞費的門架
+ * 要維運（跟著收費區的格數走），過路費要收（跟著還在開車的人走）。一個帶正負號的
+ * 數字表達不了兩個方向各自跟著不同的東西變。
+ *
+ * 分開還有一個好處:計費表既有的不變量（單價必須是正數、逐級要更貴）原封不動就
+ * 繼續守得住支出，收入這邊自己有一組同形狀的。
+ */
+export const POLICY_REVENUE: Partial<Record<PolicyType, {
+  basis: BillingBasis;
+  perUnit: readonly number[];
+}>> = {
+  // 過路費。跟著「還有多少人在開車」走，所以政策越成功收得越少 —— 做到極致會
+  // 賠錢，因為門架照樣要養。那正是這條條例要玩家自己拿捏的地方。
+  [PolicyType.CONGESTION_CHARGE]: { basis: 'chargedDrivers', perUnit: [1.8, 3.2] },
+};
+
+function amountOf(
+  table: Partial<Record<PolicyType, { basis: BillingBasis; perUnit: readonly number[] }>>,
+  type: PolicyType, level: number, scale: PolicyScale,
+): number {
+  if (level <= 0) return 0;
+  const entry = table[type];
+  if (!entry) return 0;
+  const perUnit = entry.perUnit[Math.min(level, maxLevel(type)) - 1];
+  if (perUnit === undefined) return 0;
+  return perUnit * unitsOf(entry.basis, scale, level);
 }
 
 /** 這個條例在這個等級、這個規模下，每個預算週期要花多少。 */
 export function policyCost(type: PolicyType, level: number, scale: PolicyScale): number {
-  if (level <= 0) return 0;
-  const billing = POLICY_BILLING[type];
-  if (!billing) return 0;
-  const perUnit = billing.perUnit[Math.min(level, maxLevel(type)) - 1];
-  if (perUnit === undefined) return 0;
-  return perUnit * unitsOf(billing.basis, scale, level);
+  return amountOf(POLICY_BILLING, type, level, scale);
+}
+
+/** 這個條例在這個等級、這個規模下，每個預算週期收得到多少。 */
+export function policyRevenue(type: PolicyType, level: number, scale: PolicyScale): number {
+  return amountOf(POLICY_REVENUE, type, level, scale);
 }

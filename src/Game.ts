@@ -3327,7 +3327,9 @@ export class Game {
   getEconomyBreakdown() {
     // Assembly lives in core so the "panel total === budget.expenses" invariant
     // can be tested; Game.ts imports Three.js and cannot be (BUG-077).
-    return computeEconomyBreakdown(buildEconomyBreakdownContext(this.state, this.elevationManager));
+    return computeEconomyBreakdown(buildEconomyBreakdownContext(
+      this.state, this.elevationManager,
+      this.simLoop.getCommuteStats().chargedDrivers));
   }
 
   deselectBuilding(): void {

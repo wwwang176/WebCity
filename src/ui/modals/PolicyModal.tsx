@@ -4,6 +4,7 @@ import { Modal } from './Modal';
 import { PolicyRow } from './PolicyRow';
 import { isPolicyImplemented } from '../../core/district/PolicyManager';
 import { computeCityScales } from '../../core/district/PolicyBilling';
+import { countRoadCellsInDistrict } from '../../core/district/DistrictManager';
 import {
   policiesByCategory, districtPolicyTotal, RETIRED_CATEGORY,
 } from '../../core/district/PolicyPresentation';
@@ -83,7 +84,12 @@ export function PolicyModal(props: {
     return {
       ...computeCityScales(state.citizens.getCitizens(),
         (x: number, y: number) => state.health.getCoverage(x, y)),
+      chargedDrivers: getGame().getCommuteStats().chargedDrivers,
       districtCells: selectedDistrict()?.cells.size ?? 0,
+      districtRoadCells: (() => {
+        const d = selectedDistrict();
+        return d ? countRoadCellsInDistrict(state.grid, d) : 0;
+      })(),
     };
   };
 

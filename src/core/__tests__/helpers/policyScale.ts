@@ -10,10 +10,12 @@ export function scaleOf(partial: Partial<PolicyScale> = {}): PolicyScale {
   return {
     population: 0,
     districtCells: 0,
+    districtRoadCells: 0,
     babies: 0,
     children: 0,
     teens: 0,
     clinicPatients: 0,
+    chargedDrivers: 0,
     ...partial,
   };
 }

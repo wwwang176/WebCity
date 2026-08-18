@@ -62,9 +62,10 @@ import { syncTrafficDensityToGrid } from '../environment/SyncTrafficDensity';
 import { collectTradePositions, type TradePosition } from '../traffic/FreightTradeCollector';
 import { calculateZoneIncomes } from '../economy/IncomeCalculator';
 import { buildIncomeCalcDeps } from '../economy/IncomeCalcAdapter';
-import { totalPolicyExpense, calculateTotalExpenses } from '../economy/ExpenseCalculator';
+import { totalPolicyExpense, totalPolicyRevenue, calculateTotalExpenses } from '../economy/ExpenseCalculator';
 import { computeCityScales, type CityScales } from '../district/PolicyBilling';
 import { tripDriveDeterrence } from '../district/PolicyManager';
+import { billableDistricts } from '../district/DistrictManager';
 import { calculateElevatedMaintenance } from '../elevation/ElevationMaintenance';
 import { randomInt } from '../utils/random';
 import { findAvailableTransit } from '../transport/TransitAvailability';
@@ -618,11 +619,17 @@ export class SimulationLoop {
         const home = parsePosKey(c.homeId);
         const work = parsePosKey(c.workplaceId);
         if (!home || !work) return null;
-        return estimateCommute(
+        const deterrence = this.driveDeterrenceFor(home, work);
+        const picked = estimateCommute(
           home, work,
-          this.modeChoiceFor(c.education, this.driveDeterrenceFor(home, work)),
+          this.modeChoiceFor(c.education, deterrence),
           this.transitAccess, this.flatRoutes, SIMULATION.AVERAGE_WAIT_FACTOR,
         );
+        // 付了過路費 = 還在開車，而且這一趟碰得到收費區。收入照這個人數收。
+        return {
+          ...picked,
+          chargedDriver: deterrence > 1 && picked.mode === TransportMode.DRIVE,
+        };
       },
       DEFAULT_JOB_RELOCATION_CONFIG.commuteTimeThreshold,
       SIMULATION.COMMUTE_WORST_HOMES,
@@ -1040,13 +1047,18 @@ export class SimulationLoop {
     const citySpecBonus = this.state.citySpec.getBonus();
     totalIncome *= citySpecBonus.revenueMultiplier;
 
+    // 壅塞費的過路費。目前唯一一條會賺錢的條例 —— 加在專精加成**之後**，因為
+    // 那個加成是對產業稅收的，不是對規費的。
+    totalIncome += totalPolicyRevenue(
+      billableDistricts(this.state.grid, this.state.districts.getAllDistricts()), this.state.ordinances, this.cityScales());
+
     this.state.budget.income = totalIncome;
     // Expenses: road maintenance + service + district policies + transport
     this.state.budget.expenses = calculateTotalExpenses({
       roadMaintenance: this.countRoadTiles() * ECONOMY.ROAD_MAINTENANCE_PER_TILE,
       serviceCost: getTotalServiceMaintenanceCost(this.state),
       policyCost: totalPolicyExpense(
-        this.state.districts.getAllDistricts(),
+        billableDistricts(this.state.grid, this.state.districts.getAllDistricts()),
         this.state.ordinances,
         this.cityScales(),
       ),
@@ -1336,10 +1348,15 @@ export class SimulationLoop {
    * 總數。
    */
   cityScales(): CityScales {
-    return computeCityScales(
-      this.state.citizens.getCitizens(),
-      (x, y) => this.state.health.getCoverage(x, y),
-    );
+    return {
+      ...computeCityScales(
+        this.state.citizens.getCitizens(),
+        (x, y) => this.state.health.getCoverage(x, y),
+      ),
+      // 付費人數算不出來自市民清單 —— 它要知道每個人選了哪一種交通方式，那是
+      // 通勤統計那一趟的產物。
+      chargedDrivers: this.commuteStats.chargedDrivers,
+    };
   }
 
   /** Get the abandonment stress for a building at (x, y). */

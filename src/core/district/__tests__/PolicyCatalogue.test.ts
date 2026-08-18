@@ -33,8 +33,8 @@ describe('目錄的完整性', () => {
     //
     // 每一個計費基數都給正值，不然用那個基數的條例會恆為 0 而無聲通過。
     const FULL = scaleOf({
-      population: 1000, districtCells: 100,
-      babies: 40, children: 60, teens: 50, clinicPatients: 900,
+      population: 1000, districtCells: 100, districtRoadCells: 40,
+      babies: 40, children: 60, teens: 50, clinicPatients: 900, chargedDrivers: 120,
     });
     for (const [type, billing] of Object.entries(POLICY_BILLING)) {
       for (let lv = 2; lv <= billing!.perUnit.length; lv++) {

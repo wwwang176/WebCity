@@ -10,8 +10,14 @@ import type { Citizen } from './types';
 /** 分桶的邊界（tick）。最後一桶是「以上」，所以桶數比邊界數多一。 */
 export const COMMUTE_BUCKET_EDGES = [15, 30, 45, 60] as const;
 
-/** 一位市民的通勤：花多久、怎麼去。算不出來時回傳 null。 */
-export type CommuteOf = (citizen: Citizen) => { time: number; mode: string } | null;
+/**
+ * 一位市民的通勤：花多久、怎麼去。算不出來時回傳 null。
+ *
+ * `chargedDriver` 是「這一趟付了壅塞費」—— 還在開車，而且起點或終點落在收費區裡。
+ * 由呼叫端判斷，因為只有它查得到分區;統計這一層只負責數。
+ */
+export type CommuteOf = (citizen: Citizen)
+  => { time: number; mode: string; chargedDriver?: boolean } | null;
 
 export interface WorstHome {
   pos: string;
@@ -33,6 +39,14 @@ export interface CommuteStats {
   buckets: number[];
   /** 交通方式 → 人數。 */
   byMode: Record<string, number>;
+  /**
+   * 付了壅塞費的通勤人數。
+   *
+   * 壅塞費的收入照這個數字收 —— 它是**流量**，車越少收得越少。用收費區的格數
+   * 之類的存量計價的話，在荒地上畫一個大區也照樣進帳，而且政策越成功收入也不會
+   * 掉，那就不是壅塞費了。
+   */
+  chargedDrivers: number;
   /** 通勤最久的幾個住宅格，最久的排前面。 */
   worst: WorstHome[];
 }
@@ -41,7 +55,7 @@ function emptyStats(): CommuteStats {
   return {
     byHome: new Map(), sampled: 0, average: 0, median: 0, overThreshold: 0,
     buckets: new Array(COMMUTE_BUCKET_EDGES.length + 1).fill(0),
-    byMode: {}, worst: [],
+    byMode: {}, worst: [], chargedDrivers: 0,
   };
 }
 
@@ -78,6 +92,8 @@ export function computeCommuteStats(
     if (commute.time > threshold) stats.overThreshold++;
     stats.buckets[bucketOf(commute.time)]!++;
     stats.byMode[commute.mode] = (stats.byMode[commute.mode] ?? 0) + 1;
+    // 算不出通勤的人在上面就被跳過了 —— 收入不該把他們算進去。
+    if (commute.chargedDriver) stats.chargedDrivers++;
 
     const entry = homeTotals.get(c.homeId);
     if (entry) { entry[0] += commute.time; entry[1]++; }

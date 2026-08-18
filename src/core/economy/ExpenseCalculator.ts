@@ -1,4 +1,4 @@
-import { policyCost, type CityScales } from '../district/PolicyBilling';
+import { policyCost, policyRevenue, type CityScales } from '../district/PolicyBilling';
 import type { PolicyScopeKind } from '../district/PolicyScope';
 import { PolicyType } from '../district/types';
 
@@ -16,6 +16,8 @@ import { PolicyType } from '../district/types';
 export function calculateDistrictPolicyCost(
   districts: readonly {
     cells: { size: number };
+    /** 這個分區裡的道路格數。門架架在路上，不是架在地上。 */
+    roadCells: number;
     policies: readonly { level: number; type: PolicyType }[];
   }[],
   city: CityScales,
@@ -30,6 +32,7 @@ export function calculateDistrictPolicyCost(
       total += policyCost(policy.type, policy.level, {
         ...city,
         districtCells: district.cells.size,
+        districtRoadCells: district.roadCells,
       });
     }
   }
@@ -45,12 +48,46 @@ export function calculateDistrictPolicyCost(
 export function totalPolicyExpense(
   districts: readonly {
     cells: { size: number };
+    /** 這個分區裡的道路格數。門架架在路上，不是架在地上。 */
+    roadCells: number;
     policies: readonly { level: number; type: PolicyType }[];
   }[],
   ordinances: { totalCost(city: CityScales): number },
   city: CityScales,
 ): number {
   return calculateDistrictPolicyCost(districts, city) + ordinances.totalCost(city);
+}
+
+/**
+ * 本期政策總收入:分區條例加全城條例。
+ *
+ * 跟 `totalPolicyExpense` 對稱。同一條條例可以兩邊都有 —— 壅塞費的門架要維運，
+ * 過路費要收 —— 所以兩邊各自加總，不是一個帶正負號的淨額:淨額在帳本上會變成
+ * 一筆看不出組成的數字，而玩家要問的正是「錢從哪來、又花到哪去」。
+ */
+export function totalPolicyRevenue(
+  districts: readonly {
+    cells: { size: number };
+    /** 這個分區裡的道路格數。門架架在路上，不是架在地上。 */
+    roadCells: number;
+    policies: readonly { level: number; type: PolicyType }[];
+  }[],
+  ordinances: { getLevel(t: PolicyType): number },
+  city: CityScales,
+): number {
+  let total = 0;
+  for (const district of districts) {
+    for (const policy of district.policies) {
+      total += policyRevenue(policy.type, policy.level, {
+        ...city, districtCells: district.cells.size, districtRoadCells: district.roadCells,
+      });
+    }
+  }
+  for (const type of Object.values(PolicyType)) {
+    total += policyRevenue(type, ordinances.getLevel(type),
+      { ...city, districtCells: 0, districtRoadCells: 0 });
+  }
+  return total;
 }
 
 export interface ExpenseBreakdown {
@@ -78,6 +115,14 @@ export interface PolicyExpenseLine {
   districtName: string | null;
   level: number;
   cost: number;
+  /**
+   * 這一條這期收到多少。0 = 這條條例不賺錢。
+   *
+   * 跟 `cost` 並存而不是折成淨額 —— 壅塞費的門架費與過路費是跟著兩個完全不同的
+   * 東西變的（收費區有多大 vs 還有多少人開車），折成一個數字就看不出來為什麼這
+   * 個月由賺轉賠。
+   */
+  revenue: number;
 }
 
 /**
@@ -95,6 +140,8 @@ export function listPolicyExpenses(
   districts: readonly {
     name: string;
     cells: { size: number };
+    /** 這個分區裡的道路格數。門架架在路上，不是架在地上。 */
+    roadCells: number;
     policies: readonly { type: PolicyType; level: number }[];
   }[],
   ordinances: { getLevel(t: PolicyType): number },
@@ -103,16 +150,22 @@ export function listPolicyExpenses(
   const out: PolicyExpenseLine[] = [];
   for (const d of districts) {
     for (const p of d.policies) {
-      const cost = policyCost(p.type, p.level, { ...city, districtCells: d.cells.size });
-      if (cost === 0) continue;
-      out.push({ type: p.type, scope: 'district', districtName: d.name, level: p.level, cost });
+      const scale = { ...city, districtCells: d.cells.size, districtRoadCells: d.roadCells };
+      const cost = policyCost(p.type, p.level, scale);
+      const revenue = policyRevenue(p.type, p.level, scale);
+      if (cost === 0 && revenue === 0) continue;
+      out.push({
+        type: p.type, scope: 'district', districtName: d.name, level: p.level, cost, revenue,
+      });
     }
   }
   for (const type of Object.values(PolicyType)) {
     const level = ordinances.getLevel(type);
-    const cost = policyCost(type, level, { ...city, districtCells: 0 });
-    if (cost === 0) continue;
-    out.push({ type, scope: 'city', districtName: null, level, cost });
+    const scale = { ...city, districtCells: 0, districtRoadCells: 0 };
+    const cost = policyCost(type, level, scale);
+    const revenue = policyRevenue(type, level, scale);
+    if (cost === 0 && revenue === 0) continue;
+    out.push({ type, scope: 'city', districtName: null, level, cost, revenue });
   }
   return out;
 }

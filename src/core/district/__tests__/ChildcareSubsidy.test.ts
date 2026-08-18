@@ -90,8 +90,8 @@ describe('育兒補貼', () => {
     // 這是分級的全部意義。按總人口收的話，「補到嬰兒」與「補到青少年」花一樣多，
     // 玩家沒有理由不直接開最高級。
     const scale = {
-      population: 1000, districtCells: 0,
-      babies: 40, children: 60, teens: 50, clinicPatients: 900,
+      population: 1000, districtCells: 0, districtRoadCells: 0,
+      babies: 40, children: 60, teens: 50, clinicPatients: 900, chargedDrivers: 0,
     };
     const costAt = (lv: number) => policyCost(PolicyType.CHILDCARE_SUBSIDY, lv, scale);
 

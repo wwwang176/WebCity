@@ -216,12 +216,12 @@ describe('PolicyManager', () => {
     // 每一個計費基數都要給值。漏掉一個的話，用那個基數的條例會恆為 0，而這條
     // 測試會把它讀成「這條條例不收錢」而紅 —— 那是對的，加基數就要補這裡。
     const small = scaleOf({
-      population: 100, districtCells: 10,
-      babies: 4, children: 6, teens: 5, clinicPatients: 90,
+      population: 100, districtCells: 10, districtRoadCells: 4,
+      babies: 4, children: 6, teens: 5, clinicPatients: 90, chargedDrivers: 12,
     });
     const big = scaleOf({
-      population: 10_000, districtCells: 400,
-      babies: 400, children: 600, teens: 500, clinicPatients: 9_000,
+      population: 10_000, districtCells: 400, districtRoadCells: 160,
+      babies: 400, children: 600, teens: 500, clinicPatients: 9_000, chargedDrivers: 1_200,
     });
     const billable = Object.keys(POLICY_BILLING) as PolicyType[];
     expect(billable.length, '沒有任何條例收費，這條測試等於空轉').toBeGreaterThan(0);

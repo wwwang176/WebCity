@@ -70,18 +70,18 @@ describe('條例的計費', () => {
     //   免費。
     // - 分區條例用人口計費的話，畫一格跟畫一百格收一樣多，「跟著它服務的規模走」
     //   整個失效。
-    // 「跟著人口走」已經不是唯一的全城基數 —— 育兒補貼跟著孩子人頭走，免費診所
-    // 跟著加權後的病人數走。所以驗的是**方向**:全城條例要跟著某一個全城的量變
-    // 動、而且完全不理會分區格數;分區條例反過來。
+    // 兩邊都不再只有一個基數了 —— 全城的有人口／孩子／病人，分區的有總格數與
+    // 道路格數。所以驗的是**方向**:全城條例要跟著某一個全城的量變動、而且完全
+    // 不理會分區的量;分區條例反過來。
     const base = scaleOf({
-      population: 100, districtCells: 100,
-      babies: 10, children: 10, teens: 10, clinicPatients: 100,
+      population: 100, districtCells: 100, districtRoadCells: 100,
+      babies: 10, children: 10, teens: 10, clinicPatients: 100, chargedDrivers: 100,
     });
     const biggerCity = scaleOf({
-      population: 1000, districtCells: 100,
-      babies: 100, children: 100, teens: 100, clinicPatients: 1000,
+      population: 1000, districtCells: 100, districtRoadCells: 100,
+      babies: 100, children: 100, teens: 100, clinicPatients: 1000, chargedDrivers: 100,
     });
-    const moreCells = scaleOf({ ...base, districtCells: 1000 });
+    const moreCells = scaleOf({ ...base, districtCells: 1000, districtRoadCells: 1000 });
 
     const entries = Object.entries(POLICY_BILLING);
     expect(entries.length, '計費表是空的，這條測試等於空轉').toBeGreaterThan(0);
@@ -94,7 +94,7 @@ describe('條例的計費', () => {
         expect(p, `${type} 是全城條例卻不隨城市規模變`).toBeGreaterThan(b);
         expect(c, `${type} 是全城條例卻隨分區格數變 —— 全城沒有格數可言`).toBe(b);
       } else {
-        expect(c, `${type} 是分區條例卻不隨格數變`).toBeGreaterThan(b);
+        expect(c, `${type} 是分區條例卻不隨分區規模變`).toBeGreaterThan(b);
         expect(p, `${type} 是分區條例卻隨城市規模變 —— 畫一格跟畫一百格會收一樣多`).toBe(b);
       }
     }
@@ -112,7 +112,7 @@ describe('條例的計費', () => {
 describe('預算真的照這張表收錢', () => {
   // 只測 policyCost 的話，ExpenseCalculator 完全沒改也會全綠。
   const districts = [{
-    cells: { size: 400 },
+    cells: { size: 400 }, roadCells: 400,
     policies: [{ type: PolicyType.ENCOURAGE_RECYCLING, level: 2 as const }],
   }];
 
@@ -123,7 +123,7 @@ describe('預算真的照這張表收錢', () => {
 
   it('should charge nothing for a district with no cells', () => {
     // 分區格數是計費基數 —— 沒有格子就沒有東西要服務。
-    const empty = [{ cells: { size: 0 }, policies: districts[0]!.policies }];
+    const empty = [{ cells: { size: 0 }, roadCells: 0, policies: districts[0]!.policies }];
     expect(calculateDistrictPolicyCost(empty, scaleOf({ population: 10_000 }))).toBe(0);
   });
 
@@ -147,7 +147,7 @@ describe('預算真的照這張表收錢', () => {
 
   it('should charge nothing for a policy that is off', () => {
     const off = [{
-      cells: { size: 400 },
+      cells: { size: 400 }, roadCells: 400,
       policies: [{ type: PolicyType.ENCOURAGE_RECYCLING, level: 0 as const }],
     }];
     expect(calculateDistrictPolicyCost(off, scaleOf({ population: 10_000 }))).toBe(0);

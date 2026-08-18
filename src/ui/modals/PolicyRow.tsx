@@ -1,7 +1,7 @@
 import { For, Show } from 'solid-js';
 import { POLICY_CONFIG, maxLevel } from '../../core/district/PolicyManager';
 import { policyEffectSummary, policyLevelLabel } from '../../core/district/PolicyPresentation';
-import { policyCost, type PolicyScale } from '../../core/district/PolicyBilling';
+import { policyCost, policyRevenue, type PolicyScale } from '../../core/district/PolicyBilling';
 import type { PolicyType } from '../../core/district/types';
 
 /**
@@ -28,6 +28,14 @@ export function PolicyRow(props: PolicyRowProps) {
   const max = () => maxLevel(props.type);
   const name = () => POLICY_CONFIG[props.type]?.name ?? props.type;
   const cost = () => Math.round(policyCost(props.type, props.level, props.scale));
+  const revenue = () => Math.round(policyRevenue(props.type, props.level, props.scale));
+  /**
+   * 這一列顯示的是**淨額** —— 賺錢時綠色的 +，花錢時紫色的 $。
+   *
+   * 一條條例可以兩邊都有（壅塞費的門架費 vs 過路費）。這張卡片只有一行的位置，
+   * 所以給淨額;拆開的兩筆在預算面板的逐條明細裡。
+   */
+  const net = () => revenue() - cost();
 
   return (
     <div style="background:#1a2233;border-radius:6px;padding:8px 10px;margin-bottom:8px">
@@ -84,8 +92,13 @@ export function PolicyRow(props: PolicyRowProps) {
             ? 'Retired — no effect, no longer charged'
             : (props.level > 0 ? policyEffectSummary(props.type, props.level) : 'Not in effect')}
         </span>
-        <Show when={!props.retired && cost() > 0}>
-          <span style="font-size:11px;color:#ce93d8;white-space:nowrap">${cost()}</span>
+        <Show when={!props.retired && (cost() > 0 || revenue() > 0)}>
+          <span style={{
+            'font-size': '11px', 'white-space': 'nowrap',
+            color: net() > 0 ? '#66bb6a' : '#ce93d8',
+          }}>
+            {net() > 0 ? `+$${net()}` : `$${-net()}`}
+          </span>
         </Show>
       </div>
     </div>
