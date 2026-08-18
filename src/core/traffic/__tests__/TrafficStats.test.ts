@@ -5,7 +5,7 @@ function makeCtx(overrides: Partial<TrafficStatsContext> = {}): TrafficStatsCont
   return {
     commuteVehicleCount: overrides.commuteVehicleCount ?? 0,
     topCongested: overrides.topCongested ?? [],
-    avgPathLength: overrides.avgPathLength ?? 0,
+    commuteAvgPathLength: overrides.commuteAvgPathLength ?? 0,
     roadTileCount: overrides.roadTileCount ?? 0,
   };
 }
@@ -15,7 +15,7 @@ describe('getTrafficStats', () => {
     const result = getTrafficStats(makeCtx());
     expect(result.commuteVehicleCount).toBe(0);
     expect(result.topCongested).toEqual([]);
-    expect(result.avgPathLength).toBe(0);
+    expect(result.commuteAvgPathLength).toBe(0);
     expect(result.totalRoads).toBe(0);
   });
 
@@ -34,8 +34,8 @@ describe('getTrafficStats', () => {
   });
 
   it('should round avg path length to 1 decimal', () => {
-    const result = getTrafficStats(makeCtx({ avgPathLength: 12.345 }));
-    expect(result.avgPathLength).toBe(12.3);
+    const result = getTrafficStats(makeCtx({ commuteAvgPathLength: 12.345 }));
+    expect(result.commuteAvgPathLength).toBe(12.3);
   });
 
   it('should return road tile count as totalRoads', () => {

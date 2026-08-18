@@ -3365,7 +3365,7 @@ export class Game {
     return computeTrafficStats({
       commuteVehicleCount: this.state.traffic.getCommuteVehicleCount(),
       topCongested: this.state.traffic.getTopCongested(8),
-      avgPathLength: this.state.traffic.getAveragePathLength(),
+      commuteAvgPathLength: this.state.traffic.getCommuteAveragePathLength(),
       roadTileCount: countRoadTiles(this.state.grid),
     });
   }

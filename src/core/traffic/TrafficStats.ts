@@ -13,14 +13,15 @@ export interface TrafficStatsContext {
    */
   commuteVehicleCount: number;
   topCongested: { segment: string; density: number }[];
-  avgPathLength: number;
+  /** 居民開車通勤的平均路程。與 `commuteVehicleCount` 同一個母體。 */
+  commuteAvgPathLength: number;
   roadTileCount: number;
 }
 
 export interface TrafficStatsResult {
   commuteVehicleCount: number;
   topCongested: { segment: string; density: number }[];
-  avgPathLength: number;
+  commuteAvgPathLength: number;
   totalRoads: number;
 }
 
@@ -29,7 +30,7 @@ export function getTrafficStats(ctx: TrafficStatsContext): TrafficStatsResult {
   return {
     commuteVehicleCount: ctx.commuteVehicleCount,
     topCongested: ctx.topCongested,
-    avgPathLength: Math.round(ctx.avgPathLength * 10) / 10,
+    commuteAvgPathLength: Math.round(ctx.commuteAvgPathLength * 10) / 10,
     totalRoads: ctx.roadTileCount,
   };
 }

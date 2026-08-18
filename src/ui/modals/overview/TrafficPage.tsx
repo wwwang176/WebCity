@@ -179,9 +179,9 @@ export function TrafficPage(props: { onClose?: () => void }) {
           <div class="sc-value stat-accent">{stats().commuteVehicleCount}</div>
           <div class="sc-label">Commuters Driving</div>
         </div>
-        <div class="summary-card">
-          <div class="sc-value">{stats().avgPathLength}</div>
-          <div class="sc-label">Avg Path Length</div>
+        <div class="summary-card" title="Average distance of the trips residents are driving to or from work.">
+          <div class="sc-value">{stats().commuteAvgPathLength}</div>
+          <div class="sc-label">Avg Commute Distance</div>
         </div>
         <div class="summary-card">
           <div class="sc-value">{stats().totalRoads}</div>

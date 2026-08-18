@@ -889,13 +889,23 @@ export class TrafficSimulation {
     return Math.min(1, avgDensity);
   }
 
-  getAveragePathLength(): number {
-    if (this.vehicles.length === 0) return 0;
+  /**
+   * 居民開車通勤平均跑多遠。
+   *
+   * 跟 `getCommuteVehicleCount()` 是同一組數字的兩面 —— 一個說有多少人在開車，一個
+   * 說他們開多遠，兩張卡片要講同一個城市。混進過境車流的話會各自說不同的故事:
+   * 過境車是從地圖邊緣穿到某棟建築，路程本來就比一般通勤長，少少幾台就能把平均
+   * 拉走。
+   */
+  getCommuteAveragePathLength(): number {
     let totalLen = 0;
+    let count = 0;
     for (const v of this.vehicles) {
+      if (v.citizenId === undefined) continue;
       for (const e of v.edgePath) totalLen += e.length;
+      count++;
     }
-    return totalLen / this.vehicles.length;
+    return count === 0 ? 0 : totalLen / count;
   }
 
   getTopCongested(n: number): { segment: string; density: number }[] {

@@ -17,8 +17,8 @@ export function TrafficModal(props: { open: boolean; onClose: () => void }) {
           <div class="sc-label">Commuters Driving</div>
         </div>
         <div class="summary-card">
-          <div class="sc-value">{stats().avgPathLength}</div>
-          <div class="sc-label">Avg Path Length</div>
+          <div class="sc-value">{stats().commuteAvgPathLength}</div>
+          <div class="sc-label">Avg Commute Distance</div>
         </div>
         <div class="summary-card">
           <div class="sc-value">{stats().totalRoads}</div>
