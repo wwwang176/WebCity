@@ -65,6 +65,32 @@ const VEHICLE_DIMS = [
 /** Fixed truck dimensions for freight vehicles. */
 const TRUCK_DIMS = { length: 0.45, width: 0.125 };
 
+/**
+ * 生成點多近算被佔著。世界單位，一格 = 1。
+ *
+ * 兩個方向分開量，而且不看佔位那台車實際多長多寬 —— 差別在畫面上看不出來，
+ * 而少掉逐台查尺寸讓這件事變成純粹的距離比較。
+ *
+ * 兩個數字都有上下界，不能隨便調（見 NoStackedSpawns 的斷言）:
+ * - `ALONG` 要比最長的車身長，否則兩台車中心只差半個車身也會各自生成 —— 就是穿模。
+ * - `ACROSS` 要比最窄的車道間距小。最窄的是單行道兩車道:0.55 / 2 / 2 = 0.1375。
+ *   比它大的話隔壁車道永遠有車擋著，路上的車會少一大截。
+ *
+ * 這兩條界線之間塞不下一個「單一半徑」——車身 0.26 就已經比車道間距 0.1375 寬了。
+ * 所以是兩個數字而不是一個。
+ */
+export const SPAWN_CLEARANCE = {
+  ALONG: 0.3,
+  ACROSS: 0.10,
+} as const;
+
+/**
+ * 生成點檢查用的格點:位置與車頭方向。
+ *
+ * 不帶車身尺寸 —— 餘裕是常數（`SPAWN_CLEARANCE`），不看對方多大。
+ */
+interface SpawnSlot { x: number; y: number; hx: number; hy: number }
+
 /** Traffic simulation tuning constants */
 export const TRAFFIC = {
   /** Base speed multiplier range: min value (vehicles randomly vary speed) */
@@ -153,6 +179,22 @@ export class TrafficSimulation {
   private nextId = 1;
   /** Per-cell vehicle count, rebuilt every advanceEdgeVehicles call. */
   private cellDensity = new Map<string, number>();
+  /**
+   * 生成點附近有哪些車。跟 `cellDensity` 同一個生命週期:每次 `advanceEdgeVehicles`
+   * 在**清掉抵達的車之後**重建，新車生成時當場補一筆。
+   *
+   * 存在的理由是效能。原本每要放一台車就掃過路上**所有**車，12 334 人的存檔實測
+   * 每 tick 約 394 次生成嘗試 × 890 台車 ≈ 35 萬次距離計算，49ms —— 速度 1 的
+   * 一個 tick 只有 250ms（BUG-323）。
+   *
+   * 為什麼不共用跟車那一份 `spatialHash`:那一份在每幀的處理**開始時**就建好，
+   * 到了清車之後還留著已經抵達的車。生成點正好就是別人的目的地，用那一份會把
+   * 剛剛抵達、其實已經不存在的車當成佔位的。
+   */
+  private spawnHash = new SpatialHash<SpawnSlot>(1.0);
+  /** `spawnHash` 的物件池 —— 每幀重建，不要每幀重新配置。 */
+  private spawnSlots: SpawnSlot[] = [];
+  private spawnSlotCount = 0;
   /** Predicted congestion flow (path count per cell), set by SimulationLoop periodically. */
   private predictedFlow: Map<string, number> | null = null;
   /** Reusable scratch array for active vehicles (avoids per-frame allocation). */
@@ -162,7 +204,7 @@ export class TrafficSimulation {
   /** Reusable per-frame sort key store (see advanceEdgeVehicles). */
   private sortProgress = new Map<number, number>();
   /** Reusable spatial hash for cross-edge collision detection. */
-  private spatialHash = new SpatialHash(CROSS_EDGE.CELL_SIZE);
+  private spatialHash = new SpatialHash<SpatialEntry>(CROSS_EDGE.CELL_SIZE);
   /** Reusable array for spatial entries (object pool — grows to high-water mark). */
   private spatialEntries: SpatialEntry[] = [];
   /** Reusable vid → SpatialEntry map (cleared each frame). */
@@ -173,6 +215,9 @@ export class TrafficSimulation {
   private readonly _posOut = { x: 0, y: 0 };
   private readonly _tanOut = { x: 0, y: 0 };
   private readonly _headingOut = { hx: 0, hy: 0 };
+  private readonly _spawnTan2 = { x: 0, y: 0 };
+  /** `queryNearbyInto` 的收件陣列 —— 每次呼叫重用，不要每次配置。 */
+  private readonly spawnNearbyScratch: SpawnSlot[] = [];
 
 
   /**
@@ -204,6 +249,9 @@ export class TrafficSimulation {
     if (startCell) {
       this.cellDensity.set(startCell, (this.cellDensity.get(startCell) ?? 0) + 1);
     }
+    // 同一個 tick 裡接著要出門的人，看得到這台剛放下去的車。索引要等下一幀才重建，
+    // 中間這一段沒補的話，同一個生成點會連續放出好幾台疊在一起。
+    this.indexSpawnSlot(vehicle);
     return vehicle;
   }
 
@@ -275,27 +323,52 @@ export class TrafficSimulation {
    * Position, not edge identity: the car in the way need not share an edge with
    * the newcomer — it may simply be driving past the driveway.
    */
-  private isSpawnBlocked(edgePath: LaneEdge[], length: number, width: number): boolean {
+  private isSpawnBlocked(edgePath: LaneEdge[]): boolean {
     const first = edgePath[0];
     if (!first) return false;
     interpolateEdgePositionInto(first, 0, this._spawnPos);
     interpolateEdgeTangentInto(first, 0, this._spawnTan);
     const tl = Math.sqrt(this._spawnTan.x * this._spawnTan.x + this._spawnTan.y * this._spawnTan.y) || 1;
     const hx = this._spawnTan.x / tl, hy = this._spawnTan.y / tl;
-    const halfLen = length / 2, halfWidth = width / 2;
 
-    for (const v of this.vehicles) {
-      const idx = Math.min(v.edgeIndex, v.edgePath.length - 1);
-      const edge = v.edgePath[idx];
-      if (!edge) continue;
-      const t = edge.length > 0 ? Math.min(v.edgeProgress / edge.length, 1) : 0;
-      interpolateEdgePositionInto(edge, t, this._otherPos);
-      const dx = this._otherPos.x - this._spawnPos.x;
-      const dy = this._otherPos.y - this._spawnPos.y;
-      if (Math.abs(dx * hx + dy * hy) >= halfLen + v.length / 2) continue;
-      if (Math.abs(-hy * dx + hx * dy) < halfWidth + v.width / 2) return true;
+    // 只問附近那幾格。半徑取兩個餘裕的較大者 —— 圓形先粗篩，方向的判斷在下面。
+    const near = this.spawnNearbyScratch;
+    this.spawnHash.queryNearbyInto(
+      this._spawnPos.x, this._spawnPos.y, SPAWN_CLEARANCE.ALONG, near,
+    );
+    for (const slot of near) {
+      const dx = slot.x - this._spawnPos.x;
+      const dy = slot.y - this._spawnPos.y;
+      if (Math.abs(dx * hx + dy * hy) >= SPAWN_CLEARANCE.ALONG) continue;
+      if (Math.abs(-hy * dx + hx * dy) < SPAWN_CLEARANCE.ACROSS) return true;
     }
     return false;
+  }
+
+  /** 把一台車現在的位置與車頭方向寫進生成點索引。 */
+  private indexSpawnSlot(v: Vehicle): void {
+    const idx = Math.min(v.edgeIndex, v.edgePath.length - 1);
+    const edge = v.edgePath[idx];
+    if (!edge) return;
+    const t = edge.length > 0 ? Math.min(v.edgeProgress / edge.length, 1) : 0;
+    interpolateEdgePositionInto(edge, t, this._otherPos);
+    interpolateEdgeTangentInto(edge, t, this._spawnTan2);
+    const tl = Math.sqrt(
+      this._spawnTan2.x * this._spawnTan2.x + this._spawnTan2.y * this._spawnTan2.y,
+    ) || 1;
+    let slot = this.spawnSlots[this.spawnSlotCount];
+    if (slot) {
+      slot.x = this._otherPos.x; slot.y = this._otherPos.y;
+      slot.hx = this._spawnTan2.x / tl; slot.hy = this._spawnTan2.y / tl;
+    } else {
+      slot = {
+        x: this._otherPos.x, y: this._otherPos.y,
+        hx: this._spawnTan2.x / tl, hy: this._spawnTan2.y / tl,
+      };
+      this.spawnSlots.push(slot);
+    }
+    this.spawnHash.insert(slot);
+    this.spawnSlotCount++;
   }
 
   /**
@@ -463,22 +536,19 @@ export class TrafficSimulation {
 
   /** A citizen sets off. Null when a vehicle is already standing on the spot. */
   spawnVehicleOnEdges(edgePath: LaneEdge[], citizenId?: number): Vehicle | null {
-    // 車型是隨機的，但長度差 0.04，用最長的判斷才不會偶爾漏掉。
-    const longest = VEHICLE_DIMS.reduce((a, b) => (b.length > a.length ? b : a));
-    if (this.isSpawnBlocked(edgePath, longest.length, longest.width)) return null;
+    if (this.isSpawnBlocked(edgePath)) return null;
     return this.addVehicleOnEdges(edgePath, citizenId);
   }
 
   /** A factory sends a truck out. Null when the spot is taken. */
   spawnFreightVehicle(edgePath: LaneEdge[], sourceBuildingKey?: string): Vehicle | null {
-    if (this.isSpawnBlocked(edgePath, TRUCK_DIMS.length, TRUCK_DIMS.width)) return null;
+    if (this.isSpawnBlocked(edgePath)) return null;
     return this.addFreightVehicle(edgePath, sourceBuildingKey);
   }
 
   /** A depot sends a service vehicle out. Null when the spot is taken. */
   spawnServiceVehicle(edgePath: LaneEdge[], serviceType: ServiceVehicleType): Vehicle | null {
-    const dims = SERVICE_VEHICLE_DIMS[serviceType];
-    if (this.isSpawnBlocked(edgePath, dims.length, dims.width)) return null;
+    if (this.isSpawnBlocked(edgePath)) return null;
     return this.addServiceVehicle(edgePath, serviceType);
   }
 
@@ -765,13 +835,17 @@ export class TrafficSimulation {
 
     // Rebuild cell density map from all active vehicles
     this.cellDensity.clear();
+    this.spawnHash.clear();
+    this.spawnSlotCount = 0;
     for (const v of this.vehicles) {
       const idx = Math.min(v.edgeIndex, v.edgePath.length - 1);
       const cell = v.edgePath[idx]?.from.cellKey;
       if (cell) {
         this.cellDensity.set(cell, (this.cellDensity.get(cell) ?? 0) + 1);
       }
+      this.indexSpawnSlot(v);
     }
+    this.spawnSlots.length = this.spawnSlotCount;
   }
 
   /** Remove arrived vehicles from the vehicles array in-place. */

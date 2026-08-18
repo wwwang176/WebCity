@@ -23,7 +23,7 @@ export const CROSS_EDGE = {
  */
 export function findCrossEdgeGap(
   me: SpatialEntry,
-  spatialHash: SpatialHash,
+  spatialHash: SpatialHash<SpatialEntry>,
   scratch: SpatialEntry[],
 ): number {
   spatialHash.queryNearbyInto(me.x, me.y, CROSS_EDGE.CHECK_RADIUS, scratch);

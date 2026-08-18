@@ -14,8 +14,8 @@ function entry(
   return { vid, x, y, hx, hy, halfLen, halfWidth, edgeId, toId, progressRatio };
 }
 
-function buildHash(entries: SpatialEntry[]): SpatialHash {
-  const sh = new SpatialHash(CROSS_EDGE.CELL_SIZE);
+function buildHash(entries: SpatialEntry[]): SpatialHash<SpatialEntry> {
+  const sh = new SpatialHash<SpatialEntry>(CROSS_EDGE.CELL_SIZE);
   for (const e of entries) sh.insert(e);
   return sh;
 }

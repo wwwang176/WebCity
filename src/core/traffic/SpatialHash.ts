@@ -16,13 +16,16 @@ export interface SpatialEntry {
  * Simple 2D spatial hash grid for fast proximity queries.
  * Used to find nearby vehicles across different lane edges.
  *
+ * 泛型是因為它只讀 `x` / `y` —— 跟車用的格點帶著車身與車頭方向，生成點檢查用的
+ * 只需要位置與方向，兩者共用這一份格子邏輯而不必共用欄位。
+ *
  * Zero-alloc after warm-up: clear() retains allocated cell arrays,
  * queryNearbyInto() writes into a caller-provided reusable array.
  */
-export class SpatialHash {
+export class SpatialHash<T extends { x: number; y: number }> {
   private readonly cellSize: number;
   private readonly invCellSize: number;
-  private readonly cells = new Map<number, SpatialEntry[]>();
+  private readonly cells = new Map<number, T[]>();
 
   constructor(cellSize: number) {
     this.cellSize = cellSize;
@@ -36,7 +39,7 @@ export class SpatialHash {
     }
   }
 
-  insert(entry: SpatialEntry): void {
+  insert(entry: T): void {
     const key = this.key(entry.x, entry.y);
     let arr = this.cells.get(key);
     if (!arr) { arr = []; this.cells.set(key, arr); }
@@ -44,7 +47,7 @@ export class SpatialHash {
   }
 
   /** Write all entries within `radius` of (qx, qy) into `out`. Returns entry count. */
-  queryNearbyInto(qx: number, qy: number, radius: number, out: SpatialEntry[]): number {
+  queryNearbyInto(qx: number, qy: number, radius: number, out: T[]): number {
     out.length = 0;
     const r2 = radius * radius;
     const minCx = Math.floor((qx - radius) * this.invCellSize);
@@ -64,6 +67,18 @@ export class SpatialHash {
       }
     }
     return out.length;
+  }
+
+  /**
+   * 索引裡總共有幾筆。
+   *
+   * 給測試用的:每幀重建的索引如果忘了 `clear()`，行為上看不出來（比距離時讀的是
+   * 物件當下的座標，而物件是重用的），只有筆數會一直長上去。
+   */
+  size(): number {
+    let n = 0;
+    for (const arr of this.cells.values()) n += arr.length;
+    return n;
   }
 
   private key(x: number, y: number): number {
