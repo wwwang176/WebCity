@@ -18,6 +18,8 @@ export function calculateDistrictPolicyCost(
     cells: { size: number };
     /** 這個分區裡的道路格數。門架架在路上，不是架在地上。 */
     roadCells: number;
+    /** 付錢開進這個分區的通勤人數。一趟車只過一次關卡，只記一個分區。 */
+    chargedDrivers: number;
     policies: readonly { level: number; type: PolicyType }[];
   }[],
   city: CityScales,
@@ -33,6 +35,7 @@ export function calculateDistrictPolicyCost(
         ...city,
         districtCells: district.cells.size,
         districtRoadCells: district.roadCells,
+        chargedDrivers: district.chargedDrivers,
       });
     }
   }
@@ -50,6 +53,8 @@ export function totalPolicyExpense(
     cells: { size: number };
     /** 這個分區裡的道路格數。門架架在路上，不是架在地上。 */
     roadCells: number;
+    /** 付錢開進這個分區的通勤人數。一趟車只過一次關卡，只記一個分區。 */
+    chargedDrivers: number;
     policies: readonly { level: number; type: PolicyType }[];
   }[],
   ordinances: { totalCost(city: CityScales): number },
@@ -70,6 +75,8 @@ export function totalPolicyRevenue(
     cells: { size: number };
     /** 這個分區裡的道路格數。門架架在路上，不是架在地上。 */
     roadCells: number;
+    /** 付錢開進這個分區的通勤人數。一趟車只過一次關卡，只記一個分區。 */
+    chargedDrivers: number;
     policies: readonly { level: number; type: PolicyType }[];
   }[],
   ordinances: { getLevel(t: PolicyType): number },
@@ -80,12 +87,14 @@ export function totalPolicyRevenue(
     for (const policy of district.policies) {
       total += policyRevenue(policy.type, policy.level, {
         ...city, districtCells: district.cells.size, districtRoadCells: district.roadCells,
+        chargedDrivers: district.chargedDrivers,
       });
     }
   }
   for (const type of Object.values(PolicyType)) {
+    // 全城條例沒有收費區可言 —— 三個分區的量都是 0。
     total += policyRevenue(type, ordinances.getLevel(type),
-      { ...city, districtCells: 0, districtRoadCells: 0 });
+      { ...city, districtCells: 0, districtRoadCells: 0, chargedDrivers: 0 });
   }
   return total;
 }
@@ -142,6 +151,8 @@ export function listPolicyExpenses(
     cells: { size: number };
     /** 這個分區裡的道路格數。門架架在路上，不是架在地上。 */
     roadCells: number;
+    /** 付錢開進這個分區的通勤人數。一趟車只過一次關卡，只記一個分區。 */
+    chargedDrivers: number;
     policies: readonly { type: PolicyType; level: number }[];
   }[],
   ordinances: { getLevel(t: PolicyType): number },
@@ -150,7 +161,10 @@ export function listPolicyExpenses(
   const out: PolicyExpenseLine[] = [];
   for (const d of districts) {
     for (const p of d.policies) {
-      const scale = { ...city, districtCells: d.cells.size, districtRoadCells: d.roadCells };
+      const scale = {
+        ...city, districtCells: d.cells.size, districtRoadCells: d.roadCells,
+        chargedDrivers: d.chargedDrivers,
+      };
       const cost = policyCost(p.type, p.level, scale);
       const revenue = policyRevenue(p.type, p.level, scale);
       if (cost === 0 && revenue === 0) continue;
@@ -161,7 +175,7 @@ export function listPolicyExpenses(
   }
   for (const type of Object.values(PolicyType)) {
     const level = ordinances.getLevel(type);
-    const scale = { ...city, districtCells: 0, districtRoadCells: 0 };
+    const scale = { ...city, districtCells: 0, districtRoadCells: 0, chargedDrivers: 0 };
     const cost = policyCost(type, level, scale);
     const revenue = policyRevenue(type, level, scale);
     if (cost === 0 && revenue === 0) continue;

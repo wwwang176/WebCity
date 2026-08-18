@@ -3328,8 +3328,7 @@ export class Game {
     // Assembly lives in core so the "panel total === budget.expenses" invariant
     // can be tested; Game.ts imports Three.js and cannot be (BUG-077).
     return computeEconomyBreakdown(buildEconomyBreakdownContext(
-      this.state, this.elevationManager,
-      this.simLoop.getCommuteStats().chargedDrivers));
+      this.state, this.elevationManager, this.simLoop.billableDistricts()));
   }
 
   deselectBuilding(): void {
@@ -3338,6 +3337,16 @@ export class Game {
   }
 
   /** 全城通勤統計（圖層與總覽面板共用同一份）。 */
+  /**
+   * 分區的計費資料:道路格數與付費的駕駛人數。
+   *
+   * 委派而不是把 simLoop 開出去 —— 帳本面板要的是這一份，跟結帳用的是同一個
+   * 來源。各算各的話，明細裡的過路費會跟市庫實際入帳的對不起來。
+   */
+  getBillableDistricts() {
+    return this.simLoop.billableDistricts();
+  }
+
   getCommuteStats() {
     return this.simLoop.getCommuteStats();
   }

@@ -16,26 +16,30 @@ import { getUtilityMaintenanceCost, getCivicMaintenanceCostExcludingUtilities } 
 import { getTotalTransportOperatingCost } from '../transport/TransportRegistry';
 import { totalPolicyExpense, totalPolicyRevenue } from './ExpenseCalculator';
 import { computeCityScales } from '../district/PolicyBilling';
-import { billableDistricts } from '../district/DistrictManager';
+import type { PolicyType } from '../district/types';
 import { calculateElevatedMaintenance } from '../elevation/ElevationMaintenance';
 
 export function buildEconomyBreakdownContext(
   state: GameState,
   elevationManager: ElevationManager | null,
   /**
-   * 付了壅塞費的通勤人數。
+   * 分區的計費資料（道路格數與付費人數）。
    *
-   * 必填而不是給預設 0 —— 它算不出來自 GameState（要知道每個人選了哪一種交通
-   * 方式，那是通勤統計那一趟的產物），而漏填的話面板會少報一筆收入，跟市庫
-   * 實際入帳的對不起來。
+   * 必填而不是自己從 `state` 算 —— 付費人數算不出來自 GameState（要知道每個人選了
+   * 哪一種交通方式，那是通勤統計那一趟的產物）。漏填的話面板會少報一筆收入，
+   * 跟市庫實際入帳的對不起來。
    */
-  chargedDrivers: number,
+  districts: readonly {
+    name: string;
+    cells: { size: number };
+    roadCells: number;
+    chargedDrivers: number;
+    policies: readonly { type: PolicyType; level: number }[];
+  }[],
 ): EconomyBreakdownContext {
   const utilities = getUtilityMaintenanceCost(state);
-  const scales = {
-    ...computeCityScales(state.citizens.getCitizens(), (x, y) => state.health.getCoverage(x, y)),
-    chargedDrivers,
-  };
+  const scales = computeCityScales(
+    state.citizens.getCitizens(), (x, y) => state.health.getCoverage(x, y));
   return {
     ...buildIncomeCalcDeps(state),
     roadTileCount: countRoadTiles(state.grid),
@@ -47,14 +51,8 @@ export function buildEconomyBreakdownContext(
     // Power and water are itemised as their own rows above, so this must be the
     // civic total MINUS them. Passing the full total double-charged the panel.
     serviceCost: getCivicMaintenanceCostExcludingUtilities(state),
-    policyCost: totalPolicyExpense(
-      billableDistricts(state.grid, state.districts.getAllDistricts()),
-      state.ordinances, scales,
-    ),
-    policyRevenue: totalPolicyRevenue(
-      billableDistricts(state.grid, state.districts.getAllDistricts()),
-      state.ordinances, scales,
-    ),
+    policyCost: totalPolicyExpense(districts, state.ordinances, scales),
+    policyRevenue: totalPolicyRevenue(districts, state.ordinances, scales),
     elevatedMaintenance: elevationManager ? calculateElevatedMaintenance(elevationManager) : 0,
     revenueMultiplier: state.citySpec.getBonus().revenueMultiplier,
   };

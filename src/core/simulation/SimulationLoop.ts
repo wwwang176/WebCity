@@ -208,10 +208,27 @@ export class SimulationLoop {
    * 兩端都在收費區時取比較高的那一個，不是相乘:一趟只會過一次關卡。
    */
   private driveDeterrenceFor(from: { x: number; y: number }, to: { x: number; y: number }): number {
-    const at = (p: { x: number; y: number }) =>
-      this.state.policies.getDriveDeterrence(
-        this.state.districts.getDistrictAt(p.x, p.y)?.id ?? null);
-    return tripDriveDeterrence(at(from), at(to));
+    return this.chargedCordonFor(from, to).deterrence;
+  }
+
+  /**
+   * 這一趟付幾倍的不情願，以及付給哪一個收費區。
+   *
+   * 兩端都在收費區時付比較高的那一個 —— 錢也記給那一區。一趟車只過一次關卡，
+   * 兩區各記一次的話同一筆過路費會被收兩次。
+   */
+  private chargedCordonFor(
+    from: { x: number; y: number }, to: { x: number; y: number },
+  ): { deterrence: number; districtId: string | null } {
+    const at = (p: { x: number; y: number }) => {
+      const id = this.state.districts.getDistrictAt(p.x, p.y)?.id ?? null;
+      return { id, deterrence: this.state.policies.getDriveDeterrence(id) };
+    };
+    const a = at(from);
+    const b = at(to);
+    const deterrence = tripDriveDeterrence(a.deterrence, b.deterrence);
+    if (deterrence <= 1) return { deterrence, districtId: null };
+    return { deterrence, districtId: a.deterrence >= b.deterrence ? a.id : b.id };
   }
   /** Transit structural version at the last transfer-graph rebuild. */
   private lastTransitVersion = -1;
@@ -619,16 +636,16 @@ export class SimulationLoop {
         const home = parsePosKey(c.homeId);
         const work = parsePosKey(c.workplaceId);
         if (!home || !work) return null;
-        const deterrence = this.driveDeterrenceFor(home, work);
+        const cordon = this.chargedCordonFor(home, work);
         const picked = estimateCommute(
           home, work,
-          this.modeChoiceFor(c.education, deterrence),
+          this.modeChoiceFor(c.education, cordon.deterrence),
           this.transitAccess, this.flatRoutes, SIMULATION.AVERAGE_WAIT_FACTOR,
         );
-        // 付了過路費 = 還在開車，而且這一趟碰得到收費區。收入照這個人數收。
+        // 付了過路費 = 還在開車，而且這一趟碰得到收費區。錢記給那一區。
         return {
           ...picked,
-          chargedDriver: deterrence > 1 && picked.mode === TransportMode.DRIVE,
+          chargedDistrictId: picked.mode === TransportMode.DRIVE ? cordon.districtId : null,
         };
       },
       DEFAULT_JOB_RELOCATION_CONFIG.commuteTimeThreshold,
@@ -1050,7 +1067,7 @@ export class SimulationLoop {
     // 壅塞費的過路費。目前唯一一條會賺錢的條例 —— 加在專精加成**之後**，因為
     // 那個加成是對產業稅收的，不是對規費的。
     totalIncome += totalPolicyRevenue(
-      billableDistricts(this.state.grid, this.state.districts.getAllDistricts()), this.state.ordinances, this.cityScales());
+      this.billableDistricts(), this.state.ordinances, this.cityScales());
 
     this.state.budget.income = totalIncome;
     // Expenses: road maintenance + service + district policies + transport
@@ -1058,9 +1075,7 @@ export class SimulationLoop {
       roadMaintenance: this.countRoadTiles() * ECONOMY.ROAD_MAINTENANCE_PER_TILE,
       serviceCost: getTotalServiceMaintenanceCost(this.state),
       policyCost: totalPolicyExpense(
-        billableDistricts(this.state.grid, this.state.districts.getAllDistricts()),
-        this.state.ordinances,
-        this.cityScales(),
+        this.billableDistricts(), this.state.ordinances, this.cityScales(),
       ),
       transportCost: getTotalTransportOperatingCost(this.state),
       elevatedMaintenance: this._elevationManager
@@ -1348,15 +1363,16 @@ export class SimulationLoop {
    * 總數。
    */
   cityScales(): CityScales {
-    return {
-      ...computeCityScales(
-        this.state.citizens.getCitizens(),
-        (x, y) => this.state.health.getCoverage(x, y),
-      ),
-      // 付費人數算不出來自市民清單 —— 它要知道每個人選了哪一種交通方式，那是
-      // 通勤統計那一趟的產物。
-      chargedDrivers: this.commuteStats.chargedDrivers,
-    };
+    return computeCityScales(
+      this.state.citizens.getCitizens(),
+      (x, y) => this.state.health.getCoverage(x, y),
+    );
+  }
+
+  /** 分區的計費資料:道路格數與付費人數。帳本、面板與結帳共用同一份。 */
+  billableDistricts() {
+    return billableDistricts(
+      this.state.grid, this.state.districts.getAllDistricts(), this.commuteStats);
   }
 
   /** Get the abandonment stress for a building at (x, y). */

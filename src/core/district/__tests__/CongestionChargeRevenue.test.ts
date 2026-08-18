@@ -25,6 +25,13 @@ import { RoadType, RoadDirection } from '../../road/types';
 const HOME = '5,5';
 const WORK = '40,5';
 
+/** 全部收費區加起來收到幾個付費的駕駛。 */
+function totalCharged(stats: { chargedDriversByDistrict: ReadonlyMap<string, number> }): number {
+  let n = 0;
+  for (const v of stats.chargedDriversByDistrict.values()) n += v;
+  return n;
+}
+
 /** 一批通勤者，其中 `drivers` 個還在開車而且這趟碰得到收費區。 */
 function statsWith(total: number, chargedDrivers: number) {
   const mgr = new CitizenManager();
@@ -36,7 +43,7 @@ function statsWith(total: number, chargedDrivers: number) {
     mgr.getCitizens(),
     () => {
       const charged = n++ < chargedDrivers;
-      return { time: 20, mode: charged ? 'DRIVE' : 'BUS', chargedDriver: charged };
+      return { time: 20, mode: charged ? 'DRIVE' : 'BUS', chargedDistrictId: charged ? 'd1' : null };
     },
     60, 5,
   );
@@ -44,8 +51,8 @@ function statsWith(total: number, chargedDrivers: number) {
 
 describe('付了過路費的人數', () => {
   it('should count only the drivers whose trip touches the cordon', () => {
-    expect(statsWith(10, 4).chargedDrivers, '付費人數不對').toBe(4);
-    expect(statsWith(10, 0).chargedDrivers, '沒有人付費時不該算出人數').toBe(0);
+    expect(statsWith(10, 4).chargedDriversByDistrict.get('d1'), '付費人數不對').toBe(4);
+    expect(totalCharged(statsWith(10, 0)), '沒有人付費時不該算出人數').toBe(0);
   });
 
   it('should not count anyone whose commute cannot be worked out', () => {
@@ -54,7 +61,7 @@ describe('付了過路費的人數', () => {
     const mgr = new CitizenManager();
     for (let i = 0; i < 10; i++) mgr.restoreCitizen({ age: 100, homeId: HOME, workplaceId: WORK });
     const stats = computeCommuteStats(mgr.getCitizens(), () => null, 60, 5);
-    expect(stats.chargedDrivers, '算不出通勤的人被算進付費人數').toBe(0);
+    expect(totalCharged(stats), '算不出通勤的人被算進付費人數').toBe(0);
   });
 });
 
@@ -161,16 +168,16 @@ describe('過路費走到市庫', () => {
   it('should count the drivers who actually pay through the loop', () => {
     // 接線:少了這條，`chargedDrivers` 可以永遠是 0 而上面所有測試照樣全綠。
     const { loop } = chargedCity(true);
-    expect(loop.getCommuteStats().chargedDrivers, '沒有人被算成付了過路費')
+    expect(totalCharged(loop.getCommuteStats()), '沒有人被算成付了過路費')
       .toBeGreaterThan(0);
-    expect(chargedCity(false).loop.getCommuteStats().chargedDrivers,
+    expect(totalCharged(chargedCity(false).loop.getCommuteStats()),
       '沒開條例卻有人在付過路費').toBe(0);
   });
 
   it('should put the toll into the city income', () => {
     const { state, loop } = chargedCity(true);
     const expected = totalPolicyRevenue(
-      billableDistricts(state.grid, state.districts.getAllDistricts()), state.ordinances, loop.cityScales());
+      loop.billableDistricts(), state.ordinances, loop.cityScales());
     expect(expected, '這座城市一毛過路費都沒收到，接線測不出來').toBeGreaterThan(0);
 
     // 把收入表暫時清空再結一次帳:差額就是過路費。直接比「有沒有開條例」不行 ——
@@ -205,12 +212,11 @@ describe('過路費走到市庫', () => {
       const { state, loop } = chargedCity(true);
       expect(loop.getCommuteStats().byMode['BUS'] ?? 0, '沒有人改搭公車，這條測試等於空轉')
         .toBeGreaterThan(0);
-      expect(loop.getCommuteStats().chargedDrivers, '改搭公車的人也被收了過路費')
+      expect(totalCharged(loop.getCommuteStats()), '改搭公車的人也被收了過路費')
         .toBe(0);
       expect(
         totalPolicyRevenue(
-          billableDistricts(state.grid, state.districts.getAllDistricts()),
-          state.ordinances, loop.cityScales()),
+          loop.billableDistricts(), state.ordinances, loop.cityScales()),
         '沒有人開車了卻還在收過路費',
       ).toBe(0);
     } finally {

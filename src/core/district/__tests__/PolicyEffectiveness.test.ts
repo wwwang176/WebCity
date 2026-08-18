@@ -52,7 +52,7 @@ describe('policies are charged only when they do something', () => {
     // is not in either effect table. Deleting the guard makes this fail; a real
     // policy losing its effect would then start billing for nothing again.
     const districts = [{
-      cells: { size: 50 }, roadCells: 50,
+      cells: { size: 50 }, roadCells: 50, chargedDrivers: 0,
       policies: [
         { level: 1, type: 'NOT_A_REAL_POLICY' as PolicyType },
         { level: 1, type: PolicyType.TOURISM },
@@ -68,7 +68,7 @@ describe('policies are charged only when they do something', () => {
     // —— 該區長不出高稅收的建築 —— 而不是市府掏錢。再收一次是雙重懲罰，而且那個
     // 數字沒有來由。
     const districts = [{
-      cells: { size: 50 }, roadCells: 50,
+      cells: { size: 50 }, roadCells: 50, chargedDrivers: 0,
       policies: [
         { level: 1, type: PolicyType.NO_HEAVY_INDUSTRY },
         { level: 1, type: PolicyType.HIGH_DENSITY_BAN },
@@ -81,7 +81,7 @@ describe('policies are charged only when they do something', () => {
   it('should still bill a policy that costs money', () => {
     // 反面控制:上一條「不收費」單獨看的話，一個永遠回 0 的計算器也會通過。
     const districts = [{
-      cells: { size: 50 }, roadCells: 50,
+      cells: { size: 50 }, roadCells: 50, chargedDrivers: 0,
       policies: [{ level: 2, type: PolicyType.ENCOURAGE_RECYCLING }],
     }];
     expect(calculateDistrictPolicyCost(districts, SCALE)).toBeGreaterThan(0);
@@ -89,7 +89,7 @@ describe('policies are charged only when they do something', () => {
 
   it('should not bill an inactive implemented policy', () => {
     const districts = [{
-      cells: { size: 50 }, roadCells: 50,
+      cells: { size: 50 }, roadCells: 50, chargedDrivers: 0,
       policies: [{ level: 0, type: PolicyType.ENCOURAGE_RECYCLING }],
     }];
 

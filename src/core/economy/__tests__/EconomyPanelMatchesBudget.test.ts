@@ -99,7 +99,7 @@ describe('economy panel agrees with the treasury', () => {
     state.budget.loanInterestRate = 0.05;
     for (let i = 0; i < 6; i++) loop.tick();
 
-    const b = getEconomyBreakdown(buildEconomyBreakdownContext(state, em, 0));
+    const b = getEconomyBreakdown(buildEconomyBreakdownContext(state, em, loop.billableDistricts()));
     for (const [row, value] of Object.entries({
       roadMaintenance: b.roadMaintenance, loanInterest: b.loanInterest,
       powerCost: b.powerCost, waterCost: b.waterCost,
@@ -118,7 +118,7 @@ describe('economy panel agrees with the treasury', () => {
     loop.setElevationManager(em);
     for (let i = 0; i < 6; i++) loop.tick();
 
-    const b = getEconomyBreakdown(buildEconomyBreakdownContext(state, em, 0));
+    const b = getEconomyBreakdown(buildEconomyBreakdownContext(state, em, loop.billableDistricts()));
     const loanInterest = state.budget.loans * state.budget.loanInterestRate;
 
     expect(panelExpenses(b)).toBeCloseTo(state.budget.expenses + loanInterest, 1);
@@ -133,7 +133,7 @@ describe('economy panel agrees with the treasury', () => {
     loop.setElevationManager(em);
     for (let i = 0; i < 6; i++) loop.tick();
 
-    const b = getEconomyBreakdown(buildEconomyBreakdownContext(state, em, 0));
+    const b = getEconomyBreakdown(buildEconomyBreakdownContext(state, em, loop.billableDistricts()));
 
     expect(b.loanInterest).toBeCloseTo(500, 1);
     expect(panelExpenses(b)).toBeCloseTo(state.budget.expenses + 500, 1);
@@ -146,7 +146,7 @@ describe('economy panel agrees with the treasury', () => {
     loop.setElevationManager(em);
     for (let i = 0; i < 6; i++) loop.tick();
 
-    const b = getEconomyBreakdown(buildEconomyBreakdownContext(state, em, 0));
+    const b = getEconomyBreakdown(buildEconomyBreakdownContext(state, em, loop.billableDistricts()));
 
     expect(b.powerCost).toBeGreaterThan(0);
     expect(b.waterCost).toBeGreaterThan(0);
@@ -164,7 +164,7 @@ describe('economy panel agrees with the treasury', () => {
     loop.setElevationManager(em);
     for (let i = 0; i < 6; i++) loop.tick();
 
-    const b = getEconomyBreakdown(buildEconomyBreakdownContext(state, em, 0));
+    const b = getEconomyBreakdown(buildEconomyBreakdownContext(state, em, loop.billableDistricts()));
     const panelBalance = (b.residential + b.commercial + b.industrial + b.office)
       - panelExpenses(b);
 

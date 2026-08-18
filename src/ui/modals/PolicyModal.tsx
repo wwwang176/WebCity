@@ -84,7 +84,8 @@ export function PolicyModal(props: {
     return {
       ...computeCityScales(state.citizens.getCitizens(),
         (x: number, y: number) => state.health.getCoverage(x, y)),
-      chargedDrivers: getGame().getCommuteStats().chargedDrivers,
+      chargedDrivers: getGame().getCommuteStats()
+        .chargedDriversByDistrict.get(selectedDistrict()?.id ?? '') ?? 0,
       districtCells: selectedDistrict()?.cells.size ?? 0,
       districtRoadCells: (() => {
         const d = selectedDistrict();

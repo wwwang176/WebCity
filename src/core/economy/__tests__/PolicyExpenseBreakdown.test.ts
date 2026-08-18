@@ -17,7 +17,7 @@ import { buildEconomyBreakdownContext } from '../EconomyBreakdownContext';
 
 const districts = () => [{
   name: 'Downtown',
-  cells: { size: 50 }, roadCells: 50,
+  cells: { size: 50 }, roadCells: 50, chargedDrivers: 0,
   policies: [{ type: PolicyType.ENCOURAGE_RECYCLING, level: 2 }],
 }];
 
@@ -34,13 +34,13 @@ describe('政策支出明細', () => {
   });
 
   it('should skip policies that are off', () => {
-    const off = [{ name: 'D', cells: { size: 50 }, roadCells: 50, policies: [{ type: PolicyType.TOURISM, level: 0 }] }];
+    const off = [{ name: 'D', cells: { size: 50 }, roadCells: 50, chargedDrivers: 0, policies: [{ type: PolicyType.TOURISM, level: 0 }] }];
     expect(listPolicyExpenses(off, new CityOrdinances(), scaleOf({ population: 1000 }))).toHaveLength(0);
   });
 
   it('should skip a restriction policy, which costs nothing', () => {
     const banned = [{
-      name: 'D', cells: { size: 50 }, roadCells: 50,
+      name: 'D', cells: { size: 50 }, roadCells: 50, chargedDrivers: 0,
       policies: [{ type: PolicyType.NO_HEAVY_INDUSTRY, level: 1 }],
     }];
     expect(listPolicyExpenses(banned, new CityOrdinances(), scaleOf({ population: 1000 }))).toHaveLength(0);
@@ -101,9 +101,12 @@ describe('明細與面板總額', () => {
     state.policies.setPolicyLevel(d.id, PolicyType.ENCOURAGE_RECYCLING, 2);
     state.ordinances.setLevel(PolicyType.ENERGY_REGULATION, 3);
 
-    const panelTotal = buildEconomyBreakdownContext(state, null, 0).policyCost ?? 0;
+    const loop = new SimulationLoop(state);
+    for (let i = 0; i < 6; i++) loop.tick();
+    const panelTotal = buildEconomyBreakdownContext(
+      state, null, loop.billableDistricts()).policyCost ?? 0;
     const lines = listPolicyExpenses(
-      billableDistricts(state.grid, state.districts.getAllDistricts()), state.ordinances,
+      loop.billableDistricts(), state.ordinances,
       computeCityScales(state.citizens.getCitizens(), (x, y) => state.health.getCoverage(x, y)));
     const sum = lines.reduce((a, l) => a + l.cost, 0);
 

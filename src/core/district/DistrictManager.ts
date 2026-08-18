@@ -58,16 +58,22 @@ export function countRoadCellsInDistrict(
 }
 
 /**
- * 把分區清單補上計費要用的道路格數。
+ * 把分區清單補上計費要用的兩個量:道路格數與付費的駕駛人數。
  *
- * 計費那一層只認得一個最小介面（格數、道路格數、政策），不認得 `District` —— 這裡
- * 是兩者之間唯一的轉接點，所以「門架照道路算」這件事只有一個地方會寫錯。
+ * 計費那一層只認得一個最小介面（格數、道路格數、付費人數、政策），不認得
+ * `District` —— 這裡是兩者之間唯一的轉接點，所以「門架照道路算」「過路費逐區算」
+ * 這兩件事各只有一個地方會寫錯。
  */
-export function billableDistricts<T extends { cells: ReadonlySet<string> }>(
+export function billableDistricts<T extends { id: string; cells: ReadonlySet<string> }>(
   grid: { getCell(x: number, y: number): { roadType: number } | null },
   districts: readonly T[],
-): (T & { roadCells: number })[] {
-  return districts.map(d => ({ ...d, roadCells: countRoadCellsInDistrict(grid, d) }));
+  stats?: { chargedDriversByDistrict: ReadonlyMap<string, number> },
+): (T & { roadCells: number; chargedDrivers: number })[] {
+  return districts.map(d => ({
+    ...d,
+    roadCells: countRoadCellsInDistrict(grid, d),
+    chargedDrivers: stats?.chargedDriversByDistrict.get(d.id) ?? 0,
+  }));
 }
 
 export class DistrictManager {

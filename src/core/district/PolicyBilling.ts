@@ -42,14 +42,6 @@ export interface CityScales {
    * 無家者同理:沒有家就沒有座標可查，判不出他在不在範圍內。
    */
   clinicPatients: number;
-  /**
-   * 付了壅塞費的通勤人數。
-   *
-   * 唯一一個**流量**基數 —— 其他都是存量（有多少人、多少格、多少病人）。收入要跟
-   * 著它走，條例才會「越成功賺越少」;跟著格數走的話，荒地上的大收費區會變成
-   * 印鈔機。
-   */
-  chargedDrivers: number;
 }
 
 /** 算費用要知道的規模。呼叫端負責填。 */
@@ -62,6 +54,17 @@ export interface PolicyScale extends CityScales {
    * 門架架在路上，不是架在地上 —— 圈一片綠地不該產生任何門架維運費。
    */
   districtRoadCells: number;
+  /**
+   * 付錢開進**這個分區**的通勤人數。全城條例填 0。
+   *
+   * 唯一一個**流量**基數 —— 其他都是存量（有多少人、多少格、多少病人）。收入要跟
+   * 著它走，條例才會「越成功賺越少」;跟著格數走的話，荒地上的大收費區會變成
+   * 印鈔機。
+   *
+   * 是分區的量不是全城的:一趟車只過一次關卡。放在全城那一層的話，每個收費區都會
+   * 拿整個城市的付費人數去乘，畫兩個就收兩次。
+   */
+  chargedDrivers: number;
 }
 
 /**
@@ -84,12 +87,7 @@ export function computeCityScales(
     if (!pos || !isHealthCovered(pos.x, pos.y)) continue;
     clinicPatients += CLINIC_AGE_WEIGHT[c.lifeStage];
   }
-  return {
-    population: citizens.length, babies, children, teens, clinicPatients,
-    // 付費人數算不出來 —— 它要知道每個人選了什麼交通方式，那是通勤統計那一趟的
-    // 產物。呼叫端自己補上，沒補就是 0（不收錢，不是亂收）。
-    chargedDrivers: 0,
-  };
+  return { population: citizens.length, babies, children, teens, clinicPatients };
 }
 
 /**
@@ -139,7 +137,7 @@ export const POLICY_BILLING: Partial<Record<PolicyType, {
   [PolicyType.SMOKING_BAN]: { basis: 'population', perUnit: [0.02] },
   // 門架與稽查跟著**分區內的道路格數**走，不是總格數 —— 門架架在路上，圈一片
   // 綠地不該產生任何維運費。
-  [PolicyType.CONGESTION_CHARGE]: { basis: 'districtRoadCells', perUnit: [2.5, 6] },
+  [PolicyType.CONGESTION_CHARGE]: { basis: 'districtRoadCells', perUnit: [0.8, 1.8] },
 };
 
 /**
@@ -179,7 +177,7 @@ export const POLICY_REVENUE: Partial<Record<PolicyType, {
 }>> = {
   // 過路費。跟著「還有多少人在開車」走，所以政策越成功收得越少 —— 做到極致會
   // 賠錢，因為門架照樣要養。那正是這條條例要玩家自己拿捏的地方。
-  [PolicyType.CONGESTION_CHARGE]: { basis: 'chargedDrivers', perUnit: [1.8, 3.2] },
+  [PolicyType.CONGESTION_CHARGE]: { basis: 'chargedDrivers', perUnit: [0.04, 0.09] },
 };
 
 function amountOf(

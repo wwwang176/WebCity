@@ -25,7 +25,7 @@ describe('ExpenseCalculator', () => {
 
     it('returns 0 when no policies are active', () => {
       const districts = [{
-        cells: { size: CELLS }, roadCells: 0,
+        cells: { size: CELLS }, roadCells: 0, chargedDrivers: 0,
         policies: [{ type: PolicyType.ENCOURAGE_RECYCLING, level: 0 }],
       }] satisfies BillableDistrict[];
       expect(calculateDistrictPolicyCost(districts, scaleOf({ population: POP }))).toBe(0);
@@ -35,7 +35,7 @@ describe('ExpenseCalculator', () => {
       // Paired positive control: without it, "returns 0" is satisfiable by a
       // calculator that returns 0 for everything.
       const districts = [{
-        cells: { size: CELLS }, roadCells: 0,
+        cells: { size: CELLS }, roadCells: 0, chargedDrivers: 0,
         policies: [{ type: PolicyType.ENCOURAGE_RECYCLING, level: 2 }],
       }] satisfies BillableDistrict[];
       expect(calculateDistrictPolicyCost(districts, scaleOf({ population: POP }))).toBeCloseTo(recyclingCost(2), 6);
@@ -44,14 +44,14 @@ describe('ExpenseCalculator', () => {
     it('sums costs of active policies across districts', () => {
       const districts = [
         {
-          cells: { size: CELLS }, roadCells: 0,
+          cells: { size: CELLS }, roadCells: 0, chargedDrivers: 0,
           policies: [
             { type: PolicyType.ENCOURAGE_RECYCLING, level: 1 },
             { type: PolicyType.HIGH_DENSITY_BAN, level: 1 },
           ],
         },
         {
-          cells: { size: CELLS }, roadCells: 0,
+          cells: { size: CELLS }, roadCells: 0, chargedDrivers: 0,
           policies: [{ type: PolicyType.ENCOURAGE_RECYCLING, level: 3 }],
         },
       ] satisfies BillableDistrict[];
@@ -63,11 +63,11 @@ describe('ExpenseCalculator', () => {
     it('scales with each district own size', () => {
       // 同一條政策、同一級，分區畫大一倍費用就跳一倍。這是整個改動的重點。
       const one = [{
-        cells: { size: 10 }, roadCells: 10,
+        cells: { size: 10 }, roadCells: 10, chargedDrivers: 0,
         policies: [{ type: PolicyType.ENCOURAGE_RECYCLING, level: 2 }],
       }] satisfies BillableDistrict[];
       const two = [{
-        cells: { size: 20 }, roadCells: 20,
+        cells: { size: 20 }, roadCells: 20, chargedDrivers: 0,
         policies: [{ type: PolicyType.ENCOURAGE_RECYCLING, level: 2 }],
       }] satisfies BillableDistrict[];
       expect(calculateDistrictPolicyCost(two, scaleOf({ population: POP })))

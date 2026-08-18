@@ -112,7 +112,7 @@ describe('條例的計費', () => {
 describe('預算真的照這張表收錢', () => {
   // 只測 policyCost 的話，ExpenseCalculator 完全沒改也會全綠。
   const districts = [{
-    cells: { size: 400 }, roadCells: 400,
+    cells: { size: 400 }, roadCells: 400, chargedDrivers: 0,
     policies: [{ type: PolicyType.ENCOURAGE_RECYCLING, level: 2 as const }],
   }];
 
@@ -123,7 +123,7 @@ describe('預算真的照這張表收錢', () => {
 
   it('should charge nothing for a district with no cells', () => {
     // 分區格數是計費基數 —— 沒有格子就沒有東西要服務。
-    const empty = [{ cells: { size: 0 }, roadCells: 0, policies: districts[0]!.policies }];
+    const empty = [{ cells: { size: 0 }, roadCells: 0, chargedDrivers: 0, policies: districts[0]!.policies }];
     expect(calculateDistrictPolicyCost(empty, scaleOf({ population: 10_000 }))).toBe(0);
   });
 
@@ -147,7 +147,7 @@ describe('預算真的照這張表收錢', () => {
 
   it('should charge nothing for a policy that is off', () => {
     const off = [{
-      cells: { size: 400 }, roadCells: 400,
+      cells: { size: 400 }, roadCells: 400, chargedDrivers: 0,
       policies: [{ type: PolicyType.ENCOURAGE_RECYCLING, level: 0 as const }],
     }];
     expect(calculateDistrictPolicyCost(off, scaleOf({ population: 10_000 }))).toBe(0);
