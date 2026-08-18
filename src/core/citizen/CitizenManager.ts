@@ -22,6 +22,13 @@ export interface DeathContext {
   hospitalMult: number;
   /** Pollution death-rate multiplier (1.0 = no extra risk, up to 1.5 = high pollution uncovered) */
   pollutionMult: number;
+  /**
+   * 條例對死亡機率的乘數（禁菸令、免費診所）。1 = 沒有條例。
+   *
+   * 跟 hospitalMult 分開帶著:那一欄是醫院負荷算出來的，兩者乘在一起的話，帳面上
+   * 會看不出死亡率是被醫院蓋住的還是被條例壓下去的。
+   */
+  policyMult: number;
 }
 
 /** Elderly age threshold and rate factor */
@@ -318,7 +325,8 @@ export class CitizenManager {
       const baseRate = DAILY_DEATH_RATE[c.lifeStage];
       const elderlyMult = getElderlyMultiplier(c.age);
       const ctx = getDeathContext(c);
-      const finalRate = baseRate * elderlyMult * ctx.hospitalMult * ctx.pollutionMult;
+      const finalRate = baseRate * elderlyMult * ctx.hospitalMult * ctx.pollutionMult
+        * ctx.policyMult;
       if (Math.random() < finalRate) {
         dead.push({ id: c.id, homeId: c.homeId });
       }

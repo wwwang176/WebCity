@@ -33,6 +33,8 @@ export const POLICY_CONFIG: Record<PolicyType, PolicyTypeConfig> = {
   [PolicyType.INDUSTRIAL_EMISSION_CONTROL]: { name: 'Industrial Emission Control' },
   [PolicyType.CHILDCARE_SUBSIDY]: { name: 'Childcare Subsidy' },
   [PolicyType.COMPULSORY_EDUCATION]: { name: 'Compulsory Education' },
+  [PolicyType.FREE_CLINIC]: { name: 'Free Clinics' },
+  [PolicyType.SMOKING_BAN]: { name: 'Smoking Ban' },
 };
 
 /**
@@ -106,6 +108,21 @@ export interface PolicyEffect {
    * 被加速 —— 那就沒有「辦到哪一階」可言了。
    */
   compulsorySchooling?: number;
+  /**
+   * 全城死亡機率的乘數。對誰都有效。
+   *
+   * 分成兩個欄位而不是一個帶旗標的:接線的地方是死亡判定的回呼，那裡本來就已經
+   * 分好「這個人有沒有被醫院蓋到」的三條分支。兩個欄位各自乘進對應的分支，比
+   * 一個欄位加一個「要不要看覆蓋」的旗標少一次判斷，也少一種寫錯的方式。
+   */
+  deathRate?: number;
+  /**
+   * 只作用在**醫院覆蓋範圍內**的死亡機率乘數。
+   *
+   * 醫院蓋不到的地方，人根本沒去看病 —— 補助也就沒發出去。所以免費診所是醫院的
+   * 補強，不是替代品:要先有醫院，這條才有東西可以補。
+   */
+  coveredDeathRate?: number;
 }
 
 /**
@@ -231,6 +248,24 @@ export const POLICY_EFFECTS: Partial<Record<PolicyType, readonly PolicyEffect[]>
     { compulsorySchooling: 1, revenueByZone: { [ZoneType.INDUSTRIAL]: 0.97 } },
     { compulsorySchooling: 2, revenueByZone: { [ZoneType.INDUSTRIAL]: 0.93 } },
     { compulsorySchooling: 3, revenueByZone: { [ZoneType.INDUSTRIAL]: 0.86 } },
+  ],
+
+  /**
+   * 免費診所與禁菸令是刻意設計的一對:同樣在買健康，差別是誰付錢。
+   *
+   * 診所掏市府的錢（按加權後的病人數計費，全表最貴），商業只輕輕擦到 ——
+   * 公辦的免費診所把病人從私人體系吸走。禁菸令幾乎不用市府出錢，改成讓餐飲與
+   * 夜間商業買單。
+   *
+   * 兩條可以同時開，效果相乘 —— 它們不是同一個決定的兩個答案，而是同一個目標的
+   * 兩條財源。
+   */
+  [PolicyType.FREE_CLINIC]: [
+    { coveredDeathRate: 0.88, revenueByZone: { [ZoneType.COMMERCIAL_LOW]: 0.98, [ZoneType.COMMERCIAL_HIGH]: 0.98 } },
+    { coveredDeathRate: 0.75, revenueByZone: { [ZoneType.COMMERCIAL_LOW]: 0.95, [ZoneType.COMMERCIAL_HIGH]: 0.95 } },
+  ],
+  [PolicyType.SMOKING_BAN]: [
+    { deathRate: 0.94, revenueByZone: { [ZoneType.COMMERCIAL_LOW]: 0.88, [ZoneType.COMMERCIAL_HIGH]: 0.88 } },
   ],
 };
 

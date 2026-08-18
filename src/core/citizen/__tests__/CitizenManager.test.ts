@@ -426,9 +426,9 @@ describe('getElderlyMultiplier', () => {
 });
 
 /** Helper: uncovered death context (hospitalMult=1, pollutionMult=1) */
-const UNCOVERED = () => ({ hospitalMult: 1.0, pollutionMult: 1.0 });
+const UNCOVERED = () => ({ hospitalMult: 1.0, pollutionMult: 1.0 , policyMult: 1});
 /** Helper: covered death context (hospitalMult=0.3, pollutionMult=1) */
-const COVERED = () => ({ hospitalMult: HEALTH_MULTIPLIER.COVERED, pollutionMult: 1.0 });
+const COVERED = () => ({ hospitalMult: HEALTH_MULTIPLIER.COVERED, pollutionMult: 1.0 , policyMult: 1});
 
 describe('deathTick', () => {
   it('should kill citizens over age 280', () => {
@@ -483,7 +483,7 @@ describe('deathTick', () => {
   it('callback receives citizen object', () => {
     const mgr = new CitizenManager();
     const c = mgr.createCitizen({ age: 220, homeId: null })!;
-    const ctxFn = vi.fn().mockReturnValue({ hospitalMult: 0.3, pollutionMult: 1.0 });
+    const ctxFn = vi.fn().mockReturnValue({ hospitalMult: 0.3, pollutionMult: 1.0 , policyMult: 1});
     vi.spyOn(Math, 'random').mockReturnValue(1.0);
     mgr.deathTick(ctxFn);
     expect(ctxFn).toHaveBeenCalledWith(c);
@@ -517,7 +517,7 @@ describe('deathTick', () => {
     const mgr1 = new CitizenManager();
     mgr1.createCitizen({ age: 220 })!;
     vi.spyOn(Math, 'random').mockReturnValue(0.007);
-    const deaths1 = mgr1.deathTick(() => ({ hospitalMult: 1.0, pollutionMult: 1.5 }));
+    const deaths1 = mgr1.deathTick(() => ({ hospitalMult: 1.0, pollutionMult: 1.5 , policyMult: 1}));
     expect(deaths1.length).toBe(1);
     vi.restoreAllMocks();
 
@@ -545,7 +545,7 @@ describe('deathTick', () => {
     const mgr2 = new CitizenManager();
     mgr2.createCitizen({ age: 220 })!;
     vi.spyOn(Math, 'random').mockReturnValue(0.003);
-    const deaths2 = mgr2.deathTick(() => ({ hospitalMult: 0.65, pollutionMult: 1.0 }));
+    const deaths2 = mgr2.deathTick(() => ({ hospitalMult: 0.65, pollutionMult: 1.0 , policyMult: 1}));
     expect(deaths2.length).toBe(1); // 0.003 < 0.0039
     vi.restoreAllMocks();
   });

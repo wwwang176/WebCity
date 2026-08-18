@@ -47,6 +47,10 @@ export const POLICY_SCOPE: Record<PolicyType, PolicyScopeKind> = {
   // 國民教育的階數是一部法律,不是一塊地的屬性。只在某一區義務到大學的話,決策會
   // 退化成「把分區畫在學校旁邊」。
   [PolicyType.COMPULSORY_EDUCATION]: 'city',
+  // 這兩條都是「要不要、多強」，不是「在哪裡」。而且分區範圍會讓代價落空:把禁菸令
+  // 畫在純住宅區等於白拿健康 —— 那一區沒有商業可以付錢。
+  [PolicyType.FREE_CLINIC]: 'city',
+  [PolicyType.SMOKING_BAN]: 'city',
 };
 
 /** 這個條例畫在分區上有意義嗎？ */

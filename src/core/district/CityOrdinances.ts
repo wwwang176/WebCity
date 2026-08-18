@@ -101,6 +101,16 @@ export class CityOrdinances {
     return this.effect(e => e.compulsorySchooling, 0, (a, b) => Math.max(a, b));
   }
 
+  /** 全城條例對死亡機率的乘數。對誰都有效（禁菸令）。 */
+  getDeathRateMultiplier(): number {
+    return this.effect(e => e.deathRate, 1, (a, b) => a * b);
+  }
+
+  /** 只作用在醫院覆蓋範圍內的死亡機率乘數（免費診所）。 */
+  getCoveredDeathRateMultiplier(): number {
+    return this.effect(e => e.coveredDeathRate, 1, (a, b) => a * b);
+  }
+
   /** 全城條例對這個分區類型的收入乘數。 */
   getRevenueMultiplier(zoneType: ZoneType): number {
     return this.effect((e) => {

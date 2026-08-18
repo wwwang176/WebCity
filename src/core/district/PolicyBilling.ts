@@ -112,6 +112,11 @@ export const POLICY_BILLING: Partial<Record<PolicyType, {
   [PolicyType.CHILDCARE_SUBSIDY]: { basis: 'childcareRecipients', perUnit: [1.2, 1.2, 1.2] },
   // 辦到哪一階就付到哪一階。跳得比線性快 —— 大學的單位成本本來就比國小高。
   [PolicyType.COMPULSORY_EDUCATION]: { basis: 'population', perUnit: [0.08, 0.20, 0.45] },
+  // 診所按實際看得到的病人收費 —— 一座高齡城市的帳單本來就該比年輕城市重，而
+  // 按總人口計價的話那個差別會整個不見。
+  [PolicyType.FREE_CLINIC]: { basis: 'clinicPatients', perUnit: [0.35, 0.85] },
+  // 禁菸令只有稽查成本。它真正的代價在商業收入那一欄。
+  [PolicyType.SMOKING_BAN]: { basis: 'population', perUnit: [0.02] },
 };
 
 /**

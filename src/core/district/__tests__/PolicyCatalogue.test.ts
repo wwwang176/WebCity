@@ -57,6 +57,7 @@ describe('目錄的完整性', () => {
       PolicyType.WATER_CONSERVATION, PolicyType.SEWAGE_STANDARDS,
       PolicyType.INDUSTRIAL_EMISSION_CONTROL,
       PolicyType.CHILDCARE_SUBSIDY, PolicyType.COMPULSORY_EDUCATION,
+      PolicyType.FREE_CLINIC, PolicyType.SMOKING_BAN,
     ]));
   });
 
@@ -83,6 +84,8 @@ describe('目錄的完整性', () => {
       [PolicyType.SEWAGE_STANDARDS]: 'city',
       [PolicyType.CHILDCARE_SUBSIDY]: 'city',
       [PolicyType.COMPULSORY_EDUCATION]: 'city',
+      [PolicyType.FREE_CLINIC]: 'city',
+      [PolicyType.SMOKING_BAN]: 'city',
     };
     for (const type of Object.values(PolicyType)) {
       expect(POLICY_SCOPE[type], `${type} 的範圍跟當初的設計不一樣`).toBe(DESIGNED[type]);
@@ -99,7 +102,7 @@ describe('目錄的完整性', () => {
 describe('逐級的方向', () => {
   /** 減量型的槓桿:乘數 < 1 是好處，> 1 是代價。 */
   const REDUCERS = ['garbage', 'waterDemand', 'sewageLoad', 'industrialPollution',
-    'powerDemand'] as const;
+    'powerDemand', 'deathRate', 'coveredDeathRate'] as const;
 
   /**
    * 增量型的槓桿:方向跟 REDUCERS 相反，乘數 > 1 才是好處。

@@ -496,15 +496,24 @@ export class SimulationLoop {
       this.updateHospitalLoads();
       const hospitalMult = loadRatioToDeathMultiplier(this.state.health.getLoadRatio());
 
+      // 禁菸令對誰都有效，免費診所只保護醫院蓋得到的人 —— 醫院蓋不到的地方，
+      // 人根本沒去看病，補助也就沒發出去。兩個乘數在這裡各自進對應的分支。
+      const banMult = this.state.ordinances.getDeathRateMultiplier();
+      const clinicMult = this.state.ordinances.getCoveredDeathRateMultiplier();
+
       const deadIds = this.state.citizens.deathTick(
         (citizen): DeathContext => {
-          if (!citizen.homeId) return { hospitalMult: 1.0, pollutionMult: 1.0 };
+          if (!citizen.homeId) return { hospitalMult: 1.0, pollutionMult: 1.0, policyMult: banMult };
           const pos = parsePosKey(citizen.homeId);
-          if (!pos) return { hospitalMult: 1.0, pollutionMult: 1.0 };
+          if (!pos) return { hospitalMult: 1.0, pollutionMult: 1.0, policyMult: banMult };
           const covered = this.state.health.getCoverage(pos.x, pos.y);
-          if (covered) return { hospitalMult, pollutionMult: 1.0 };
+          if (covered) return { hospitalMult, pollutionMult: 1.0, policyMult: banMult * clinicMult };
           const cell = this.state.grid.getCell(pos.x, pos.y);
-          return { hospitalMult: 1.0, pollutionMult: uncoveredPollutionMultiplier(cell?.pollution ?? 0) };
+          return {
+            hospitalMult: 1.0,
+            pollutionMult: uncoveredPollutionMultiplier(cell?.pollution ?? 0),
+            policyMult: banMult,
+          };
         }
       );
       for (const d of deadIds) {
