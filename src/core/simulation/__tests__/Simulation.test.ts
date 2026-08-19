@@ -965,11 +965,17 @@ describe('Unemployment happiness penalty', () => {
     return state;
   }
 
-  function runHappinessSlot(state: GameState): void {
+  /**
+   * 跑完一整輪快樂度。
+   *
+   * 快樂度改成分片之後，一個 tick 只重算其中一片 —— 要 SLOW_TICK_INTERVAL 個 tick
+   * 才輪得到每一位市民（BUG-330）。原本這裡只跑一個 tick 就期待全部算好。
+   */
+  function runHappinessCycle(state: GameState): void {
     const before = state.clock.tick;
-    new SimulationLoop(state).tick();
-    expect(state.clock.tick % SIMULATION.SLOW_TICK_INTERVAL).toBe(HAPPINESS_SLOT);
-    expect(state.clock.tick).toBe(before + 1);
+    const loop = new SimulationLoop(state);
+    for (let i = 0; i < SIMULATION.SLOW_TICK_INTERVAL; i++) loop.tick();
+    expect(state.clock.tick).toBe(before + SIMULATION.SLOW_TICK_INTERVAL);
   }
 
   it('should penalise jobless citizens even when totalJobs exceeds adultCount', () => {
@@ -983,7 +989,7 @@ describe('Unemployment happiness penalty', () => {
       jobless.push(state.citizens.restoreCitizen({ age: 100, homeId: '3,3', workplaceId: null, unemployedSince: 0 }));
     }
 
-    runHappinessSlot(state);
+    runHappinessCycle(state);
 
     const avg = (cs: { happiness: number }[]) => cs.reduce((s, c) => s + c.happiness, 0) / cs.length;
     expect(avg(jobless)).toBeLessThan(avg(employed));
@@ -998,7 +1004,7 @@ describe('Unemployment happiness penalty', () => {
     // Pin the commute jitter (the only legitimate use of randomness here) so the
     // gap can only come from the employment factor.
     const rand = vi.spyOn(Math, 'random').mockReturnValue(0.5);
-    runHappinessSlot(state);
+    runHappinessCycle(state);
     rand.mockRestore();
 
     // unemployedSince=0 against a clock far past the tolerance means the forced
@@ -1013,7 +1019,7 @@ describe('Unemployment happiness penalty', () => {
     const child = state.citizens.restoreCitizen({ age: 20, homeId: '2,3', workplaceId: null });
     const adult = state.citizens.restoreCitizen({ age: 100, homeId: '2,3', workplaceId: null, unemployedSince: 0 });
 
-    runHappinessSlot(state);
+    runHappinessCycle(state);
 
     expect(child.happiness).toBeGreaterThan(adult.happiness);
   });

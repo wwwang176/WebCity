@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { createGameState, type GameState } from '../../simulation/GameState';
 import { SimulationLoop } from '../../simulation/SimulationLoop';
+import { SIMULATION } from '../../simulation/SimulationConstants';
 import { buildOverlayValue, type OverlayBuildContext } from '../../overlay/OverlayBuilders';
 import { POLICY_EFFECTS, type PolicyEffect } from '../PolicyManager';
 import { PolicyType } from '../types';
@@ -118,8 +119,19 @@ describe('犯罪走到幸福度', () => {
     // （見 `BuildingAbandonment.test.ts`）。
     const avgHappinessWith = (crime: number) => {
       const { state, loop } = city();
-      const update = () =>
-        (loop as unknown as { updateCitizenHappiness: () => void }).updateCitizenHappiness();
+      // 快樂度改成分片之後，一個 tick 只重算其中一片 —— 要推進 SLOW_TICK_INTERVAL 個
+      // tick 才輪得到每一位市民（BUG-330）。時鐘不動的話會重複算同一片。
+      const inner = loop as unknown as {
+        refreshHappinessContext(): void;
+        updateCitizenHappinessSlice(): void;
+      };
+      const update = () => {
+        inner.refreshHappinessContext();
+        for (let i = 0; i < SIMULATION.SLOW_TICK_INTERVAL; i++) {
+          state.clock.tick++;
+          inner.updateCitizenHappinessSlice();
+        }
+      };
       if (crime !== 0) withCityCrime(state, crime, () => { for (let i = 0; i < 8; i++) update(); });
       else for (let i = 0; i < 8; i++) update();
       const cs = state.citizens.getCitizens();

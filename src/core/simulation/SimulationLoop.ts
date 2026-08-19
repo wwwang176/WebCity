@@ -22,6 +22,7 @@ import type { WorkerRequest } from '../traffic/PathfindingWorkerHandler';
 import { computeCongestionFlow, computeCongestionFlowMonteCarlo, type CongestionFlowDeps } from '../traffic/CongestionFlowPredictor';
 import { PathCellCache } from '../traffic/PathCellCache';
 import { commuteSampleSize } from './CommuteSampling';
+import { happinessSliceCount, happinessSliceOf } from './HappinessSlicing';
 import { CongestionFlowSweep } from '../traffic/CongestionFlowSweep';
 import { getBuildingType } from '../building/types';
 import { avgEducationScore } from '../building/BuildingUpgrade';
@@ -474,7 +475,7 @@ export class SimulationLoop {
         const type = SCHOOL_KEY_TO_TYPE[schoolKey];
         return this.state.education.getCoverage(x, y, type);
       }, capacity, this.state.ordinances.getCompulsorySchoolingStages());
-      this.updateCitizenHappiness();
+      this.refreshHappinessContext();
       this.updateCitizenHealth();
       this.updateHospitalLoads();
       this.updateSchoolLoads();
@@ -598,6 +599,10 @@ export class SimulationLoop {
       this.runJobRelocation();
     }
     this.advanceJobRelocation();
+
+    // 快樂度分片:每個 tick 算一片，`slices` 個 tick 輪完一圈（BUG-330）。
+    // 情境仍然每 6 個 tick 才換一次，所以新鮮度與改動前相同。
+    this.updateCitizenHappinessSlice();
 
     // Rebuild lane graph if roads changed
     if (this.laneGraphDirty) {
@@ -824,7 +829,13 @@ export class SimulationLoop {
     }
   }
 
-  private updateCitizenHappiness(): void {
+  /**
+   * 重算全城情境，給接下來每個 tick 的分片共用。
+   *
+   * 呼叫節奏與改動前的 `updateCitizenHappiness` 相同（慢速槽 4，每 6 個 tick）——
+   * 所以每位市民看到的情境新鮮度沒有變。
+   */
+  private refreshHappinessContext(): void {
     const taxRate = this.state.taxRates.residential ?? DEFAULT_TAX_RATE;
     const pop = this.state.citizens.getPopulation();
     if (pop === 0) return;
@@ -851,7 +862,6 @@ export class SimulationLoop {
 
     // Check if any parks exist for happiness bonus
     const hasParkCoverage = this.state.parks.getParks().length > 0;
-    const currentTick = this.state.clock.tick;
 
     // Shopping access: only penalise when population >= threshold (early game protection)
     const enableShopping = pop >= SIMULATION.SHOPPING_POP_THRESHOLD;
@@ -869,6 +879,37 @@ export class SimulationLoop {
       pendingGarbageCounts.set(key, (pendingGarbageCounts.get(key) ?? 0) + 1);
     }
 
+    this.happinessContext = {
+      ctx, hasParkCoverage, taxRate, enableShopping,
+      pendingDeathCounts, pendingGarbageCounts,
+    };
+  }
+
+  /**
+   * 這個 tick 輪到的那一片市民，重算他們的快樂度。
+   *
+   * 每位市民身上都存著自己的快樂度，沒輪到的人沿用上次的值 —— 全城平均照樣是
+   * 「所有人身上的值加總 ÷ 人數」，不受哪一片剛被重算影響。這是**輪流**不是抽樣:
+   * 沒有人被跳過，`slices` 個 tick 之內每個人一定輪到一次。
+   *
+   * 70 891 人實測，改動前這一整包是 68.5ms 落在單一個 tick 上（BUG-330）。
+   */
+  private updateCitizenHappinessSlice(): void {
+    // 情境是慢速槽 4 建立的，而分片每個 tick 都跑 —— 開局或讀檔後的頭幾個 tick 還沒有
+    // 情境可用。不補這一手的話那幾片會被白白跳過，第一輪只蓋得到一部分市民。
+    if (this.happinessContext === null) this.refreshHappinessContext();
+    const cached = this.happinessContext;
+    if (cached === null) return;
+    const { ctx, hasParkCoverage, taxRate, enableShopping,
+      pendingDeathCounts, pendingGarbageCounts } = cached;
+    const citizens = this.state.citizens.getCitizens();
+    if (citizens.length === 0) return;
+
+    const currentTick = this.state.clock.tick;
+    const slices = happinessSliceCount(citizens.length);
+    const mySlice = currentTick % slices;
+    let updated = 0;
+
     // Reusable factors object — mutated per citizen, no allocation per iteration
     const factors: HappinessFactors = {
       commuteDistance: 0, hasPark: hasParkCoverage,
@@ -883,6 +924,9 @@ export class SimulationLoop {
     };
 
     for (const citizen of citizens) {
+      if (happinessSliceOf(citizen.id, slices) !== mySlice) continue;
+      updated++;
+
       // Vary commute per citizen (+/- 3 random jitter)
       factors.commuteDistance = Math.max(1, ctx.avgCommute + (Math.random() * SIMULATION.COMMUTE_JITTER - SIMULATION.COMMUTE_JITTER / 2));
 
@@ -924,6 +968,7 @@ export class SimulationLoop {
       factors.isEmployed = !isWorkingAge(citizen.age) || citizen.workplaceId !== null;
       citizen.happiness = calculateHappiness(citizen, factors);
     }
+    this.lastHappinessSlice = { slices, index: mySlice, updated };
   }
 
   private updateHospitalLoads(): void {
@@ -1815,6 +1860,21 @@ export class SimulationLoop {
   /** 上一個 tick 想問幾位、實際問幾位、放大倍率。測試與面板靠它（BUG-328）。 */
   lastCommuteSample: { attempts: number; samples: number; scale: number } =
     { attempts: 0, samples: 0, scale: 1 };
+  /**
+   * 全城情境 + 每棟的待處理佇列。每 SLOW_TICK_INTERVAL 個 tick 重算一次（跟改動前
+   * 同一個節奏），分片共用 —— 那一段有一個 O(人口) 的成年人計數，每個 tick 重跑
+   * 會把分片省下的吃掉（BUG-330）。
+   */
+  private happinessContext: {
+    ctx: ReturnType<typeof calculateCityHappinessContext>;
+    hasParkCoverage: boolean;
+    taxRate: number;
+    enableShopping: boolean;
+    pendingDeathCounts: Map<string, number>;
+    pendingGarbageCounts: Map<string, number>;
+  } | null = null;
+  /** 上一個 tick 分成幾片、輪到第幾片。測試與量測靠它。 */
+  lastHappinessSlice = { slices: 0, index: -1, updated: 0 };
   private commuteFillCursor = 0;
   /** 這一個 tick 看過幾位市民。省下來的時間就是這個數字，測試靠它。 */
   private commuteFillScanned = 0;
