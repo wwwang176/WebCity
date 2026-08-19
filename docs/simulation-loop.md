@@ -248,6 +248,10 @@ SimulationLoop 原本包含大量內聯邏輯，隨功能增長已超過合理�
 
 ### CongestionFlowPredictor
 
+輸出的逐格流量圖是全遊戲壅塞的唯一資料來源 —— 運具選擇（沿市民自己的路線逐格平均）、
+公車速度（全城平均）、壅塞熱度圖都讀它。詳見
+[交通系統 — 壅塞](traffic-system.md#壅塞-congestion)。
+
 ```
 src/core/traffic/CongestionFlowPredictor.ts
 ```

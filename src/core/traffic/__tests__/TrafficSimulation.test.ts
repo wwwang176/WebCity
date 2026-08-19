@@ -208,10 +208,6 @@ describe('TRAFFIC constants', () => {
     expect(TRAFFIC.SPEED_MULTIPLIER_MIN + TRAFFIC.SPEED_MULTIPLIER_RANGE).toBeLessThanOrEqual(1);
   });
 
-  it('density capacity per cell should be positive', () => {
-    expect(TRAFFIC.DENSITY_CAPACITY_PER_CELL).toBeGreaterThan(0);
-  });
-
   it('edge speed and reference limit should be positive', () => {
     expect(TRAFFIC.EDGE_SPEED).toBeGreaterThan(0);
     expect(TRAFFIC.REFERENCE_LIMIT).toBeGreaterThan(0);
