@@ -1810,6 +1810,10 @@ export class SimulationLoop {
    */
   private commuteFillAttempts = new Map<string, number>();
   private commuteFillAttemptsGeneration = -1;
+  /** 上次補到名單的哪一位。見 advanceCommuteFill（BUG-329）。 */
+  private commuteFillCursor = 0;
+  /** 這一個 tick 看過幾位市民。省下來的時間就是這個數字，測試靠它。 */
+  private commuteFillScanned = 0;
 
   /** 目前這一格的通勤路線在快取裡是不是已經齊了（兩個方向、且是這一代路網）。 */
   private commuteRouteSettled(entry: CachedRoute | undefined, generation: number): boolean {
@@ -1852,7 +1856,25 @@ export class SimulationLoop {
     let searchBudget = SIMULATION.COMMUTE_FILL_SEARCH_PER_TICK;
     let enqueued = false;
 
-    for (const c of citizens) {
+    // 從上次停下的地方接著看，而不是每個 tick 重掃整份名單。
+    //
+    // 預算用完之後的 `continue` 只跳過這一個人，迴圈照樣走完剩下的一萬多位 ——
+    // 每人兩次 parsePosKey、兩次字串串接、兩次 getRouteVariants，全部白做。玩家
+    // 存檔實測，進遊戲後前 11 秒這裡吃掉 update() 的 46–66%（BUG-329）。
+    //
+    // 游標還順便解決一件事:原本每個 tick 都從開頭掃，排在名單後面的市民要等前面
+    // 的人全部 settled 才輪得到。
+    const total = citizens.length;
+    const scanLimit = Math.min(total, SIMULATION.COMMUTE_FILL_SCAN_PER_TICK);
+    if (this.commuteFillCursor >= total) this.commuteFillCursor = 0;
+    this.commuteFillScanned = 0;
+
+    for (let scanned = 0; scanned < scanLimit; scanned++) {
+      const c = citizens[this.commuteFillCursor]!;
+      // 游標先走，再看這個人 —— 底下每一條 `continue` 才不會把他黏在原地。
+      this.commuteFillCursor = (this.commuteFillCursor + 1) % total;
+      this.commuteFillScanned++;
+
       if (!c.homeId || !c.workplaceId) continue;
       if (!isWorkingAge(c.age)) continue;
 

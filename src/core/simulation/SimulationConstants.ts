@@ -87,6 +87,17 @@ export const SIMULATION = {
    * pathfinding worker 時（生產環境缺 COOP/COEP 就沒有 SharedArrayBuffer）
    * 只剩這條路，所以慢是刻意的：補得完比補得快重要。
    */
+  /**
+   * 補通勤路線時，一個 tick 最多看幾位市民。
+   *
+   * 排隊與自己算各有自己的預算，但預算用完之後迴圈仍然會走完整份名單 —— 12 351 人
+   * 的存檔，進遊戲後前 11 秒有 46–66% 的主執行緒時間花在「看過、沒事做」（BUG-329）。
+   *
+   * 要大到暖機時找得滿 32 個排隊名額（暖機時幾乎每個人都還沒算），又要小到一個 tick
+   * 掃得完。1024 對 12 000 人的城市是六個 tick 轉一圈。
+   */
+  COMMUTE_FILL_SCAN_PER_TICK: 1024,
+
   COMMUTE_FILL_SEARCH_PER_TICK: 2,
   /** 有 worker 時每個 tick 排進去的路線數。排隊本身很便宜，算的人在別的執行緒。 */
   COMMUTE_FILL_ENQUEUE_PER_TICK: 32,
