@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
-  cellCongestion, routeCongestion, cityCongestion, FLOW_PER_LANE_SATURATED,
+  cellCongestion, routeCongestion, cityCongestion,
+  FLOW_PER_LANE_SATURATED, CONGESTION_EXPONENT,
 } from '../RouteCongestion';
 
 /**
@@ -19,9 +20,29 @@ describe('一格有多擠', () => {
   });
 
   it('should rise with flow and stop at one', () => {
-    expect(cellCongestion(FLOW_PER_LANE_SATURATED / 2)).toBeCloseTo(0.5, 10);
-    expect(cellCongestion(FLOW_PER_LANE_SATURATED)).toBe(1);
-    expect(cellCongestion(FLOW_PER_LANE_SATURATED * 10), '塞爆之後還繼續往上長').toBe(1);
+    const S = FLOW_PER_LANE_SATURATED;
+    expect(cellCongestion(S / 2), '半滿的路').toBeCloseTo(0.5 ** CONGESTION_EXPONENT, 10);
+    expect(cellCongestion(S)).toBe(1);
+    expect(cellCongestion(S * 10), '塞爆之後還繼續往上長').toBe(1);
+  });
+
+  it('should hurt far more near capacity than when half empty', () => {
+    // 空的路上多一台車沒感覺;快滿的路上多一台車，整條隊伍卡住。
+    // 線性的話這兩件事一樣重，於是「疏通一個快爆的路口」跟「拓寬一條本來就順的路」
+    // 效果一樣 —— 玩家花錢打通瓶頸卻沒有回饋。
+    const S = FLOW_PER_LANE_SATURATED;
+    const lowStep = cellCongestion(S * 0.5) - cellCongestion(S * 0.25);
+    const highStep = cellCongestion(S * 1.0) - cellCongestion(S * 0.75);
+    expect(highStep, '最後一段跟中間一段一樣痛 —— 那是線性').toBeGreaterThan(lowStep * 4);
+  });
+
+  it('should stay in step with the exponent it advertises', () => {
+    // 常數與算式各寫各的話，校準過的數字會跟實際行為分家。
+    const S = FLOW_PER_LANE_SATURATED;
+    for (const load of [0.1, 0.35, 0.6, 0.99]) {
+      expect(cellCongestion(S * load), `負載 ${load} 跟指數對不起來`)
+        .toBeCloseTo(load ** CONGESTION_EXPONENT, 10);
+    }
   });
 
   it('should treat a negative or broken flow as empty', () => {
