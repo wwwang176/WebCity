@@ -21,6 +21,7 @@ import { PathRequestBatcher } from '../traffic/PathRequestBatcher';
 import type { WorkerRequest } from '../traffic/PathfindingWorkerHandler';
 import { computeCongestionFlow, computeCongestionFlowMonteCarlo, type CongestionFlowDeps } from '../traffic/CongestionFlowPredictor';
 import { PathCellCache } from '../traffic/PathCellCache';
+import { commuteSampleSize } from './CommuteSampling';
 import { CongestionFlowSweep } from '../traffic/CongestionFlowSweep';
 import { getBuildingType } from '../building/types';
 import { avgEducationScore } from '../building/BuildingUpgrade';
@@ -1811,6 +1812,9 @@ export class SimulationLoop {
   private commuteFillAttempts = new Map<string, number>();
   private commuteFillAttemptsGeneration = -1;
   /** 上次補到名單的哪一位。見 advanceCommuteFill（BUG-329）。 */
+  /** 上一個 tick 想問幾位、實際問幾位、放大倍率。測試與面板靠它（BUG-328）。 */
+  lastCommuteSample: { attempts: number; samples: number; scale: number } =
+    { attempts: 0, samples: 0, scale: 1 };
   private commuteFillCursor = 0;
   /** 這一個 tick 看過幾位市民。省下來的時間就是這個數字，測試靠它。 */
   private commuteFillScanned = 0;
@@ -2462,10 +2466,22 @@ export class SimulationLoop {
     // live here, behind this and two earlier early returns — see
     // rebuildTransferGraphIfDirty(). Both now run from tick().
 
-    const maxPerTick = Math.max(SIMULATION.MIN_SPAWN_PER_TICK, Math.ceil(eligible.length / SIMULATION.SPAWN_SPREAD_TICKS));
+    // 想問幾位，以及實際問幾位。
+    //
+    // 想問的量跟人口成正比，而這個迴圈同時在估「今天多少人搭捷運」—— 估計的準確度
+    // 只跟問了幾個人有關，跟城市多大無關（民調問一千人的誤差，兩千萬人的國家和三億
+    // 人的國家一樣）。同一份存檔複製成 10 萬人實測:每 tick 想問 13 149 位、191ms，
+    // 而速度 1 的一個 tick 只有 250ms（BUG-328）。
+    //
+    // 問得少就要放大回去:每問到一位搭車的，記成 `sampleScale` 位。小城市
+    // `sampleScale` 就是 1，行為一個字都沒改。
+    const attempts = Math.max(SIMULATION.MIN_SPAWN_PER_TICK, Math.ceil(eligible.length / SIMULATION.SPAWN_SPREAD_TICKS));
+    const samples = commuteSampleSize(attempts);
+    const sampleScale = attempts / samples;
+    this.lastCommuteSample = { attempts, samples, scale: sampleScale };
     let spawned = 0;
 
-    for (let i = 0; i < maxPerTick; i++) {
+    for (let i = 0; i < samples; i++) {
       if (this.state.traffic.getVehicleCount() >= vehicleCap) break;
 
       // Random citizen sampling — route distribution matches real commute patterns
@@ -2503,7 +2519,7 @@ export class SimulationLoop {
             this.pendingTrips.push({
               fromX: fromPos.x, fromY: fromPos.y,
               toX: toPos.x, toY: toPos.y,
-              tripType: PedestrianTripType.FULL_WALK, count: 1,
+              tripType: PedestrianTripType.FULL_WALK, count: sampleScale,
             });
           } else if (multiLeg) {
             // Multi-modal: generate pedestrian trips for each walk leg
@@ -2517,7 +2533,7 @@ export class SimulationLoop {
                 tripType: li === 0 ? PedestrianTripType.FIRST_MILE
                   : li === legs.length - 1 ? PedestrianTripType.LAST_MILE
                   : PedestrianTripType.TRANSFER_WALK,
-                count: 1,
+                count: sampleScale,
               });
             }
           } else {
@@ -2526,14 +2542,14 @@ export class SimulationLoop {
               this.pendingTrips.push({
                 fromX: fromPos.x, fromY: fromPos.y,
                 toX: boardStop.x, toY: boardStop.y,
-                tripType: PedestrianTripType.FIRST_MILE, count: 1,
+                tripType: PedestrianTripType.FIRST_MILE, count: sampleScale,
               });
             }
             if (alightStop) {
               this.pendingTrips.push({
                 fromX: alightStop.x, fromY: alightStop.y,
                 toX: toPos.x, toY: toPos.y,
-                tripType: PedestrianTripType.LAST_MILE, count: 1,
+                tripType: PedestrianTripType.LAST_MILE, count: sampleScale,
               });
             }
           }
@@ -2547,7 +2563,7 @@ export class SimulationLoop {
               const route = this.flatRoutes[leg.routeIdx];
               if (route) {
                 const stop = route.stops[leg.boardStopIdx] as { dailyRiders: number } | undefined;
-                if (stop) stop.dailyRiders++;
+                if (stop) stop.dailyRiders += sampleScale;
               }
             }
           }
@@ -2557,13 +2573,13 @@ export class SimulationLoop {
               const icons = TRANSIT_ICONS;
               return icons[l.transitType ?? ''] ?? '?';
             }).join('\u2192');
-            this.transferTracker.recordTransfer(label);
+            this.transferTracker.recordTransfer(label, sampleScale);
             this.transferTracker.recordBuilding(label, citizen.homeId!, citizen.workplaceId!);
           }
         } else if (boardStop) {
           // 記在他上車的那一站。這裡曾經改用「整個系統裡最近的站」重挑一次，於是
           // 同運具多條路線時，人被記到他沒搭的那條路線頭上（BUG-283）。
-          boardStop.dailyRiders++;
+          boardStop.dailyRiders += sampleScale;
         }
         continue;
       }

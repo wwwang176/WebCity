@@ -33,8 +33,11 @@ export class TransferTracker {
   onDataChanged: (() => void) | null = null;
 
   /** Record a transfer trip for the given route label. */
-  recordTransfer(label: string): void {
-    this.today.set(label, (this.today.get(label) ?? 0) + 1);
+  /**
+   * @param count 這一筆代表幾個人。生成迴圈是抽樣的，抽少了就要放大回去（BUG-328）。
+   */
+  recordTransfer(label: string, count = 1): void {
+    this.today.set(label, (this.today.get(label) ?? 0) + count);
   }
 
   /** Record a building that used a transfer route. */
