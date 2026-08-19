@@ -942,14 +942,18 @@
 `outside` 時間 p99 只有 7.2ms，不是它們的問題。模擬 tick 跑在主執行緒的算繪迴圈裡
 （`Game.ts` 的 `simLoop.tick()`），所以一個貴的 tick 就是一個掉的幀。
 
-- [ ] **BUG-327 每 15 秒卡半秒** — `computeCongestionFlow` 每 60 tick 走過 4,505,318
-  條邊，去填一張只有 314 格的流量圖（292–315ms）；下一個 tick `refreshCommuteStats`
-  再 72–87ms。
-  **已驗證的修法**:路徑陣列是共用且不可變的，把「這條路徑經過哪些格子」快取進
-  `WeakMap`（跟 `PathLengthCache` 同一個模式），實測 **217 → 57ms，輸出逐格相同**。
-  剩下的 57ms 還可以再分散到 60 個 tick 上（雙緩衝，換完才 swap）。
-  **已排除**:同一 OD 的 4 個變體不能只取代表 —— 800 組抽樣沒有一組格子集合相同
-  （平均 Jaccard 0.463）。
+- [x] **BUG-327 每 15 秒卡半秒** — 兩步修完:`PathCellCache` 把「這條路徑經過哪些
+  格子」快取起來（292 → 60ms，輸出逐格相同），`CongestionFlowSweep` 再把剩下的
+  攤到 40 個 tick 上（每 tick 最多 14ms）。**最慢的 tick 311 → 78.8ms**，
+  `mod60 = 2` 已經不在最慢的前六名。
+- [ ] **`refreshCommuteStats` 還是一次算完** — 每 60 tick 一發，比基準線高出約 25ms
+  （`mod60 = 3`）。`CongestionFlowSweep` 同一招套得上去，但已經不是玩家感覺得到的
+  等級了，排在 BUG-328 後面。
+- [ ] **密集陣列累加還沒做，而且有地雷** — 把流量累加從 `Map<string, number>` 改成
+  `Float64Array` 快 5 倍（55 → 11ms）。**但 cellKey 不一定是兩段的**:高架道路是
+  `"27,55,1"`（x, y, 層）。照 `x,y` 解析會讓 60 格高架路（流量圖的 18%）安靜地
+  消失，而且沒有任何測試會紅。要做的話得先發號碼牌（`Map<string, number>` 內插），
+  不能自己拆字串。
 - [ ] **BUG-328 每 0.25 秒卡 40ms** — `spawnCommuteVehicles` 每 tick 對 1,238 位取樣到的
   市民做完整的多模式運具選擇（`getAvailableTransit` 呼叫 958 次、16.8ms），
   呼叫 878 次生成，**只生出 3.9 台車（0.4%）**。
