@@ -5,6 +5,7 @@ import {
   type CongestionFlowDeps,
 } from '../CongestionFlowPredictor';
 import { CommuteCache } from '../CommuteCache';
+import { PathCellCache } from '../PathCellCache';
 import type { LaneEdge } from '../LaneGraph';
 import { makeCellEdge } from '../../../../tests/helpers/makeLaneEdge';
 
@@ -16,8 +17,7 @@ describe('CongestionFlowPredictor', () => {
   describe('computeCongestionFlow', () => {
     it('returns empty map when commuteCache has no routes', () => {
       const cache = new CommuteCache();
-      const flowCellSet = new Set<string>();
-      const { flowMap, totalRefCount } = computeCongestionFlow(cache, flowCellSet, (cellKey) => 1);
+      const { flowMap, totalRefCount } = computeCongestionFlow(cache, new PathCellCache(), () => 1);
       expect(flowMap.size).toBe(0);
       expect(totalRefCount).toBe(0);
     });
@@ -47,8 +47,7 @@ describe('CongestionFlowPredictor', () => {
         });
       }
 
-      const flowCellSet = new Set<string>();
-      const { flowMap, totalRefCount } = computeCongestionFlow(cache, flowCellSet, (_cellKey) => 1);
+      const { flowMap, totalRefCount } = computeCongestionFlow(cache, new PathCellCache(), () => 1);
 
       // All 3 cells should have flow
       expect(flowMap.has('0,0')).toBe(true);
@@ -73,9 +72,8 @@ describe('CongestionFlowPredictor', () => {
         generation: 0,
       });
 
-      const flowCellSet = new Set<string>();
       // 2-lane road: flow should be halved
-      const { flowMap } = computeCongestionFlow(cache, flowCellSet, (cellKey) => {
+      const { flowMap } = computeCongestionFlow(cache, new PathCellCache(), (cellKey) => {
         return cellKey === '0,0' ? 2 : 1;
       });
 
@@ -85,30 +83,64 @@ describe('CongestionFlowPredictor', () => {
       expect(flowAt00).toBeLessThan(flowAt10);
     });
 
-    it('reuses flowCellSet without leaking between calls', () => {
+    it('should build the map from what the cell cache says', () => {
+      // 這條測試守的是「流量圖真的是照快取給的格子累加的」。改回每次自己從邊
+      // 重建一份 Set 的話，輸出一模一樣 —— 沒有任何看結果的斷言會紅。
+      class Poisoned extends PathCellCache {
+        override cellsOf(): readonly string[] { return ['poison,0']; }
+      }
       const cache = new CommuteCache();
       const path = [makeEdge('5,5', '6,5')];
       cache.setRouteVariants('5,5->6,5', [path]);
       cache.set(0, {
-        citizenId: 0,
-        homeId: '5,5',
-        workplaceId: '6,5',
-        morningPath: path,
-        eveningPath: null,
-        status: 'ready',
-        generation: 0,
+        citizenId: 0, homeId: '5,5', workplaceId: '6,5',
+        morningPath: path, eveningPath: null, status: 'ready', generation: 0,
       });
 
-      const flowCellSet = new Set<string>();
-      // Pre-populate to verify it gets cleared
-      flowCellSet.add('old_key');
+      const { flowMap } = computeCongestionFlow(cache, new Poisoned(), () => 1);
+      expect(flowMap.has('poison,0'), '流量圖沒有照快取給的格子走').toBe(true);
+      expect(flowMap.has('5,5'), '繞過快取自己從邊重建了一份').toBe(false);
+    });
 
-      computeCongestionFlow(cache, flowCellSet, () => 1);
+    it('should weight each cell by how many people use the route', () => {
+      // 流量圖問的是「有多少人的通勤路線經過這一格」。每條路線都算一個人的話，
+      // 一條沒人走的巷子跟一條全城都在走的幹道會一樣塞 —— 而現有的斷言只看
+      // `flowMap.has(...)`，那個改動一個都不會紅。
+      const busy = new CommuteCache();
+      const quiet = new CommuteCache();
+      const path = [makeEdge('0,0', '1,0')];
+      for (const [cache, riders] of [[busy, 40], [quiet, 1]] as const) {
+        cache.setRouteVariants('0,0->1,0', [path]);
+        for (let i = 0; i < riders; i++) {
+          cache.set(i, {
+            citizenId: i, homeId: '0,0', workplaceId: '1,0',
+            morningPath: path, eveningPath: null, status: 'ready', generation: 0,
+          });
+        }
+      }
+      const flowOf = (c: CommuteCache) =>
+        computeCongestionFlow(c, new PathCellCache(), () => 1).flowMap.get('0,0') ?? 0;
 
-      // flowCellSet should have been cleared during use (no old_key leak into result)
-      // The function should work correctly regardless of pre-existing set contents
-      const { flowMap } = computeCongestionFlow(cache, flowCellSet, () => 1);
-      expect(flowMap.has('old_key')).toBe(false);
+      expect(flowOf(busy), '四十個人走的路跟一個人走的路一樣空')
+        .toBeGreaterThan(flowOf(quiet) * 10);
+    });
+
+    it('should give the same answer on a second pass', () => {
+      // 快取是跨次數共用的。第二次拿到髒掉的內容（例如被就地改過）的話，
+      // 玩家會看到壅塞圖每 15 秒抖一下。
+      const cache = new CommuteCache();
+      const path = [makeEdge('1,1', '2,1'), makeEdge('2,1', '3,1')];
+      cache.setRouteVariants('1,1->3,1', [path]);
+      cache.set(0, {
+        citizenId: 0, homeId: '1,1', workplaceId: '3,1',
+        morningPath: path, eveningPath: null, status: 'ready', generation: 0,
+      });
+
+      const cells = new PathCellCache();
+      const first = computeCongestionFlow(cache, cells, () => 1).flowMap;
+      const second = computeCongestionFlow(cache, cells, () => 1).flowMap;
+      expect([...second.entries()].sort(), '第二次算出來不一樣')
+        .toEqual([...first.entries()].sort());
     });
   });
 

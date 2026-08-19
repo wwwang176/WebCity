@@ -1,6 +1,6 @@
 import type { LaneEdge } from './LaneGraph';
 import type { CommuteCache } from './CommuteCache';
-import { collectEdgeCells } from './CommuteCacheHelpers';
+import type { PathCellCache } from './PathCellCache';
 import { buildODPools, type CommutingCitizen } from './ODPoolBuilder';
 import { pickWeighted } from '../utils/random';
 import { manhattanDistance } from '../grid/GridHelpers';
@@ -25,14 +25,18 @@ export interface CongestionFlowDeps {
  * Uses CommuteCache's routeIndex with reference counts — O(routes × avg path length), zero A*.
  * Flow is normalized by lane count at each cell.
  *
+ * 「這條路徑經過哪些格子」交給 `PathCellCache` —— 那個答案只跟路徑有關，而路徑是
+ * 共用且不可變的。原本每次重算都從邊重建一次 Set:玩家存檔實測每 60 tick 走過
+ * 4 505 318 條邊，去填一張只有 314 個鍵的圖（BUG-327）。
+ *
  * @param commuteCache - The shared commute path cache
- * @param flowCellSet - Reusable scratch Set (cleared internally, avoids GC)
+ * @param cellCache - Per-path cell lists, shared across recomputes
  * @param getLaneCount - Returns lane count for a given cellKey
  * @returns flowMap (cellKey → normalized flow) and totalRefCount (citizens covered by cache)
  */
 export function computeCongestionFlow(
   commuteCache: CommuteCache,
-  flowCellSet: Set<string>,
+  cellCache: PathCellCache,
   getLaneCount: (cellKey: string) => number,
 ): { flowMap: Map<string, number>; totalRefCount: number } {
   const flowMap = new Map<string, number>();
@@ -40,9 +44,9 @@ export function computeCongestionFlow(
 
   commuteCache.forEachRouteWithRefCount((path, refCount) => {
     totalRefCount += refCount;
-    flowCellSet.clear();
-    collectEdgeCells(path, flowCellSet);
-    for (const cellKey of flowCellSet) {
+    const cells = cellCache.cellsOf(path);
+    for (let i = 0; i < cells.length; i++) {
+      const cellKey = cells[i]!;
       flowMap.set(cellKey, (flowMap.get(cellKey) ?? 0) + refCount);
     }
   });

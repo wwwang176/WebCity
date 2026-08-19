@@ -20,6 +20,7 @@ import { LaneGraphBuffer, type GraphMapping } from '../traffic/LaneGraphBuffer';
 import { PathRequestBatcher } from '../traffic/PathRequestBatcher';
 import type { WorkerRequest } from '../traffic/PathfindingWorkerHandler';
 import { computeCongestionFlow, computeCongestionFlowMonteCarlo, type CongestionFlowDeps } from '../traffic/CongestionFlowPredictor';
+import { PathCellCache } from '../traffic/PathCellCache';
 import { getBuildingType } from '../building/types';
 import { avgEducationScore } from '../building/BuildingUpgrade';
 import { ECONOMY } from '../economy/TaxMultipliers';
@@ -260,7 +261,8 @@ export class SimulationLoop {
   /** Reusable scratch array for working-age citizens. */
   private workingAgeScratch: Citizen[] = [];
   /** Reusable Set for congestion flow cell collection. */
-  private flowCellSet = new Set<string>();
+  /** 「這條路徑經過哪些格子」跨次重算共用 —— 路徑不可變，答案就不會變（BUG-327）。 */
+  private readonly flowCellCache = new PathCellCache();
   /** Reusable Map for traffic density sync (avoids per-call Map allocation). */
   private trafficFlowMap = new Map<string, number>();
 
@@ -2824,7 +2826,7 @@ export class SimulationLoop {
     // Primary: cache-based flow prediction
     const { flowMap, totalRefCount } = computeCongestionFlow(
       this.commuteCache,
-      this.flowCellSet,
+      this.flowCellCache,
       (cellKey) => {
         const { x, y } = parsePosKeyUnsafe(cellKey);
         const cell = grid.getCell(x, y);
