@@ -985,16 +985,14 @@ export class TrafficSimulation {
     return this.vehicles.length;
   }
 
-  /** City-wide congestion level (0 = free-flow, 1 = gridlock). */
-  getCongestionLevel(): number {
-    const vehicleCount = this.vehicles.length;
-    if (vehicleCount === 0) return 0;
-    // Use unique occupied cells vs total cells as density metric
-    const occupiedCells = this.cellDensity.size;
-    if (occupiedCells === 0) return 0;
-    // Average vehicles per occupied cell, capped at 1.0
-    const avgDensity = vehicleCount / Math.max(1, occupiedCells * TRAFFIC.DENSITY_CAPACITY_PER_CELL);
-    return Math.min(1, avgDensity);
+  /**
+   * 逐格的預測流量，還是 null 就是還沒算過。
+   *
+   * 這是**需求**算出來的:每一格上有多少人的通勤路線經過，除以車道數。塞不塞跟畫面上
+   * 生成了幾台車無關 —— 車輛實體有數量上限、會被生成點檢查擋掉，那是演繹（BUG-326）。
+   */
+  getPredictedFlow(): ReadonlyMap<string, number> | null {
+    return this.predictedFlow;
   }
 
   /**

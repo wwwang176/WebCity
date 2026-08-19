@@ -180,12 +180,24 @@ describe('Commute Traffic System', () => {
   });
 
   it('should scale vehicle count with working population', () => {
-    // Create 10 adult citizens with commute assignments
+    // 家與工作要散開。全部擠在同一棟的話，第二台車會被第一台擋在生成點外面
+    // （`isSpawnBlocked`），路上永遠只有一兩台 —— 而出發方向是隨機的，兩台會不會
+    // 撞在同一個門口全看運氣。這一條因此偶爾會紅，跟「人多車就多」無關。
+    const homes: string[] = [];
+    for (let x = 2; x <= 11; x++) {
+      state.grid.setCell(x, 0, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 });
+      homes.push(`${x},0`);
+    }
+    const works: string[] = [];
+    for (let x = 5; x <= 14; x++) {
+      state.grid.setCell(x, 2, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
+      works.push(`${x},2`);
+    }
     for (let i = 0; i < 10; i++) {
       state.citizens.createCitizen({
         age: 100,
-        homeId: '1,1',
-        workplaceId: '15,1',
+        homeId: homes[i % homes.length]!,
+        workplaceId: works[(i * 3) % works.length]!,
       })!;
     }
 

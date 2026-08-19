@@ -12,6 +12,8 @@ import { ZoneType, TerrainType, isResidentialZone, isCommercialZone, zoneToRCI }
 import { RoadType } from '../road/types';
 import { getLaneCount } from '../road/types';
 import { LaneGraph, type LaneEdge } from '../traffic/LaneGraph';
+import { routeCongestion, cityCongestion } from '../traffic/RouteCongestion';
+import { collectEdgeCells } from '../traffic/CommuteCacheHelpers';
 import { findLanePath, findLanePathVariants, findBuildingAccessPoints } from '../traffic/LaneGraphPathfinder';
 import { CommuteCache, type CachedRoute } from '../traffic/CommuteCache';
 import { LaneGraphBuffer, type GraphMapping } from '../traffic/LaneGraphBuffer';
@@ -111,6 +113,15 @@ export class SimulationLoop {
 
   // Lane-level connection graph for edge-based vehicle movement
   laneGraph: LaneGraph = new LaneGraph();
+  /**
+   * 整個路網的平均負載 0..1。跟著逐格流量圖一起更新（每 60 tick）。
+   * 問不到某一趟的路線時用它當退路。
+   */
+  private cityCongestionLevel = 0;
+  /** 逐路線的擁擠程度。流量圖一換就整個清掉。 */
+  private readonly routeCongestionCache = new Map<string, number>();
+  /** `collectEdgeCells` 的收件容器 —— 每次呼叫重用。 */
+  private readonly congestionCellScratch = new Set<string>();
   private laneGraphDirty = true;
 
   // Building index: active zone buildings (excludes ABANDONED/BURNED). Rebuilt every slow tick.
@@ -179,7 +190,7 @@ export class SimulationLoop {
     const b = parsePosKey(toPos);
     if (!a || !b) return null;
     return estimateCommuteTime(
-      a, b, this.modeChoiceFor(undefined, this.driveDeterrenceFor(a, b)),
+      a, b, this.modeChoiceFor(undefined, this.driveDeterrenceFor(a, b), this.congestionFor(a, b)),
       this.transitAccess, this.flatRoutes, SIMULATION.AVERAGE_WAIT_FACTOR,
     );
   };
@@ -190,9 +201,13 @@ export class SimulationLoop {
    * 沒有指定市民時用預設的不情願權重 —— 住房評分是拿「一間房子對這一位市民好不好」
    * 在問，那裡確實有市民；而通勤統計是整城的分布，用哪一位的脾氣都不對，用平均。
    */
-  private modeChoiceFor(education?: EducationLevel, driveDeterrence = 1): ModeChoiceParams {
+  private modeChoiceFor(
+    education: EducationLevel | undefined,
+    driveDeterrence: number,
+    congestionLevel: number,
+  ): ModeChoiceParams {
     return {
-      congestionLevel: this.state.traffic.getCongestionLevel(),
+      congestionLevel,
       walkSpeed: SIMULATION.WALK_SPEED,
       walkWeight: education === undefined
         ? WALK_DISUTILITY.FALLBACK
@@ -601,7 +616,9 @@ export class SimulationLoop {
     this.spawnVehicles();
 
     // Transport systems (every tick) — pass utility checkers for operational status
-    this.state.bus.congestionLevel = this.state.traffic.getCongestionLevel();
+    // 公車跑在路上，路網愈滿它愈慢。用整個路網的平均負載 —— 逐條路線的版本要等
+    // 公車路線也接上逐格流量，記在 TODO。
+    this.state.bus.congestionLevel = this.cityCongestionLevel;
     {
       const isPow = (x: number, y: number) => this.state.power.isPowered(x, y);
       const isWat = (x: number, y: number) => this.state.water.isSupplied(x, y);
@@ -639,7 +656,7 @@ export class SimulationLoop {
         const cordon = this.chargedCordonFor(home, work);
         const picked = estimateCommute(
           home, work,
-          this.modeChoiceFor(c.education, cordon.deterrence),
+          this.modeChoiceFor(c.education, cordon.deterrence, this.congestionFor(home, work)),
           this.transitAccess, this.flatRoutes, SIMULATION.AVERAGE_WAIT_FACTOR,
         );
         // 付了過路費 = 還在開車，而且這一趟碰得到收費區。錢記給那一區。
@@ -2433,7 +2450,6 @@ export class SimulationLoop {
 
       // --- Transport mode choice (with multi-modal transfer support) ---
       const availableTransport = this.getAvailableTransit(fromPos, toPos);
-      const congestion = this.state.traffic.getCongestionLevel();
       const multiModalRoutes = findMultiModalRoutes(
         this.flatRoutes, fromPos, toPos, SIMULATION.WALK_SPEED,
         SIMULATION.AVERAGE_WAIT_FACTOR, this.transferGraph, SIMULATION.MAX_TRIP_LEGS,
@@ -2441,7 +2457,10 @@ export class SimulationLoop {
       );
       const { mode, multiLeg, boardStop, alightStop } = chooseModeMultiModal(
         fromPos, toPos, availableTransport, multiModalRoutes,
-        this.modeChoiceFor(citizen.education, this.driveDeterrenceFor(fromPos, toPos)),
+        this.modeChoiceFor(
+          citizen.education, this.driveDeterrenceFor(fromPos, toPos),
+          this.congestionFor(fromPos, toPos),
+        ),
       );
 
       if (mode !== TransportMode.DRIVE) {
@@ -2837,6 +2856,37 @@ export class SimulationLoop {
     }
 
     this.state.traffic.updatePredictedFlow(flowMap);
+    // 流量換了，逐路線的快取全部作廢，全城平均也要跟著重算。
+    this.routeCongestionCache.clear();
+    this.cityCongestionLevel = cityCongestion(flowMap, this.countRoadTiles());
+  }
+
+  /**
+   * 這一趟沿途有多擠。
+   *
+   * 問的是**需求**算出來的逐格流量，不是畫面上有幾台車（BUG-326）。問不到這條路線
+   * 的快取時退回全城平均 —— 那是「還沒算過」，不是「暢通」。
+   *
+   * 逐路線快取:同一條路上班的人成千上萬，而流量圖每 60 tick 才換一次。
+   */
+  private congestionFor(from: { x: number; y: number }, to: { x: number; y: number }): number {
+    const flow = this.state.traffic.getPredictedFlow();
+    if (!flow) return this.cityCongestionLevel;
+    const key = `${toPosKey(from.x, from.y)}->${toPosKey(to.x, to.y)}`;
+    const cached = this.routeCongestionCache.get(key);
+    if (cached !== undefined) return cached;
+
+    let result = this.cityCongestionLevel;
+    const variants = this.commuteCache.getRouteVariants(key);
+    const path = variants && variants.length > 0 ? variants[0]! : null;
+    if (path && path.length > 0) {
+      this.congestionCellScratch.clear();
+      collectEdgeCells(path, this.congestionCellScratch);
+      const along = routeCongestion(this.congestionCellScratch, (cell) => flow.get(cell) ?? 0);
+      if (along !== null) result = along;
+    }
+    this.routeCongestionCache.set(key, result);
+    return result;
   }
 
   /**

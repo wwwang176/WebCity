@@ -1,7 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import { getCongestionRate, getSpeedMultiplier, CONGESTION } from '../Congestion';
-import { TrafficSimulation } from '../TrafficSimulation';
-import { makeCellEdge } from '../../../../tests/helpers/makeLaneEdge';
+
+/**
+ * 這裡原本還有一組 `TrafficSimulation.getCongestionLevel` 的案例 —— 那支是拿
+ * 「畫面上有幾台車」算全城壅塞的，已經整支移除:車輛實體有數量上限、會被生成點
+ * 檢查擋掉，那是演繹不是模擬，而且實測在任何有規模的城市都貼死在上限（BUG-326）。
+ *
+ * 現在的壅塞從需求算，見 `RouteCongestion.ts` 與它的測試。
+ */
 
 describe('Congestion', () => {
   it('should calculate congestion rate', () => {
@@ -38,37 +44,5 @@ describe('Congestion', () => {
     expect(CONGESTION.MEDIUM_SPEED).toBeLessThan(1);
     expect(CONGESTION.HIGH_SPEED).toBeLessThan(CONGESTION.MEDIUM_SPEED);
     expect(CONGESTION.MIN_SPEED).toBeLessThan(CONGESTION.HIGH_SPEED);
-  });
-});
-
-describe('TrafficSimulation.getCongestionLevel', () => {
-  it('returns 0 when no vehicles exist', () => {
-    const ts = new TrafficSimulation();
-    expect(ts.getCongestionLevel()).toBe(0);
-  });
-
-  it('returns a value between 0 and 1 with vehicles', () => {
-    const ts = new TrafficSimulation();
-    // Add some fake vehicles by adding edge paths
-    const edge = makeCellEdge('0,0', '1,0', 0, { length: 1 });
-    for (let i = 0; i < 5; i++) {
-      ts.addVehicleOnEdges([edge]);
-    }
-    const level = ts.getCongestionLevel();
-    expect(level).toBeGreaterThanOrEqual(0);
-    expect(level).toBeLessThanOrEqual(1);
-  });
-
-  it('increases with more vehicles', () => {
-    const ts = new TrafficSimulation();
-    const edge = makeCellEdge('0,0', '1,0', 0, { length: 1 });
-
-    for (let i = 0; i < 3; i++) ts.addVehicleOnEdges([edge]);
-    const low = ts.getCongestionLevel();
-
-    for (let i = 0; i < 50; i++) ts.addVehicleOnEdges([edge]);
-    const high = ts.getCongestionLevel();
-
-    expect(high).toBeGreaterThanOrEqual(low);
   });
 });
