@@ -936,7 +936,18 @@
 
 ## 待修正項目（開發過程中發現）
 
-- [ ] **BUG-330 七萬人時每 1.5 秒卡 0.1 秒** — `updateCitizenHappiness` 逐市民重算
+- [x] **BUG-330 七萬人時每 1.5 秒卡 0.1 秒** — 分片輪流（`HappinessSlicing.ts`），
+  `N = clamp(6, 人口/2100, 72)`，用 id 雜湊分片。人口 12 372 → 125 788（十倍），
+  快樂度成本 1.66 → 4.6ms/tick;改動前同樣規模是 68.5ms 集中在一個 tick。
+- [ ] **同一種病還在鄰居身上** — 12 萬人實測，慢速槽 4 的尖峰現在是
+  `updatePoliceFireLoads` **102ms**、`updateHospitalLoads` 33ms、`updateCitizenHealth`
+  28ms、`updateSchoolLoads` 21ms;中速塊的 `runRelocation` **195ms**。全部是 O(人口)
+  逐市民掃描，跟 BUG-330 同一個形狀，同一招（分片或快取住址）套得上去。
+- [ ] **快樂度的隨機抖動每次重擲** — `factors.commuteDistance` 每次重算都重擲
+  `Math.random()`，造成每位市民 sd 2.36 的純雜訊（中位數才 68，等於 3.5%），跟城市
+  發生什麼事無關。改成用 id 決定一個固定抖動值，市民之間仍有差異但同一個人不會無故
+  跳動 —— 那也會讓分片的落後誤差更小。
+- [ ] ~~舊描述~~ `updateCitizenHappiness` 逐市民重算
   （慢速槽 4，每 6 個 tick 一次）。7 萬人時 68.5ms，1.2 萬人時只有 2.5ms/tick。
   跟 BUG-328 是同一種病:O(人口)、沒有節流，只是長在別的地方。
   **記憶化量過了，不是答案**:那段查詢逐市民 18.4ms、照住址記憶化 6.0ms（3.1 倍），
