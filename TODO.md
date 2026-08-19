@@ -936,6 +936,14 @@
 
 ## 待修正項目（開發過程中發現）
 
+- [ ] **BUG-330 七萬人時每 1.5 秒卡 0.1 秒** — `updateCitizenHappiness` 逐市民重算
+  （慢速槽 4，每 6 個 tick 一次）。7 萬人時 68.5ms，1.2 萬人時只有 2.5ms/tick。
+  跟 BUG-328 是同一種病:O(人口)、沒有節流，只是長在別的地方。
+  **修法方向**:那一整段查詢（`parsePosKey` ×2、`isPowered`、`isSupplied`、
+  `getResidentialAccess`、待處理佇列、`getCell`）只跟住址有關，跟是哪一位市民無關 ——
+  照住址記憶化，零行為改變。省多少取決於平均每棟住宅住幾個人，**還沒量**。
+  隔壁的 `updateHospitalLoads` 是同一個形狀（7 萬人時約 17ms）。
+
 ### 玩家回報的三個卡點（Chrome trace 量過，人口 12,351，速度 1）
 
 三個症狀各有各的成因，而且都在 `game.update()` 裡 —— 算繪與 GC 的
