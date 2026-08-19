@@ -19,6 +19,8 @@ const BUS_CONFIG: TransportSystemConfig = {
 export class BusSystem extends BaseTransportSystem {
   /** Per-route precomputed LaneEdge segments (stop[i] → stop[i+1]). */
   private routeSegments = new Map<number, LaneEdge[][]>();
+  /** 每一段多長，以段落陣列本身當 key —— 見 getSegmentDistances。 */
+  private segmentDistances = new WeakMap<LaneEdge[][], number[]>();
   /** Per-route TrafficSimulation vehicle IDs. */
   private busVehicleIds = new Map<number, number[]>();
   /**
@@ -154,10 +156,27 @@ export class BusSystem extends BaseTransportSystem {
     return this.computeRouteSegments(route, this.lastFindEdgePath) !== null;
   }
 
+  /**
+   * 每一段路多長。純幾何 —— 跟今天有幾個人搭車無關。
+   *
+   * `findAvailableTransit` 每問一次「這個人有哪些大眾運輸可選」就呼叫一次，而生成
+   * 通勤車的迴圈每個 tick 要問將近一千次。玩家存檔實測（人口 12 696）:每個 tick
+   * 呼叫約 2 900 次。同場交替 A/B 三輪，`findAvailableTransit` 從 17.53 降到
+   * 12.76ms/tick —— **省下 4.77ms/tick**（BUG-328）。
+   *
+   * 以段落陣列本身當 key:`computeRouteSegments` 每次都存進一個新陣列，而沒有人
+   * 就地改它，所以段落換了 key 就換了 —— 結構上拿不到過期的答案，不需要有人記得
+   * 在哪些地方失效。與 `PathLengthCache`、`PathCellCache` 同一個模式。
+   */
   override getSegmentDistances(routeId: number): number[] | null {
     const segments = this.routeSegments.get(routeId);
     if (!segments) return null;
-    return segments.map(edges => edges.reduce((sum, e) => sum + e.length, 0));
+    let dists = this.segmentDistances.get(segments);
+    if (dists === undefined) {
+      dists = segments.map(edges => edges.reduce((sum, e) => sum + e.length, 0));
+      this.segmentDistances.set(segments, dists);
+    }
+    return dists;
   }
 
   // ── Road change handling ────────────────────────────────────────
