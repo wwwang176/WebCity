@@ -262,14 +262,36 @@ export class CommuteCache {
    * RefCount is distributed evenly across variants.
    */
   forEachRouteWithRefCount(callback: (path: LaneEdge[], refCount: number) => void): void {
-    for (const [routeKey, variants] of this.routeIndex) {
-      const refCount = this.routeRefCount.get(routeKey) ?? 0;
-      if (refCount > 0 && variants.length > 0) {
-        const perVariant = refCount / variants.length;
-        for (const variant of variants) {
-          callback(variant, perVariant);
-        }
-      }
+    for (const routeKey of this.routeIndex.keys()) {
+      this.forRouteKey(routeKey, callback);
     }
+  }
+
+  /**
+   * 目前有人走的路線 key，填進呼叫端給的陣列（不配置新陣列）。
+   *
+   * 給跨 tick 分次掃的呼叫端用:掃到一半路線被增刪都不影響手上這份名單，
+   * 而 `forRouteKey` 會把已經消失的那些跳過。
+   */
+  routeKeysWithRiders(out: string[]): string[] {
+    out.length = 0;
+    for (const [routeKey, variants] of this.routeIndex) {
+      if (variants.length > 0 && (this.routeRefCount.get(routeKey) ?? 0) > 0) out.push(routeKey);
+    }
+    return out;
+  }
+
+  /**
+   * 這一條路線的每個變體，以及各自分到的人數。
+   *
+   * 路線已經不在了（被 `invalidateCell` 清掉、或沒人走了）就不呼叫 callback。
+   */
+  forRouteKey(routeKey: string, callback: (path: LaneEdge[], refCount: number) => void): void {
+    const variants = this.routeIndex.get(routeKey);
+    if (variants === undefined || variants.length === 0) return;
+    const refCount = this.routeRefCount.get(routeKey) ?? 0;
+    if (refCount <= 0) return;
+    const perVariant = refCount / variants.length;
+    for (const variant of variants) callback(variant, perVariant);
   }
 }

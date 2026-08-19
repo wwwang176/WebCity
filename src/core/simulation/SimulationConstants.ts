@@ -11,6 +11,13 @@ export const SIMULATION = {
   SLOW_TICK_INTERVAL: 6,
   /** Ticks between heavier computations: pollution, land value, vehicle spawning */
   MEDIUM_TICK_INTERVAL: 60,
+
+  /**
+   * 壅塞流量重算攤成幾個 tick。
+   *
+   * 比 MEDIUM_TICK_INTERVAL 小 —— 下一輪開始前這一輪要掃得完，不然永遠交不出件。
+   */
+  CONGESTION_FLOW_SPREAD_TICKS: 40,
   /** Ticks between job relocation checks */
   JOB_RELOCATION_INTERVAL: 60,
   /**

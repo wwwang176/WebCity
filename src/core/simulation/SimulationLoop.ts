@@ -21,6 +21,7 @@ import { PathRequestBatcher } from '../traffic/PathRequestBatcher';
 import type { WorkerRequest } from '../traffic/PathfindingWorkerHandler';
 import { computeCongestionFlow, computeCongestionFlowMonteCarlo, type CongestionFlowDeps } from '../traffic/CongestionFlowPredictor';
 import { PathCellCache } from '../traffic/PathCellCache';
+import { CongestionFlowSweep } from '../traffic/CongestionFlowSweep';
 import { getBuildingType } from '../building/types';
 import { avgEducationScore } from '../building/BuildingUpgrade';
 import { ECONOMY } from '../economy/TaxMultipliers';
@@ -263,6 +264,8 @@ export class SimulationLoop {
   /** Reusable Set for congestion flow cell collection. */
   /** 「這條路徑經過哪些格子」跨次重算共用 —— 路徑不可變，答案就不會變（BUG-327）。 */
   private readonly flowCellCache = new PathCellCache();
+  /** 流量重算攤在好幾個 tick 上 —— 一次算完會掉五六幀（BUG-327）。 */
+  private readonly flowSweep = new CongestionFlowSweep();
   /** Reusable Map for traffic density sync (avoids per-call Map allocation). */
   private trafficFlowMap = new Map<string, number>();
 
@@ -628,9 +631,15 @@ export class SimulationLoop {
     }
 
     // Congestion flow prediction (first tick + every 60 ticks, offset to slot 2)
-    if (tick === 1 || (tick >= 2 && (tick - 2) % SIMULATION.MEDIUM_TICK_INTERVAL === 0)) {
+    //
+    // 第一個 tick 一次算完 —— 讀檔之後運具選擇馬上就要有數字可讀。之後每 60 tick
+    // 開一輪，攤在接下來幾十個 tick 上慢慢掃（BUG-327）。
+    if (tick === 1) {
       this.computeCongestionFlow();
+    } else if (tick >= 2 && (tick - 2) % SIMULATION.MEDIUM_TICK_INTERVAL === 0) {
+      this.flowSweep.begin(this.commuteCache);
     }
+    this.advanceCongestionFlow();
 
     // 通勤統計（圖層與總覽面板共用）。與車流預測錯開一格，避免同一個 tick 做兩件重的事。
     if (tick === 1 || (tick >= 3 && (tick - 3) % SIMULATION.MEDIUM_TICK_INTERVAL === 0)) {
@@ -2821,18 +2830,31 @@ export class SimulationLoop {
    * Delegated to CongestionFlowPredictor (SRP).
    */
   private computeCongestionFlow(): void {
-    const grid = this.state.grid;
+    this.flowSweep.begin(this.commuteCache);
+    this.advanceCongestionFlow(Number.POSITIVE_INFINITY);
+  }
 
-    // Primary: cache-based flow prediction
-    const { flowMap, totalRefCount } = computeCongestionFlow(
-      this.commuteCache,
-      this.flowCellCache,
+  /**
+   * 推進這一輪的流量重算，掃完才換上去。
+   *
+   * 一次算完要 60ms 落在單一個 tick 上，而速度 1 的一個 tick 只有 250ms，算繪還跟
+   * 它搶同一個執行緒（BUG-327）。結果本來就每 60 tick 才換一次，攤開來算不會更舊。
+   */
+  private advanceCongestionFlow(keysPerTick?: number): void {
+    const grid = this.state.grid;
+    const batch = keysPerTick ?? Math.max(
+      1, Math.ceil(this.flowSweep.size / SIMULATION.CONGESTION_FLOW_SPREAD_TICKS),
+    );
+    const done = this.flowSweep.step(
+      this.commuteCache, this.flowCellCache, batch,
       (cellKey) => {
         const { x, y } = parsePosKeyUnsafe(cellKey);
         const cell = grid.getCell(x, y);
         return cell ? getLaneCount(cell.roadType) : 1;
       },
     );
+    if (done === null) return;
+    const { flowMap, totalRefCount } = done;
 
     // Fallback: Monte Carlo when cache coverage is too low
     if (totalRefCount < SIMULATION.SAMPLE_COUNT_MIN) {
