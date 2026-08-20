@@ -954,7 +954,7 @@
   | `updatePoliceFireLoads` | 102ms | 產一份總表 | **按建築去重**（`CitizenLocationIndex`）。結果不變，零延遲代價 |
   | `updateHospitalLoads` | 33ms | 同上 | 同上，條目多帶一個 `count` |
   | `updateSchoolLoads` | 21ms | 同上 | 同上，鍵是「住址 \| 學制」 |
-  | `runRelocation` | 195ms | 決策迴圈 | **切片器**（`beginHousingRelocation`），照 `JobRelocationSlicer` 的形狀，攤 50 個 tick |
+  | `runRelocation` | 195ms | 決策迴圈 | **單 tick 分批**（`HOUSING_RELOCATION_SLICES=10`）。第一版是切片器，被 BUG-331 推翻 —— 見下 |
   | `updateCitizenHealth` | 28ms | 每人一個值 | **分片**（與快樂度共用 `SliceCycle` 與雜湊）+ 住址記憶 |
 
   住址記憶（`homeFactsFor`）**每個 tick 清空**:斷電、缺水、污染是玩家看得見而且會
