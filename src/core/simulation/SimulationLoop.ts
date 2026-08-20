@@ -610,8 +610,9 @@ export class SimulationLoop {
 
     // ── Per-tick operations ──
 
-    // 換工作：每 JOB_RELOCATION_INTERVAL 個 tick 開一輪，然後**每個 tick**
-    // 推進一小片。以前是整輪擠在開輪的那一個 tick 裡跑完（BUG-109）。
+    // 換工作：每 JOB_RELOCATION_INTERVAL 個 tick 一輪，**整輪在這一個 tick
+    // 之內跑完**。曾經切成每 tick 兩次（BUG-109 的止痛藥），治本做完之後整輪
+    // 只要 7.7 毫秒，切片器反而讓功能在大城市失效（BUG-333）。
     if (tick >= 4 && (tick - 4) % SIMULATION.JOB_RELOCATION_INTERVAL === 0) {
       this.runJobRelocation();
     }
