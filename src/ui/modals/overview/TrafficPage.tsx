@@ -3,8 +3,8 @@ import { gameSignals, getGame } from '../../store/gameStore';
 import { getTransitSystems } from '../../../core/transport/TransportRegistry';
 import { TransportType } from '../../../core/transport/types';
 import { UI_COLORS } from '../../constants';
-import { formatRouteUsage, routeLoadStatus, type RouteLoadStatus }
-  from '../../../core/transport/RouteLoad';
+import { type RouteLoadStatus } from '../../../core/transport/RouteLoad';
+import { buildTransitRows, type TransitSystemRow } from './transitRows';
 import { COMMUTE_BUCKET_EDGES } from '../../../core/citizen/CommuteStats';
 
 const TYPE_LABELS: Record<string, string> = {
@@ -26,28 +26,8 @@ const TYPE_ICONS: Record<string, string> = {
   [TransportType.FERRY]: '\u26F4',
 };
 
-interface RouteRow {
-  id: number;
-  stops: number;
-  vehicles: number;
-  riders: number;
-  capacity: number;
-  cost: number;
-  suspended: boolean;
-}
-
-interface SystemRow {
-  type: TransportType;
-  label: string;
-  color: string;
-  icon: string;
-  routeCount: number;
-  totalVehicles: number;
-  totalRiders: number;
-  totalCapacity: number;
-  totalCost: number;
-  routeRows: RouteRow[];
-}
+/** `transitRows` 的一列，加上這張表要用的名稱與顏色。 */
+type SystemRow = TransitSystemRow & { label: string; color: string; icon: string };
 
 /** 載重的顏色。三段的分界不是隨手挑的，見 `routeLoadStatus`。 */
 const USAGE_COLOR: Record<RouteLoadStatus, string> = {
@@ -120,46 +100,28 @@ export function TrafficPage(props: { onClose?: () => void }) {
     const systems = getTransitSystems(state as any);
     let totalCost = 0;
 
-    const rows: SystemRow[] = systems.map(({ type, system }) => {
-      const routes = system.getRoutes();
-      const cost = system.getOperatingCost();
-      totalCost += cost;
-
-      let totalRiders = 0;
-      for (const stop of system.getStops()) {
-        totalRiders += stop.smoothedDailyRiders;
-      }
-
-      const vehicleCapacity = system.getCapacity();
-      const routeRows: RouteRow[] = routes.map(route => {
-        let riders = 0;
-        for (const stop of route.stops) {
-          riders += stop.smoothedDailyRiders;
-        }
-        return {
-          id: route.id,
-          stops: route.stops.length,
-          vehicles: route.vehicles,
-          riders,
-          capacity: route.vehicles * vehicleCapacity,
-          cost: route.operatingCost,
-          suspended: !!route.suspended,
-        };
-      });
-
-      return {
+    // 數字全部交給 `transitRows` —— 面板自己算過一次，而且算錯了單位（BUG-342）。
+    const built = buildTransitRows(
+      systems.map(({ type, system }) => ({
         type,
-        label: TYPE_LABELS[type] ?? type,
-        color: TYPE_COLORS[type] ?? '#888',
-        icon: TYPE_ICONS[type] ?? '',
-        routeCount: routes.length,
-        totalVehicles: system.getVehicles().length,
-        totalRiders,
-        totalCapacity: routeRows.reduce((s, r) => s + r.capacity, 0),
-        totalCost: cost,
-        routeRows,
-      };
-    });
+        routes: system.getRoutes(),
+        stops: system.getStops(),
+        seatsPerVehicle: system.getCapacity(),
+        speed: system.getSpeed(),
+        vehicleCount: system.getVehicles().length,
+        operatingCost: system.getOperatingCost(),
+        segmentDistances: (routeId: number) => system.getSegmentDistances(routeId),
+      })),
+      state.clock.ticksPerDay,
+    );
+    for (const row of built) totalCost += row.totalCost;
+
+    const rows: SystemRow[] = built.map(row => ({
+      ...row,
+      label: TYPE_LABELS[row.type] ?? row.type,
+      color: TYPE_COLORS[row.type] ?? '#888',
+      icon: TYPE_ICONS[row.type] ?? '',
+    }));
 
     const airports = state.airport.getAirports();
     const airportCost = state.airport.getOperatingCost();
@@ -340,10 +302,17 @@ export function TrafficPage(props: { onClose?: () => void }) {
                         <span style={{ color: row.color }}>{row.label}</span>
                         <span style="color:#667a90;font-size:11px;margin-left:2px">({row.routeCount})</span>
                       </td>
-                      <td class="td-value" style="text-align:right">{row.routeRows.reduce((s, r) => s + r.stops, 0)}</td>
+                      <td class="td-value" style="text-align:right">{row.totalStops}</td>
                       <td class="td-value" style="text-align:right">{row.totalVehicles}</td>
                       <td class="td-value" style="text-align:right">{Math.round(row.totalRiders * 7)}</td>
-                      <td class="td-value" style={`text-align:right;color:${row.totalCapacity > 0 && row.totalRiders / row.totalCapacity > 0.8 ? UI_COLORS.STATUS_BAD : row.totalCapacity > 0 && row.totalRiders / row.totalCapacity > 0.5 ? UI_COLORS.STATUS_WARN : UI_COLORS.STATUS_GOOD}`}>{row.totalCapacity > 0 ? `${Math.min(100, Math.round(row.totalRiders / row.totalCapacity * 100))}%` : '—'}</td>
+                      {/* 收合列與展開列走同一組門檻、同樣不夾在 100% —— 以前這一格
+                          自己寫死了 0.5 / 0.8 兩段，還套了一層 `Math.min(100, …)`，
+                          於是一條真的在拒載的路線收合起來看只是「有點滿」。 */}
+                      <td
+                        class="td-value"
+                        style={`text-align:right;color:${USAGE_COLOR[row.status]}`}
+                        title={USAGE_HINT[row.status]}
+                      >{row.usage}</td>
                       <td class="td-expense" style="text-align:right">${row.totalCost}</td>
                     </tr>
                     <Show when={isOpen()}>
@@ -363,9 +332,9 @@ export function TrafficPage(props: { onClose?: () => void }) {
                                 已經從那些人的選項裡消失了」。 */}
                             <td
                               class="td-value"
-                              style={`text-align:right;font-size:11px;color:${USAGE_COLOR[routeLoadStatus(route.capacity > 0 ? route.riders / route.capacity : 0)]}`}
-                              title={USAGE_HINT[routeLoadStatus(route.capacity > 0 ? route.riders / route.capacity : 0)]}
-                            >{formatRouteUsage(route.riders, route.capacity)}</td>
+                              style={`text-align:right;font-size:11px;color:${USAGE_COLOR[route.status]}`}
+                              title={USAGE_HINT[route.status]}
+                            >{route.usage}</td>
                             <td class="td-expense" style="text-align:right;font-size:11px">${route.cost}</td>
                           </tr>
                         )}

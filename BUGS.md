@@ -77,7 +77,7 @@
 - **嚴重性**: 中（現在被 BUG-343 遮住，修好 BUG-343 就會爆出來）
 - **狀態**: 待修
 
-### BUG-342: 面板的 Usage 用錯單位，收合之後還夾在 100%
+### BUG-342: 面板的 Usage 用錯單位，收合之後還夾在 100% ✅ 已修復
 
 - **位置**: `src/ui/modals/overview/TrafficPage.tsx:144`（容量）與 `:346`（收合列）
 - **成因（兩個）**:
@@ -99,8 +99,11 @@
 
   三個數字，同一條路線。
 
+- **修法**: 數字全部搬到 `src/ui/modals/overview/transitRows.ts`，收合列與展開列走
+  **同一條路徑**，用的是模擬那組函式（`computeDailyCapacity` / `computeLoadFactor` /
+  `formatRouteUsage` / `routeLoadStatus`）。面板自己不再算任何一個數字。
 - **嚴重性**: 中（顯示層，但玩家就是靠它決定要加幾台車）
-- **狀態**: 待修
+- **狀態**: 已修復
 
 ### BUG-341: 一個 tick 的取樣定不了全城的行人路線池 ✅ 已修復
 
