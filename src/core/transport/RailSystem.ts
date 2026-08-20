@@ -62,10 +62,8 @@ export class RailSystem extends BaseTransportSystem {
    * **失效靠身分比對，不靠記得清。** 存著來源陣列的參照，`routePaths` 換過就對不上，
    * 自動重建 —— 五個改動點沒有任何一個需要記得通知這裡。
    */
-  private pathPointsCache = new Map<number, {
-    source: string[][];
-    value: ReadonlyArray<ReadonlyArray<{ x: number; y: number }>>;
-  }>();
+  private pathPointsCache =
+    new WeakMap<string[][], ReadonlyArray<ReadonlyArray<{ x: number; y: number }>>>();
 
   /**
    * `getSegmentDistances()` 的結果，失效方式同上。
@@ -75,28 +73,31 @@ export class RailSystem extends BaseTransportSystem {
    * `findAvailableTransit` 每問一個人、每條路線就呼叫一次:實測 12 秒 20 萬次，
    * 每次把整條路徑的每個節點解析兩遍。
    */
-  private segmentDistCache = new Map<number, { source: string[][]; value: number[] }>();
+  private segmentDistCache = new WeakMap<string[][], number[]>();
 
   /**
-   * 兩份衍生資料共用的取用方式:對不上來源就重算。
+   * 兩份衍生資料共用的取用方式:**以來源陣列本身當鍵**。
    *
-   * 比的是**陣列的參照**，不是內容 —— 換路線一定是換一整個新陣列（見 `routePaths`），
-   * 所以五個改動點沒有任何一個需要記得通知這裡。
+   * 換路線一定是換一整個新陣列（見 `routePaths` 的所有寫入點），所以新陣列查不到、
+   * 自動重算 —— 五個改動點沒有任何一個需要記得通知這裡。
+   *
+   * 用 `WeakMap` 而不是 `Map<routeId, …>`:路線被刪掉之後，那份陣列變成不可達，
+   * 連同快取一起被 GC 收走。改用 routeId 當鍵的話就得有一個「路線刪了要清快取」的
+   * 收尾動作，而那個動作在正式流程裡**永遠不會被執行到** —— 路線一旦刪除，就再也
+   * 沒有人會用那個 id 來問，於是每一條被查詢過又刪掉的路線都會永久留著。
+   * （`BusSystem.segmentDistances` 同一個做法。）
    */
   private cachedFromPaths<T>(
-    cache: Map<number, { source: string[][]; value: T }>,
+    cache: WeakMap<string[][], T>,
     routeId: number,
     build: (paths: string[][]) => T,
   ): T | null {
     const paths = this.routePaths.get(routeId);
-    if (!paths) {
-      cache.delete(routeId);
-      return null;
-    }
-    const hit = cache.get(routeId);
-    if (hit && hit.source === paths) return hit.value;
+    if (!paths) return null;
+    const hit = cache.get(paths);
+    if (hit !== undefined) return hit;
     const value = build(paths);
-    cache.set(routeId, { source: paths, value });
+    cache.set(paths, value);
     return value;
   }
 
@@ -126,7 +127,13 @@ export class RailSystem extends BaseTransportSystem {
     this.railNetwork = network;
   }
 
-  /** Get precomputed track paths for a route. */
+  /**
+   * Get precomputed track paths for a route.
+   *
+   * 回傳的是**實際的那個陣列**。就地改它（push/splice/排序）會讓
+   * `getSegmentDistances()` 與 `getRoutePathPoints()` 兩份快取都察覺不到 ——
+   * 它們認的是陣列的身分。要改路線請整份換掉。
+   */
   getRoutePaths(routeId: number): string[][] | undefined {
     return this.routePaths.get(routeId);
   }

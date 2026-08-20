@@ -67,25 +67,32 @@ describe('路線路徑點的快取', () => {
     expect(sys.getRoutePathPoints(1), '路線刪掉了還拿得到路徑').toBeNull();
   });
 
-  it('should not keep entries for routes that no longer exist', () => {
-    // 路線 id 是遞增的，刪掉的號碼不會被重用 —— 不清的話，一場玩很久、路線改很多次
-    // 的遊戲會一直長。讀不到（前面的 null 就擋掉了），但會一直佔著。
-    const sys = systemWithPath(1, [['0,0', '1,0']]);
-    const inner = sys as unknown as Internals & {
-      pathPointsCache: Map<number, unknown>;
-      segmentDistCache: Map<number, unknown>;
-    };
-    sys.getRoutePathPoints(1);
-    sys.getSegmentDistances(1);
-    expect(inner.pathPointsCache.size).toBe(1);
-    expect(inner.segmentDistCache.size).toBe(1);
+  it('should key on the source array, not on the route id', () => {
+    // 快取認的是**那個陣列**，不是路線編號。這一條同時釘住兩件事:
+    //
+    // 1. 換走再換回同一份來源，拿得回原本那份結果 —— 證明鍵是陣列不是 id。
+    // 2. 用 `WeakMap` 才做得到這件事，而用 `WeakMap` 的真正理由是**不必清理**:
+    //    路線刪掉之後那份陣列變成不可達，快取跟著被 GC 收走。
+    //
+    // 這裡原本有一條「路線刪掉要清快取」的測試，是**假綠** —— 它在刪掉來源之後
+    // 又手動呼叫了一次 getter 來製造清理機會，而正式流程永遠不會那樣做:路線一旦
+    // 刪除就再也沒有人用那個 id 來問。Codex 審查抓到的。
+    const sys = new RailSystem();
+    const inner = sys as unknown as Internals;
+    const first = [['0,0', '1,0']];
+    const second = [['5,5', '6,5']];
 
-    inner.routePaths.delete(1);
-    sys.getRoutePathPoints(1);
-    sys.getSegmentDistances(1);
+    inner.routePaths.set(1, first);
+    const fromFirst = sys.getRoutePathPoints(1);
+    const distFirst = sys.getSegmentDistances(1);
 
-    expect(inner.pathPointsCache.size, '路線刪了，路徑點的快取還留著').toBe(0);
-    expect(inner.segmentDistCache.size, '路線刪了，段落長度的快取還留著').toBe(0);
+    inner.routePaths.set(1, second);
+    expect(sys.getRoutePathPoints(1), '換了來源卻沿用舊結果').not.toBe(fromFirst);
+
+    inner.routePaths.set(1, first);
+    expect(sys.getRoutePathPoints(1), '換回同一份來源卻重算了 —— 鍵是 id 不是陣列')
+      .toBe(fromFirst);
+    expect(sys.getSegmentDistances(1), '段落長度同上').toBe(distFirst);
   });
 
   it('should keep routes apart', () => {
@@ -99,6 +106,23 @@ describe('路線路徑點的快取', () => {
       .toEqual([[{ x: 9, y: 9 }, { x: 9, y: 8 }]]);
     expect(sys.getRoutePathPoints(1), '算了第二條之後第一條就壞了')
       .toEqual([[{ x: 0, y: 0 }, { x: 1, y: 0 }]]);
+  });
+
+  it('should not let the two caches feed each other', () => {
+    // 兩份快取以**同一個來源陣列**為鍵。如果不小心傳成同一個 WeakMap，先算的那一份
+    // 會被後算的當成自己的結果拿走 —— 段落長度會變成一串座標物件，或反過來。
+    //
+    // 前面每一組測試都各用各的 RailSystem，從來沒有交錯呼叫過，所以照不出這件事。
+    // 兩個順序都要試:誰先算都不能污染對方。
+    for (const pointsFirst of [true, false]) {
+      const sys = systemWithPath(1, [['0,0', '3,0', '3,4']]);
+      if (pointsFirst) { sys.getRoutePathPoints(1); } else { sys.getSegmentDistances(1); }
+
+      expect(sys.getRoutePathPoints(1), `points 先算=${pointsFirst}:路徑點被污染`)
+        .toEqual([[{ x: 0, y: 0 }, { x: 3, y: 0 }, { x: 3, y: 4 }]]);
+      expect(sys.getSegmentDistances(1), `points 先算=${pointsFirst}:段落長度被污染`)
+        .toEqual([7]);
+    }
   });
 
   it('should return null for a route it has never seen', () => {
