@@ -4,6 +4,7 @@ import { SimulationLoop } from '../SimulationLoop';
 import { SIMULATION } from '../SimulationConstants';
 import { RoadType, RoadDirection } from '../../road/types';
 import { ZoneType } from '../../grid/types';
+import { PolicyType } from '../../district/types';
 import type { CommuteStats } from '../../citizen/CommuteStats';
 
 /**
@@ -22,6 +23,7 @@ import type { CommuteStats } from '../../citizen/CommuteStats';
 
 interface Internals {
   advanceCommuteSlice(): void;
+  getCommuteStatsVersion(): number;
   refreshCommuteStats(): void;
   rebuildAllCommuteRecords(): void;
   commuteRecords: Map<number, unknown>;
@@ -30,7 +32,12 @@ interface Internals {
 
 const N = SIMULATION.MEDIUM_TICK_INTERVAL;
 
-/** 住商分散在路線兩端，通勤時間才會有分布，不會全部一樣。 */
+/**
+ * 住商分散在路線兩端，通勤時間才會有分布，不會全部一樣。
+ *
+ * **一定要有一個收費區。** 沒有的話 `chargedDriversByDistrict` 兩邊都是空 Map，
+ * 「全量與分片相同」那條比的就是空比空 —— 而那一項正是決定壅塞費收入的數字。
+ */
 function city(citizens: number): GameState {
   const state = createGameState(40, 40);
   for (let x = 0; x < 40; x++) {
@@ -49,6 +56,14 @@ function city(citizens: number): GameState {
     });
   }
   state.citizens.updateResidentialCapacity(citizens * 2);
+
+  // 收費區蓋住右半邊的公司，所以只有一部分通勤者會付過路費 —— 全付或全不付
+  // 的話，把 districtId 寫死成常數也能讓測試通過。
+  const d = state.districts.createDistrict('Downtown');
+  for (let x = 22; x < 40; x++) {
+    for (let y = 0; y <= 4; y++) state.districts.addCellToDistrict(d.id, x, y);
+  }
+  state.policies.setPolicyLevel(d.id, PolicyType.CONGESTION_CHARGE, 1);
   return state;
 }
 
@@ -86,6 +101,12 @@ describe('通勤統計的輪流計算', () => {
 
     expect(atOnce.sampled, '這座城市沒有人算得出通勤 —— 測試什麼都沒比')
       .toBeGreaterThan(0);
+    // 空 Map 等於空 Map 是空比空。收入那一項要真的有數字才算比到。
+    const chargedTotal = atOnce.charged.reduce((a, [, n]) => a + n, 0);
+    expect(chargedTotal, 'fixture 沒有人付過路費 —— 收入那一項等於沒測')
+      .toBeGreaterThan(0);
+    expect(chargedTotal, '全部人都付過路費 —— 把 districtId 寫死成常數也會過')
+      .toBeLessThan(atOnce.sampled);
     expect(sliced).toEqual(atOnce);
   });
 
@@ -197,13 +218,62 @@ describe('通勤統計的輪流計算', () => {
     }
   });
 
+  it('should get the charged drivers all the way into the published stats', () => {
+    // **記錄有了不等於統計看得見** —— 加總跑的是另一個節奏。其他測試都直接呼叫
+    // `refreshCommuteStats()`，跳過了排程;這一條走真的 tick，一路驗到發布出去
+    // 的那份:估算 → 記錄 → 加總 → `getCommuteStats()`。
+    //
+    // 盯著付過路費的人數而不是通勤人數:那是決定壅塞費**收入**的數字，斷在哪一段
+    // 都是收不到錢。
+    const state = city(400);
+    const loop = new SimulationLoop(state);
+
+    loop.tick();
+
+    const published = loop.getCommuteStats();
+    const charged = [...published.chargedDriversByDistrict.values()]
+      .reduce((a, b) => a + b, 0);
+    expect(charged, '付過路費的人數沒有進到發布出去的統計 —— 壅塞費收不到錢')
+      .toBeGreaterThan(0);
+    expect(charged, '全城都在付 —— 收費區沒有真的在篩人').toBeLessThan(published.sampled);
+  });
+
+  it('should publish on its own schedule, not every tick', () => {
+    // 加總每 60 個 tick 才發布一次。每個 tick 都發布的話 10 萬人要多付 24 毫秒 ×60;
+    // 而如果**永遠不再**發布，市民的值一直在更新、玩家看到的卻是開局那一份。
+    //
+    // 用版本號而不是統計內容 —— 這個 fixture 沒有電、水、服務，建築撐不過 60 個
+    // tick 就被廢棄了，內容會歸零而版本號不受影響。
+    const state = city(400);
+    const loop = new SimulationLoop(state);
+    const inner = loop as unknown as Internals;
+
+    // 排程是第 1 個 tick（開局全量）與之後的 `(tick - 3) % 60 === 0`，
+    // 也就是第 3、63、123…… 從第 3 個之後開始數。
+    while (state.clock.tick < 3) loop.tick();
+    const afterFirst = inner.getCommuteStatsVersion();
+
+    while (state.clock.tick < N + 2) loop.tick();
+    expect(inner.getCommuteStatsVersion(),
+      `第 4 到第 ${N + 2} 個 tick 之間又發布了 —— 加總不該每個 tick 跑`)
+      .toBe(afterFirst);
+
+    while (state.clock.tick < N + 3) loop.tick();
+    expect(inner.getCommuteStatsVersion(),
+      `第 ${N + 3} 個 tick 該發布卻沒有 —— 統計會永遠停在開局那一份`)
+      .toBe(afterFirst + 1);
+  });
+
   it('should pick up citizens who moved in, within two cycles', () => {
     // 每一輪開頭要重新分桶。只分一次的話新搬進來的人**永遠**不會被算到 ——
     // 圖層上那棟樓的顏色會停在舊住戶的數字，而且不會有東西把它修回來。
     //
     // 為什麼是兩輪不是一輪:中途搬進來的人要等下一輪開頭才進得了桶，進去之後還要
-    // 等自己那一片輪到。改動前是一輪（每 60 個 tick 整城重算）—— **這是分桶換來的
-    // 代價，新住戶進統計的時間從最多 2.5 個遊戲日變成最多 5 個。**
+    // 等自己那一片輪到。改動前是一輪（每 60 個 tick 整城重算）。
+    //
+    // **同樣的兩輪落後適用於所有改動**，不只新住戶 —— 搬家、換工作、開關條例都一樣:
+    // 記錄要等自己那片輪到（最多一輪），加總又是另一個節奏（最多再一輪）。見
+    // `advanceCommuteSlice()` 的說明。
     const { state, inner } = primed(400);
     for (let i = 0; i < N; i++) inner.advanceCommuteSlice();
 
