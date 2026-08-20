@@ -88,6 +88,19 @@ describe('行人路線池跟著大眾運輸走', () => {
       '車站拆了，行人還在走向它').toBe(0);
   });
 
+  it('should stop walking to a station whose line was deleted but which still stands', () => {
+    // 玩家在路線面板砍掉一條線，車站**留在原地**。沒有線就沒有車 ——
+    // 那個站不再是任何人的目的地，走向它的路線必須跟著消失。
+    const { state, loop, line, stationCells } = metroCity();
+
+    state.metro.deleteLine(line.id);
+    for (let i = 0; i < 12; i++) loop.tick();
+
+    expect(state.metro.getStations().length, '這個測試要驗的是車站還在的情形').toBe(2);
+    expect(touches(poolOf(loop).trips, stationCells),
+      '線砍了但車站還在，行人繼續走向一個不會有車來的站').toBe(0);
+  });
+
   it('should empty the pool when nobody walks any more', () => {
     // 拆掉全部的大眾運輸之後，這座城市**一條**步行路線都不剩。
     // 「收集到零條」跟「還沒收集」是兩件事 —— 前者的正確答案是把池子清空。
