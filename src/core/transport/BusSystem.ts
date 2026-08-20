@@ -21,6 +21,8 @@ export class BusSystem extends BaseTransportSystem {
   private routeSegments = new Map<number, LaneEdge[][]>();
   /** 每一段多長，以段落陣列本身當 key —— 見 getSegmentDistances。 */
   private segmentDistances = new WeakMap<LaneEdge[][], number[]>();
+  /** 這條路線蓋到哪些格。同樣以段落陣列當 key —— 見 getRouteCells。 */
+  private routeCells = new WeakMap<LaneEdge[][], ReadonlySet<string>>();
   /** Per-route TrafficSimulation vehicle IDs. */
   private busVehicleIds = new Map<number, number[]>();
   /**
@@ -168,6 +170,28 @@ export class BusSystem extends BaseTransportSystem {
    * 就地改它，所以段落換了 key 就換了 —— 結構上拿不到過期的答案，不需要有人記得
    * 在哪些地方失效。與 `PathLengthCache`、`PathCellCache` 同一個模式。
    */
+  /**
+   * 這條路線的車會經過哪些格子。
+   *
+   * 給「這條路線沿線有多擠」用 —— 公車跟著幹道跑，而幹道本來就比全城平均塞。
+   * 以段落陣列本身當 key:路線改了一定是換一整份新的段落，舊的查不到就重算
+   * （同 `getSegmentDistances`）。
+   */
+  getRouteCells(routeId: number): ReadonlySet<string> | null {
+    const segments = this.routeSegments.get(routeId);
+    if (!segments) return null;
+    let cells = this.routeCells.get(segments);
+    if (cells === undefined) {
+      const set = new Set<string>();
+      for (const edges of segments) {
+        for (const e of edges) { set.add(e.from.cellKey); set.add(e.to.cellKey); }
+      }
+      cells = set;
+      this.routeCells.set(segments, cells);
+    }
+    return cells;
+  }
+
   override getSegmentDistances(routeId: number): number[] | null {
     const segments = this.routeSegments.get(routeId);
     if (!segments) return null;
