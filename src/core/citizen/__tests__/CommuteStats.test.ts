@@ -59,6 +59,24 @@ describe('全城通勤統計', () => {
     expect(s.median, '中位數被離群值拉走了').toBe(30);
   });
 
+  it('should give the same median as a full sort, at every size', () => {
+    // 中位數不再靠排序求（改用 quickselect）。這一條盯的是「換掉之後答案要一樣」
+    // —— 取值位置差一格、或是分割寫壞，這裡就會紅。
+    let seed = 987654321;
+    const rnd = () => (seed = (Math.imul(seed, 1103515245) + 12345) >>> 0) / 4294967296;
+
+    for (const n of [1, 2, 3, 4, 5, 9, 64, 257, 1000]) {
+      const cs = Array.from({ length: n }, (_, i) => citizen(i, `${i},0`, '9,9'));
+      const table: Record<number, { time: number; mode: string }> = {};
+      for (let i = 0; i < n; i++) table[i] = { time: Math.round(rnd() * 200) / 4, mode: 'DRIVE' };
+
+      const s = computeCommuteStats(cs, lookup(table), THRESHOLD, 3);
+      const sorted = Object.values(table).map(v => v.time).sort((a, b) => a - b);
+
+      expect(s.median, `n=${n}`).toBe(sorted[Math.floor(n / 2)]);
+    }
+  });
+
   it('should count who is over the threshold', () => {
     const cs = [1, 2, 3].map(i => citizen(i, `${i},0`, '9,9'));
     const s = computeCommuteStats(cs, lookup({
