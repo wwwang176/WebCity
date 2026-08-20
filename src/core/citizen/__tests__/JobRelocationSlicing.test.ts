@@ -197,3 +197,24 @@ describe('job relocation slicing', () => {
 // 預設的距離查詢 —— 與 jobRelocationTick 內部用的是同一個。
 import { roadDistanceToTargets } from '../../service/RoadCoverageFlood';
 const DEFAULT_LOOKUP = roadDistanceToTargets;
+
+describe('一輪跑到一半市民不在了', () => {
+  it('should skip citizens who died or emigrated mid-round', () => {
+    // 名單是開輪時拍的，而一輪要跑上百個 tick。移除市民只是把物件從
+    // CitizenManager 的陣列裡拿掉 —— 這份名單握的是物件參照，欄位都還在。
+    // 不擋墓碑的話死人也會被換工作，吃掉配額，讓活著的人少一次機會。
+    const s = scenario();
+    const slicer = beginJobRelocation(
+      s.citizens, candidates, s.occupancy, s.cache, grid, 0,
+    );
+    for (const c of s.citizens) c.removed = true;
+
+    const relocated: number[] = [];
+    let guard = 0;
+    while (slicer.pending > 0) {
+      relocated.push(...slicer.runSlice(2));
+      if (++guard > 200) throw new Error('切片沒有收斂');
+    }
+    expect(relocated, '已經不在城裡的人還是被換了工作').toEqual([]);
+  });
+});

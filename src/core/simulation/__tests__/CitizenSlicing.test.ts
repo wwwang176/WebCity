@@ -112,13 +112,18 @@ describe('輪次游標', () => {
     // 可能被排到走過的片。
     const cycle = new SliceCycle();
     let want = 6;
-    const seen: number[] = [];
-    for (let t = 0; t < 6; t++) {
-      want = 20;   // 每個 tick 都想換片數
-      seen.push(cycle.next(() => want).index);
-    }
+    // 先真的開出一輪六片 —— 第一次呼叫就把 want 改掉的話，這一輪本來就是 20 片，
+    // 「中途不換」與「每次都換」會算出同樣的結果，測試等於什麼都沒測。
+    expect(cycle.next(() => want).slices, '第一輪沒有用開輪時的片數').toBe(6);
+
+    const seen = [0];
+    want = 20;   // 從第二個 tick 起每次都想換片數
+    for (let t = 1; t < 6; t++) seen.push(cycle.next(() => want).index);
     expect(seen, '一輪之內換了片數').toEqual([0, 1, 2, 3, 4, 5]);
-    expect(cycle.next(() => want).slices, '新的一輪沒有換上新片數').toBe(20);
+
+    const next = cycle.next(() => want);
+    expect(next.slices, '新的一輪沒有換上新片數').toBe(20);
+    expect(next.index, '換片數的那一次不是從第 0 片開始').toBe(0);
   });
 
   it('should start a fresh cycle after reset', () => {
@@ -134,10 +139,13 @@ describe('輪次游標', () => {
   it('should refuse a slice count below one', () => {
     // 0 會讓 citizenSliceOf 取模得到 NaN —— 一個人都不會被更新，而且游標永遠
     // 到不了下一輪。負數會讓每次呼叫都重新開輪。
-    for (const bad of [0, -3, NaN, 0.4]) {
+    // Infinity 也要擋:它不會讓取模變 NaN，但 `cursor >= slices` 永遠不成立，
+    // 一輪永遠不會結束，而且絕大多數 tick 一個人都不會被算到。
+    for (const bad of [0, -3, NaN, 0.4, Infinity, -Infinity]) {
       const cycle = new SliceCycle();
       const { slices, index } = cycle.next(() => bad);
-      expect(slices, `countFor 回傳 ${bad} 時片數是 ${slices}`).toBeGreaterThanOrEqual(1);
+      expect(Number.isFinite(slices), `countFor 回傳 ${bad} 時片數是 ${slices}`).toBe(true);
+      expect(slices).toBeGreaterThanOrEqual(1);
       expect(Number.isNaN(citizenSliceOf(7, slices)), `片數 ${slices} 讓分片變成 NaN`).toBe(false);
       expect(index).toBe(0);
     }

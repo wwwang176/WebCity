@@ -36,16 +36,21 @@ export const SIMULATION = {
    */
   JOB_RELOCATION_SLICE: 2,
   /**
-   * 一輪換房子攤平到幾個 tick。
+   * 換房子分成幾批。每個慢速槽跑一批。
    *
-   * 昂貴的是評估不是搬遷:每一位不開心的市民都要把全城的候選住宅打一次分，
-   * 而搬遷的 5% 上限只擋得住真的搬成的人。12 萬人實測整輪 195ms 落在單一個
-   * tick 上，而中速塊每 60 個 tick 才跑一次。
+   * 昂貴的是評估不是搬遷:每一位不開心的市民都要把全城的候選住宅打一次分，而
+   * 搬遷的 5% 上限只擋得住真的搬成的人。12 萬人實測一次 195ms，而速度 1 的一個
+   * tick 只有 250ms。
    *
-   * 比 `MEDIUM_TICK_INTERVAL`（60）小，這一輪才來得及在下一輪開始前跑完 ——
-   * 跑不完的話下一輪會被整個跳過，搬家的頻率會偷偷變低。
+   * `10 × SLOW_TICK_INTERVAL = 60` —— 每位市民**每 60 個 tick 輪到一次**，與改動
+   * 前的 `MEDIUM_TICK_INTERVAL` 完全相同，搬家的節奏沒有變。變的只是把一次 195ms
+   * 換成十次 20ms。
+   *
+   * 不要改成「一次的名單分幾十個 tick 慢慢跑」——試過，那會讓候選住宅、入住數、
+   * 誰還活著這三份快照活上幾十個 tick，補了三輪還在冒新的 bug（BUG-331）。每一批
+   * 都在**同一個 tick 內**拍完用完丟掉，那一整類問題才不存在。
    */
-  HOUSING_RELOCATION_SPREAD_TICKS: 50,
+  HOUSING_RELOCATION_SLICES: 10,
   /** Number of random cells sampled per growth tick */
   GROWTH_ATTEMPTS: 20,
   /** Chance per attempt for burned building auto-clearance */

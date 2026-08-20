@@ -166,6 +166,9 @@ export class CitizenManager {
       educationProgress: 0,
       ...overrides,
     };
+    // 墓碑不是持久狀態。存檔裡帶著 `removed: true` 進來的話（匯入的檔、或某個
+    // 早期版本寫進去的），那個人會出現在人口與服務負載裡，卻永遠被搬遷跳過。
+    if (citizen.removed) delete citizen.removed;
     // Legacy saves may not have emigrationTolerance — assign fallback
     if (citizen.emigrationTolerance === undefined || citizen.emigrationTolerance === null) {
       citizen.emigrationTolerance = EMIGRATION_TOLERANCE.FALLBACK;

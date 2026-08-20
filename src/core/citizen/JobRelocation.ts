@@ -174,7 +174,12 @@ export function beginJobRelocation(
       while (cursor < ordered.length && spent < budget) {
         const { citizen, reason } = ordered[cursor++]!;
         if (reason !== 'failed' && nonUrgentCount >= maxNonUrgent) continue;
-        // 名單是開一輪的時候拍下來的，而一輪要跑幾十個 tick 才輪得到這一位。
+        // 名單是開一輪的時候拍下來的，而一輪要跑上百個 tick 才輪得到這一位。
+        //
+        // `removed` 是墓碑:死亡與遷出只是把物件從市民陣列裡拿掉，物件本身還在這份
+        // 名單裡而且欄位都還在。不擋的話死人也會被換工作，吃掉配額，讓真正活著的
+        // 人少一次機會（BUG-331 在換房子那邊的同一個問題）。
+        if (citizen.removed) continue;
         // 中間拆掉那一棟住宅，這個人的 homeId 就成了 null（`Reconcile` 會清掉），
         // 而底下是拿 `!` 直接送進 parsePosKeyUnsafe 的 —— 會丟例外。
         if (citizen.homeId === null) continue;

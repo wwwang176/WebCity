@@ -866,3 +866,20 @@ describe('移除時的墓碑', () => {
     expect(mgr.getPopulation()).toBe(kept.length);
   });
 });
+
+describe('墓碑不是持久狀態', () => {
+  it('should drop a tombstone that arrived from a save file', () => {
+    // 存檔裡帶著 removed:true 進來的話（匯入的檔、或某個早期版本寫進去的），
+    // 那個人會出現在人口與服務負載裡，卻永遠被搬遷與換工作的切片器跳過。
+    const mgr = new CitizenManager();
+    const c = mgr.restoreCitizen({ homeId: '1,1', removed: true });
+    expect(c.removed, '存檔帶進來的墓碑沒有被清掉').toBeFalsy();
+    expect(mgr.getPopulation()).toBe(1);
+  });
+
+  it('should leave a normally restored citizen without the field', () => {
+    const mgr = new CitizenManager();
+    const c = mgr.restoreCitizen({ homeId: '1,1' });
+    expect('removed' in c && c.removed).toBeFalsy();
+  });
+});

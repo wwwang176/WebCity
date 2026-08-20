@@ -16,154 +16,100 @@ export const DEFAULT_RELOCATION_CONFIG: RelocationConfig = {
 };
 
 /**
- * 一輪換房子的**切片器**。
+ * Attempt to relocate unhappy citizens to better housing.
+ * Returns the number of citizens that were relocated.
+ * Mutates citizens (homeId) and occupancy map in-place.
  *
- * 昂貴的是**評估**不是搬遷:每一位不開心的市民都要把全城的候選住宅打一次分，
- * 而只有分數差夠大的才會真的搬。搬遷有 5% 的上限，評估沒有 —— 沒搬成的人不算進
- * 上限，所以成本是 O(不開心人數 × 住宅數)。12 萬人實測整輪 195ms。
+ * ### 為什麼有 `inSlice`
  *
- * 切片器**不減少總工作量**，也不改變任何決定:名單與順序在開輪時就定好，之後照著
- * 走。順序不能亂 —— `occupancy` 隨著搬遷邊走邊改，後面的市民看得到前面的決定。
+ * 昂貴的是**評估**不是搬遷:每一位不開心的市民都要把全城的候選住宅打一次分，而
+ * 只有分數差夠大的才會真的搬。搬遷有 5% 的上限，評估沒有 —— 沒搬成的人不算進
+ * 上限，所以成本是 O(不開心人數 × 住宅數)。12 萬人實測一次 **195ms**，而速度 1
+ * 的一個 tick 只有 250ms（BUG-331）。
+ *
+ * `inSlice` 讓呼叫端每次只叫**一部分市民**來評估。節奏因此變成「開得比較密、每次
+ * 人比較少」，而不是「一場會拆成幾十天開」。
+ *
+ * 拆成幾十天開過一次，那是錯的:候選住宅、入住數、誰還活著，這三份資料在那幾十個
+ * tick 裡全部會變，而拿著第一天印的資料一路用到最後一天，就會把人搬進已經拆掉的
+ * 樓、已經住滿的樓，或幫已經過世的人搬家。補了三輪還在冒新的（BUG-331）。
+ *
+ * 現在每次呼叫都是**獨立的一場會**:當場拍快照、當場用完、當場丟掉，壽命一個 tick
+ * —— 與最初的寫法完全相同，那一整類問題不存在。
+ *
+ * 上限是「**這一批**不開心的人的 5%」。批數 × 呼叫頻率設成與原本的節奏相同時，
+ * 每個遊戲日搬走的人數也就與原本相同。
  */
-export interface HousingRelocationSlicer {
-  /** 還沒評估的市民數。0 表示這一輪跑完了。 */
-  readonly pending: number;
-  /**
-   * 換上一份新的入住數。
-   *
-   * 開輪時拍的那一份會過期 —— 這一輪橫跨幾十個 tick，中間移民與配房都在填房子。
-   * 不換的話會把人搬進其實已經住滿的樓。傳進來的計數要包含切片器自己已經做過的
-   * 搬遷（從市民的 `homeId` 數出來的就會）。
-   */
-  refreshOccupancy(counts: ReadonlyMap<string, number>): void;
-  /**
-   * 評估下一片，最多做 `budget` 次評分。回傳這一片搬遷的市民 id。
-   *
-   * 被跳過的市民（已經不在城裡、房子被拆了、這時候已經不再不開心）**不消耗預算**
-   * —— 讓它算一次的話，配額用完之後每一片都在空轉，`pending` 永遠降不到 0。
-   */
-  runSlice(budget: number): number[];
-}
-
-/**
- * 開一輪換房子，回傳切片器。
- *
- * 不開心的名單在這裡拍下來。一輪要跑幾十個 tick 才輪得到後面的人，中間可能有人
- * 遷出、房子被拆 —— 那些在 `runSlice` 裡逐一擋掉。
- */
-export function beginHousingRelocation(
+export function relocationTick(
   // Read-only: the pass rewrites `homeId` on the citizens, never the array.
   citizens: readonly Citizen[],
   candidates: readonly HousingCandidate[],
   occupancy: Map<string, number>,
   config?: Partial<RelocationConfig>,
-  /**
-   * 這個座標現在還是一棟能住人的樓嗎。
-   *
-   * 候選名單是開輪時拍的，而這一輪橫跨幾十個 tick —— 中間玩家可能拆掉它、火災
-   * 可能燒掉它。搬進去的人不會被那次拆除的驅離掃到（那時他還沒搬），而
-   * `assignCitizenHousing` 看到非 null 的 homeId 也不會救他。
-   *
-   * 省略等於「全部都還在」，給不需要這層檢查的呼叫端（測試、一次跑完）用。
-   */
-  isHousingValid: (pos: string) => boolean = () => true,
-): HousingRelocationSlicer {
+  /** 這一位屬於這一批嗎。省略等於「全部人都算」。 */
+  inSlice: (citizen: Citizen) => boolean = () => true,
+): { count: number; relocatedIds: number[] } {
   const cfg: RelocationConfig = config
     ? { ...DEFAULT_RELOCATION_CONFIG, ...config }
     : DEFAULT_RELOCATION_CONFIG;
 
-  const unhappy: Citizen[] = [];
-  if (candidates.length > 0) {
-    for (const c of citizens) {
-      if (c.homeId !== null && c.happiness < cfg.happinessThreshold) unhappy.push(c);
-    }
-  }
+  if (candidates.length === 0) return { count: 0, relocatedIds: [] };
 
-  // 上限用開輪時的人數算。逐片重算的話，隨著人陸續搬走上限會一路往下掉。
-  const maxRelocations = Math.max(1, Math.floor(unhappy.length * cfg.maxRelocateRatio));
+  // Count unhappy citizens inline (avoid .filter() array allocation)
+  let unhappyCount = 0;
+  for (const c of citizens) {
+    if (c.homeId !== null && c.happiness < cfg.happinessThreshold && inSlice(c)) unhappyCount++;
+  }
+  if (unhappyCount === 0) return { count: 0, relocatedIds: [] };
+
+  // Cap the number of relocations per call
+  const maxRelocations = Math.max(1, Math.floor(unhappyCount * cfg.maxRelocateRatio));
+  const relocatedIds: number[] = [];
+
   // 現居住宅原本是每位市民 `candidates.find` 線性找一次。
   const byPos = new Map<string, HousingCandidate>();
   for (const c of candidates) byPos.set(c.pos, c);
 
-  let cursor = 0;
-  let relocated = 0;
+  for (const citizen of citizens) {
+    if (relocatedIds.length >= maxRelocations) break;
+    if (citizen.homeId === null || citizen.happiness >= cfg.happinessThreshold) continue;
+    if (!inSlice(citizen)) continue;
 
-  return {
-    get pending(): number { return relocated >= maxRelocations ? 0 : unhappy.length - cursor; },
-    refreshOccupancy(counts: ReadonlyMap<string, number>): void {
-      occupancy.clear();
-      for (const [pos, n] of counts) occupancy.set(pos, n);
-    },
-    runSlice(budget: number): number[] {
-      const relocatedIds: number[] = [];
-      let spent = 0;
-      while (cursor < unhappy.length && spent < budget && relocated < maxRelocations) {
-        const citizen = unhappy[cursor++]!;
-        // 名單是開輪時拍的。這一輪跑到這裡可能已經過了幾十個 tick。
-        //
-        // `removed` 是墓碑:死亡與遷出只是把物件從市民陣列裡拿掉，物件本身還在
-        // 這份名單裡而且 homeId 還在。不擋的話死人也會被搬家，吃掉 5% 的配額，
-        // 讓真正活著的人少一次機會。
-        if (citizen.removed) continue;
-        const currentPos = citizen.homeId;
-        if (currentPos === null || citizen.happiness >= cfg.happinessThreshold) continue;
+    const currentPos = citizen.homeId;
 
-        const currentCandidate = byPos.get(currentPos);
-        if (!currentCandidate) continue;
-        spent++;
-        const currentScore = scoreHousing(citizen, currentCandidate);
+    // Find the current home candidate to compute current score
+    const currentCandidate = byPos.get(currentPos);
+    if (!currentCandidate) continue;
+    const currentScore = scoreHousing(citizen, currentCandidate);
 
-        // Score alternatives inline (avoid .filter() array allocation)
-        let bestCandidate: HousingCandidate | null = null;
-        let bestScore = -Infinity;
-        for (const c of candidates) {
-          if (c.pos === currentPos) continue;
-          const occ = occupancy.get(c.pos) ?? 0;
-          if (occ >= c.capacity) continue;
-          const s = scoreHousing(citizen, c);
-          if (s > bestScore) {
-            bestScore = s;
-            bestCandidate = c;
-          }
-        }
-
-        if (bestCandidate === null) continue;
-
-        // Only relocate if the score gap is large enough
-        if (bestScore - currentScore < cfg.scoreGap) continue;
-
-        // 這一輪跑到現在，那棟樓可能已經被拆了或燒了。
-        if (!isHousingValid(bestCandidate.pos)) continue;
-
-        // Perform relocation
-        const oldOcc = occupancy.get(currentPos) ?? 0;
-        occupancy.set(currentPos, Math.max(0, oldOcc - 1));
-        citizen.homeId = bestCandidate.pos;
-        occupancy.set(bestCandidate.pos, (occupancy.get(bestCandidate.pos) ?? 0) + 1);
-
-        relocated++;
-        relocatedIds.push(citizen.id);
+    // Score alternatives inline (avoid .filter() array allocation)
+    let bestCandidate: HousingCandidate | null = null;
+    let bestScore = -Infinity;
+    for (const c of candidates) {
+      if (c.pos === currentPos) continue;
+      const occ = occupancy.get(c.pos) ?? 0;
+      if (occ >= c.capacity) continue;
+      const s = scoreHousing(citizen, c);
+      if (s > bestScore) {
+        bestScore = s;
+        bestCandidate = c;
       }
-      return relocatedIds;
-    },
-  };
-}
+    }
 
-/**
- * Attempt to relocate unhappy citizens to better housing.
- * Returns the number of citizens that were relocated.
- * Mutates citizens (homeId) and occupancy map in-place.
- *
- * 一次跑完整輪。SimulationLoop 走的是切片的路（`beginHousingRelocation`）——
- * 這個包裝留給測試與「就是要一次做完」的呼叫端。
- */
-export function relocationTick(
-  citizens: readonly Citizen[],
-  candidates: readonly HousingCandidate[],
-  occupancy: Map<string, number>,
-  config?: Partial<RelocationConfig>,
-): { count: number; relocatedIds: number[] } {
-  const relocatedIds = beginHousingRelocation(citizens, candidates, occupancy, config)
-    .runSlice(Infinity);
+    if (bestCandidate === null) continue;
+
+    // Only relocate if the score gap is large enough
+    if (bestScore - currentScore < cfg.scoreGap) continue;
+
+    // Perform relocation
+    const oldOcc = occupancy.get(currentPos) ?? 0;
+    occupancy.set(currentPos, Math.max(0, oldOcc - 1));
+
+    citizen.homeId = bestCandidate.pos;
+    occupancy.set(bestCandidate.pos, (occupancy.get(bestCandidate.pos) ?? 0) + 1);
+
+    relocatedIds.push(citizen.id);
+  }
+
   return { count: relocatedIds.length, relocatedIds };
 }

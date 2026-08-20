@@ -6,14 +6,16 @@ import { RoadType, RoadDirection } from '../../road/types';
 import { ZoneType } from '../../grid/types';
 
 /**
- * 換房子那一輪原本擠在中速塊的那一個 tick 裡跑完 —— 12 萬人實測 195ms，而速度 1
- * 的一個 tick 只有 250ms。
+ * 換房子從「每 60 個 tick 把全部人跑一次」改成「每個慢速槽跑一批，10 批輪完」。
  *
- * 這裡釘的是**接線**:一輪真的被攤開了，而且上一輪沒跑完之前不會開新的一輪
- * （兩輪交錯的話 `occupancy` 是共用的，後面那一輪會看到半套的狀態）。
+ * `10 × SLOW_TICK_INTERVAL = 60` —— 每位市民輪到一次的間隔與改動前完全相同，
+ * 變的只是把一次 195ms 換成十次 20ms（BUG-331）。
+ *
+ * 這裡釘的是**接線**:批次真的有在輪、每次只處理一部分人、而且整件事在同一個
+ * tick 內做完（沒有跨 tick 的快照要維護）。
  */
 
-/** 高稅率讓大家不開心（快樂度門檻是 35），再給兩種等級的住宅讓他們有得搬。 */
+/** 住宅等級交錯，讓學歷 NONE 的市民有明顯更好的選擇可搬。 */
 function unhappyCity(citizens: number): GameState {
   const state = createGameState(40, 40);
   for (let x = 0; x < 40; x++) {
@@ -21,12 +23,12 @@ function unhappyCity(citizens: number): GameState {
       roadType: RoadType.TWO_LANE, roadFlags: RoadDirection.EAST | RoadDirection.WEST,
     });
   }
-  state.taxRates.residential = 0.29;
-  // 一排住宅，等級交錯 —— 分數差得夠開才有人想搬。等級是從 buildingId 來的:
-  // 1 = Small House（level 1）、3 = Large House（level 3）。
+  // 高密度住宅，等級交錯:4 = Small Apartment（level 1、80 人）、
+  // 6 = High Rise（level 3、320 人）。容量要夠 —— 全部爆滿的話每個候選都會被
+  // `occ >= capacity` 刷掉，一個人也搬不動，測試就變成什麼都沒測到。
   for (let x = 2; x < 20; x++) {
     state.grid.setCell(x, 2, {
-      zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: x % 2 === 0 ? 1 : 3,
+      zoneType: ZoneType.RESIDENTIAL_HIGH, buildingId: x % 2 === 0 ? 4 : 6,
     });
   }
   state.grid.setCell(25, 2, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
@@ -39,107 +41,103 @@ function unhappyCity(citizens: number): GameState {
   return state;
 }
 
-/** 中速塊在 (tick - 2) % 60 === 0 那些 tick 開輪。 */
-function isRoundStart(tick: number): boolean {
-  return tick >= 2 && (tick - 2) % SIMULATION.MEDIUM_TICK_INTERVAL === 0;
+const CYCLE = SIMULATION.SLOW_TICK_INTERVAL * SIMULATION.HOUSING_RELOCATION_SLICES;
+
+/** 這座城市的住宅與工作地。每個 tick 重放一次，把無關的衰退隔離掉。 */
+function placeBuildings(state: GameState): void {
+  for (let x = 2; x < 20; x++) {
+    state.grid.setCell(x, 2, {
+      zoneType: ZoneType.RESIDENTIAL_HIGH, buildingId: x % 2 === 0 ? 4 : 6,
+      reserved: 0,
+    });
+  }
+  state.grid.setCell(25, 2, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7, reserved: 0 });
+}
+
+/**
+ * 推一個 tick，並在推之前把城市維持在「有人不開心、有房子可搬」的狀態。
+ *
+ * 兩件事都要:靠高稅率製造不開心會同時觸發建築廢棄，而長期不開心本身也會 ——
+ * 實測跑到第 58 個 tick 時候選住宅已經歸零，最後一批根本沒執行。那是**別的**
+ * 子系統的行為，不是這個測試要釘的東西。
+ */
+function tickUnhappy(state: GameState, loop: SimulationLoop): void {
+  placeBuildings(state);
+  for (const c of state.citizens.getCitizens()) c.happiness = 10;
+  loop.tick();
 }
 
 describe('換房子的接線', () => {
-  it('should spread one round over many ticks instead of one', () => {
+  it('should run one slice per slow cycle and walk through all of them', () => {
+    // 沒接上批號的話（例如永遠跑第 0 批），其餘九成的市民永遠不會被考慮。
+    const state = unhappyCity(900);
+    const loop = new SimulationLoop(state);
+    const seen = new Set<number>();
+
+    for (let t = 0; t < CYCLE; t++) {
+      tickUnhappy(state, loop);
+      const s = loop.lastHousingRelocation.slice;
+      if (s >= 0) seen.add(s);
+    }
+    expect(seen.size, `輪了一圈只走到 ${seen.size} 批`)
+      .toBe(SIMULATION.HOUSING_RELOCATION_SLICES);
+  });
+
+  it('should consider only about one slice worth of citizens each time', () => {
+    // 這是省下來的東西本身。一次跑全部人的話這個數字會是全城人口。
     const state = unhappyCity(900);
     const loop = new SimulationLoop(state);
 
-    let ticksInFlight = 0;
-    let maxPending = 0;
-    let maxBudget = 0;
-    for (let t = 0; t < SIMULATION.MEDIUM_TICK_INTERVAL; t++) {
-      loop.tick();
-      const { budget, pending } = loop.lastHousingRelocation;
-      if (pending > 0) {
-        ticksInFlight++;
-        maxPending = Math.max(maxPending, pending);
-        maxBudget = Math.max(maxBudget, budget);
+    let maxConsidered = 0;
+    let ran = 0;
+    for (let t = 0; t < CYCLE; t++) {
+      tickUnhappy(state, loop);
+      if (loop.lastHousingRelocation.slice >= 0) {
+        ran++;
+        maxConsidered = Math.max(maxConsidered, loop.lastHousingRelocation.considered);
       }
     }
-    expect(maxPending, '一輪只有幾個人，攤不攤開看不出差別').toBeGreaterThan(50);
-    // 這就是「不再擠在一個 tick」本身。改回一次跑完的話這個數字是 0。
-    expect(ticksInFlight, `一輪只花了 ${ticksInFlight} 個 tick`)
-      .toBeGreaterThan(SIMULATION.HOUSING_RELOCATION_SPREAD_TICKS / 3);
-    // 一片的額度要遠小於整輪。
-    expect(maxBudget, `一片就要做 ${maxBudget} 次，而一輪至少 ${maxPending} 次`)
-      .toBeLessThan(maxPending / 10);
+    expect(ran, '一圈裡一次都沒跑過').toBeGreaterThan(0);
+    expect(maxConsidered, '一次都沒看到任何人').toBeGreaterThan(0);
+    const pop = state.citizens.getPopulation();
+    expect(maxConsidered, `一次就看了 ${maxConsidered} 位，全城才 ${pop} 位`)
+      .toBeLessThan(pop / (SIMULATION.HOUSING_RELOCATION_SLICES / 2));
   });
 
-  it('should not start a new round while one is still running', () => {
-    // 開了的話兩輪的決定會交錯，而 occupancy 是共用的。
-    const state = unhappyCity(900);
-    const loop = new SimulationLoop(state);
-
-    let prev = 0;
-    let jumpsOutsideRoundStart = 0;
-    for (let t = 0; t < SIMULATION.MEDIUM_TICK_INTERVAL * 2; t++) {
-      loop.tick();
-      const { pending } = loop.lastHousingRelocation;
-      if (pending > prev && !isRoundStart(state.clock.tick)) jumpsOutsideRoundStart++;
-      prev = pending;
-    }
-    expect(jumpsOutsideRoundStart,
-      `有 ${jumpsOutsideRoundStart} 個 tick 在上一輪跑完之前又開了新的一輪`).toBe(0);
-  });
-
-  it('should ignore a round-start that lands mid-round', () => {
-    // 目前的常數（攤 50 個 tick、每 60 個 tick 開一輪）讓這件事不會自然發生，
-    // 所以這裡直接叫它再開一輪。守衛拿掉的話名單會被換成全新的一份，pending
-    // 跳回滿載 —— 而兩輪共用同一個 occupancy，後面那一輪看到的是半套的狀態。
-    const state = unhappyCity(900);
-    const loop = new SimulationLoop(state);
-    for (let t = 0; t < 6; t++) loop.tick();
-    const midRound = loop.lastHousingRelocation.pending;
-    expect(midRound, '這時候應該正在一輪的中間').toBeGreaterThan(0);
-
-    (loop as unknown as { runRelocation(): void }).runRelocation();
-    loop.tick();
-
-    expect(loop.lastHousingRelocation.pending, '上一輪跑到一半又被開了一輪')
-      .toBeLessThan(midRound);
-  });
-
-  it('should hand the running round a fresh occupancy count', () => {
-    // 開輪時拍的入住數會過期 —— 這一輪橫跨幾十個 tick，中間移民與配房都在填房子。
-    // 不換新的話會把人搬進其實已經住滿的樓。
-    const state = unhappyCity(900);
-    const loop = new SimulationLoop(state);
-    const inner = loop as unknown as {
-      housingRelocationSlicer: { refreshOccupancy(c: ReadonlyMap<string, number>): void } | null;
-    };
-
-    for (let t = 0; t < 3; t++) loop.tick();
-    const slicer = inner.housingRelocationSlicer;
-    expect(slicer, '這時候應該正在一輪的中間').not.toBeNull();
-
-    let calls = 0;
-    const orig = slicer!.refreshOccupancy.bind(slicer!);
-    slicer!.refreshOccupancy = (c) => { calls++; orig(c); };
-    for (let t = 0; t < SIMULATION.SLOW_TICK_INTERVAL * 2; t++) loop.tick();
-
-    expect(calls, '一輪跑了兩個慢速週期，入住數一次都沒換新').toBeGreaterThan(0);
+  it('should keep the per-citizen interval at MEDIUM_TICK_INTERVAL', () => {
+    // 批數 × 慢速槽 = 每位市民輪到一次的間隔。這個乘積換掉，搬家的節奏就變了。
+    expect(SIMULATION.HOUSING_RELOCATION_SLICES * SIMULATION.SLOW_TICK_INTERVAL)
+      .toBe(SIMULATION.MEDIUM_TICK_INTERVAL);
   });
 
   it('should still move somebody', () => {
-    // 攤開之後一個人都搬不動的話，這一整套等於把功能關掉了。
+    // 分批之後一個人都搬不動的話，這一整套等於把功能關掉了。
     const state = unhappyCity(900);
     const loop = new SimulationLoop(state);
-    const homesBefore = state.citizens.getCitizens().map(c => c.homeId);
-    const ids = state.citizens.getCitizens().map(c => c.id);
+    const homesBefore = new Map(state.citizens.getCitizens().map(c => [c.id, c.homeId]));
 
-    for (let t = 0; t < SIMULATION.MEDIUM_TICK_INTERVAL; t++) loop.tick();
-
-    const now = new Map(state.citizens.getCitizens().map(c => [c.id, c.homeId]));
     let moved = 0;
-    for (let i = 0; i < ids.length; i++) {
-      const after = now.get(ids[i]!);
-      if (after !== undefined && after !== homesBefore[i]) moved++;
+    for (let t = 0; t < CYCLE; t++) {
+      tickUnhappy(state, loop);
+      moved += loop.lastHousingRelocation.relocated;
     }
-    expect(moved, '一輪跑完一個人都沒搬').toBeGreaterThan(0);
+    expect(moved, '輪完一圈一個人都沒搬').toBeGreaterThan(0);
+
+    const changed = state.citizens.getCitizens()
+      .filter(c => homesBefore.has(c.id) && homesBefore.get(c.id) !== c.homeId).length;
+    expect(changed, '回報有人搬家，實際上住址沒變').toBeGreaterThan(0);
+  });
+
+  it('should not hold any relocation state between ticks', () => {
+    // 整件事在同一個 tick 內做完 —— 沒有跨 tick 的快照要維護，那一整類過期問題
+    // 因此不存在（BUG-331）。留著任何一個殘件就代表設計又倒回去了。
+    const state = unhappyCity(900);
+    const loop = new SimulationLoop(state);
+    for (let t = 0; t < SIMULATION.SLOW_TICK_INTERVAL * 3; t++) tickUnhappy(state, loop);
+
+    const inner = loop as unknown as Record<string, unknown>;
+    for (const leftover of ['housingRelocationSlicer', 'housingRelocationBudget']) {
+      expect(inner[leftover], `${leftover} 還在 —— 又有跨 tick 的狀態了`).toBeUndefined();
+    }
   });
 });

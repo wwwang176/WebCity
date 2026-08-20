@@ -44,7 +44,7 @@ import { computeCommuteStats, type CommuteStats } from '../citizen/CommuteStats'
 import { calculateCityHappinessContext } from '../citizen/CityHappinessContext';
 import { computeOccupancyRatios } from '../citizen/OccupancyRatio';
 import type { WorkplaceCandidate } from '../citizen/WorkplaceScore';
-import { beginHousingRelocation, type HousingRelocationSlicer } from '../citizen/Relocation';
+import { relocationTick } from '../citizen/Relocation';
 import { beginJobRelocation, jobRelocationTick, DEFAULT_JOB_RELOCATION_CONFIG,
   type JobRelocationSlicer } from '../citizen/JobRelocation';
 import { roadDistanceToTargets } from '../service/RoadCoverageFlood';
@@ -496,6 +496,9 @@ export class SimulationLoop {
       this.updateHospitalLoads();
       this.updateSchoolLoads();
       this.updatePoliceFireLoads();
+      // 換房子:每個慢速槽跑一批，10 批輪完 = 每位市民每 60 個 tick 輪到一次。
+      // 排在這裡是因為位置索引剛剛建好，入住數直接拿得到（BUG-331）。
+      this.runRelocation();
     }
 
     // ── Slot 5: Migration + housing + freight + shopping ──
@@ -541,7 +544,6 @@ export class SimulationLoop {
       this.updatePollution();
       this.updateLandValue();
       this.onTerrainChanged?.();
-      this.runRelocation();
       this.state.rail.updateExternalConnection(this.state.grid.width, this.state.grid.height, this.state.grid);
       this.state.highwayConnection.updateExternalConnection(this.state.grid.width, this.state.grid.height, this.state.grid);
     }
@@ -615,7 +617,6 @@ export class SimulationLoop {
       this.runJobRelocation();
     }
     this.advanceJobRelocation();
-    this.advanceHousingRelocation();
 
     // 快樂度分片:每個 tick 算一片，`slices` 個 tick 輪完一圈（BUG-330）。
     // 情境仍然每 6 個 tick 才換一次，所以新鮮度與改動前相同。
@@ -1065,9 +1066,6 @@ export class SimulationLoop {
     if (this.citizenLocationsTick === tick) return;
     this.citizenLocations = buildCitizenLocationIndex(this.state.citizens.getCitizens());
     this.citizenLocationsTick = tick;
-    // 換房子那一輪橫跨幾十個 tick，開輪時拍的入住數會過期 —— 中間移民與配房都在
-    // 填房子。趁著剛數完，順手換上新的一份。
-    this.housingRelocationSlicer?.refreshOccupancy(this.citizenLocations.homeCounts);
   }
 
   private updateHospitalLoads(): void {
@@ -1695,80 +1693,49 @@ export class SimulationLoop {
     }
   }
 
-  /**
-   * 這一輪換房子還沒跑完的切片器。null 表示上一輪已經收工，可以開新的一輪。
-   *
-   * 下一輪只在上一輪跑完之後才開始 —— 跟換工作同一個形狀，讓它自己節流。
-   */
-  private housingRelocationSlicer: HousingRelocationSlicer | null = null;
-  /** 這一輪每個 tick 的評估額度。開輪時按名單長度算，攤平到固定的 tick 數。 */
-  private housingRelocationBudget = 1;
-  /** 上一個 tick 評估了幾位、還剩幾位。測試與量測靠它。 */
-  lastHousingRelocation = { budget: 0, pending: 0 };
+  /** 上一次跑的是第幾批、評估了幾位、搬了幾位。測試與量測靠它。 */
+  lastHousingRelocation = { slice: -1, considered: 0, relocated: 0 };
 
   /**
    * Run relocation tick: unhappy citizens may move to better housing.
-   * Called every MEDIUM_TICK_INTERVAL ticks.
    *
-   * 只負責**開一輪**。實際的評估由 `advanceHousingRelocation` 每個 tick 推一小片。
+   * 每個慢速槽跑**一批**，`HOUSING_RELOCATION_SLICES` 批輪完一圈 —— 每位市民每
+   * 60 個 tick 輪到一次，與改動前完全相同。
+   *
+   * 整件事在**同一個 tick 內**做完:候選住宅、入住數、市民名單當場拍、當場用完、
+   * 當場丟掉。把一次的名單攤到幾十個 tick 上跑過，那會讓這三份快照全部過期
+   * （BUG-331）。
    */
   private runRelocation(): void {
-    // 上一輪還沒跑完就不開新的。開了的話兩輪的決定會交錯，而 `occupancy` 是共用的。
-    if (this.housingRelocationSlicer !== null) return;
-
     this.rebuildBuildingIndex();
 
     const housingCandidates = buildHousingCandidates(
       this.buildingPositions, this.state.grid, this.state.pollution, this.state.parks,
     );
-
-    if (housingCandidates.length === 0) return;
-
-    const citizens = this.state.citizens.getCitizens();
-    const homeOccupancy = countOccupancy(citizens, (c) => c.homeId);
-    const slicer = beginHousingRelocation(
-      citizens, housingCandidates, homeOccupancy, undefined,
-      (pos) => this.isStillHousing(pos),
-    );
-    if (slicer.pending === 0) return;
-    this.housingRelocationSlicer = slicer;
-    this.housingRelocationBudget = Math.max(1,
-      Math.ceil(slicer.pending / SIMULATION.HOUSING_RELOCATION_SPREAD_TICKS));
-  }
-
-  /**
-   * 這個座標現在還是一棟能住人的樓嗎。
-   *
-   * 換房子那一輪的候選名單是開輪時拍的，而一輪橫跨幾十個 tick —— 中間玩家可能
-   * 拆掉它、火災可能燒掉它。
-   */
-  private isStillHousing(pos: string): boolean {
-    const p = parsePosKey(pos);
-    if (!p) return false;
-    const cell = this.state.grid.getCell(p.x, p.y);
-    if (!cell || cell.reserved === ABANDONED || cell.reserved === BURNED) return false;
-    const bt = getBuildingType(cell.buildingId);
-    return bt !== undefined && bt.residents > 0;
-  }
-
-  /**
-   * 推進換房子那一輪。每個 tick 呼叫，成本由開輪時算好的額度封頂。
-   *
-   * 以前這一整輪擠在一個 tick 裡跑完 —— 12 萬人實測 195ms，而速度 1 的一個 tick
-   * 只有 250ms。總工作量沒有變，只是不再擠在一起。
-   */
-  private advanceHousingRelocation(): void {
-    const slicer = this.housingRelocationSlicer;
-    if (!slicer) {
-      this.lastHousingRelocation = { budget: 0, pending: 0 };
+    if (housingCandidates.length === 0) {
+      this.lastHousingRelocation = { slice: -1, considered: 0, relocated: 0 };
       return;
     }
-    const budget = this.housingRelocationBudget;
-    const relocatedIds = slicer.runSlice(budget);
+
+    const citizens = this.state.citizens.getCitizens();
+    const slices = SIMULATION.HOUSING_RELOCATION_SLICES;
+    const mySlice = Math.floor(this.state.clock.tick / SIMULATION.SLOW_TICK_INTERVAL) % slices;
+    // 用 id 的雜湊分批，不是用名單位置:同時建成的市民往往住同一區，照位置切的話
+    // 每一批是一個街區，出事時反應會一區一區掃過去（同 CitizenSlicing）。
+    const inSlice = (c: Citizen) => citizenSliceOf(c.id, slices) === mySlice;
+
+    // 入住數要數**全部人**，不是這一批 —— 房子有沒有空位跟誰輪到無關。
+    const homeOccupancy = countOccupancy(citizens, (c) => c.homeId);
+    let considered = 0;
+    for (const c of citizens) if (inSlice(c)) considered++;
+
+    const { relocatedIds } = relocationTick(
+      citizens, housingCandidates, homeOccupancy, undefined, inSlice);
     // 搬家的市民要清掉通勤快取，路線才會重算。
     for (const id of relocatedIds) this.commuteCache.remove(id);
-    this.lastHousingRelocation = { budget, pending: slicer.pending };
-    if (slicer.pending === 0) this.housingRelocationSlicer = null;
+    this.lastHousingRelocation = {
+      slice: mySlice, considered, relocated: relocatedIds.length,
+    };
   }
 
   /**
