@@ -91,10 +91,17 @@ describe('誰屬於哪一片', () => {
       .toBeGreaterThanOrEqual(N - 1);
   });
 
-  it('should always give the same citizen the same slice', () => {
-    // 每次算出不同片的話，有人會連續好幾圈都輪不到，落後時間就沒有上界了。
+  it('should depend only on its arguments, with no hidden state', () => {
+    // 擋的是「實作裡藏一個游標」那種寫法 —— 同樣的輸入連續兩次算出不同答案的話，
+    // 分片就成了亂數抽樣，誰也保證不了會不會被跳過。
+    //
+    // 注意這裡**不**保證「一輪剛好一次」:片數變了每個人的片號就會跟著變。那個
+    // 保證是在 SimulationLoop 用輪次游標做的，釘在 HappinessSliceFairness。
     for (const id of [1, 7, 12345, 999999]) {
-      expect(happinessSliceOf(id, 24)).toBe(happinessSliceOf(id, 24));
+      const first = happinessSliceOf(id, 24);
+      // 中間插進一堆別的呼叫，藏了狀態的話會被推走。
+      for (let other = 0; other < 50; other++) happinessSliceOf(other, 13);
+      expect(happinessSliceOf(id, 24)).toBe(first);
     }
   });
 });

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { createGameState, type GameState } from '../GameState';
 import { SimulationLoop } from '../SimulationLoop';
 import { SIMULATION } from '../SimulationConstants';
-import { happinessSliceCount } from '../HappinessSlicing';
+import { happinessSliceCount, HAPPINESS_PER_TICK } from '../HappinessSlicing';
 import { RoadType, RoadDirection } from '../../road/types';
 import { ZoneType } from '../../grid/types';
 
@@ -35,8 +35,12 @@ type Inner = { refreshHappinessContext(): void };
 describe('快樂度分片的接線', () => {
   it('should use the slice count the pure function decided', () => {
     // 接線斷掉（例如寫死 6 片）的話，大城市的成本會退回線性，而所有看數值的
-    // 斷言都還是綠的。
-    const state = city(600);
+    // 斷言都還是綠的。城市要大到純函式算出來**不是**下限，否則寫死 6 照樣過。
+    const pop = HAPPINESS_PER_TICK * SIMULATION.SLOW_TICK_INTERVAL + 1000;
+    const state = city(pop);
+    expect(happinessSliceCount(state.citizens.getPopulation()),
+      '城市不夠大，寫死下限也會過').toBeGreaterThan(SIMULATION.SLOW_TICK_INTERVAL);
+
     const loop = new SimulationLoop(state);
     loop.tick();
     expect(loop.lastHappinessSlice.slices, '片數跟純函式算的不一致')
@@ -106,13 +110,19 @@ describe('快樂度分片的接線', () => {
   it('should have happiness for everyone after the first cycle', () => {
     // 開局的頭幾個 tick 還沒有情境可用。不補建的話那幾片會被白白跳過，
     // 第一輪只蓋得到一部分市民。
+    //
+    // 逐一認人，不看總數:「每個 tick 都重算同一批人」的總數也對得上。哨兵用
+    // NaN —— 開局時每個人的快樂度是預設值，光看「有沒有值」分不出誰被算過。
     const state = city(600);
     const loop = new SimulationLoop(state);
+    for (const c of state.citizens.getCitizens()) c.happiness = NaN;
+
     const n = happinessSliceCount(state.citizens.getPopulation());
-    let total = 0;
-    for (let t = 0; t < n; t++) { loop.tick(); total += loop.lastHappinessSlice.updated; }
-    // 不補建情境的話，開頭那幾個 tick 會被跳過 —— 第一輪只蓋得到一半左右。
-    expect(total / state.citizens.getPopulation(), '第一輪就有人被跳過')
-      .toBeGreaterThan(0.95);
+    const before = new Set(state.citizens.getCitizens().map(c => c.id));
+    for (let t = 0; t < n; t++) loop.tick();
+
+    const skipped = state.citizens.getCitizens()
+      .filter(c => before.has(c.id) && Number.isNaN(c.happiness));
+    expect(skipped.length, `第一輪有 ${skipped.length} 位市民完全沒被算到`).toBe(0);
   });
 });

@@ -3,6 +3,7 @@ import { GameClock, TIME_PERIOD, SPEED_INTERVALS, TimeOfDay } from '../GameClock
 import { createGameState, DEFAULT_GRID_SIZE, INITIAL_RCI_DEMAND, type GameState } from '../GameState';
 import { SimulationLoop } from '../SimulationLoop';
 import { SIMULATION } from '../SimulationConstants';
+import { happinessSliceCount } from '../HappinessSlicing';
 import { countResidentialCapacity, countWorkplaceJobs } from '../../building/BuildingQueries';
 import { clampBuildingLevel } from '../../building/BuildingLevel';
 import { ZoneType } from '../../grid/types';
@@ -945,9 +946,9 @@ const HAPPINESS_SLOT = 4;
 describe('Unemployment happiness penalty', () => {
   /**
    * Grid with far more job slots than adults, so employmentRate === 1.
-   * The clock is parked one tick before the happiness slot so a single tick()
-   * runs slot 4 and nothing else — driving the whole loop would let fire,
-   * growth and abandonment (all Math.random-driven) perturb the result.
+   *
+   * 時鐘停在快樂度那一槽的前一格 —— 底下的 `runHappinessCycle` 不推時鐘，這只是
+   * 讓 `factors.currentTick` 遠大於 `unemployedSince`，失業時間才吃得到最深的那一階。
    */
   function jobRichCity() {
     const state = createGameState(30, 30);
@@ -965,17 +966,27 @@ describe('Unemployment happiness penalty', () => {
     return state;
   }
 
+  type HappinessInner = {
+    refreshHappinessContext(): void;
+    updateCitizenHappinessSlice(): void;
+  };
+
   /**
-   * 跑完一整輪快樂度。
+   * 跑完一整輪快樂度，**只跑快樂度**。
    *
-   * 快樂度改成分片之後，一個 tick 只重算其中一片 —— 要 SLOW_TICK_INTERVAL 個 tick
-   * 才輪得到每一位市民（BUG-330）。原本這裡只跑一個 tick 就期待全部算好。
+   * 分片之後一個 tick 只重算其中一片，要一整輪才輪得到每一位市民（BUG-330）。
+   * 但這裡不能改成連跑 `SLOW_TICK_INTERVAL` 個完整 tick:底下的測試靠
+   * `workplaceId === null` 分辨失業者，而完整的 tick 會經過工作指派 —— 這座城市
+   * 職缺遠多於成年人，那個「失業者」在輪到他的那一片之前就被塞了一份工作。
+   *
+   * 直接驅動這兩個函式，隔離度與分片之前的單一個 tick 相同。接線本身釘在
+   * HappinessSliceWiring 與 HappinessSliceFairness。
    */
   function runHappinessCycle(state: GameState): void {
-    const before = state.clock.tick;
-    const loop = new SimulationLoop(state);
-    for (let i = 0; i < SIMULATION.SLOW_TICK_INTERVAL; i++) loop.tick();
-    expect(state.clock.tick).toBe(before + SIMULATION.SLOW_TICK_INTERVAL);
+    const loop = new SimulationLoop(state) as unknown as HappinessInner;
+    loop.refreshHappinessContext();
+    const n = happinessSliceCount(state.citizens.getPopulation());
+    for (let i = 0; i < n; i++) loop.updateCitizenHappinessSlice();
   }
 
   it('should penalise jobless citizens even when totalJobs exceeds adultCount', () => {

@@ -838,6 +838,9 @@ export class SimulationLoop {
   private refreshHappinessContext(): void {
     const taxRate = this.state.taxRates.residential ?? DEFAULT_TAX_RATE;
     const pop = this.state.citizens.getPopulation();
+    // 空城不必建情境。作廢舊情境的是 `updateCitizenHappinessSlice` —— 它每個 tick
+    // 都跑，人一走光就會把 `happinessContext` 設回 null，這裡再設一次沒有任何
+    // 情況守得到。
     if (pop === 0) return;
 
     // Calculate city-wide happiness context (SRP: pure calculation in CityHappinessContext)
@@ -866,23 +869,30 @@ export class SimulationLoop {
     // Shopping access: only penalise when population >= threshold (early game protection)
     const enableShopping = pop >= SIMULATION.SHOPPING_POP_THRESHOLD;
 
-    // Pre-build pending death counts per position for per-citizen happiness
-    const pendingDeathCounts = new Map<string, number>();
+    this.happinessContext = { ctx, hasParkCoverage, taxRate, enableShopping };
+  }
+
+  /** 重複使用的待處理佇列計數。每個 tick 清空重建，不留跨 tick 的殘值。 */
+  private readonly pendingDeathCounts = new Map<string, number>();
+  private readonly pendingGarbageCounts = new Map<string, number>();
+
+  /**
+   * 把屍體與垃圾的待處理佇列數成「每一格幾筆」。
+   *
+   * 每個 tick 都重建 —— 佇列長度是「還沒收走的幾筆」，與人口無關。放進慢速槽的
+   * 快照裡的話，一輪之內只有頭幾片看得到當時的事件。
+   */
+  private refreshPendingCounts(): void {
+    this.pendingDeathCounts.clear();
     for (const d of this.state.deathCare.getPendingDeathQueue()) {
       const key = toPosKey(d.x, d.y);
-      pendingDeathCounts.set(key, (pendingDeathCounts.get(key) ?? 0) + 1);
+      this.pendingDeathCounts.set(key, (this.pendingDeathCounts.get(key) ?? 0) + 1);
     }
-    // Pre-build pending garbage counts per position
-    const pendingGarbageCounts = new Map<string, number>();
+    this.pendingGarbageCounts.clear();
     for (const g of this.state.garbage.getPendingGarbageQueue()) {
       const key = toPosKey(g.x, g.y);
-      pendingGarbageCounts.set(key, (pendingGarbageCounts.get(key) ?? 0) + 1);
+      this.pendingGarbageCounts.set(key, (this.pendingGarbageCounts.get(key) ?? 0) + 1);
     }
-
-    this.happinessContext = {
-      ctx, hasParkCoverage, taxRate, enableShopping,
-      pendingDeathCounts, pendingGarbageCounts,
-    };
   }
 
   /**
@@ -895,19 +905,35 @@ export class SimulationLoop {
    * 70 891 人實測，改動前這一整包是 68.5ms 落在單一個 tick 上（BUG-330）。
    */
   private updateCitizenHappinessSlice(): void {
+    const citizens = this.state.citizens.getCitizens();
+    if (citizens.length === 0) {
+      // 空城:情境跟著作廢，重新遷入的人才不會拿到上一座城市的稅率與服務。
+      this.happinessContext = null;
+      this.happinessCycle.slices = 0;
+      this.happinessCycle.index = 0;
+      this.lastHappinessSlice = { slices: 0, index: -1, updated: 0 };
+      return;
+    }
     // 情境是慢速槽 4 建立的，而分片每個 tick 都跑 —— 開局或讀檔後的頭幾個 tick 還沒有
     // 情境可用。不補這一手的話那幾片會被白白跳過，第一輪只蓋得到一部分市民。
     if (this.happinessContext === null) this.refreshHappinessContext();
     const cached = this.happinessContext;
     if (cached === null) return;
-    const { ctx, hasParkCoverage, taxRate, enableShopping,
-      pendingDeathCounts, pendingGarbageCounts } = cached;
-    const citizens = this.state.citizens.getCitizens();
-    if (citizens.length === 0) return;
+    const { ctx, hasParkCoverage, taxRate, enableShopping } = cached;
+
+    this.refreshPendingCounts();
+    const pendingDeathCounts = this.pendingDeathCounts;
+    const pendingGarbageCounts = this.pendingGarbageCounts;
 
     const currentTick = this.state.clock.tick;
-    const slices = happinessSliceCount(citizens.length);
-    const mySlice = currentTick % slices;
+    // 片數只在開輪時更新。中途跟著人口變的話全城會一起重新分片（見 happinessCycle）。
+    const cycle = this.happinessCycle;
+    if (cycle.index >= cycle.slices) {
+      cycle.slices = happinessSliceCount(citizens.length);
+      cycle.index = 0;
+    }
+    const slices = cycle.slices;
+    const mySlice = cycle.index++;
     let updated = 0;
 
     // Reusable factors object — mutated per citizen, no allocation per iteration
@@ -1861,18 +1887,29 @@ export class SimulationLoop {
   lastCommuteSample: { attempts: number; samples: number; scale: number } =
     { attempts: 0, samples: 0, scale: 1 };
   /**
-   * 全城情境 + 每棟的待處理佇列。每 SLOW_TICK_INTERVAL 個 tick 重算一次（跟改動前
-   * 同一個節奏），分片共用 —— 那一段有一個 O(人口) 的成年人計數，每個 tick 重跑
-   * 會把分片省下的吃掉（BUG-330）。
+   * 全城情境。每 SLOW_TICK_INTERVAL 個 tick 重算一次（跟改動前同一個節奏），分片
+   * 共用 —— 那一段有一個 O(人口) 的成年人計數，每個 tick 重跑會把分片省下的
+   * 吃掉（BUG-330）。
+   *
+   * 屍體與垃圾的待處理佇列**不在**這裡:它們是短命事件，而快照要活滿一整輪。
+   * 大城市一輪 72 個 tick，只有 6 個 tick 的片看得到那份快照，其餘 66 片永遠不
+   * 知道門口有屍體。佇列只有「還沒收走的幾筆」那麼長，每個 tick 重建不花錢。
    */
   private happinessContext: {
     ctx: ReturnType<typeof calculateCityHappinessContext>;
     hasParkCoverage: boolean;
     taxRate: number;
     enableShopping: boolean;
-    pendingDeathCounts: Map<string, number>;
-    pendingGarbageCounts: Map<string, number>;
   } | null = null;
+  /**
+   * 這一輪的片數與游標。
+   *
+   * 片數在**開輪時**定死。以前是每個 tick 從當下人口重算的 —— 人口跨過
+   * `HAPPINESS_PER_TICK` 的倍數時 `happinessSliceOf` 會把所有人重新分片，已經輪過
+   * 的人可能又被排到後面，還沒輪到的人可能被排到已經走過的片。人口在門檻附近來回
+   * 時沒有任何落後上界，實測可以構造出某人連續數百個 tick 不被更新。
+   */
+  private happinessCycle = { slices: 0, index: 0 };
   /** 上一個 tick 分成幾片、輪到第幾片。測試與量測靠它。 */
   lastHappinessSlice = { slices: 0, index: -1, updated: 0 };
   private commuteFillCursor = 0;
