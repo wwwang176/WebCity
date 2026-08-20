@@ -13,6 +13,7 @@
 
 import { deserializeRoadCellGraph } from '../core/road/RoadCellGraphBuffer';
 import { floodRoadCellGraph, seedNodesFor, attachAtSettledNode } from '../core/road/RoadCellGraph';
+import type { RoadCellGraph } from '../core/road/RoadCellGraph';
 import { ZONE_ROAD_REACH } from '../core/grid/constants';
 import type {
   WDWorkerRequest, WDWorkerResponse, WorkplaceDistanceEntry, WorkplacePosition,
@@ -25,16 +26,18 @@ const BYTES_PER_CELL = 12;
 /**
  * 從一個工作地點反向 flood，回傳每個建築格到它的道路成本。
  *
- * `graphBuffer` **必須是轉置後的圖** —— 成本加在目的地那一格，直接用正向圖
+ * `graph` **必須是轉置後的圖** —— 成本加在目的地那一格，直接用正向圖
  * 反向擴散會付成來源那格的價格（BUG-237）。
+ *
+ * 收的是**建好的圖**而不是 buffer:反序列化要為每個路網節點配一個字串鍵再塞進
+ * `Map`，不是零成本視圖。整批工作地共用一張圖，見 `computeWorkplaceDistances`。
  */
 export function reverseFloodFromGraph(
-  graphBuffer: ArrayBuffer,
+  graph: RoadCellGraph,
   wp: WorkplacePosition,
   maxBudget: number,
   isBuilding: (x: number, y: number) => boolean,
 ): Record<string, number> {
-  const graph = deserializeRoadCellGraph(graphBuffer);
   const seeds = seedNodesFor(graph, wp.x, wp.y, ZONE_ROAD_REACH);
   if (seeds.length === 0) return {};
 
@@ -44,6 +47,23 @@ export function reverseFloodFromGraph(
     return false;   // 反向要走完整個預算範圍，沒有目標集合可以早退
   });
   return Object.fromEntries(out);
+}
+
+/**
+ * 一整批工作地的距離表。**圖只反序列化一次**（BUG-334）——以前這件事在逐工作地
+ * 的迴圈裡做，成本是 O(工作地數 × 路格數) 次字串配置，疊在真正的 flood 之上。
+ */
+export function computeWorkplaceDistances(
+  graphBuffer: ArrayBuffer,
+  workplaces: readonly WorkplacePosition[],
+  maxBudget: number,
+  isBuilding: (x: number, y: number) => boolean,
+): WorkplaceDistanceEntry[] {
+  const graph = deserializeRoadCellGraph(graphBuffer);
+  return workplaces.map(wp => ({
+    workplacePos: wp.pos,
+    distances: reverseFloodFromGraph(graph, wp, maxBudget, isBuilding),
+  }));
 }
 
 // ── Worker message handler ─────────────────────────────────────────
@@ -64,10 +84,8 @@ if (typeof self !== 'undefined' && typeof self.postMessage === 'function') {
         return view.getUint8((y * msg.gridWidth + x) * BYTES_PER_CELL + 5) === 0;
       };
 
-      const entries: WorkplaceDistanceEntry[] = msg.workplaces.map(wp => ({
-        workplacePos: wp.pos,
-        distances: reverseFloodFromGraph(msg.graphBuffer, wp, msg.maxBudget, isBuilding),
-      }));
+      const entries = computeWorkplaceDistances(
+        msg.graphBuffer, msg.workplaces, msg.maxBudget, isBuilding);
 
       (self as unknown as Worker).postMessage({
         type: 'RESULT',

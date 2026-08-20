@@ -10,7 +10,7 @@ import { RoadBuilder } from '../../road/RoadBuilder';
 import { RoadType } from '../../road/types';
 import { RailType } from '../../rail/types';
 import { ZoneType } from '../../grid/types';
-import { reverseFloodFromGraph } from '../../../workers/workplace-distance.worker';
+import { computeWorkplaceDistances } from '../../../workers/workplace-distance.worker';
 import { roadDistanceToTargets } from '../../service/RoadCoverageFlood';
 import { buildRoadCellGraph, transposeRoadCellGraph } from '../../road/RoadCellGraph';
 import { serializeRoadCellGraph } from '../../road/RoadCellGraphBuffer';
@@ -67,10 +67,8 @@ class ComputingFakeWorker {
       if (x < 0 || y < 0 || x >= req.gridWidth || y >= req.gridHeight) return false;
       return view.getUint8((y * req.gridWidth + x) * 12 + 5) === 0;
     };
-    const entries = req.workplaces.map(wp => ({
-      workplacePos: wp.pos,
-      distances: reverseFloodFromGraph(req.graphBuffer, wp, req.maxBudget, isBuilding),
-    }));
+    const entries = computeWorkplaceDistances(
+      req.graphBuffer, req.workplaces, req.maxBudget, isBuilding);
     this.onmessage?.({ data: { type: 'RESULT', requestId: req.requestId, entries } });
   }
   addEventListener(): void {}

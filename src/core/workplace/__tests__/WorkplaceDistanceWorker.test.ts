@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { reverseFloodFromGraph } from '../../../workers/workplace-distance.worker';
+import { computeWorkplaceDistances, reverseFloodFromGraph } from '../../../workers/workplace-distance.worker';
 import { RoadType } from '../../road/types';
 import { UnifiedRoadLookup } from '../../road/UnifiedRoadLookup';
 import { buildRoadCellGraph, transposeRoadCellGraph } from '../../road/RoadCellGraph';
-import { serializeRoadCellGraph } from '../../road/RoadCellGraphBuffer';
+import { deserializeRoadCellGraph, serializeRoadCellGraph } from '../../road/RoadCellGraphBuffer';
 import type { WorkplacePosition } from '../WorkplaceDistanceTypes';
 
 const BYTES_PER_CELL = 12;
@@ -72,7 +72,7 @@ function flood(
   wp: WorkplacePosition, maxBudget: number,
 ): Record<string, number> {
   const { graphBuffer, isBuilding } = workerInputs(width, height, roads);
-  return reverseFloodFromGraph(graphBuffer, wp, maxBudget, isBuilding);
+  return reverseFloodFromGraph(deserializeRoadCellGraph(graphBuffer), wp, maxBudget, isBuilding);
 }
 
 const BUDGET = 1080;   // 舊制 60 × 18
@@ -170,13 +170,10 @@ describe('one flood per workplace', () => {
     ]);
     const { graphBuffer, isBuilding } = workerInputs(5, 3, roads);
 
-    const entries = [
+    const entries = computeWorkplaceDistances(graphBuffer, [
       { pos: '1,1', x: 1, y: 1 },
       { pos: '3,1', x: 3, y: 1 },
-    ].map(wp => ({
-      workplacePos: wp.pos,
-      distances: reverseFloodFromGraph(graphBuffer, wp, BUDGET, isBuilding),
-    }));
+    ], BUDGET, isBuilding);
 
     expect(entries.length).toBe(2);
     expect(entries[0]!.workplacePos).toBe('1,1');

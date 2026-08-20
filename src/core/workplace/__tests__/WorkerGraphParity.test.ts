@@ -3,7 +3,6 @@ import { RoadType, RoadDirection } from '../../road/types';
 import { UnifiedRoadLookup } from '../../road/UnifiedRoadLookup';
 import { ElevationManager } from '../../elevation/ElevationManager';
 import { buildRoadCellGraph, transposeRoadCellGraph } from '../../road/RoadCellGraph';
-import { serializeRoadCellGraph } from '../../road/RoadCellGraphBuffer';
 import { roadDistanceToTargets } from '../../service/RoadCoverageFlood';
 import { reverseFloodFromGraph } from '../../../workers/workplace-distance.worker';
 
@@ -66,7 +65,7 @@ describe('worker result equals the synchronous query', () => {
   it('should agree on every home → workplace cost, exactly', () => {
     const { grid, lookup } = testCity();
     const forward = buildRoadCellGraph(lookup);
-    const transposed = serializeRoadCellGraph(transposeRoadCellGraph(forward));
+    const transposed = transposeRoadCellGraph(forward);
     const cells = buildingCells(grid);
     const isBuilding = (x: number, y: number): boolean => {
       const c = grid.getCell(x, y);
@@ -108,8 +107,8 @@ describe('worker result equals the synchronous query', () => {
     };
     const wp = { pos: '0,0', x: 0, y: 0 };
     const withTranspose = reverseFloodFromGraph(
-      serializeRoadCellGraph(transposeRoadCellGraph(g)), wp, BUDGET, isBuilding);
-    const withForward = reverseFloodFromGraph(serializeRoadCellGraph(g), wp, BUDGET, isBuilding);
+      transposeRoadCellGraph(g), wp, BUDGET, isBuilding);
+    const withForward = reverseFloodFromGraph(g, wp, BUDGET, isBuilding);
     expect(withForward, '正向圖與轉置圖給出相同結果 —— fixture 的路型不夠混合')
       .not.toEqual(withTranspose);
   });

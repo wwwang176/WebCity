@@ -31,7 +31,7 @@
 
 ## 待修問題
 
-### BUG-334: 工作距離 worker 每算一個工作地就把整張路網圖重建一次
+### BUG-334: 工作距離 worker 每算一個工作地就把整張路網圖重建一次 ✅ 已修復
 
 - **位置**: `src/workers/workplace-distance.worker.ts`
 - **成因**: `reverseFloodFromGraph()` 第一行就是 `deserializeRoadCellGraph(graphBuffer)`，
@@ -39,10 +39,11 @@
   它要為每一個路網節點配一個字串鍵、再塞進一個 `Map`（`RoadCellGraphBuffer.ts:97-104`）。
 - **成本**: O(工作地數 × 路格數) 次字串配置，疊在真正的 flood 之上。284 個路格 ×
   112 個工作地約三萬次，看不出來;大城市（兩萬路格 × 數千工作地）會是數千萬次。
-- **修法**: 把反序列化提到 `.map()` 外面，圖只建一次傳進去。
+- **修法**: 新增 `computeWorkplaceDistances()`，圖只反序列化一次;`reverseFloodFromGraph()`
+  改收**建好的圖**而不是 buffer —— 型別本身擋掉「在迴圈裡再建一次」的寫法。
 - **嚴重性**: 中（只影響 worker 執行緒，不卡畫面，但會拖長快取重建的空窗期，
   空窗期內主執行緒要走同步 Dijkstra fallback）
-- **狀態**: 待修
+- **狀態**: 已修復
 
 ### BUG-335: 距離表的方向寫死成「從工作地淹」，而工作地不保證比住宅少
 

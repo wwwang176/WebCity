@@ -963,9 +963,10 @@
   29ms），而切片器每 tick 只做 2 次 —— 10 萬人時一輪要 9 478 個 tick（約 400 個遊戲日），
   換工作在大城市等於是關掉的。BUG-109 的治本（工作距離快取變成 O(1)）早就做完了，
   止痛藥卻沒下架。連帶刪掉 `Citizen.removed` 墓碑與 `JOB_RELOCATION_SLICE`。
-- [ ] **工作距離 worker 每個工作地重建一次路網圖**（BUG-334）— `reverseFloodFromGraph()`
-  第一行就 `deserializeRoadCellGraph()`，而它每個工作地被呼叫一次。反序列化要為每個
-  路網節點配一個字串鍵再塞進 `Map`，不是零成本視圖。把它提到 `.map()` 外面。
+- [x] **工作距離 worker 每個工作地重建一次路網圖**（BUG-334）— 反序列化要為每個路網
+  節點配一個字串鍵再塞進 `Map`，不是零成本視圖，而它每個工作地被呼叫一次。改成
+  `computeWorkplaceDistances()` 整批共用一張圖，`reverseFloodFromGraph()` 收建好的圖
+  而不是 buffer —— 型別本身擋掉復發。
 - [ ] **距離表的方向寫死成「從工作地淹」**（BUG-335）— worker 要跑 W 次 flood，
   但 W（工作地建築數）不保證比 H（住宅建築數）小。玩家存檔 W=112 / H≈103，工作地
   **已經比較多**。「高層住宅 + 小商店」的城市 W 遠大於 H。先量極端城市的 W/H 分布，
