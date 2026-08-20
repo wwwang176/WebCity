@@ -112,7 +112,6 @@ export function TrafficPage(props: { onClose?: () => void }) {
         operatingCost: system.getOperatingCost(),
         segmentDistances: (routeId: number) => system.getSegmentDistances(routeId),
       })),
-      state.clock.ticksPerDay,
     );
     for (const row of built) totalCost += row.totalCost;
 

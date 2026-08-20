@@ -56,20 +56,56 @@ export function computeHeadway(cycleTime: number, vehicles: number): number {
 }
 
 /**
+ * 一台車一天算在班上多久（tick）。**運能專用，不是日曆上的一天。**
+ *
+ * 這個遊戲裡有兩個時鐘:
+ *
+ * | | |
+ * |---|---|
+ * | 日曆 | `ticksPerDay = 24` —— 老化、薪資、成長、統計都靠它 |
+ * | 動畫 | 車子每 tick 前進幾格 —— 挑的是「看起來像不像公車」 |
+ *
+ * 車速從來不是從物理推出來的。所以拿 `ticksPerDay`（日曆）去除 `cycleTime`（動畫）
+ * 是把兩個時鐘當成同一個 —— 玩家 12 500 人的存檔實測，一條 282 格的公車路線一圈
+ * 要 141 tick，而一天只有 24 tick:一天跑 **0.17 圈**，50 座的車一天運能剩
+ * **8.5 人次**。任何路線超過約 9 人次就爆表，玩家得買三百台車。
+ *
+ * 分開之後，運能用自己這把尺。**畫面上那台車一天還是只跑 0.17 圈** —— 兩個時鐘
+ * 不同步，這是明知道的取捨。要同步就只能把車速調成每 tick 跨二十幾格，那是拿
+ * 畫面去換公式好看。
+ *
+ * 480 的來由（玩家存檔的那條公車路線，2 623 人次/日）:
+ *
+ * | | 一天跑幾圈 | 單車運能/日 | 一條線要幾台車 |
+ * |---|---|---|---|
+ * | 24（日曆，錯的） | 0.17 | 8.5 | 309 |
+ * | **480** | **3.4** | **170** | **15** |
+ * | 960 | 6.8 | 340 | 8 |
+ *
+ * 選 480 而不是 960:960 之下捷運永遠吃不滿（四列車 12 400 人次/日，而全城一天
+ * 約 17 600 趟通勤），擁擠模型在捷運上等於不存在。
+ *
+ * **這是平衡旋鈕**，不是物理常數。
+ */
+export const TRANSIT_SERVICE_TICKS_PER_DAY = 480;
+
+/**
  * 一天載得動多少人次。
  *
  * 座位數要乘上「一天跑幾圈」才是同一個單位。原本是拿一整天的累計人次去比
  * `車輛數 × 座位數` —— 一個是累計量、一個是瞬間量，兩台公車一天載到第 100 人次
  * 就算滿了，天花板低了一個數量級。
+ *
+ * 「一天」用的是 `TRANSIT_SERVICE_TICKS_PER_DAY`，不是日曆上的一天，理由見上面。
+ * 這裡**不收**時鐘參數 —— 收的話下一個呼叫端還是會把 `ticksPerDay` 傳進來。
  */
 export function computeDailyCapacity(
   vehicles: number,
   seatsPerVehicle: number,
   cycleTime: number,
-  ticksPerDay: number,
 ): number {
   if (vehicles <= 0 || seatsPerVehicle <= 0 || cycleTime <= 0) return 0;
-  const loopsPerDay = ticksPerDay / cycleTime;
+  const loopsPerDay = TRANSIT_SERVICE_TICKS_PER_DAY / cycleTime;
   return vehicles * seatsPerVehicle * loopsPerDay;
 }
 
@@ -169,13 +205,12 @@ export function routeService(
   seatsPerVehicle: number,
   speed: number,
   segDists: number[] | null,
-  ticksPerDay: number,
 ): { headway: number; loadFactor: number } {
   const cycleTime = computeCycleTime(route.stops, segDists, speed);
   const loadFactor = seatsPerVehicle > 0
     ? computeLoadFactor(
         riders,
-        computeDailyCapacity(route.vehicles, seatsPerVehicle, cycleTime, ticksPerDay),
+        computeDailyCapacity(route.vehicles, seatsPerVehicle, cycleTime),
       )
     : 0;
   return { headway: computeHeadway(cycleTime, route.vehicles), loadFactor };

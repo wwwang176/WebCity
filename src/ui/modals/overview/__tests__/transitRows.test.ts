@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { buildTransitRows, type TransitSystemSource } from '../transitRows';
 import { TransportType, type TransportRoute, type TransportStop } from '../../../../core/transport/types';
+import { TRANSIT_SERVICE_TICKS_PER_DAY } from '../../../../core/transport/RouteLoad';
 
 /**
  * 面板上那一欄 Usage。
@@ -15,7 +16,8 @@ import { TransportType, type TransportRoute, type TransportStop } from '../../..
  *    唯一依據。
  */
 
-const TICKS_PER_DAY = 24;
+/** 運能自己那把尺 —— 不是日曆上的一天，見 `TRANSIT_SERVICE_TICKS_PER_DAY`。 */
+const SERVICE_TICKS = TRANSIT_SERVICE_TICKS_PER_DAY;
 
 function stop(x: number, y: number, riders = 0): TransportStop {
   return {
@@ -49,20 +51,21 @@ function busSystem(routes: TransportRoute[], seats: number, speed: number): Tran
 
 describe('面板的路線載重', () => {
   it('should count how many loops a vehicle makes in a day', () => {
-    // 一台 50 座的車，路線 100 格、車速 2 → 一圈 50 tick，一天 24 tick，
-    // 一天跑 0.48 圈。一天的運能是 50 × 0.48 = 24 人次，不是 50。
+    // 一台 50 座的車，路線 100 格、車速 2 → 一圈 50 tick。運能是座位數乘上
+    // 「一天跑幾圈」，不是座位數本身。
     const rows = buildTransitRows(
-      [busSystem([route(1, loopOf100(0), 1)], 50, 2)], TICKS_PER_DAY);
+      [busSystem([route(1, loopOf100(0), 1)], 50, 2)]);
 
     expect(rows[0]!.routeRows[0]!.capacity, '運能沒有乘上「一天跑幾圈」')
-      .toBeCloseTo(50 * (TICKS_PER_DAY / 50), 6);
+      .toBeCloseTo(50 * (SERVICE_TICKS / 50), 6);
   });
 
   it('should not clamp the system row at 100%', () => {
-    // 一天運能 24 人次，卻有 240 人次要搭 —— 玩家要看到的是 1000%，那是
-    // 「該加十台車」。夾在 100% 的話它跟剛好滿載長得一模一樣。
+    // 運能的十倍要搭 —— 玩家要看到的是 1000%，那是「該加十台車」。
+    // 夾在 100% 的話它跟剛好滿載長得一模一樣。
+    const perStop = 50 * (SERVICE_TICKS / 50) * 10 / 2;
     const rows = buildTransitRows(
-      [busSystem([route(1, loopOf100(120), 1)], 50, 2)], TICKS_PER_DAY);
+      [busSystem([route(1, loopOf100(perStop), 1)], 50, 2)]);
 
     expect(rows[0]!.usage, '收合列夾在 100%').toBe('1000%');
     expect(rows[0]!.routeRows[0]!.usage, '展開列跟收合列對不起來').toBe('1000%');
@@ -71,8 +74,9 @@ describe('面板的路線載重', () => {
   it('should judge the system row on the same thresholds as its routes', () => {
     // 收合列以前用另外寫死的 0.5 / 0.8，跟模擬的 0.8 / 0.9 / 1.5 不是同一組 ——
     // 於是一條真的在拒載的路線，收合起來看只是「有點滿」。
+    const perStop = 50 * (SERVICE_TICKS / 50) * 10 / 2;
     const rows = buildTransitRows(
-      [busSystem([route(1, loopOf100(120), 1)], 50, 2)], TICKS_PER_DAY);
+      [busSystem([route(1, loopOf100(perStop), 1)], 50, 2)]);
 
     expect(rows[0]!.status, '收合列沒有照模擬的門檻判斷').toBe('refusing');
     expect(rows[0]!.status).toBe(rows[0]!.routeRows[0]!.status);
@@ -81,7 +85,7 @@ describe('面板的路線載重', () => {
   it('should print a dash for a system with no capacity of its own', () => {
     // 0% 會讓玩家以為它很空。
     const rows = buildTransitRows(
-      [busSystem([route(1, loopOf100(10), 1)], 0, 2)], TICKS_PER_DAY);
+      [busSystem([route(1, loopOf100(10), 1)], 0, 2)]);
 
     expect(rows[0]!.usage).toBe('—');
     expect(rows[0]!.routeRows[0]!.usage).toBe('—');
@@ -89,10 +93,9 @@ describe('面板的路線載重', () => {
 
   it('should add up riders and capacity across the routes of one system', () => {
     const rows = buildTransitRows(
-      [busSystem([route(1, loopOf100(30), 1), route(2, loopOf100(10), 3)], 50, 2)],
-      TICKS_PER_DAY);
+      [busSystem([route(1, loopOf100(30), 1), route(2, loopOf100(10), 3)], 50, 2)]);
 
-    const perLoop = 50 * (TICKS_PER_DAY / 50);
+    const perLoop = 50 * (SERVICE_TICKS / 50);
     expect(rows[0]!.totalRiders, '人次沒有跨路線加總').toBeCloseTo(80, 6);
     expect(rows[0]!.totalCapacity, '運能沒有跨路線加總').toBeCloseTo(perLoop * 4, 6);
   });
@@ -100,7 +103,7 @@ describe('面板的路線載重', () => {
   it('should keep a suspended route visible and still count it', () => {
     // 停駛的路線還在收玩家的錢，面板不能把它藏起來。
     const suspended = { ...route(1, loopOf100(0), 1), suspended: true };
-    const rows = buildTransitRows([busSystem([suspended], 50, 2)], TICKS_PER_DAY);
+    const rows = buildTransitRows([busSystem([suspended], 50, 2)]);
 
     expect(rows[0]!.routeRows).toHaveLength(1);
     expect(rows[0]!.routeRows[0]!.suspended).toBe(true);

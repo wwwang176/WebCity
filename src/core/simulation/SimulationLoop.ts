@@ -52,7 +52,7 @@ import { serializeRoadCellGraph } from '../road/RoadCellGraphBuffer';
 import type { SchoolType, EnrolledCitizen } from '../service/EducationService';
 import { EDUCATION_PROGRESSION, MIN_SCHOOL_AGE, type EducationRule, type DeathContext } from '../citizen/CitizenManager';
 import { chooseMode, chooseModeMultiModal, type AvailableTransport } from '../transport/ModeChoice';
-import { buildTransferGraph, buildStopRouteCache, findMultiModalRoutes, flattenSystems, type TransferGraph, type FlatRoute } from '../transport/MultiModalRouter';
+import { buildTransferGraph, buildStopRouteCache, findMultiModalRoutes, flattenSystems, refreshRouteService, type TransferGraph, type FlatRoute } from '../transport/MultiModalRouter';
 import { calculateCitizenHealth, type HealthFactors } from '../citizen/CitizenHealth';
 import { loadRatioToDeathMultiplier, uncoveredPollutionMultiplier } from '../service/HealthService';
 import { TransportMode } from '../transport/types';
@@ -657,6 +657,12 @@ export class SimulationLoop {
     // whether spawning happens at all — spawnVehicles bails out on an empty or
     // capped city, which used to strand the rebuild (see the method's comment).
     this.rebuildTransferGraphIfDirty();
+
+    // 班距與載重率要是**當下**的數字。它們原本只在上面那個重建裡算一次，而重建只在
+    // 玩家動到路網拓樸時發生 —— 搭乘人數之後怎麼漲都回不到這裡，於是路線永遠不會
+    // 拒載、等車也永遠不會因為擠而變久（BUG-343）。路線數是個位數，每個 tick 重算
+    // 的成本是幾次乘除。
+    refreshRouteService(this.flatRoutes);
 
     // 補完還沒算的通勤路線。放在生成車輛之前，這一 tick 補到的路線立刻可用。
     this.advanceCommuteFill();
@@ -2387,7 +2393,7 @@ export class SimulationLoop {
 
     if (!this.isTransferGraphDirty()) return;
     const systems = this.getTransitSystemInfos();
-    this.flatRoutes = flattenSystems(systems, this.state.clock.ticksPerDay);
+    this.flatRoutes = flattenSystems(systems);
     this.transferGraph = buildTransferGraph(
       this.flatRoutes, SIMULATION.TRANSFER_WALK_RANGE, this.stopReach,
     );
@@ -3104,7 +3110,7 @@ export class SimulationLoop {
   ): AvailableTransport[] {
     return findAvailableTransit(
       this.getTransitSystemInfos(), origin, destination, this.stopReach,
-      SIMULATION.WALK_SPEED, SIMULATION.AVERAGE_WAIT_FACTOR, this.state.clock.ticksPerDay,
+      SIMULATION.WALK_SPEED, SIMULATION.AVERAGE_WAIT_FACTOR,
     );
   }
 

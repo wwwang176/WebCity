@@ -39,7 +39,7 @@ function busSystem(): TransitSystemInfo {
 function busFlatRoute(): FlatRoute {
   return {
     routeId: 1, type: TransportType.BUS, speed: 2, stops: SOUTH_STOPS,
-    segDists: null, headway: 10, loadFactor: 0,
+    segDists: null, headway: 10, loadFactor: 0, source: { stops: SOUTH_STOPS, vehicles: 1 }, seatsPerVehicle: 0,
   };
 }
 
@@ -49,8 +49,7 @@ describe('挑站牌不跨越馬路', () => {
     const reach = new SidewalkStopReach(graph);
 
     const result = findAvailableTransit(
-      [busSystem()], { x: 13, y: 11 }, { x: 5, y: 11 }, reach, WALK_SPEED, WAIT_FACTOR, TICKS_PER_DAY,
-    );
+      [busSystem()], { x: 13, y: 11 }, { x: 5, y: 11 }, reach, WALK_SPEED, WAIT_FACTOR);
     expect(result.length, '同一側兩端都在站旁邊卻搭不到，這條測試等於沒測')
       .toBeGreaterThan(0);
   });
@@ -62,8 +61,7 @@ describe('挑站牌不跨越馬路', () => {
     const reach = new SidewalkStopReach(graph);
 
     const result = findAvailableTransit(
-      [busSystem()], { x: 12, y: 9 }, { x: 4, y: 9 }, reach, WALK_SPEED, WAIT_FACTOR, TICKS_PER_DAY,
-    );
+      [busSystem()], { x: 12, y: 9 }, { x: 4, y: 9 }, reach, WALK_SPEED, WAIT_FACTOR);
     expect(
       result,
       '馬路對面的人被算成搭得到 —— 行人會被派去繞路口',
@@ -99,8 +97,7 @@ describe('挑站牌不跨越馬路', () => {
 
     const [option] = findAvailableTransit(
       [{ type: TransportType.BUS, speed: 2, routes: [route] }],
-      { x: 12, y: 9 }, { x: 5, y: 9 }, reach, WALK_SPEED, WAIT_FACTOR, TICKS_PER_DAY,
-    );
+      { x: 12, y: 9 }, { x: 5, y: 9 }, reach, WALK_SPEED, WAIT_FACTOR);
 
     expect(option, '同一側走得到卻沒有回報任何路線').toBeDefined();
     expect(option!.boardStop?.id, '挑了對街那一站 —— 行人得繞到路口再繞回來')

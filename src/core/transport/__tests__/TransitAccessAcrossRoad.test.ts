@@ -23,7 +23,7 @@ function stop(id: number, x: number, y: number): TransportStop {
 function busRoute(stops: TransportStop[]): FlatRoute {
   return {
     routeId: 1, type: TransportType.BUS, speed: 2, stops,
-    segDists: null, headway: 10, loadFactor: 0,
+    segDists: null, headway: 10, loadFactor: 0, source: { stops, vehicles: 1 }, seatsPerVehicle: 0,
   };
 }
 
@@ -31,7 +31,7 @@ function busRoute(stops: TransportStop[]): FlatRoute {
 function metroRoute(stops: TransportStop[]): FlatRoute {
   return {
     routeId: 1, type: TransportType.METRO, speed: 3, stops,
-    segDists: null, headway: 10, loadFactor: 0,
+    segDists: null, headway: 10, loadFactor: 0, source: { stops, vehicles: 1 }, seatsPerVehicle: 0,
   };
 }
 

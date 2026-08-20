@@ -30,7 +30,7 @@ export function getRouteDailyRiders(route: TransportRoute): number {
  * 早上每條路線看起來都是空的，擁擠代價要到傍晚才出現，然後隔天再歸零。取它與
  * 跨日平滑值的較大者：既有的路線用平滑值，新開或正在爆量的路線用今天的實數。
  */
-export function getRouteRiders(route: TransportRoute): number {
+export function getRouteRiders(route: { stops: readonly TransportStop[] }): number {
   let daily = 0;
   let smoothed = 0;
   for (let i = 0; i < route.stops.length; i++) {
@@ -65,7 +65,6 @@ export function findAvailableTransit(
   reach: StopReach,
   walkSpeed: number,
   waitFactor: number,
-  ticksPerDay: number,
 ): AvailableTransport[] {
   const result: AvailableTransport[] = [];
 
@@ -76,7 +75,7 @@ export function findAvailableTransit(
     for (const route of sys.routes) {
       const segDists = sys.getSegmentDistances?.(route.id) ?? null;
       const { headway, loadFactor } = routeService(
-        route, getRouteRiders(route), sys.vehicleCapacity ?? 0, sys.speed, segDists, ticksPerDay,
+        route, getRouteRiders(route), sys.vehicleCapacity ?? 0, sys.speed, segDists,
       );
       // 擠不上去的路線對這個人不存在。這條線之前的形式是「一整天的人次 ≥
       // 車輛數 × 座位數」—— 累計量比瞬間量，天花板低了一個數量級。

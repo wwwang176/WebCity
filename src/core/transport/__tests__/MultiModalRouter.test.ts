@@ -7,7 +7,7 @@ import {
   type FlatRoute,
 } from '../MultiModalRouter';
 import { openFieldReach } from './openFieldReach';
-import { CROWDING } from '../RouteLoad';
+import { CROWDING, TRANSIT_SERVICE_TICKS_PER_DAY } from '../RouteLoad';
 import { TransportType, type TransportStop } from '../types';
 
 function makeStop(x: number, y: number, id: number, type = TransportType.BUS): TransportStop {
@@ -19,13 +19,16 @@ function makeRoute(
   type: TransportType,
   speed: number,
   stops: TransportStop[],
-  opts?: { segDists?: number[]; headway?: number; loadFactor?: number },
+  opts?: { segDists?: number[]; headway?: number; loadFactor?: number;
+           vehicles?: number; seatsPerVehicle?: number },
 ): FlatRoute {
   return {
     routeId, type, speed, stops,
     segDists: opts?.segDists ?? null,
     headway: opts?.headway ?? 10,
     loadFactor: opts?.loadFactor ?? 0,
+    source: { stops, vehicles: opts?.vehicles ?? 1 },
+    seatsPerVehicle: opts?.seatsPerVehicle ?? 0,
   };
 }
 
@@ -330,7 +333,7 @@ describe('flattenSystems', () => {
       }],
       getSegmentDistances: () => [10, 10],
     }];
-    const flat = flattenSystems(systems, 24);
+    const flat = flattenSystems(systems);
     expect(flat).toHaveLength(1);
     expect(flat[0]!.routeId).toBe(1);
     expect(flat[0]!.type).toBe(TransportType.BUS);
@@ -347,8 +350,8 @@ describe('flattenSystems', () => {
       routes: [{ id: 1, type: TransportType.BUS, stops, vehicles, operatingCost: 100 }],
       getSegmentDistances: () => [10, 10],
     }];
-    const two = flattenSystems(sys(2), 24)[0]!.headway;
-    const four = flattenSystems(sys(4), 24)[0]!.headway;
+    const two = flattenSystems(sys(2))[0]!.headway;
+    const four = flattenSystems(sys(4))[0]!.headway;
     expect(four).toBeCloseTo(two / 2);
   });
 
@@ -365,22 +368,25 @@ describe('flattenSystems', () => {
       }],
       getSegmentDistances: () => [10, 10],
     }];
-    const flat = flattenSystems(systems, 24);
-    // 整圈 20 格 / 速度 2 = 10 tick → 一天 2.4 圈；2 台 × 50 座 × 2.4 = 240 人次。
+    const flat = flattenSystems(systems);
+    // 整圈 20 格 / 速度 2 = 10 tick。一天跑幾圈由 TRANSIT_SERVICE_TICKS_PER_DAY 決定
+    // —— 期望值跟著它算，寫死的話調一次刻度就得回來改魔術數字。
+    const loops = TRANSIT_SERVICE_TICKS_PER_DAY / 10;
     // 舊模型拿 100 人次去比「2 台 × 50 座 = 100」，這條線在這裡就滿了。
-    expect(flat[0]!.loadFactor).toBeCloseTo(100 / 240);
+    expect(flat[0]!.loadFactor).toBeCloseTo(100 / (2 * 50 * loops));
     expect(flat[0]!.loadFactor, '一天才 100 人次就算滿了').toBeLessThan(1);
   });
 
   it('refuses a route that really is over capacity', () => {
     const stops = [makeStop(0, 0, 1), makeStop(10, 0, 2)];
-    stops[0]!.dailyRiders = 1000;
+    // 拒載門檻是 1.5，運能是 2 台 × 50 座 × 一天跑幾圈 —— 人次要壓過它。
+    stops[0]!.dailyRiders = 2 * 50 * (TRANSIT_SERVICE_TICKS_PER_DAY / 10) * 2;
     const systems = [{
       type: TransportType.BUS, speed: 2, vehicleCapacity: 50,
       routes: [{ id: 1, type: TransportType.BUS, stops, vehicles: 2, operatingCost: 100 }],
       getSegmentDistances: () => [10, 10],
     }];
-    expect(flattenSystems(systems, 24)[0]!.loadFactor).toBeGreaterThan(CROWDING.REFUSE_LOAD);
+    expect(flattenSystems(systems)[0]!.loadFactor).toBeGreaterThan(CROWDING.REFUSE_LOAD);
   });
 
   it('skips suspended routes', () => {
@@ -394,7 +400,7 @@ describe('flattenSystems', () => {
         suspended: true,
       }],
     }];
-    const flat = flattenSystems(systems, 24);
+    const flat = flattenSystems(systems);
     expect(flat).toHaveLength(0);
   });
 });

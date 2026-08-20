@@ -54,8 +54,7 @@ const SYSTEM: TransitSystemInfo = {
 
 function options() {
   return findAvailableTransit(
-    [SYSTEM], HOME, WORK, openFieldReach, WALK_SPEED, WAIT_FACTOR, TICKS_PER_DAY,
-  );
+    [SYSTEM], HOME, WORK, openFieldReach, WALK_SPEED, WAIT_FACTOR);
 }
 
 describe('搭乘記在他真正搭的那條路線上', () => {

@@ -74,6 +74,15 @@ export interface FlatRoute {
   headway: number;
   /** 載重率。等車時間隨它上升，過了 `CROWDING.REFUSE_LOAD` 就擠不上去。 */
   loadFactor: number;
+  /**
+   * 來源路線本身，不是它的車輛數。
+   *
+   * 複製一份 `vehicles` 進來就是 `TransportRoute` 自己警告過的那個錯:玩家加車之後
+   * 有兩個地方記著車輛數，而其中一個會忘記更新。這裡存參照，`refreshRouteService()`
+   * 每次現讀。
+   */
+  source: { readonly stops: readonly TransportStop[]; readonly vehicles: number };
+  seatsPerVehicle: number;
 }
 
 // ── Helpers ─────────────────────────────────────────────────────
@@ -86,7 +95,6 @@ function sk(ri: number, si: number): string {
 
 export function flattenSystems(
   systems: readonly TransitSystemInfo[],
-  ticksPerDay: number,
 ): FlatRoute[] {
   const result: FlatRoute[] = [];
   for (const sys of systems) {
@@ -99,13 +107,38 @@ export function flattenSystems(
         speed: sys.speed,
         stops: route.stops,
         segDists,
+        source: route,
+        seatsPerVehicle: sys.vehicleCapacity ?? 0,
         ...routeService(
-          route, getRouteRiders(route), sys.vehicleCapacity ?? 0, sys.speed, segDists, ticksPerDay,
+          route, getRouteRiders(route), sys.vehicleCapacity ?? 0, sys.speed, segDists,
         ),
       });
     }
   }
   return result;
+}
+
+/**
+ * 把每條扁平路線的班距與載重率更新成**當下**的數字。
+ *
+ * 這兩個值原本只在 `flattenSystems()` 算一次，而扁平路線只有玩家動到路網拓樸時
+ * 才重建 —— 搭乘人數之後怎麼漲都回不到這裡。玩家 12 500 人的存檔實測:記著的
+ * 載重率 0.0000192，照當下人數重算是 **308**。整套擁擠模型因此形同不存在:
+ * `isOverCapacity()` 永遠拿舊值（路線永遠不拒載），`expectedWait()` 的擁擠加成
+ * 永遠是 1。而同一份判斷在 `findAvailableTransit()` 裡是每次現算的 —— 兩條路徑
+ * 對同一條路線的看法差了一千六百萬倍（BUG-343）。
+ *
+ * 就地改而不是重建陣列:`TransferGraph` 與 `TransitAccessField` 都以索引指回這裡，
+ * 換掉陣列等於把那兩份快取一起作廢。而它們存的是幾何，本來就不需要跟著變。
+ */
+export function refreshRouteService(routes: FlatRoute[]): void {
+  for (const r of routes) {
+    const { headway, loadFactor } = routeService(
+      r.source, getRouteRiders(r.source), r.seatsPerVehicle, r.speed, r.segDists,
+    );
+    r.headway = headway;
+    r.loadFactor = loadFactor;
+  }
 }
 
 // ── Transfer Graph ──────────────────────────────────────────────

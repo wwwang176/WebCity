@@ -68,7 +68,6 @@ function ridersOf(stops: readonly TransportStop[]): number {
 
 export function buildTransitRows(
   systems: readonly TransitSystemSource[],
-  ticksPerDay: number,
 ): TransitSystemRow[] {
   return systems.map((sys) => {
     const routeRows: TransitRouteRow[] = sys.routes.map((route) => {
@@ -77,7 +76,7 @@ export function buildTransitRows(
       const cycleTime = computeCycleTime(
         route.stops, sys.segmentDistances(route.id), sys.speed);
       const capacity = computeDailyCapacity(
-        route.vehicles, sys.seatsPerVehicle, cycleTime, ticksPerDay);
+        route.vehicles, sys.seatsPerVehicle, cycleTime);
       const loadFactor = computeLoadFactor(riders, capacity);
       return {
         id: route.id,

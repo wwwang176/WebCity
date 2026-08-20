@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  TRANSIT_SERVICE_TICKS_PER_DAY,
   CROWDING,
   computeCycleTime,
   computeHeadway,
@@ -63,25 +64,35 @@ describe('班距', () => {
 
 describe('每日載運能力', () => {
   it('should count how many loops each vehicle completes in a day', () => {
-    // 整圈 6 tick → 一天跑 4 圈；2 台車 × 50 座 × 4 圈 = 400 人次
-    expect(computeDailyCapacity(2, 50, 6, TICKS_PER_DAY)).toBeCloseTo(400);
+    // 「一天」用的是運能自己那把尺（TRANSIT_SERVICE_TICKS_PER_DAY），不是日曆上的
+    // 一天 —— 車速是挑來讓畫面好看的，跟日曆本來就不是同一個時鐘。
+    const loops = TRANSIT_SERVICE_TICKS_PER_DAY / 6;
+    expect(computeDailyCapacity(2, 50, 6)).toBeCloseTo(2 * 50 * loops);
+  });
+
+  it('should not measure a service day by the calendar day', () => {
+    // 兩個時鐘混用是 BUG-344:玩家存檔的公車路線一圈 141 tick，而日曆上一天只有
+    // 24 tick，一天跑 0.17 圈 —— 50 座的車一天運能剩 8.5 人次，任何路線超過約
+    // 9 人次就爆表。
+    expect(TRANSIT_SERVICE_TICKS_PER_DAY, '運能又跟日曆綁在一起了')
+      .toBeGreaterThan(100);
   });
 
   it('should scale with vehicles', () => {
-    const one = computeDailyCapacity(1, 50, 6, TICKS_PER_DAY);
-    expect(computeDailyCapacity(3, 50, 6, TICKS_PER_DAY)).toBeCloseTo(one * 3);
+    const one = computeDailyCapacity(1, 50, 6);
+    expect(computeDailyCapacity(3, 50, 6)).toBeCloseTo(one * 3);
   });
 
   it('should be zero when the route cannot run', () => {
-    expect(computeDailyCapacity(2, 50, 0, TICKS_PER_DAY)).toBe(0);
-    expect(computeDailyCapacity(0, 50, 6, TICKS_PER_DAY)).toBe(0);
+    expect(computeDailyCapacity(2, 50, 0)).toBe(0);
+    expect(computeDailyCapacity(0, 50, 6)).toBe(0);
   });
 
   it('should be far larger than the seat count of the fleet', () => {
     // 舊模型拿「一整天的人次」去比「車輛數 × 座位數」—— 一個是累計量、一個是
     // 瞬間量。兩台公車一天載到第 100 人次就「滿了」，天花板低了一個數量級。
     const seats = 2 * 50;
-    expect(computeDailyCapacity(2, 50, 6, TICKS_PER_DAY)).toBeGreaterThan(seats * 3);
+    expect(computeDailyCapacity(2, 50, 6)).toBeGreaterThan(seats * 3);
   });
 });
 
