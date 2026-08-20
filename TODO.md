@@ -1250,11 +1250,12 @@
 - [x] 為放置與圖的測試套件加入「相鄰／雙實例」fixture（現有測試全部只在空 grid 上放單一實例）
 
 ### 既有測試套件問題（非本輪掃描產出，但阻礙驗證）
-- [ ] `Integration.test.ts` 200x200 效能測試在平行負載下逾時（單獨跑 3752ms / 上限 5000ms），餘裕僅 25%
-- [ ] `CommuteTraffic.test.ts` 的 `should spawn vehicles at any hour` 在平行負載下
+- [x] **全域測試逾時改成 20 秒**（2026-08-20）— 底下三條是同一個病因:最慢的一條要跑 3.4 秒，而 vitest 預設逾時 5 秒，不到一倍餘裕，機器一忙就爆，而且每次紅的檔案都不一樣。以前是逐條補 `}, 30000)`（Integration、Economy 各一次），會在下一個吃 tick 的測試上復發。已在 `vitest.config.ts` 設 `testTimeout` / `hookTimeout`。
+- [x] ~~`Integration.test.ts` 200x200 效能測試在平行負載下逾時（單獨跑 3752ms / 上限 5000ms），餘裕僅 25%~~
+- [x] ~~`CommuteTraffic.test.ts` 的 `should spawn vehicles at any hour` 在平行負載下~~
   偶發失敗（2026-08-10 全跑時紅一次，單獨跑 15 條全過）。與 `BirthAfterAgeing`
   同一類：時間敏感的測試在 325 個檔案並行時被排擠。
-- [ ] 這一類已經不只三支了。2026-08-13 全跑三次，紅的組合每次都不一樣：
+- [x] ~~這一類已經不只三支了。2026-08-13 全跑三次，紅的組合每次都不一樣：~~
   `BirthAfterAgeing` ×2、`GroundPropLayer > should never scale a garden`、
   `BuildingMaterial > should at least be bracket-balanced`，全部單獨跑是綠的，
   紅的原因是 vitest 每條 5 秒的上限（那幾條單獨跑就要 0.9～4.2 秒）。逐條調
