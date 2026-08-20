@@ -47,9 +47,28 @@ export const CITIZEN_SLICE_MAX = 72;
  * 取它 —— **行為與改動前完全相同**，每位市民仍然每 6 個 tick 更新一次。
  */
 export function citizenSliceCount(population: number): number {
-  const min = SIMULATION.SLOW_TICK_INTERVAL;
+  return sliceCount(population, SIMULATION.SLOW_TICK_INTERVAL);
+}
+
+/**
+ * 通勤統計要分成幾片。
+ *
+ * 跟快樂度同一個形狀，下限換成 `MEDIUM_TICK_INTERVAL` —— 那是通勤統計原本的節奏
+ * （每 60 個 tick 整城重算一次）。`2100 × 60 = 126 000`，所以 12.6 萬人以下算出來
+ * 一律是 60:**每位市民的更新頻率與改動前完全相同**，分片一格新鮮度都沒退。
+ *
+ * 用下限而不是寫死 60 的理由是上面那個懸崖:固定 60 的話每個 tick 的工作量是
+ * 人口 ÷ 60，**還是線性成長**，只是被推遲了。
+ */
+export function commuteSliceCount(population: number): number {
+  return sliceCount(population, SIMULATION.MEDIUM_TICK_INTERVAL);
+}
+
+function sliceCount(population: number, min: number): number {
   if (!(population > 0)) return min;
   const wanted = Math.ceil(population / CITIZEN_SLICE_PER_TICK);
+  // 人口是 Infinity 時 wanted 也是 Infinity，`Math.min` 會擋掉;NaN 進不來，
+  // 上面那個 `population > 0` 對 NaN 是 false。
   return Math.min(CITIZEN_SLICE_MAX, Math.max(min, wanted));
 }
 

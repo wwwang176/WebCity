@@ -22,7 +22,7 @@ import type { WorkerRequest } from '../traffic/PathfindingWorkerHandler';
 import { computeCongestionFlow, computeCongestionFlowMonteCarlo, type CongestionFlowDeps } from '../traffic/CongestionFlowPredictor';
 import { PathCellCache } from '../traffic/PathCellCache';
 import { commuteSampleSize } from './CommuteSampling';
-import { citizenSliceCount, citizenSliceOf, SliceCycle } from './CitizenSlicing';
+import { citizenSliceCount, commuteSliceCount, citizenSliceOf, SliceCycle } from './CitizenSlicing';
 import { buildCitizenLocationIndex, type CitizenLocationIndex }
   from '../citizen/CitizenLocationIndex';
 import { CongestionFlowSweep } from '../traffic/CongestionFlowSweep';
@@ -40,7 +40,7 @@ import { isWorkingAge, type Citizen } from '../citizen/types';
 import { countOccupancy, assignWithPreference, assignWorkWithPreference } from '../citizen/OccupancyAssignment';
 import { buildHousingCandidates, buildWorkplaceCandidates } from '../citizen/BuildingCandidateBuilder';
 import { TransitAccessField, estimateCommuteTime, estimateCommute } from '../transport/TransitAccessField';
-import { computeCommuteStats, type CommuteStats } from '../citizen/CommuteStats';
+import { computeCommuteStats, type CommuteStats, type CommuteRecord } from '../citizen/CommuteStats';
 import { calculateCityHappinessContext } from '../citizen/CityHappinessContext';
 import { computeOccupancyRatios } from '../citizen/OccupancyRatio';
 import type { WorkplaceCandidate } from '../citizen/WorkplaceScore';
@@ -666,8 +666,16 @@ export class SimulationLoop {
     }
     this.advanceCongestionFlow();
 
-    // 通勤統計（圖層與總覽面板共用）。與車流預測錯開一格，避免同一個 tick 做兩件重的事。
-    if (tick === 1 || (tick >= 3 && (tick - 3) % SIMULATION.MEDIUM_TICK_INTERVAL === 0)) {
+    // 通勤估算輪流做:每個 tick 一片，`commuteSliceCount()` 個 tick 輪完一圈。
+    // 每位市民被重算的頻率與改動前相同（12.6 萬人以下都是每 60 個 tick 一次）。
+    this.advanceCommuteSlice();
+
+    // 加總（圖層與總覽面板共用）仍然每 60 個 tick 一次，與車流預測錯開一格。
+    // 第一個 tick 要全量算 —— 只有 1/60 的人有記錄的話，壅塞費收入會被少算。
+    if (tick === 1) {
+      this.rebuildAllCommuteRecords();
+      this.refreshCommuteStats();
+    } else if (tick >= 3 && (tick - 3) % SIMULATION.MEDIUM_TICK_INTERVAL === 0) {
       this.refreshCommuteStats();
     }
   }
@@ -676,7 +684,103 @@ export class SimulationLoop {
   private commuteStatsVersion = 0;
 
   /**
-   * 重算全城通勤統計。
+   * 每位市民最近一次算出來的通勤。**這是快取，不是名冊** —— 加總永遠走還活著的
+   * 市民名單，這裡只回答「這個人的值是多少」。死掉、遷出的人留下的條目投不了票。
+   *
+   * 不進存檔:它完全可以從現有狀態重算。
+   */
+  private commuteRecords = new Map<number, CommuteRecord>();
+  private readonly commuteCycle = new SliceCycle();
+  /**
+   * 這一輪每一片要處理誰。**一輪開頭分好，之後每個 tick 只走自己那一桶。**
+   *
+   * 沒有這一層的話，每個 tick 都要掃過全部市民才挑得出自己那一片 —— 一輪就是
+   * 「人口 × 片數」次過濾。10 萬人實測:分桶前一輪 551 毫秒，其中估算只佔 115，
+   * 其餘全是過濾。分桶之後一輪多一次 O(人口) 的走訪，換掉 60 次。
+   *
+   * 桶裡放的是**參照**，一輪之內不重建，所以名單會在一輪之內過期:
+   *
+   * - 中途遷出、死亡的人還留在桶裡，會被多算一次。那筆記錄沒有人讀得到（加總走
+   *   的是活人名單），而開輪時會被清掉 —— **保證是「一輪之內」，不是「立刻」**。
+   * - 中途搬進來的人這一輪還沒有桶可以待，下一輪才輪得到。
+   *
+   * 兩邊的落後都是一輪，與改動前「每 60 個 tick 把全城重算一次」完全相同。
+   */
+  private commuteBuckets: Citizen[][] = [];
+
+  /** 這一趟通勤要花多久、怎麼去、付不付過路費。算不出來時回傳 null。 */
+  private commuteRecordFor(c: Citizen): CommuteRecord | null {
+    if (!c.homeId || !c.workplaceId) return null;
+    const home = parsePosKey(c.homeId);
+    const work = parsePosKey(c.workplaceId);
+    if (!home || !work) return null;
+    const cordon = this.chargedCordonFor(home, work);
+    const picked = estimateCommute(
+      home, work,
+      this.modeChoiceFor(c.education, cordon.deterrence, this.congestionFor(home, work)),
+      this.transitAccess, this.flatRoutes, SIMULATION.AVERAGE_WAIT_FACTOR,
+    );
+    // 付了過路費 = 還在開車，而且這一趟碰得到收費區。錢記給那一區。
+    return {
+      ...picked,
+      chargedDistrictId: picked.mode === TransportMode.DRIVE ? cordon.districtId : null,
+    };
+  }
+
+  /**
+   * 這一個 tick 該算的那一片。
+   *
+   * 改動前是每 60 個 tick 把**全城**算一次 —— 10 萬人時 128 毫秒全擠在那一個 tick，
+   * 而速度 10 的一個 tick 只有 25 毫秒。片數的下限就是 60，所以每位市民被重算的
+   * 頻率一格都沒退，變的只是那筆工作攤開了。
+   *
+   * 這是**輪流**不是抽樣。抽樣被否決的理由有二:`chargedDriversByDistrict` 直接
+   * 決定壅塞費收入，抽樣估收入會讓玩家的錢跟著抽到誰而抖;而固定抽 k 個人是
+   * **系統性偏差**，抽到的人不具代表性的話那棟樓永遠顯示錯的數字，不會自己修正。
+   */
+  private advanceCommuteSlice(): void {
+    // 空城不特別處理:片數的下限是 60，迴圈掃過零個人，然後 prune 會把上一座
+    // 城市留下的記錄清乾淨。提早 return 反而會讓那些記錄一直留著。
+    const citizens = this.state.citizens.getCitizens();
+
+    const { slices, index } = this.commuteCycle.next(() => commuteSliceCount(citizens.length));
+    // 開輪:重新分桶，順便把離開的人的記錄清掉。`index === 0` 就是一輪的開頭。
+    //
+    // 清理排在這裡而不是每個 tick，理由有二:桶剛重建，接下來一整輪都不會再把
+    // 離開的人加回去;而活人名單本來就要為了分桶走一遍，清理是順便，不多花錢。
+    if (index === 0) {
+      this.commuteBuckets = Array.from({ length: slices }, () => []);
+      const alive = new Set<number>();
+      for (const c of citizens) {
+        this.commuteBuckets[citizenSliceOf(c.id, slices)]!.push(c);
+        alive.add(c.id);
+      }
+      for (const id of this.commuteRecords.keys()) {
+        if (!alive.has(id)) this.commuteRecords.delete(id);
+      }
+    }
+
+    for (const c of this.commuteBuckets[index] ?? []) {
+      const rec = this.commuteRecordFor(c);
+      if (rec) this.commuteRecords.set(c.id, rec);
+      else this.commuteRecords.delete(c.id);
+    }
+  }
+
+  /**
+   * 全城一次算完。載入與第一個 tick 用 —— 那兩個時機不能只有 1/60 的人有記錄:
+   * `chargedDriversByDistrict` 是壅塞費的計費基礎，少算就是少收錢。
+   */
+  private rebuildAllCommuteRecords(): void {
+    this.commuteRecords.clear();
+    for (const c of this.state.citizens.getCitizens()) {
+      const rec = this.commuteRecordFor(c);
+      if (rec) this.commuteRecords.set(c.id, rec);
+    }
+  }
+
+  /**
+   * 把存下來的值加總成圖層與面板要的數字。
    *
    * 不進存檔 —— 它完全可以從現有狀態重算，存起來只會讓存檔格式多一塊要遷移的東西。
    * 代價是讀檔後第一次慢速 tick 之前面板是空的。
@@ -684,23 +788,7 @@ export class SimulationLoop {
   private refreshCommuteStats(): void {
     this.commuteStats = computeCommuteStats(
       this.state.citizens.getCitizens(),
-      (c) => {
-        if (!c.homeId || !c.workplaceId) return null;
-        const home = parsePosKey(c.homeId);
-        const work = parsePosKey(c.workplaceId);
-        if (!home || !work) return null;
-        const cordon = this.chargedCordonFor(home, work);
-        const picked = estimateCommute(
-          home, work,
-          this.modeChoiceFor(c.education, cordon.deterrence, this.congestionFor(home, work)),
-          this.transitAccess, this.flatRoutes, SIMULATION.AVERAGE_WAIT_FACTOR,
-        );
-        // 付了過路費 = 還在開車，而且這一趟碰得到收費區。錢記給那一區。
-        return {
-          ...picked,
-          chargedDistrictId: picked.mode === TransportMode.DRIVE ? cordon.districtId : null,
-        };
-      },
+      (c) => this.commuteRecords.get(c.id) ?? null,
       DEFAULT_JOB_RELOCATION_CONFIG.commuteTimeThreshold,
       SIMULATION.COMMUTE_WORST_HOMES,
     );
@@ -1973,6 +2061,7 @@ export class SimulationLoop {
     // 第一個 tick 才建。
     this.ensureSidewalkGraph();
     this.rebuildTransferGraphIfDirty();
+    this.rebuildAllCommuteRecords();
     this.refreshCommuteStats();
 
     onProgress?.(1);

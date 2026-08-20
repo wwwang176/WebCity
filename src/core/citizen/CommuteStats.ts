@@ -21,8 +21,13 @@ export const COMMUTE_BUCKET_EDGES = [15, 30, 45, 60] as const;
  * 記分區而不是一個布林值:計費是逐分區跑的，只有一個全城總數的話，每個收費區都會
  * 拿整個城市的付費人數去乘 —— 畫兩個收費區同一筆過路費就收兩次。
  */
-export type CommuteOf = (citizen: Citizen)
-  => { time: number; mode: string; chargedDistrictId?: string | null } | null;
+export interface CommuteRecord {
+  time: number;
+  mode: string;
+  chargedDistrictId?: string | null;
+}
+
+export type CommuteOf = (citizen: Citizen) => CommuteRecord | null;
 
 export interface WorstHome {
   pos: string;
