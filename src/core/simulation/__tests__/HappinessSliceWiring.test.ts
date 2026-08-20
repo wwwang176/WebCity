@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { createGameState, type GameState } from '../GameState';
 import { SimulationLoop } from '../SimulationLoop';
 import { SIMULATION } from '../SimulationConstants';
-import { happinessSliceCount, HAPPINESS_PER_TICK } from '../HappinessSlicing';
+import { citizenSliceCount, CITIZEN_SLICE_PER_TICK } from '../CitizenSlicing';
 import { RoadType, RoadDirection } from '../../road/types';
 import { ZoneType } from '../../grid/types';
 
@@ -36,21 +36,21 @@ describe('快樂度分片的接線', () => {
   it('should use the slice count the pure function decided', () => {
     // 接線斷掉（例如寫死 6 片）的話，大城市的成本會退回線性，而所有看數值的
     // 斷言都還是綠的。城市要大到純函式算出來**不是**下限，否則寫死 6 照樣過。
-    const pop = HAPPINESS_PER_TICK * SIMULATION.SLOW_TICK_INTERVAL + 1000;
+    const pop = CITIZEN_SLICE_PER_TICK * SIMULATION.SLOW_TICK_INTERVAL + 1000;
     const state = city(pop);
-    expect(happinessSliceCount(state.citizens.getPopulation()),
+    expect(citizenSliceCount(state.citizens.getPopulation()),
       '城市不夠大，寫死下限也會過').toBeGreaterThan(SIMULATION.SLOW_TICK_INTERVAL);
 
     const loop = new SimulationLoop(state);
     loop.tick();
     expect(loop.lastHappinessSlice.slices, '片數跟純函式算的不一致')
-      .toBe(happinessSliceCount(state.citizens.getPopulation()));
+      .toBe(citizenSliceCount(state.citizens.getPopulation()));
   });
 
   it('should cover the whole city in one cycle and no more', () => {
     const state = city(600);
     const loop = new SimulationLoop(state);
-    const n = happinessSliceCount(state.citizens.getPopulation());
+    const n = citizenSliceCount(state.citizens.getPopulation());
 
     let total = 0;
     const slicesSeen = new Set<number>();
@@ -70,7 +70,7 @@ describe('快樂度分片的接線', () => {
   it('should keep a small city on the cadence it always had', () => {
     // 小城市每位市民仍然每 SLOW_TICK_INTERVAL 個 tick 更新一次 —— 頻率沒有變。
     const state = city(600);
-    expect(happinessSliceCount(state.citizens.getPopulation()))
+    expect(citizenSliceCount(state.citizens.getPopulation()))
       .toBe(SIMULATION.SLOW_TICK_INTERVAL);
   });
 
@@ -78,7 +78,7 @@ describe('快樂度分片的接線', () => {
     // 這是整件事的重點。全部擠在慢速槽 4 的話，那一個 tick 會做完全部的工作。
     const state = city(600);
     const loop = new SimulationLoop(state);
-    const n = happinessSliceCount(state.citizens.getPopulation());
+    const n = citizenSliceCount(state.citizens.getPopulation());
     const perTick: number[] = [];
     for (let t = 0; t < n; t++) { loop.tick(); perTick.push(loop.lastHappinessSlice.updated); }
 
@@ -117,7 +117,7 @@ describe('快樂度分片的接線', () => {
     const loop = new SimulationLoop(state);
     for (const c of state.citizens.getCitizens()) c.happiness = NaN;
 
-    const n = happinessSliceCount(state.citizens.getPopulation());
+    const n = citizenSliceCount(state.citizens.getPopulation());
     const before = new Set(state.citizens.getCitizens().map(c => c.id));
     for (let t = 0; t < n; t++) loop.tick();
 

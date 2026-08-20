@@ -3,7 +3,7 @@ import { GameClock, TIME_PERIOD, SPEED_INTERVALS, TimeOfDay } from '../GameClock
 import { createGameState, DEFAULT_GRID_SIZE, INITIAL_RCI_DEMAND, type GameState } from '../GameState';
 import { SimulationLoop } from '../SimulationLoop';
 import { SIMULATION } from '../SimulationConstants';
-import { happinessSliceCount } from '../HappinessSlicing';
+import { citizenSliceCount } from '../CitizenSlicing';
 import { countResidentialCapacity, countWorkplaceJobs } from '../../building/BuildingQueries';
 import { clampBuildingLevel } from '../../building/BuildingLevel';
 import { ZoneType } from '../../grid/types';
@@ -985,7 +985,7 @@ describe('Unemployment happiness penalty', () => {
   function runHappinessCycle(state: GameState): void {
     const loop = new SimulationLoop(state) as unknown as HappinessInner;
     loop.refreshHappinessContext();
-    const n = happinessSliceCount(state.citizens.getPopulation());
+    const n = citizenSliceCount(state.citizens.getPopulation());
     for (let i = 0; i < n; i++) loop.updateCitizenHappinessSlice();
   }
 

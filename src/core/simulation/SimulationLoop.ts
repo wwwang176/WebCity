@@ -22,7 +22,7 @@ import type { WorkerRequest } from '../traffic/PathfindingWorkerHandler';
 import { computeCongestionFlow, computeCongestionFlowMonteCarlo, type CongestionFlowDeps } from '../traffic/CongestionFlowPredictor';
 import { PathCellCache } from '../traffic/PathCellCache';
 import { commuteSampleSize } from './CommuteSampling';
-import { happinessSliceCount, happinessSliceOf } from './HappinessSlicing';
+import { citizenSliceCount, citizenSliceOf, SliceCycle } from './CitizenSlicing';
 import { buildCitizenLocationIndex, type CitizenLocationIndex }
   from '../citizen/CitizenLocationIndex';
 import { CongestionFlowSweep } from '../traffic/CongestionFlowSweep';
@@ -44,7 +44,7 @@ import { computeCommuteStats, type CommuteStats } from '../citizen/CommuteStats'
 import { calculateCityHappinessContext } from '../citizen/CityHappinessContext';
 import { computeOccupancyRatios } from '../citizen/OccupancyRatio';
 import type { WorkplaceCandidate } from '../citizen/WorkplaceScore';
-import { relocationTick } from '../citizen/Relocation';
+import { beginHousingRelocation, type HousingRelocationSlicer } from '../citizen/Relocation';
 import { beginJobRelocation, jobRelocationTick, DEFAULT_JOB_RELOCATION_CONFIG,
   type JobRelocationSlicer } from '../citizen/JobRelocation';
 import { roadDistanceToTargets } from '../service/RoadCoverageFlood';
@@ -94,6 +94,21 @@ import { SIMULATION } from './SimulationConstants';
 import { TransferTracker } from '../transport/TransferTracker';
 import { computeTransferStats, findTransferRouteStops, TRANSIT_ICONS } from '../transport/TransferStatsQuery';
 
+
+/**
+ * 一個住址的環境。快樂度與健康都要這幾樣，而它們只跟樓有關 —— 同一棟樓的住戶
+ * 查出來完全一樣。見 `SimulationLoop.homeFactsFor`。
+ */
+interface HomeFacts {
+  x: number;
+  y: number;
+  powered: boolean;
+  watered: boolean;
+  shoppingRatio: number;
+  hospitalCostRatio: number;
+  parkCoverage: boolean;
+  pollution: number;
+}
 
 /** Map CitizenManager schoolKey to EducationService SchoolType */
 const SCHOOL_KEY_TO_TYPE: Record<EducationRule['schoolKey'], SchoolType> = {
@@ -478,7 +493,6 @@ export class SimulationLoop {
         return this.state.education.getCoverage(x, y, type);
       }, capacity, this.state.ordinances.getCompulsorySchoolingStages());
       this.refreshHappinessContext();
-      this.updateCitizenHealth();
       // 三個服務共用同一份位置索引，各自再掃一遍市民名單的話就白做了。
       this.refreshCitizenLocations();
       this.updateHospitalLoads();
@@ -603,10 +617,12 @@ export class SimulationLoop {
       this.runJobRelocation();
     }
     this.advanceJobRelocation();
+    this.advanceHousingRelocation();
 
     // 快樂度分片:每個 tick 算一片，`slices` 個 tick 輪完一圈（BUG-330）。
     // 情境仍然每 6 個 tick 才換一次，所以新鮮度與改動前相同。
     this.updateCitizenHappinessSlice();
+    this.updateCitizenHealthSlice();
 
     // Rebuild lane graph if roads changed
     if (this.laneGraphDirty) {
@@ -881,6 +897,38 @@ export class SimulationLoop {
   private readonly pendingGarbageCounts = new Map<string, number>();
 
   /**
+   * 這個住址的環境。同一個 tick 之內只算一次。
+   *
+   * 回傳 null 表示這個鍵解不出座標（不該發生，但 `parsePosKey` 允許失敗）。
+   */
+  private homeFactsFor(homeId: string): HomeFacts | null {
+    const tick = this.state.clock.tick;
+    if (this.homeFactsTick !== tick) {
+      this.homeFacts.clear();
+      this.homeFactsTick = tick;
+    }
+    const hit = this.homeFacts.get(homeId);
+    if (hit !== undefined) return hit;
+
+    const pos = parsePosKey(homeId);
+    let facts: HomeFacts | null = null;
+    if (pos) {
+      const cell = this.state.grid.getCell(pos.x, pos.y);
+      facts = {
+        x: pos.x, y: pos.y,
+        powered: this.state.power.isPowered(pos.x, pos.y),
+        watered: this.state.water.isSupplied(pos.x, pos.y),
+        shoppingRatio: this.state.shopping.getResidentialAccess(pos.x, pos.y).ratio,
+        hospitalCostRatio: this.state.health.getCostRatio(pos.x, pos.y),
+        parkCoverage: this.state.parks.getCoverage(pos.x, pos.y),
+        pollution: cell?.pollution ?? 0,
+      };
+    }
+    this.homeFacts.set(homeId, facts);
+    return facts;
+  }
+
+  /**
    * 把屍體與垃圾的待處理佇列數成「每一格幾筆」。
    *
    * 每個 tick 都重建 —— 佇列長度是「還沒收走的幾筆」，與人口無關。放進慢速槽的
@@ -913,8 +961,7 @@ export class SimulationLoop {
     if (citizens.length === 0) {
       // 空城:情境跟著作廢，重新遷入的人才不會拿到上一座城市的稅率與服務。
       this.happinessContext = null;
-      this.happinessCycle.slices = 0;
-      this.happinessCycle.index = 0;
+      this.happinessCycle.reset();
       this.lastHappinessSlice = { slices: 0, index: -1, updated: 0 };
       return;
     }
@@ -930,14 +977,8 @@ export class SimulationLoop {
     const pendingGarbageCounts = this.pendingGarbageCounts;
 
     const currentTick = this.state.clock.tick;
-    // 片數只在開輪時更新。中途跟著人口變的話全城會一起重新分片（見 happinessCycle）。
-    const cycle = this.happinessCycle;
-    if (cycle.index >= cycle.slices) {
-      cycle.slices = happinessSliceCount(citizens.length);
-      cycle.index = 0;
-    }
-    const slices = cycle.slices;
-    const mySlice = cycle.index++;
+    const { slices, index: mySlice } =
+      this.happinessCycle.next(() => citizenSliceCount(citizens.length));
     let updated = 0;
 
     // Reusable factors object — mutated per citizen, no allocation per iteration
@@ -954,7 +995,7 @@ export class SimulationLoop {
     };
 
     for (const citizen of citizens) {
-      if (happinessSliceOf(citizen.id, slices) !== mySlice) continue;
+      if (citizenSliceOf(citizen.id, slices) !== mySlice) continue;
       updated++;
 
       // Vary commute per citizen (+/- 3 random jitter)
@@ -967,13 +1008,11 @@ export class SimulationLoop {
       factors.pendingDeathsAtHome = 0;
       factors.pendingGarbageAtHome = 0;
       if (citizen.homeId) {
-        const pos = parsePosKey(citizen.homeId);
-        if (pos) {
-          factors.homePowered = this.state.power.isPowered(pos.x, pos.y);
-          factors.homeWatered = this.state.water.isSupplied(pos.x, pos.y);
-          if (enableShopping) {
-            factors.shoppingAccess = this.state.shopping.getResidentialAccess(pos.x, pos.y).ratio;
-          }
+        const home = this.homeFactsFor(citizen.homeId);
+        if (home) {
+          factors.homePowered = home.powered;
+          factors.homeWatered = home.watered;
+          if (enableShopping) factors.shoppingAccess = home.shoppingRatio;
           factors.pendingDeathsAtHome = pendingDeathCounts.get(citizen.homeId) ?? 0;
           factors.pendingGarbageAtHome = pendingGarbageCounts.get(citizen.homeId) ?? 0;
         }
@@ -1087,13 +1126,30 @@ export class SimulationLoop {
     pollution: 0, hasHome: false, age: 0,
   };
 
-  private updateCitizenHealth(): void {
+  /**
+   * 這個 tick 輪到的那一片市民，重算他們的健康。
+   *
+   * 與快樂度同一套分片（`SliceCycle` + `citizenSliceOf`），所以同一位市民的兩件事
+   * 落在同一個 tick —— 他的住址只查一次。健康值存在每個人身上，沒輪到的人沿用
+   * 上次的值。12 萬人實測改動前這一發 28ms。
+   */
+  private updateCitizenHealthSlice(): void {
     const citizens = this.state.citizens.getCitizens();
-    if (citizens.length === 0) return;
+    if (citizens.length === 0) {
+      this.healthCycle.reset();
+      this.lastHealthSlice = { slices: 0, index: -1, updated: 0 };
+      return;
+    }
 
+    const { slices, index: mySlice } =
+      this.healthCycle.next(() => citizenSliceCount(citizens.length));
     const f = this.healthFactors;
+    let updated = 0;
 
     for (const c of citizens) {
+      if (citizenSliceOf(c.id, slices) !== mySlice) continue;
+      updated++;
+
       f.hasHome = !!c.homeId;
       f.hospitalCostRatio = -1;
       f.hasParkCoverage = false;
@@ -1101,17 +1157,17 @@ export class SimulationLoop {
       f.age = c.age;
 
       if (c.homeId) {
-        const pos = parsePosKey(c.homeId);
-        if (pos) {
-          f.hospitalCostRatio = this.state.health.getCostRatio(pos.x, pos.y);
-          f.hasParkCoverage = this.state.parks.getCoverage(pos.x, pos.y);
-          const cell = this.state.grid.getCell(pos.x, pos.y);
-          if (cell) f.pollution = cell.pollution;
+        const home = this.homeFactsFor(c.homeId);
+        if (home) {
+          f.hospitalCostRatio = home.hospitalCostRatio;
+          f.hasParkCoverage = home.parkCoverage;
+          f.pollution = home.pollution;
         }
       }
 
       c.health = calculateCitizenHealth(f);
     }
+    this.lastHealthSlice = { slices, index: mySlice, updated };
   }
 
   // Only check service coverage for residential buildings — residents care about
@@ -1623,10 +1679,26 @@ export class SimulationLoop {
   }
 
   /**
+   * 這一輪換房子還沒跑完的切片器。null 表示上一輪已經收工，可以開新的一輪。
+   *
+   * 下一輪只在上一輪跑完之後才開始 —— 跟換工作同一個形狀，讓它自己節流。
+   */
+  private housingRelocationSlicer: HousingRelocationSlicer | null = null;
+  /** 這一輪每個 tick 的評估額度。開輪時按名單長度算，攤平到固定的 tick 數。 */
+  private housingRelocationBudget = 1;
+  /** 上一個 tick 評估了幾位、還剩幾位。測試與量測靠它。 */
+  lastHousingRelocation = { budget: 0, pending: 0 };
+
+  /**
    * Run relocation tick: unhappy citizens may move to better housing.
    * Called every MEDIUM_TICK_INTERVAL ticks.
+   *
+   * 只負責**開一輪**。實際的評估由 `advanceHousingRelocation` 每個 tick 推一小片。
    */
   private runRelocation(): void {
+    // 上一輪還沒跑完就不開新的。開了的話兩輪的決定會交錯，而 `occupancy` 是共用的。
+    if (this.housingRelocationSlicer !== null) return;
+
     this.rebuildBuildingIndex();
 
     const housingCandidates = buildHousingCandidates(
@@ -1637,10 +1709,31 @@ export class SimulationLoop {
 
     const citizens = this.state.citizens.getCitizens();
     const homeOccupancy = countOccupancy(citizens, (c) => c.homeId);
-    const { relocatedIds } = relocationTick(citizens, housingCandidates, homeOccupancy);
-    for (const id of relocatedIds) {
-      this.commuteCache.remove(id);
+    const slicer = beginHousingRelocation(citizens, housingCandidates, homeOccupancy);
+    if (slicer.pending === 0) return;
+    this.housingRelocationSlicer = slicer;
+    this.housingRelocationBudget = Math.max(1,
+      Math.ceil(slicer.pending / SIMULATION.HOUSING_RELOCATION_SPREAD_TICKS));
+  }
+
+  /**
+   * 推進換房子那一輪。每個 tick 呼叫，成本由開輪時算好的額度封頂。
+   *
+   * 以前這一整輪擠在一個 tick 裡跑完 —— 12 萬人實測 195ms，而速度 1 的一個 tick
+   * 只有 250ms。總工作量沒有變，只是不再擠在一起。
+   */
+  private advanceHousingRelocation(): void {
+    const slicer = this.housingRelocationSlicer;
+    if (!slicer) {
+      this.lastHousingRelocation = { budget: 0, pending: 0 };
+      return;
     }
+    const budget = this.housingRelocationBudget;
+    const relocatedIds = slicer.runSlice(budget);
+    // 搬家的市民要清掉通勤快取，路線才會重算。
+    for (const id of relocatedIds) this.commuteCache.remove(id);
+    this.lastHousingRelocation = { budget, pending: slicer.pending };
+    if (slicer.pending === 0) this.housingRelocationSlicer = null;
   }
 
   /**
@@ -1939,17 +2032,27 @@ export class SimulationLoop {
     taxRate: number;
     enableShopping: boolean;
   } | null = null;
-  /**
-   * 這一輪的片數與游標。
-   *
-   * 片數在**開輪時**定死。以前是每個 tick 從當下人口重算的 —— 人口跨過
-   * `HAPPINESS_PER_TICK` 的倍數時 `happinessSliceOf` 會把所有人重新分片，已經輪過
-   * 的人可能又被排到後面，還沒輪到的人可能被排到已經走過的片。人口在門檻附近來回
-   * 時沒有任何落後上界，實測可以構造出某人連續數百個 tick 不被更新。
-   */
-  private happinessCycle = { slices: 0, index: 0 };
+  /** 快樂度這一輪的游標。片數在開輪時定死，理由見 `SliceCycle`。 */
+  private readonly happinessCycle = new SliceCycle();
+  /** 健康這一輪的游標。與快樂度共用同一個雜湊，所以同一位市民同一個 tick 更新。 */
+  private readonly healthCycle = new SliceCycle();
   /** 上一個 tick 分成幾片、輪到第幾片。測試與量測靠它。 */
   lastHappinessSlice = { slices: 0, index: -1, updated: 0 };
+  /** 健康的同一組數字。 */
+  lastHealthSlice = { slices: 0, index: -1, updated: 0 };
+
+  /**
+   * 這一個 tick 已經查過的住址。快樂度與健康共用。
+   *
+   * 兩邊都要「這個住址通不通電、有沒有水、污染多少、醫療費率、公園覆蓋」——
+   * 而那些只跟樓有關。12 434 人住在 103 棟樓裡，逐市民查等於同一棟樓查 120 次。
+   * 實測那一整段逐市民做要 18.4ms（61 436 人），照住址記憶化之後 6.0ms。
+   *
+   * **每個 tick 清空**，不是每 6 個 tick。斷電、缺水、污染都是玩家看得見而且會突然
+   * 改變的東西，快取跨 tick 就會慢半拍。而重建只花「這一片碰到幾個住址」那麼多。
+   */
+  private readonly homeFacts = new Map<string, HomeFacts | null>();
+  private homeFactsTick = -1;
   private commuteFillCursor = 0;
   /** 這一個 tick 看過幾位市民。省下來的時間就是這個數字，測試靠它。 */
   private commuteFillScanned = 0;

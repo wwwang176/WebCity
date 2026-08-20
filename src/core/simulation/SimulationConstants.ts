@@ -35,6 +35,17 @@ export const SIMULATION = {
    * 道路時也能用（BUG-109 的正解，記在 TODO）。
    */
   JOB_RELOCATION_SLICE: 2,
+  /**
+   * 一輪換房子攤平到幾個 tick。
+   *
+   * 昂貴的是評估不是搬遷:每一位不開心的市民都要把全城的候選住宅打一次分，
+   * 而搬遷的 5% 上限只擋得住真的搬成的人。12 萬人實測整輪 195ms 落在單一個
+   * tick 上，而中速塊每 60 個 tick 才跑一次。
+   *
+   * 比 `MEDIUM_TICK_INTERVAL`（60）小，這一輪才來得及在下一輪開始前跑完 ——
+   * 跑不完的話下一輪會被整個跳過，搬家的頻率會偷偷變低。
+   */
+  HOUSING_RELOCATION_SPREAD_TICKS: 50,
   /** Number of random cells sampled per growth tick */
   GROWTH_ATTEMPTS: 20,
   /** Chance per attempt for burned building auto-clearance */

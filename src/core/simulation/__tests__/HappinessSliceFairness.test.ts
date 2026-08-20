@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { createGameState, type GameState } from '../GameState';
 import { SimulationLoop } from '../SimulationLoop';
 import { SIMULATION } from '../SimulationConstants';
-import { HAPPINESS_PER_TICK } from '../HappinessSlicing';
+import { CITIZEN_SLICE_PER_TICK } from '../CitizenSlicing';
 import { RoadType, RoadDirection } from '../../road/types';
 import { ZoneType } from '../../grid/types';
 
@@ -12,7 +12,7 @@ import { ZoneType } from '../../grid/types';
  * `HappinessSliceWiring` 只數了「一輪總共更新幾位」，那個數字擋不住「每個 tick
  * 都重算同一批人、其餘的人永遠不動」—— 總數照樣對得上。這裡改用哨兵值追**身分**。
  *
- * 片數以前是每個 tick 從當下人口重算的。人口跨過 `HAPPINESS_PER_TICK` 的倍數時
+ * 片數以前是每個 tick 從當下人口重算的。人口跨過 `CITIZEN_SLICE_PER_TICK` 的倍數時
  * 所有人的片號會一起改變，「一輪剛好一次」的保證就沒了 —— 人口在門檻附近來回時
  * 可以構造出某人連續數百個 tick 沒被更新。
  */
@@ -84,9 +84,9 @@ describe('分片的公平性', () => {
     const startSlices = loop.lastHappinessSlice.slices;
     expect(startSlices, '600 人應該是最小片數').toBe(SIMULATION.SLOW_TICK_INTERVAL);
 
-    // 一口氣衝過 HAPPINESS_PER_TICK × SLOW_TICK_INTERVAL —— 純函式算出來的片數
+    // 一口氣衝過 CITIZEN_SLICE_PER_TICK × SLOW_TICK_INTERVAL —— 純函式算出來的片數
     // 一定比 startSlices 大。
-    const target = HAPPINESS_PER_TICK * SIMULATION.SLOW_TICK_INTERVAL + 500;
+    const target = CITIZEN_SLICE_PER_TICK * SIMULATION.SLOW_TICK_INTERVAL + 500;
     for (let i = state.citizens.getPopulation(); i < target; i++) {
       state.citizens.restoreCitizen({ age: 100, homeId: '2,2', workplaceId: '6,2' });
     }
@@ -120,7 +120,7 @@ describe('分片的公平性', () => {
     for (let t = 0; t < 40; t++) {
       // 每個 tick 都動人口，讓純函式算出來的片數一直在變。
       const pop = state.citizens.getPopulation();
-      const want = HAPPINESS_PER_TICK * SIMULATION.SLOW_TICK_INTERVAL + (t % 2 === 0 ? 400 : -400);
+      const want = CITIZEN_SLICE_PER_TICK * SIMULATION.SLOW_TICK_INTERVAL + (t % 2 === 0 ? 400 : -400);
       for (let i = pop; i < want; i++) {
         state.citizens.restoreCitizen({ age: 100, homeId: '2,2', workplaceId: '6,2' });
       }
