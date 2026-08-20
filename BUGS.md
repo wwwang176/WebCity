@@ -31,6 +31,31 @@
 
 ## 待修問題
 
+### BUG-345: 開車滿滿地計入壅塞，公車完全不計 ✅ 已修復
+
+- **位置**: `SimulationLoop.getTransitSystemInfos()` → `flattenSystems()` /
+  `findAvailableTransit()`
+- **成因**: 運具選擇是把「開車要多久」跟「搭車要多久」擺在一起比大小。開車那一側
+  滿滿地計入壅塞（`driveTime = 曼哈頓距離 × (1 + 壅塞)`），公車那一側傳的卻是
+  `config.speed` 的**原始值** —— 塞車的城市裡公車看起來不合理地好:路上的車全部
+  慢下來，只有公車照跑。
+- **來源**: BUG-339 修完時查到的，當時記進 TODO 沒做 —— 理由是玩家存檔公車零人，
+  量不出影響。BUG-341 修好之後公車終於有人搭（`BUS 33 / METRO 822`），量得出來了。
+- **修法**: `BaseTransportSystem.getSpeedOn(routeId)` 把逐路線的實際車速
+  （`config.speed × getSpeedMultiplier(routeId)`，BUG-339 就有了）公開出去，
+  `TransitSystemInfo.speedOn` 接出去，扁平路線與單一運具兩條路徑都改讀它。
+- **壅塞同時吃三件事**（都是真的）:
+  1. **乘車時間**變長（`rideDistance / speed`）
+  2. **班距**跟著變長（整圈時間 ÷ 車輛數）
+  3. **運能**跟著變小（班距決定一天跑幾圈）
+- **不走地面的系統不受影響**: 捷運、鐵路、渡輪的 `getSpeedMultiplier()` 回 1。
+  那正是玩家蓋捷運的理由。
+- **突變驗證逼出的一個實作缺口**: 第一版把車速只在 `flattenSystems()` 算一次 ——
+  那是 BUG-343 換一個欄位再犯一次（幹道是逐 tick 在塞的，而扁平路線只有拓樸變動
+  才重建）。改成 `refreshRouteService()` 每個 tick 連車速一起重讀。
+- **嚴重性**: 中（動平衡:塞車的城市裡公車會變得比較不划算，那是正確的方向）
+- **狀態**: 已修復
+
 ### BUG-343: 路線的載重率凍結在玩家上次動路網的那一刻 ✅ 已修復
 
 - **位置**: `MultiModalRouter.flattenSystems()` / `SimulationLoop.rebuildTransferGraphIfDirty()`

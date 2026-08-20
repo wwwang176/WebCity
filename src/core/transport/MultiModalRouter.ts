@@ -83,6 +83,15 @@ export interface FlatRoute {
    */
   source: { readonly stops: readonly TransportStop[]; readonly vehicles: number };
   seatsPerVehicle: number;
+  /**
+   * 現在的車速。壅塞會讓它變 —— `refreshRouteService()` 每個 tick 重讀。
+   *
+   * `speed` 只是它最後一次的值。不重讀的話就是 BUG-343 換一個欄位再犯一次:
+   * 幹道塞住了，而估計時間還用著路網剛蓋好時的車速。
+   *
+   * 選填，理由同 `TransitSystemInfo.speedOn` —— 不模擬壅塞的 fixture 不必造一份。
+   */
+  speedOn?: () => number;
 }
 
 // ── Helpers ─────────────────────────────────────────────────────
@@ -101,16 +110,21 @@ export function flattenSystems(
     for (const route of sys.routes) {
       if (route.suspended) continue;
       const segDists = sys.getSegmentDistances?.(route.id) ?? null;
+      // 含壅塞的車速。乘車時間與班距都吃它 —— 車開得慢，整圈就跑得久，班距跟著
+      // 拉長，而班距又決定一天跑幾圈也就是運能。三件都是真的。
+      const speedOn = sys.speedOn ? () => sys.speedOn!(route.id) : undefined;
+      const speed = speedOn?.() ?? sys.speed;
       result.push({
         routeId: route.id,
         type: sys.type,
-        speed: sys.speed,
+        speed,
         stops: route.stops,
         segDists,
         source: route,
         seatsPerVehicle: sys.vehicleCapacity ?? 0,
+        speedOn,
         ...routeService(
-          route, getRouteRiders(route), sys.vehicleCapacity ?? 0, sys.speed, segDists,
+          route, getRouteRiders(route), sys.vehicleCapacity ?? 0, speed, segDists,
         ),
       });
     }
@@ -133,6 +147,8 @@ export function flattenSystems(
  */
 export function refreshRouteService(routes: FlatRoute[]): void {
   for (const r of routes) {
+    // 車速先重讀 —— 底下兩個都從它算出來。
+    if (r.speedOn) r.speed = r.speedOn();
     const { headway, loadFactor } = routeService(
       r.source, getRouteRiders(r.source), r.seatsPerVehicle, r.speed, r.segDists,
     );

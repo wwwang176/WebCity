@@ -6,7 +6,15 @@ import type { AvailableTransport } from './ModeChoice';
 
 export interface TransitSystemInfo {
   type: TransportType;
+  /** 設定值。沒有 `speedOn` 的系統（測試用的簡易 fixture）拿它當退路。 */
   speed: number;
+  /**
+   * 這條路線現在實際開多快 —— 含壅塞。
+   *
+   * 選填是為了讓不在乎壅塞的呼叫端（多數測試）不必造一份。省略時退回 `speed`，
+   * 那是「這個系統不受壅塞影響」，不是「現在不塞」。
+   */
+  speedOn?: (routeId: number) => number;
   /** Single-vehicle passenger capacity (e.g. 50 for bus). 0 or omitted = unlimited. */
   vehicleCapacity?: number;
   routes: readonly TransportRoute[];
@@ -74,8 +82,9 @@ export function findAvailableTransit(
     const walkRange = walkRangeFor(sys.type);
     for (const route of sys.routes) {
       const segDists = sys.getSegmentDistances?.(route.id) ?? null;
+      const speed = sys.speedOn?.(route.id) ?? sys.speed;
       const { headway, loadFactor } = routeService(
-        route, getRouteRiders(route), sys.vehicleCapacity ?? 0, sys.speed, segDists,
+        route, getRouteRiders(route), sys.vehicleCapacity ?? 0, speed, segDists,
       );
       // 擠不上去的路線對這個人不存在。這條線之前的形式是「一整天的人次 ≥
       // 車輛數 × 座位數」—— 累計量比瞬間量，天花板低了一個數量級。

@@ -415,6 +415,20 @@ export abstract class BaseTransportSystem {
     );
   }
 
+  /**
+   * 這條路線**現在**實際上開多快。
+   *
+   * `getSpeed()` 回的是設定值。車子在畫面上跑的是這個 —— 塞住的公車就是比較慢
+   * （BUG-339）。運具選擇那一關也要讀它:開車那一側滿滿地計入壅塞
+   * （`driveTime = 曼哈頓距離 × (1 + 壅塞)`），公車那一側如果讀設定值，塞車的城市裡
+   * 公車會看起來不合理地好 —— 路上的車全部慢下來，只有公車照跑。
+   *
+   * 不走地面的系統（捷運、鐵路、渡輪）回的就是設定值。那正是玩家蓋捷運的理由。
+   */
+  getSpeedOn(routeId: number): number {
+    return this.config.speed * this.getSpeedMultiplier(routeId);
+  }
+
   getCapacity(): number {
     return this.config.capacity;
   }

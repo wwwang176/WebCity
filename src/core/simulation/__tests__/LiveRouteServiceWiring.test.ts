@@ -60,6 +60,26 @@ describe('迴圈餵給路線的班距與載重率', () => {
     void state;
   });
 
+  it('should slow the estimated ride down once the corridor jams up', () => {
+    // 運具選擇是把「開車要多久」跟「搭車要多久」擺在一起比大小，而開車那一側滿滿地
+    // 計入壅塞。公車那一側如果讀設定車速，塞車的城市裡公車會看起來不合理地好 ——
+    // 路上的車全部慢下來，只有公車照跑。
+    //
+    // 而車速跟載重率一樣會變:幹道是逐 tick 在塞的。只在重建時算一次的話，就是把
+    // BUG-343 換一個欄位再犯一次。
+    const { state, loop, route } = busCity();
+    const flat = () => flatOf(loop).find(r => r.routeId === route.id)!;
+    // 這座小 fixture 幾乎不塞，所以起點就是設定車速（差在小數第八位）。
+    expect(flat().speed, 'fixture 一開始就不是設定車速')
+      .toBeCloseTo(state.bus.getSpeed(), 4);
+
+    state.bus.setRouteCongestion(route.id, 1);
+    loop.tick();
+
+    expect(flat().speed, '幹道塞死了，估計時間用的還是設定車速')
+      .toBeLessThan(state.bus.getSpeed() * 0.9);
+  });
+
   it('should let the load fall again once the riders go away', () => {
     // 只往上不往下的話，一條曾經爆滿的路線會永遠被判定為拒載。
     const { loop, route } = busCity();

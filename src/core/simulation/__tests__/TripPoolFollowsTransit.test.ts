@@ -220,12 +220,19 @@ describe('行人路線池跟著大眾運輸走', () => {
     state.metro.createLine(
       [state.metro.addStation(7, 1), state.metro.addStation(55, 1)], 2);
 
+    // 高層住宅:市民是在迴圈跑過之後才搬進來的，這時住宅容量已經照網格算好了 ——
+    // 只有一棟小房子的話 `createCitizen` 會擋掉多數人，剩下的幾位取樣不一定抽得到，
+    // 這個測試就會偶爾紅。
+    state.grid.setCell(8, 2, { zoneType: ZoneType.RESIDENTIAL_HIGH, buildingId: 6 });
+
     const loop = start(state);   // 一個市民都還沒有
     expect(poolOf(loop).trips.length, '空城卻有步行路線').toBe(0);
 
+    let moved = 0;
     for (let k = 0; k < 60; k++) {
-      state.citizens.createCitizen({ age: 100, homeId: '6,2', workplaceId: '56,2' });
+      if (state.citizens.createCitizen({ age: 100, homeId: '6,2', workplaceId: '56,2' })) moved++;
     }
+    expect(moved, '人根本沒搬進來 —— 撞到住宅容量了').toBe(60);
     for (let i = 0; i < 12; i++) loop.tick();
 
     expect(poolOf(loop).trips.length, '人搬進來了，池子卻沒有重建過')

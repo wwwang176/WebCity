@@ -3093,6 +3093,7 @@ export class SimulationLoop {
     return getTransitSystems(this.state).map(({ type, system }) => ({
       type,
       speed: system.getSpeed(),
+      speedOn: (routeId: number) => system.getSpeedOn(routeId),
       vehicleCapacity: system.getCapacity(),
       routes: system.getRoutes(),
       getSegmentDistances: (routeId: number) => system.getSegmentDistances(routeId),
