@@ -1843,7 +1843,6 @@ export class SimulationLoop {
       : (grid: ReadableGrid, homePos: { x: number; y: number }, targets: Set<string>, budget: number) =>
           roadDistanceToTargets(grid, homePos, targets, budget, roadLookup, cellGraph);
 
-    // 開一輪，交給 advanceJobRelocation 逐 tick 推進。
     const { relocatedIds } = jobRelocationTick(
       citizens,
       workplaceCandidates,
