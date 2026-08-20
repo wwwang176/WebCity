@@ -975,6 +975,17 @@
   抽樣** —— 抽樣被否決:`chargedDriversByDistrict` 直接決定壅塞費收入，而固定抽 k 人
   是系統性偏差不是隨機誤差。10 萬人實測單一 tick 尖峰 225.7ms → 21.2ms，統計與全量
   計算逐欄相同。第一版每個 tick 掃全體挑片，一輪 551ms 比不分片還糟;改成開輪分桶。
+- [ ] **慢速槽 5 完全沒碰過，而它是現在唯一還會製造可見卡頓的地方** —
+  `runMigration()` + `assignCitizenHousing()`（`SimulationLoop.ts` 的 `slowSlot === 5`）。
+  實測同一個版本連續兩次跑之間會從 **33ms 晃到 99ms** —— 那個晃動本身就代表它跟
+  某個會變動的量成正比，而不是固定成本。
+
+  形狀跟前面三種都不一樣，**不要直接套分片**:
+  - `runMigration` 的人數統計看起來可以做成 `CitizenManager` 裡的增量計數
+  - `assignCitizenHousing` 是決策迴圈，形狀接近 `runRelocation`（單 tick 分批）
+
+  但兩個都**先量再設計** —— 這一輪已經有五個設計被量測推翻過，包括「分片一定比較快」
+  那個（第一版分片讓總 CPU 變 2.4 倍）。
 - [ ] **快樂度與健康的分片也是每個 tick 掃全體挑片** — `updateCitizenHappinessSlice`
   與健康那一份都是 `for (const c of citizens) { if (citizenSliceOf(...) !== mySlice) continue; }`，
   一輪的過濾成本是「人口 × 片數」。通勤那邊實測這一項佔了 78%（8.5ms 裡的 6.6ms），
