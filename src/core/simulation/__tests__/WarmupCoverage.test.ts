@@ -4,7 +4,7 @@ import { SimulationLoop } from '../SimulationLoop';
 import { RoadType, RoadDirection } from '../../road/types';
 import { UnifiedRoadLookup } from '../../road/UnifiedRoadLookup';
 import { ElevationManager } from '../../elevation/ElevationManager';
-import { beginJobRelocation } from '../../citizen/JobRelocation';
+import { collectJobRelocationTriggers } from '../../citizen/JobRelocation';
 import { CommuteCache } from '../../traffic/CommuteCache';
 import { ZoneType } from '../../grid/types';
 import type { LaneEdge } from '../../traffic/LaneGraph';
@@ -286,9 +286,9 @@ describe('下游怎麼看待「還沒算」的市民', () => {
       { pos: '20,20', capacity: 10, zoneType: ZoneType.COMMERCIAL_LOW },
       { pos: '2,2', capacity: 10, zoneType: ZoneType.COMMERCIAL_LOW },
     ];
-    return beginJobRelocation(
-      [c], candidates, new Map([['20,20', 1]]), cache, state.grid, 0, CONFIG,
-    ).pending;
+    const { urgent, nonUrgent } = collectJobRelocationTriggers(
+      [c], candidates, cache, CONFIG);
+    return urgent.length + nonUrgent.length;
   }
 
   it('should judge a citizen the same way whether or not the route is computed', () => {

@@ -103,36 +103,60 @@ export type DistanceLookup = (
 ) => Map<string, number>;
 
 /**
- * 一輪換工作的**切片器**。
+ * 這一輪有哪些市民該換工作，以及為什麼。
  *
- * 每個市民都要一次 Dijkstra（家 → 所有可能的工作），而那是這一輪唯一昂貴的
- * 東西 —— 2436 人的城市裡實測一次約 4.3 毫秒，整輪 1474 毫秒。全部擠在同一個
- * tick 就是每隔幾秒卡一下（BUG-109）。
+ * 分成兩組:**走不到**公司的（緊急）與**通勤太久**的（非緊急）。這兩組的處理順序
+ * 不能亂 —— `occupancy` 隨著搬遷邊走邊改，後面的市民看得到前面的決定。
  *
- * 切片器**不減少總工作量**，只是讓呼叫端能說「這一片最多做幾次」。決策完全
- * 不變：順序在開輪時就定好，之後照著走。
+ * 獨立出來是因為「有幾位符合條件」本身就是個有用的觀測值:它不做任何距離查詢，
+ * 所以可以拿來檢查觸發條件而不必真的跑一輪。
  */
-export interface JobRelocationSlicer {
-  /** 還沒處理的市民數。0 表示這一輪跑完了。 */
-  readonly pending: number;
-  /**
-   * 處理下一片，最多做 `budget` 次距離查詢。回傳這一片搬遷的市民 id。
-   *
-   * 被配額擋下而跳過的市民**不消耗預算** —— 跳過不做 Dijkstra，讓它算一次的話，
-   * 配額用完之後每一片都在空轉，`pending` 永遠降不到 0。
-   */
-  runSlice(budget: number): number[];
+export function collectJobRelocationTriggers(
+  citizens: readonly Citizen[],
+  candidates: readonly WorkplaceCandidateWithZone[],
+  cache: { get(id: number): CachedRoute | undefined; roadGeneration: number },
+  config?: Partial<JobRelocationConfig>,
+  commuteTimeOf: CommuteTimeOf = () => NaN,
+): { urgent: { citizen: Citizen; reason: string }[]; nonUrgent: { citizen: Citizen; reason: string }[] } {
+  const cfg: JobRelocationConfig = config
+    ? { ...DEFAULT_JOB_RELOCATION_CONFIG, ...config }
+    : DEFAULT_JOB_RELOCATION_CONFIG;
+  const urgent: { citizen: Citizen; reason: string }[] = [];
+  const nonUrgent: { citizen: Citizen; reason: string }[] = [];
+  if (candidates.length === 0) return { urgent, nonUrgent };
+  for (const c of citizens) {
+    if (c.workplaceId === null || c.homeId === null || !isWorkingAge(c.age)) continue;
+    const reason = getTriggerReason(c, cache, cfg, commuteTimeOf);
+    if (reason === 'none') continue;
+    (reason === 'failed' ? urgent : nonUrgent).push({ citizen: c, reason });
+  }
+  return { urgent, nonUrgent };
 }
 
 /**
- * 開一輪換工作，回傳切片器。
+ * 換工作:走不到公司、或通勤太久的市民換一份工作。**整輪在一個 tick 之內跑完。**
  *
- * 順序在這裡就定死：先所有**走不到**的（緊急），再所有**通勤太長**的（非緊急）。
- * 這與原本兩輪迴圈的結果完全相同，但只算一次 `getTriggerReason`。
+ * ### 為什麼不再切片
  *
- * 順序不能亂 —— `occupancy` 隨著搬遷邊走邊改，後面的市民看得到前面的決定。
+ * 這一輪曾經被切成「每個 tick 只做 2 次」——那是 BUG-109 的止痛藥，當時每位市民
+ * 都要一次完整的 Dijkstra（2436 人的城市整輪 1474 毫秒）。
+ *
+ * 後來治本做完了:工作距離快取（樓層感知，高架也能用）把查詢變成 O(1)，而 fallback
+ * 的路網圖也改成整輪只建一次。**止痛藥卻留著。**
+ *
+ * 實測（玩家 12 354 人的存檔）整輪 **7.7 毫秒**;10 萬人 **29 毫秒**。而切片器每個
+ * tick 做 2 次 —— 一輪要 503 個 tick，10 萬人時 **9 478 個 tick（約 400 個遊戲日）**。
+ * 換工作在大城市等於是關掉的。
+ *
+ * 而且那幾百個 tick 的視窗會讓名單過期:候選工作地被拆、市民死亡遷出 —— 與 BUG-331
+ * 一模一樣的那一整類問題。一個 tick 內做完就沒有那個視窗。
+ *
+ * ### 順序
+ *
+ * 先所有**走不到**的（緊急），再所有**通勤太長**的（非緊急）。順序不能亂 ——
+ * `occupancy` 隨著搬遷邊走邊改，後面的市民看得到前面的決定。
  */
-export function beginJobRelocation(
+export function jobRelocationTick(
   citizens: readonly Citizen[],
   candidates: readonly WorkplaceCandidateWithZone[],
   occupancy: Map<string, number>,
@@ -142,50 +166,28 @@ export function beginJobRelocation(
   config?: Partial<JobRelocationConfig>,
   distanceLookup?: DistanceLookup,
   commuteTimeOf: CommuteTimeOf = () => NaN,
-): JobRelocationSlicer {
+): { count: number; relocatedIds: number[] } {
   const cfg: JobRelocationConfig = config
     ? { ...DEFAULT_JOB_RELOCATION_CONFIG, ...config }
     : DEFAULT_JOB_RELOCATION_CONFIG;
 
-  const urgent: { citizen: Citizen; reason: string }[] = [];
-  const nonUrgent: { citizen: Citizen; reason: string }[] = [];
-
-  if (candidates.length > 0) {
-    for (const c of citizens) {
-      if (c.workplaceId === null || c.homeId === null || !isWorkingAge(c.age)) continue;
-      const reason = getTriggerReason(c, cache, cfg, commuteTimeOf);
-      if (reason === 'none') continue;
-      (reason === 'failed' ? urgent : nonUrgent).push({ citizen: c, reason });
-    }
-  }
+  const { urgent, nonUrgent } = collectJobRelocationTriggers(
+    citizens, candidates, cache, cfg, commuteTimeOf);
 
   const ordered = [...urgent, ...nonUrgent];
   const maxNonUrgent = Math.max(1, Math.floor(nonUrgent.length * cfg.maxRelocateRatio));
   const lookup = distanceLookup ?? roadDistanceToTargets;
 
-  let cursor = 0;
   let nonUrgentCount = 0;
+  const relocatedIds: number[] = [];
 
-  return {
-    get pending(): number { return ordered.length - cursor; },
-    runSlice(budget: number): number[] {
-      const relocatedIds: number[] = [];
-      let spent = 0;
-      while (cursor < ordered.length && spent < budget) {
-        const { citizen, reason } = ordered[cursor++]!;
-        if (reason !== 'failed' && nonUrgentCount >= maxNonUrgent) continue;
-        // 名單是開一輪的時候拍下來的，而一輪要跑上百個 tick 才輪得到這一位。
-        //
-        // `removed` 是墓碑:死亡與遷出只是把物件從市民陣列裡拿掉，物件本身還在這份
-        // 名單裡而且欄位都還在。不擋的話死人也會被換工作，吃掉配額，讓真正活著的
-        // 人少一次機會（BUG-331 在換房子那邊的同一個問題）。
-        if (citizen.removed) continue;
-        // 中間拆掉那一棟住宅，這個人的 homeId 就成了 null（`Reconcile` 會清掉），
-        // 而底下是拿 `!` 直接送進 parsePosKeyUnsafe 的 —— 會丟例外。
-        if (citizen.homeId === null) continue;
-        spent++;
+  for (const { citizen, reason } of ordered) {
+    if (reason !== 'failed' && nonUrgentCount >= maxNonUrgent) continue;
+    // homeId / workplaceId 為 null 的人已經被 `collectJobRelocationTriggers` 濾掉，
+    // 而名單與處理在同一個 tick 之內 —— 中間沒有東西會把它們清成 null。切片時代
+    // 需要在這裡再擋一次，因為那份名單要活上百個 tick。
     const currentPos = citizen.workplaceId!;
-    const homePos = parsePosKeyUnsafe(citizen.homeId);
+    const homePos = parsePosKeyUnsafe(citizen.homeId!);
 
     // Find current workplace's zoneType
     const currentCandidate = candidates.find(c => c.pos === currentPos);
@@ -281,30 +283,7 @@ export function beginJobRelocation(
       }
       relocatedIds.push(citizen.id);
     }
-      }
-      return relocatedIds;
-    },
-  };
-}
+  }
 
-/**
- * 跑完整輪換工作。等同於「開一輪，然後一次跑完」—— 只有這一個實作，所以
- * 切片與一次跑完不可能給出不同的決策。
- */
-export function jobRelocationTick(
-  citizens: readonly Citizen[],
-  candidates: readonly WorkplaceCandidateWithZone[],
-  occupancy: Map<string, number>,
-  cache: { get(id: number): CachedRoute | undefined; roadGeneration: number },
-  grid: ReadableGrid,
-  currentTick: number,
-  config?: Partial<JobRelocationConfig>,
-  distanceLookup?: DistanceLookup,
-  commuteTimeOf?: CommuteTimeOf,
-): { count: number; relocatedIds: number[] } {
-  const slicer = beginJobRelocation(
-    citizens, candidates, occupancy, cache, grid, currentTick, config, distanceLookup, commuteTimeOf,
-  );
-  const relocatedIds = slicer.runSlice(Infinity);
   return { count: relocatedIds.length, relocatedIds };
 }

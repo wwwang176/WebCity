@@ -45,8 +45,7 @@ import { calculateCityHappinessContext } from '../citizen/CityHappinessContext';
 import { computeOccupancyRatios } from '../citizen/OccupancyRatio';
 import type { WorkplaceCandidate } from '../citizen/WorkplaceScore';
 import { relocationTick, DEFAULT_RELOCATION_CONFIG } from '../citizen/Relocation';
-import { beginJobRelocation, jobRelocationTick, DEFAULT_JOB_RELOCATION_CONFIG,
-  type JobRelocationSlicer } from '../citizen/JobRelocation';
+import { jobRelocationTick, DEFAULT_JOB_RELOCATION_CONFIG } from '../citizen/JobRelocation';
 import { roadDistanceToTargets } from '../service/RoadCoverageFlood';
 import { buildRoadCellGraph, transposeRoadCellGraph } from '../road/RoadCellGraph';
 import { serializeRoadCellGraph } from '../road/RoadCellGraphBuffer';
@@ -616,7 +615,7 @@ export class SimulationLoop {
     if (tick >= 4 && (tick - 4) % SIMULATION.JOB_RELOCATION_INTERVAL === 0) {
       this.runJobRelocation();
     }
-    this.advanceJobRelocation();
+
 
     // 快樂度分片:每個 tick 算一片，`slices` 個 tick 輪完一圈（BUG-330）。
     // 情境仍然每 6 個 tick 才換一次，所以新鮮度與改動前相同。
@@ -1817,33 +1816,7 @@ export class SimulationLoop {
    * Run job relocation tick: citizens with long/failed commutes may switch workplace.
    * Called every JOB_RELOCATION_INTERVAL ticks (after housing relocation).
    */
-  /**
-   * 這一輪還沒跑完的切片器。null 表示上一輪已經收工，可以開新的一輪。
-   *
-   * 下一輪只在上一輪跑完之後才開始 —— 這讓它自己節流：城市越大，輪與輪之間
-   * 的間隔越長，而每個 tick 的成本維持不變。
-   */
-  private jobRelocationSlicer: JobRelocationSlicer | null = null;
-
-  /**
-   * 推進換工作那一輪。每個 tick 呼叫，成本由 `JOB_RELOCATION_SLICE` 封頂。
-   *
-   * 以前這一整輪擠在一個 tick 裡跑完 —— 2436 人的城市量到 1474 毫秒，
-   * 每 3 秒卡一次（BUG-109）。總工作量沒有變，只是不再擠在一起。
-   */
-  private advanceJobRelocation(): void {
-    const slicer = this.jobRelocationSlicer;
-    if (!slicer) return;
-    const relocatedIds = slicer.runSlice(SIMULATION.JOB_RELOCATION_SLICE);
-    // 搬遷的市民要清掉通勤快取，路線才會重算。
-    for (const id of relocatedIds) this.commuteCache.remove(id);
-    if (slicer.pending === 0) this.jobRelocationSlicer = null;
-  }
-
   private runJobRelocation(): void {
-    // 上一輪還沒跑完就不開新的。
-    if (this.jobRelocationSlicer) return;
-
     this.rebuildBuildingIndex();
 
     const workplaceCandidates = buildWorkplaceCandidates(this.buildingPositions);
@@ -1871,7 +1844,7 @@ export class SimulationLoop {
           roadDistanceToTargets(grid, homePos, targets, budget, roadLookup, cellGraph);
 
     // 開一輪，交給 advanceJobRelocation 逐 tick 推進。
-    this.jobRelocationSlicer = beginJobRelocation(
+    const { relocatedIds } = jobRelocationTick(
       citizens,
       workplaceCandidates,
       workOccupancy,
@@ -1881,11 +1854,13 @@ export class SimulationLoop {
       undefined,
       distanceLookup,
       // 通勤要花多久 —— 開車、走路與大眾運輸都換算成同一個尺度的時間。
-      (c) => {
+      (c: Citizen) => {
         if (!c.homeId || !c.workplaceId) return NaN;
         return this.commuteTimeBetween(c.homeId, c.workplaceId) ?? NaN;
       },
     );
+    // 換了工作的市民要清掉通勤快取，路線才會重算。
+    for (const id of relocatedIds) this.commuteCache.remove(id);
   }
 
   /** Mark the lane graph as needing rebuild (call after road build/demolish).

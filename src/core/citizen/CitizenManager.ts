@@ -148,14 +148,6 @@ export class CitizenManager {
   }
 
   private _addCitizen(overrides: Partial<Citizen>, currentTick: number): Citizen {
-    // 墓碑不是持久狀態。存檔裡帶著它進來的話（匯入的檔、或某個早期版本寫進去的），
-    // 那個人會出現在人口與服務負載裡，卻永遠被搬遷與換工作的切片器跳過。`false`
-    // 也要濾掉 —— 留著的話序列化會把它一路寫回存檔。在建立物件**之前**排除，
-    // 而不是建好再 delete:後者會改變物件形狀。
-    if ('removed' in overrides) {
-      const { removed: _removed, ...rest } = overrides;
-      overrides = rest;
-    }
     const age = overrides.age ?? 100; // default mid-ADULT (life-weeks)
     const education = overrides.education ?? EducationLevel.NONE;
     const citizen: Citizen = {
@@ -185,11 +177,7 @@ export class CitizenManager {
 
   removeCitizen(id: number): void {
     const idx = this.citizens.findIndex((c) => c.id === id);
-    if (idx >= 0) {
-      // 立墓碑。拿著物件參照的切片器要看得出這個人已經不在了。
-      this.citizens[idx]!.removed = true;
-      this.citizens.splice(idx, 1);
-    }
+    if (idx >= 0) this.citizens.splice(idx, 1);
   }
 
   /** Batch-remove citizens by id set. Single-pass compaction — no intermediate arrays. */
@@ -198,11 +186,7 @@ export class CitizenManager {
     let write = 0;
     for (let read = 0; read < this.citizens.length; read++) {
       const c = this.citizens[read]!;
-      if (ids.has(c.id)) {
-        c.removed = true;   // 立墓碑，理由見 removeCitizen
-      } else {
-        this.citizens[write++] = c;
-      }
+      if (!ids.has(c.id)) this.citizens[write++] = c;
     }
     this.citizens.length = write;
   }

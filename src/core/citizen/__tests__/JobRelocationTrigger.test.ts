@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  beginJobRelocation, DEFAULT_JOB_RELOCATION_CONFIG,
+  collectJobRelocationTriggers, DEFAULT_JOB_RELOCATION_CONFIG,
   type WorkplaceCandidateWithZone,
 } from '../JobRelocation';
 import type { Citizen } from '../types';
@@ -59,16 +59,15 @@ function readyRoute(id: number): CachedRoute {
   };
 }
 
-/** 開一輪，回傳有多少人被判定為需要處理。 */
+/** 有多少人被判定為需要換工作。不做任何距離查詢。 */
 function pendingWith(
   citizens: Citizen[],
   commuteTime: (c: Citizen) => number,
   cache: { get(id: number): CachedRoute | undefined; roadGeneration: number } = noRoutes,
 ): number {
-  return beginJobRelocation(
-    citizens, candidates, new Map([['40,1', citizens.length]]), cache, grid, 0,
-    undefined, undefined, commuteTime,
-  ).pending;
+  const { urgent, nonUrgent } = collectJobRelocationTriggers(
+    citizens, candidates, cache, undefined, commuteTime);
+  return urgent.length + nonUrgent.length;
 }
 
 const THRESHOLD = DEFAULT_JOB_RELOCATION_CONFIG.commuteTimeThreshold;

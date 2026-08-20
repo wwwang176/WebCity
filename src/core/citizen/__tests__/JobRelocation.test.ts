@@ -451,3 +451,58 @@ describe('jobRelocationTick', () => {
     expect(citizen.workplaceId).toBe('6,1');
   });
 });
+
+describe('緊急與非緊急的順序', () => {
+  it('should handle a failed route even when the non-urgent quota is used up', () => {
+    // 走不到公司的人是**緊急**的，不吃 5% 的配額。兩組混在一起的話，前面一堆
+    // 「通勤太久」的人會把配額用光，真正走不到公司的人就一直卡在那裡。
+    const grid = makeRoadGrid(20, 20);
+    // 遠的現職 + 家門口的空缺 —— 非緊急的那批要真的搬得動，配額才會被用掉。
+    const candidates = [
+      { pos: '18,0', capacity: 100, zoneType: ZoneType.COMMERCIAL_LOW },
+      { pos: '1,0', capacity: 100, zoneType: ZoneType.COMMERCIAL_LOW },
+    ];
+    const citizens: Citizen[] = [];
+    const routes: [number, CachedRoute][] = [];
+    // 40 位通勤太久的（非緊急，配額只有 max(1, 40×5%) = 2）
+    for (let i = 1; i <= 40; i++) {
+      citizens.push(makeCitizen({ id: i, homeId: '0,0', workplaceId: '18,0' }));
+    }
+    // 一位走不到公司的（緊急）排在最後
+    citizens.push(makeCitizen({ id: 99, homeId: '0,0', workplaceId: '18,0' }));
+    routes.push([99, makeRoute({ status: 'failed' })]);
+
+    const { relocatedIds } = jobRelocationTick(
+      citizens, candidates, new Map([['18,0', 41]]),
+      makeCacheMap(routes), grid, 0, undefined, undefined, () => 999,
+    );
+    // 前提:非緊急的配額真的被用光了，否則這條測試什麼都沒擋到。
+    const nonUrgentMoved = relocatedIds.filter(id => id !== 99).length;
+    expect(nonUrgentMoved, '非緊急的一個都沒搬，配額沒被用掉').toBeGreaterThan(0);
+    expect(relocatedIds, '走不到公司的人被非緊急的配額擋住了').toContain(99);
+  });
+});
+
+describe('緊急優先於非緊急', () => {
+  it('should give the last opening to the stranded citizen, not a long commuter', () => {
+    // 兩組的順序只有在**搶同一個名額**時才看得出來 —— occupancy 邊走邊改，
+    // 先被處理的人拿走位子。走不到公司的人比通勤久的人更需要那個位子。
+    const grid = makeRoadGrid(20, 20);
+    const candidates: WorkplaceCandidateWithZone[] = [
+      { pos: '18,0', capacity: 100, zoneType: ZoneType.COMMERCIAL_LOW },
+      { pos: '1,0', capacity: 1, zoneType: ZoneType.COMMERCIAL_LOW },  // 只剩一個名額
+    ];
+    // 通勤太久的（非緊急）排在陣列前面，走不到公司的（緊急）排在後面。
+    const commuter = makeCitizen({ id: 1, homeId: '0,0', workplaceId: '18,0' });
+    const stranded = makeCitizen({ id: 99, homeId: '0,0', workplaceId: '18,0' });
+    const cache = makeCacheMap([[99, makeRoute({ citizenId: 99, status: 'failed' })]]);
+
+    jobRelocationTick(
+      [commuter, stranded], candidates, new Map([['18,0', 2], ['1,0', 0]]),
+      cache, grid, 0, undefined, undefined, () => 999,
+    );
+
+    expect(stranded.workplaceId, '走不到公司的人沒搶到那個名額').toBe('1,0');
+    expect(commuter.workplaceId, '通勤久的人搶走了唯一的名額').toBe('18,0');
+  });
+});
