@@ -3263,6 +3263,7 @@ export class SimulationLoop {
     // 流量換了，逐路線的快取全部作廢，全城平均也要跟著重算。
     this.routeCongestionCache.clear();
     this.cityCongestionLevel = cityCongestion(flowMap, this.countRoadTiles());
+    this.refreshBusRouteCongestion(flowMap);
   }
 
   /**
@@ -3273,6 +3274,25 @@ export class SimulationLoop {
    *
    * 逐路線快取:同一條路上班的人成千上萬，而流量圖每 60 tick 才換一次。
    */
+  /**
+   * 每條公車路線沿線有多擠。
+   *
+   * 公車跟著幹道跑，而幹道本來就比全城平均塞:玩家 12 600 人的存檔實測，全城平均
+   * 0.211，那條路線沿線 **0.380**（1.8 倍），線上最塞的一格已經是 1.0。吃全城平均
+   * 等於告訴玩家「你的公車沒有塞在車陣裡」，而畫面上它明明卡在那裡。
+   *
+   * 只有公車要算 —— 捷運、鐵路、渡輪都不走地面道路（`affectedByCongestion`）。
+   */
+  private refreshBusRouteCongestion(flowMap: ReadonlyMap<string, number>): void {
+    const bus = this.state.bus;
+    for (const route of bus.getRoutes()) {
+      const cells = bus.getRouteCells(route.id);
+      if (!cells) continue;
+      const along = routeCongestion(cells, (cell) => flowMap.get(cell) ?? 0);
+      if (along !== null) bus.setRouteCongestion(route.id, along);
+    }
+  }
+
   private congestionFor(from: { x: number; y: number }, to: { x: number; y: number }): number {
     const flow = this.state.traffic.getPredictedFlow();
     if (!flow) return this.cityCongestionLevel;

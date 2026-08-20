@@ -37,7 +37,15 @@ export interface BaseTransportJSON {
 }
 
 export const TRANSPORT_SPEED = {
+  /**
+   * 塞死也還是要爬得動 —— 速度 0 會讓車永遠到不了下一站，班距變成無限大。
+   *
+   * **目前摸不到這個下限**:壅塞上限是 1，所以 `1 - 壅塞 × 0.5` 最低是 0.5。
+   * 它守的是「有人把 `CONGESTION_SPEED_IMPACT` 調過 1」那一天 —— 那是平衡旋鈕，
+   * 調得動。沒有測試守得住這一條，因為要照出來就得改常數本身。
+   */
   MIN_CONGESTION_SPEED: 0.1,
+  /** 壅塞對速度的影響強度。**平衡旋鈕**，不是物理常數。 */
   CONGESTION_SPEED_IMPACT: 0.5,
 } as const;
 
@@ -96,8 +104,38 @@ export abstract class BaseTransportSystem {
     return this.topologyVersion;
   }
 
-  /** Current road congestion level (0 = free-flow, 1 = gridlock). */
+  /**
+   * 全系統的路面壅塞（0 = 暢通，1 = 塞死）。
+   *
+   * 這是**退路** —— 問不到某條路線的逐路線值時才用它。「問不到」代表「還沒算過」，
+   * 不是「暢通」。
+   */
   congestionLevel = 0;
+
+  /**
+   * 逐路線的路面壅塞。
+   *
+   * 公車跟著幹道跑，而幹道本來就比全城平均塞:玩家 12 600 人的存檔實測，全城平均
+   * 0.211，那條公車路線沿線 **0.380**（1.8 倍），線上最塞的一格已經是 1.0。吃全城
+   * 平均等於告訴玩家「你的公車沒有塞在車陣裡」，而畫面上它明明卡在那裡。
+   */
+  private readonly routeCongestion = new Map<number, number>();
+
+  /** 這條路線沿線有多擠。由模擬迴圈每次重算流量圖之後餵進來。 */
+  setRouteCongestion(routeId: number, level: number): void {
+    this.routeCongestion.set(routeId, level);
+  }
+
+  /** 路線沒了就把它的值丟掉 —— 編號不會重用，不清會一直長。 */
+  clearRouteCongestion(routeId: number): void {
+    this.routeCongestion.delete(routeId);
+  }
+
+  /** 這條路線沿線有多擠。沒有逐路線的值時退回全系統的。 */
+  congestionOn(routeId?: number): number {
+    if (routeId === undefined) return this.congestionLevel;
+    return this.routeCongestion.get(routeId) ?? this.congestionLevel;
+  }
 
   constructor(protected readonly config: TransportSystemConfig) {}
 
@@ -222,6 +260,7 @@ export abstract class BaseTransportSystem {
   }
 
   deleteRoute(routeId: number): void {
+    this.clearRouteCongestion(routeId);
     this.bumpTopologyVersion();
     this.routes = this.routes.filter(r => r.id !== routeId);
     this.vehicles = this.vehicles.filter(v => v.routeId !== routeId);
@@ -338,7 +377,7 @@ export abstract class BaseTransportSystem {
       vehicle.currentStopIndex = (vehicle.currentStopIndex + 1) % route.stops.length;
       const nextStop = route.stops[vehicle.currentStopIndex]!;
       const dist = manhattanDistance(nextStop.x, nextStop.y, vehicle.position.x, vehicle.position.y);
-      const speed = this.config.speed * this.getSpeedMultiplier();
+      const speed = this.config.speed * this.getSpeedMultiplier(route.id);
       vehicle.travelTicks = Math.max(1, Math.ceil(dist / speed));
       vehicle.traveling = true;
       this.onDepart(vehicle, route);
@@ -368,9 +407,12 @@ export abstract class BaseTransportSystem {
 
   // ── Overridable hooks ────────────────────────────────────────────
 
-  protected getSpeedMultiplier(): number {
+  protected getSpeedMultiplier(routeId?: number): number {
     if (!this.config.affectedByCongestion) return 1;
-    return Math.max(TRANSPORT_SPEED.MIN_CONGESTION_SPEED, 1 - this.congestionLevel * TRANSPORT_SPEED.CONGESTION_SPEED_IMPACT);
+    return Math.max(
+      TRANSPORT_SPEED.MIN_CONGESTION_SPEED,
+      1 - this.congestionOn(routeId) * TRANSPORT_SPEED.CONGESTION_SPEED_IMPACT,
+    );
   }
 
   getCapacity(): number {
