@@ -1,12 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import { calculatePoliceLoads, calculateFireLoads } from '../PoliceFireLoadCalculator';
+import { buildCitizenLocationIndex } from '../../citizen/CitizenLocationIndex';
 import { EducationLevel } from '../../citizen/types';
 import { ZoneType } from '../../grid/types';
 
 describe('PoliceFireLoadCalculator', () => {
   describe('calculatePoliceLoads', () => {
     it('returns empty array when no citizens', () => {
-      const result = calculatePoliceLoads([], { getCoverage: () => false }, { getCell: () => null });
+      const result = calculatePoliceLoads(buildCitizenLocationIndex([]), { getCoverage: () => false }, { getCell: () => null });
       expect(result).toEqual([]);
     });
 
@@ -17,7 +18,7 @@ describe('PoliceFireLoadCalculator', () => {
       const police = { getCoverage: (x: number, y: number) => x === 2 && y === 3 };
       const grid = { getCell: () => ({ zoneType: ZoneType.NONE }) };
 
-      const result = calculatePoliceLoads(citizens, police, grid);
+      const result = calculatePoliceLoads(buildCitizenLocationIndex(citizens), police, grid);
       // NONE education → multiplier 2.0, baseDemand 0.3 → 0.6
       expect(result.length).toBe(1);
       expect(result[0]!.x).toBe(2);
@@ -32,7 +33,7 @@ describe('PoliceFireLoadCalculator', () => {
       const police = { getCoverage: () => true };
       const grid = { getCell: () => ({ zoneType: ZoneType.NONE }) };
 
-      const result = calculatePoliceLoads(citizens, police, grid);
+      const result = calculatePoliceLoads(buildCitizenLocationIndex(citizens), police, grid);
       // UNIVERSITY → multiplier 0.3, baseDemand 0.3 → 0.09
       expect(result[0]!.weight).toBeCloseTo(0.09);
     });
@@ -47,7 +48,7 @@ describe('PoliceFireLoadCalculator', () => {
         return null;
       }};
 
-      const result = calculatePoliceLoads(citizens, police, grid);
+      const result = calculatePoliceLoads(buildCitizenLocationIndex(citizens), police, grid);
       // Industrial zone → multiplier 1.5, baseDemand 0.3 → 0.45
       expect(result.length).toBe(1);
       expect(result[0]!.weight).toBeCloseTo(0.45);
@@ -60,7 +61,7 @@ describe('PoliceFireLoadCalculator', () => {
       const police = { getCoverage: () => false };
       const grid = { getCell: () => null };
 
-      const result = calculatePoliceLoads(citizens, police, grid);
+      const result = calculatePoliceLoads(buildCitizenLocationIndex(citizens), police, grid);
       expect(result).toEqual([]);
     });
 
@@ -71,7 +72,7 @@ describe('PoliceFireLoadCalculator', () => {
       const police = { getCoverage: () => true };
       const grid = { getCell: (_x: number, _y: number) => ({ zoneType: ZoneType.OFFICE }) };
 
-      const result = calculatePoliceLoads(citizens, police, grid);
+      const result = calculatePoliceLoads(buildCitizenLocationIndex(citizens), police, grid);
       // Home: ELEMENTARY → 1.1 * 0.3 = 0.33
       // Work: OFFICE → 0.5 * 0.3 = 0.15
       expect(result.length).toBe(2);
@@ -80,7 +81,7 @@ describe('PoliceFireLoadCalculator', () => {
 
   describe('calculateFireLoads', () => {
     it('returns empty array when no citizens', () => {
-      const result = calculateFireLoads([], { getCoverage: () => false }, { getCell: () => null });
+      const result = calculateFireLoads(buildCitizenLocationIndex([]), { getCoverage: () => false }, { getCell: () => null });
       expect(result).toEqual([]);
     });
 
@@ -94,11 +95,11 @@ describe('PoliceFireLoadCalculator', () => {
       const grid = { getCell: () => ({ zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 }) };
       const getBuildingResidents = (_id: number) => 4;
 
-      const result = calculateFireLoads(citizens, fire, grid, getBuildingResidents);
-      // Each citizen: baseDemand * (1 + occupancy) = 0.3 * (1 + 0.5) = 0.45
-      expect(result.length).toBe(2);
-      expect(result[0]!.weight).toBeCloseTo(0.45);
-      expect(result[1]!.weight).toBeCloseTo(0.45);
+      const result = calculateFireLoads(buildCitizenLocationIndex(citizens), fire, grid, getBuildingResidents);
+      // 每位住戶 baseDemand * (1 + 擠迫) = 0.3 * (1 + 0.5) = 0.45，兩位合成一筆 0.9。
+      // 同一棟樓只出一筆是去重的重點 —— 下游對同一格只做加總，總量沒有變。
+      expect(result.length, '同一棟樓沒有合成一筆').toBe(1);
+      expect(result[0]!.weight).toBeCloseTo(0.9);
     });
 
     it('adds workplace fire demand weighted by zone type', () => {
@@ -108,7 +109,7 @@ describe('PoliceFireLoadCalculator', () => {
       const fire = { getCoverage: () => true };
       const grid = { getCell: () => ({ zoneType: ZoneType.INDUSTRIAL, buildingId: 0 }) };
 
-      const result = calculateFireLoads(citizens, fire, grid);
+      const result = calculateFireLoads(buildCitizenLocationIndex(citizens), fire, grid);
       // Industrial zone → 2.0 * 0.3 = 0.6
       expect(result.length).toBe(1);
       expect(result[0]!.weight).toBeCloseTo(0.6);
@@ -121,7 +122,7 @@ describe('PoliceFireLoadCalculator', () => {
       const fire = { getCoverage: () => false };
       const grid = { getCell: () => null };
 
-      const result = calculateFireLoads(citizens, fire, grid);
+      const result = calculateFireLoads(buildCitizenLocationIndex(citizens), fire, grid);
       expect(result).toEqual([]);
     });
   });

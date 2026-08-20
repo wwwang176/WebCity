@@ -23,6 +23,8 @@ import { computeCongestionFlow, computeCongestionFlowMonteCarlo, type Congestion
 import { PathCellCache } from '../traffic/PathCellCache';
 import { commuteSampleSize } from './CommuteSampling';
 import { happinessSliceCount, happinessSliceOf } from './HappinessSlicing';
+import { buildCitizenLocationIndex, type CitizenLocationIndex }
+  from '../citizen/CitizenLocationIndex';
 import { CongestionFlowSweep } from '../traffic/CongestionFlowSweep';
 import { getBuildingType } from '../building/types';
 import { avgEducationScore } from '../building/BuildingUpgrade';
@@ -477,6 +479,8 @@ export class SimulationLoop {
       }, capacity, this.state.ordinances.getCompulsorySchoolingStages());
       this.refreshHappinessContext();
       this.updateCitizenHealth();
+      // 三個服務共用同一份位置索引，各自再掃一遍市民名單的話就白做了。
+      this.refreshCitizenLocations();
       this.updateHospitalLoads();
       this.updateSchoolLoads();
       this.updatePoliceFireLoads();
@@ -997,47 +1001,81 @@ export class SimulationLoop {
     this.lastHappinessSlice = { slices, index: mySlice, updated };
   }
 
+  /**
+   * 「哪一棟樓住了幾個人、哪一棟樓有幾個人上班」。慢速槽 4 建一次，醫院、學校、
+   * 警消共用。
+   *
+   * 這三個服務算的是每一格的需求，而同一棟樓的住戶算出來完全一樣 —— 原本各自逐
+   * 市民掃一遍，每位付兩次 `parsePosKey`、兩次 `getCoverage`、一次 `getCell`。
+   * 12 萬人實測 `updatePoliceFireLoads` 102ms、`updateHospitalLoads` 33ms、
+   * `updateSchoolLoads` 21ms。
+   */
+  private citizenLocations: CitizenLocationIndex = buildCitizenLocationIndex([]);
+
+  private refreshCitizenLocations(): void {
+    this.citizenLocations = buildCitizenLocationIndex(this.state.citizens.getCitizens());
+  }
+
   private updateHospitalLoads(): void {
-    const coveredCitizens: Array<{ x: number; y: number; pollution: number }> = [];
-    for (const c of this.state.citizens.getCitizens()) {
-      if (!c.homeId) continue;
-      const pos = parsePosKey(c.homeId);
+    const coveredCitizens: Array<{ x: number; y: number; pollution: number; count: number }> = [];
+    for (const [home, count] of this.citizenLocations.homeCounts) {
+      const pos = parsePosKey(home);
       if (!pos || !this.state.health.getCoverage(pos.x, pos.y)) continue;
       const cell = this.state.grid.getCell(pos.x, pos.y);
-      coveredCitizens.push({ x: pos.x, y: pos.y, pollution: cell?.pollution ?? 0 });
+      coveredCitizens.push({ x: pos.x, y: pos.y, pollution: cell?.pollution ?? 0, count });
     }
     this.state.health.updateLoads(coveredCitizens);
   }
 
   private updateSchoolLoads(): void {
-    const enrolled: EnrolledCitizen[] = [];
-    const eligible: EnrolledCitizen[] = [];
+    // 先數成「哪一棟樓、哪一種學制、幾個人」。分隔用 `|` 不是逗號 —— 高架格子的
+    // 鍵是三段的（`27,55,1`），用逗號切會把它切錯。
+    const enrolledCounts = new Map<string, number>();
+    const eligibleCounts = new Map<string, number>();
     for (const c of this.state.citizens.getCitizens()) {
       if (!c.homeId || c.age < MIN_SCHOOL_AGE) continue;
-      const pos = parsePosKey(c.homeId);
-      if (!pos) continue;
       const rule = EDUCATION_PROGRESSION.find(r => c.education === r.requiredEducation);
       if (!rule) continue;
-      if (c.educationProgress > 0) {
-        enrolled.push({ x: pos.x, y: pos.y, schoolKey: rule.schoolKey });
-      } else {
-        // Eligible but not enrolled (waiting for capacity)
-        const schoolType = ({ elementary: 'elementary', highSchool: 'highschool', university: 'university' } as const)[rule.schoolKey];
-        if (this.state.education.getCoverage(pos.x, pos.y, schoolType)) {
-          eligible.push({ x: pos.x, y: pos.y, schoolKey: rule.schoolKey });
-        }
-      }
+      const key = `${c.homeId}|${rule.schoolKey}`;
+      const target = c.educationProgress > 0 ? enrolledCounts : eligibleCounts;
+      target.set(key, (target.get(key) ?? 0) + 1);
     }
+
+    const split = (key: string) => {
+      const at = key.lastIndexOf('|');
+      return {
+        pos: parsePosKey(key.slice(0, at)),
+        schoolKey: key.slice(at + 1) as EnrolledCitizen['schoolKey'],
+      };
+    };
+
+    const enrolled: EnrolledCitizen[] = [];
+    for (const [key, count] of enrolledCounts) {
+      const { pos, schoolKey } = split(key);
+      if (!pos) continue;
+      enrolled.push({ x: pos.x, y: pos.y, schoolKey, count });
+    }
+
+    const eligible: EnrolledCitizen[] = [];
+    for (const [key, count] of eligibleCounts) {
+      const { pos, schoolKey } = split(key);
+      if (!pos) continue;
+      // Eligible but not enrolled (waiting for capacity)
+      const schoolType = ({ elementary: 'elementary', highSchool: 'highschool', university: 'university' } as const)[schoolKey];
+      if (!this.state.education.getCoverage(pos.x, pos.y, schoolType)) continue;
+      eligible.push({ x: pos.x, y: pos.y, schoolKey, count });
+    }
+
     this.state.education.updateSchoolLoads(enrolled, eligible);
   }
 
   private updatePoliceFireLoads(): void {
-    const citizens = this.state.citizens.getCitizens();
     const grid = this.state.grid;
     const getResidents = (id: number) => getBuildingType(id)?.residents ?? 1;
+    const index = this.citizenLocations;
 
-    const policeDemands = calculatePoliceLoads(citizens, this.state.police, grid);
-    const fireDemands = calculateFireLoads(citizens, this.state.fire, grid, getResidents);
+    const policeDemands = calculatePoliceLoads(index, this.state.police, grid);
+    const fireDemands = calculateFireLoads(index, this.state.fire, grid, getResidents);
 
     this.state.police.updateStationLoads(policeDemands);
     this.state.fire.updateStationLoads(fireDemands);

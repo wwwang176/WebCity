@@ -7,6 +7,7 @@
  */
 
 import { EducationLevel } from '../citizen/types';
+import type { CitizenLocationIndex } from '../citizen/CitizenLocationIndex';
 import { ZoneType } from '../grid/types';
 import { parsePosKey } from '../grid/GridHelpers';
 
@@ -54,87 +55,77 @@ interface DemandEntry {
   weight: number;
 }
 
-interface CitizenLike {
-  homeId: string | null;
-  workplaceId: string | null;
-  education: EducationLevel;
-}
-
 // ── Public API ──
 
 /**
- * Calculate police demand weights for each citizen location within coverage.
- * Residential demand weighted by education, workplace demand weighted by zone type.
+ * 每一格的警力需求權重。住宅看學歷，工作地看分區。
+ *
+ * 吃的是**位置索引**不是市民名單:同一棟樓的住戶算出來的座標與覆蓋完全一樣，
+ * 逐市民做的話 12 萬人要付 24 萬次 `parsePosKey` + `getCoverage`，而不重複的位置
+ * 只有幾千個。下游 `distributeLoadToNearest` 對同一格只做加總，先加起來再送進去
+ * 結果一樣 —— 這是去重，不是近似。
  */
 export function calculatePoliceLoads(
-  citizens: readonly CitizenLike[],
+  index: CitizenLocationIndex,
   police: CoverageQuery,
   grid: GridCellQuery,
 ): DemandEntry[] {
   const demands: DemandEntry[] = [];
 
-  for (const c of citizens) {
-    if (c.homeId) {
-      const pos = parsePosKey(c.homeId);
-      if (pos && police.getCoverage(pos.x, pos.y)) {
-        const eMult = POLICE_EDUCATION_MULT[c.education] ?? 1.0;
-        demands.push({ x: pos.x, y: pos.y, weight: BASE_DEMAND * eMult });
-      }
+  for (const [home, byEducation] of index.homeEducation) {
+    const pos = parsePosKey(home);
+    if (!pos || !police.getCoverage(pos.x, pos.y)) continue;
+    let mult = 0;
+    for (const [education, count] of byEducation) {
+      mult += (POLICE_EDUCATION_MULT[education] ?? 1.0) * count;
     }
+    demands.push({ x: pos.x, y: pos.y, weight: BASE_DEMAND * mult });
+  }
 
-    if (c.workplaceId) {
-      const wpos = parsePosKey(c.workplaceId);
-      if (wpos && police.getCoverage(wpos.x, wpos.y)) {
-        const wcell = grid.getCell(wpos.x, wpos.y);
-        const zt = (wcell?.zoneType ?? ZoneType.NONE) as ZoneType;
-        const zMult = POLICE_ZONE_MULT[zt] ?? 1.0;
-        demands.push({ x: wpos.x, y: wpos.y, weight: BASE_DEMAND * zMult });
-      }
-    }
+  for (const [workplace, count] of index.workCounts) {
+    const wpos = parsePosKey(workplace);
+    if (!wpos || !police.getCoverage(wpos.x, wpos.y)) continue;
+    const wcell = grid.getCell(wpos.x, wpos.y);
+    const zt = (wcell?.zoneType ?? ZoneType.NONE) as ZoneType;
+    const zMult = POLICE_ZONE_MULT[zt] ?? 1.0;
+    demands.push({ x: wpos.x, y: wpos.y, weight: BASE_DEMAND * zMult * count });
   }
 
   return demands;
 }
 
 /**
- * Calculate fire demand weights for each citizen location within coverage.
- * Residential demand weighted by building occupancy, workplace demand weighted by zone type.
+ * 每一格的消防需求權重。住宅看擠迫程度，工作地看分區。
+ *
+ * 與警力同一個道理:吃位置索引。住宅那一項的權重原本是逐住戶 `BASE * (1 + 擠迫)`，
+ * 同一棟樓每個人都一樣 —— 乘上人數即可，逐位元等價。
+ *
  * @param getBuildingResidents Optional lookup for building capacity (default: 1).
  */
 export function calculateFireLoads(
-  citizens: readonly CitizenLike[],
+  index: CitizenLocationIndex,
   fire: CoverageQuery,
   grid: GridCellQuery,
   getBuildingResidents?: (buildingId: number) => number,
 ): DemandEntry[] {
   const demands: DemandEntry[] = [];
 
-  // Pre-compute occupancy count per home for fire demand
-  const homePop = new Map<string, number>();
-  for (const c of citizens) {
-    if (c.homeId) homePop.set(c.homeId, (homePop.get(c.homeId) ?? 0) + 1);
+  for (const [home, count] of index.homeCounts) {
+    const pos = parsePosKey(home);
+    if (!pos || !fire.getCoverage(pos.x, pos.y)) continue;
+    const cell = grid.getCell(pos.x, pos.y);
+    const cap = Math.max(1, getBuildingResidents?.(cell?.buildingId ?? 0) ?? 1);
+    const occ = count / cap;
+    demands.push({ x: pos.x, y: pos.y, weight: BASE_DEMAND * (1 + occ) * count });
   }
 
-  for (const c of citizens) {
-    if (c.homeId) {
-      const pos = parsePosKey(c.homeId);
-      if (pos && fire.getCoverage(pos.x, pos.y)) {
-        const cell = grid.getCell(pos.x, pos.y);
-        const cap = Math.max(1, getBuildingResidents?.(cell?.buildingId ?? 0) ?? 1);
-        const occ = (homePop.get(c.homeId) ?? 0) / cap;
-        demands.push({ x: pos.x, y: pos.y, weight: BASE_DEMAND * (1 + occ) });
-      }
-    }
-
-    if (c.workplaceId) {
-      const wpos = parsePosKey(c.workplaceId);
-      if (wpos && fire.getCoverage(wpos.x, wpos.y)) {
-        const wcell = grid.getCell(wpos.x, wpos.y);
-        const zt = (wcell?.zoneType ?? ZoneType.NONE) as ZoneType;
-        const zMult = FIRE_ZONE_MULT[zt] ?? 1.0;
-        demands.push({ x: wpos.x, y: wpos.y, weight: BASE_DEMAND * zMult });
-      }
-    }
+  for (const [workplace, count] of index.workCounts) {
+    const wpos = parsePosKey(workplace);
+    if (!wpos || !fire.getCoverage(wpos.x, wpos.y)) continue;
+    const wcell = grid.getCell(wpos.x, wpos.y);
+    const zt = (wcell?.zoneType ?? ZoneType.NONE) as ZoneType;
+    const zMult = FIRE_ZONE_MULT[zt] ?? 1.0;
+    demands.push({ x: wpos.x, y: wpos.y, weight: BASE_DEMAND * zMult * count });
   }
 
   return demands;

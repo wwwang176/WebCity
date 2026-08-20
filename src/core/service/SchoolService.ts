@@ -106,10 +106,15 @@ export class SchoolService extends RoadCoverageService<SchoolFacility> {
     return this.getActiveFacilities().reduce((sum, s) => sum + s.capacity, 0);
   }
 
-  /** Assign enrollment and demand counts to nearest school (Euclidean). */
+  /**
+   * Assign enrollment and demand counts to nearest school (Euclidean).
+   *
+   * `count` 是這一格代表幾個學生（預設 1）。同一棟樓、同一種學制的學生算出來的
+   * 座標與最近的學校完全一樣，呼叫端先數起來再送進來。
+   */
   updateLoads(
-    enrolled: ReadonlyArray<{ x: number; y: number }>,
-    eligible: ReadonlyArray<{ x: number; y: number }>,
+    enrolled: ReadonlyArray<{ x: number; y: number; count?: number }>,
+    eligible: ReadonlyArray<{ x: number; y: number; count?: number }>,
   ): void {
     this.enrollment.clear();
     this.demand.clear();
@@ -120,12 +125,12 @@ export class SchoolService extends RoadCoverageService<SchoolFacility> {
 
     for (const c of enrolled) {
       const id = this.findNearest(c.x, c.y);
-      if (id) this.enrollment.set(id, (this.enrollment.get(id) ?? 0) + 1);
+      if (id) this.enrollment.set(id, (this.enrollment.get(id) ?? 0) + (c.count ?? 1));
     }
 
     for (const c of [...enrolled, ...eligible]) {
       const id = this.findNearest(c.x, c.y);
-      if (id) this.demand.set(id, (this.demand.get(id) ?? 0) + 1);
+      if (id) this.demand.set(id, (this.demand.get(id) ?? 0) + (c.count ?? 1));
     }
   }
 

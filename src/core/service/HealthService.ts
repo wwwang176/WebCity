@@ -72,16 +72,22 @@ export class HealthService extends RoadCoverageService<Hospital> {
   private loadRatio = 0;
   private readonly hospitalDemand = new Map<string, number>();
 
-  /** Update city-wide and per-hospital load from covered citizen positions.
-   *  Each citizen is assigned to the nearest hospital (Euclidean). */
-  updateLoads(coveredCitizens: ReadonlyArray<{ x: number; y: number; pollution: number }>): void {
+  /**
+   * Update city-wide and per-hospital load from covered citizen positions.
+   * Each citizen is assigned to the nearest hospital (Euclidean).
+   *
+   * `count` 是這一格代表幾個人（預設 1）。呼叫端把同一棟樓的住戶先數起來再送進來 ——
+   * 座標與污染只跟樓有關，逐市民送的話 12 萬人要配置 12 萬個小物件，而不重複的
+   * 位置只有幾千個。這裡對同一格本來就只做加總，先加起來結果一樣。
+   */
+  updateLoads(coveredCitizens: ReadonlyArray<{ x: number; y: number; pollution: number; count?: number }>): void {
     this.hospitalDemand.clear();
     for (const h of this.facilities) this.hospitalDemand.set(h.id, 0);
 
     const operational = this.getOperationalFacilities();
     let totalDemand = 0;
     for (const c of coveredCitizens) {
-      const demand = citizenHospitalDemand(c.pollution);
+      const demand = citizenHospitalDemand(c.pollution) * (c.count ?? 1);
       totalDemand += demand;
 
       // Assign to nearest OPERATIONAL hospital. An unpowered one could be the

@@ -30,6 +30,8 @@ export interface EnrolledCitizen {
   x: number;
   y: number;
   schoolKey: 'elementary' | 'highSchool' | 'university';
+  /** 這一格代表幾個學生。省略等於 1。 */
+  count?: number;
 }
 
 /** Map schoolKey → SchoolType for lookups. */
@@ -172,7 +174,7 @@ export class EducationService {
     eligible: ReadonlyArray<EnrolledCitizen>,
   ): void {
     // Partition by type
-    const byType: Record<SchoolType, { enrolled: { x: number; y: number }[]; eligible: { x: number; y: number }[] }> = {
+    const byType: Record<SchoolType, { enrolled: { x: number; y: number; count?: number }[]; eligible: { x: number; y: number; count?: number }[] }> = {
       elementary: { enrolled: [], eligible: [] },
       highschool: { enrolled: [], eligible: [] },
       university: { enrolled: [], eligible: [] },
