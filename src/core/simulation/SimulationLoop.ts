@@ -184,6 +184,14 @@ export class SimulationLoop {
   // Walking trip pool: rebuilt each rush period from commute mode distribution
   private walkingTripPool: WalkingTripPool = { trips: [], totalWeight: 0, prefixSums: [] };
   private tripPoolDirty = true;
+  /**
+   * 這一輪重建問過幾位市民的通勤方式。
+   *
+   * 「收集到零條步行路線」跟「還沒收集」是兩件事，而 `pendingTrips.length` 分不出來。
+   * 全城的大眾運輸都被拆光時正確答案就是零條 —— 拿長度當條件的話，池子會永遠停在
+   * 拆除前的那一份，行人繼續從已經不存在的車站走出來。
+   */
+  private tripSamplesTaken = 0;
   private tripAggMap = new Map<string, AggregatedTrip>();
   private pendingTrips: AggregatedTrip[] = [];
 
@@ -2389,6 +2397,12 @@ export class SimulationLoop {
     if (topology !== this.lastTransitTopologyVersion) {
       this.lastTransitTopologyVersion = topology;
       this.transferTracker.clearBuildings();
+      // 行人是照「走去哪一站」的路線池生出來的，池子存的是座標。站牌拆掉之後那些
+      // 座標還在池子裡 —— 玩家 12 500 人的存檔實測，把捷運全部拆掉再跑 12 秒，
+      // 40 條路線一條沒少，328 位行人繼續走向已經不存在的三個車站。
+      //
+      // 只掛在**拓樸**版本上:班次加減不會動到走去哪一站，而重建要重問一輪市民。
+      this.tripPoolDirty = true;
     }
   }
 
@@ -2756,7 +2770,11 @@ export class SimulationLoop {
     // Exclude service vehicles from the cap (they are cosmetic and should not block commute traffic)
     const vehicleCap = Math.min(SIMULATION.VEHICLE_CAP_MAX, SIMULATION.VEHICLE_CAP_BASE + Math.floor(pop * SIMULATION.VEHICLE_CAP_POP_RATIO));
     const commuteVehicles = this.state.traffic.getVehicleCount() - this.state.traffic.getServiceVehicleCount();
-    if (commuteVehicles >= vehicleCap) return;
+    // 車位滿了就不再生車 —— 但**行人的路線池還是要維護**。它是搭著底下那個取樣
+    // 迴圈收集的，而大城市會永遠停在上限，於是路線池永遠不再更新:玩家拆掉的車站
+    // 會一直有行人走過去。換乘圖以前也是掛在這條路徑上，已經搬出去了。
+    const atCap = commuteVehicles >= vehicleCap;
+    if (atCap && !this.tripPoolDirty) return;
 
     this.rebuildBuildingIndex();
 
@@ -2766,11 +2784,21 @@ export class SimulationLoop {
     // Random citizen sampling ensures route distribution matches real commute patterns.
     this.spawnCommuteVehicles(grid, vehicleCap);
 
-    // Spawn external highway traffic
-    this.spawnExternalHighwayTraffic(grid, vehicleCap);
+    // 滿載時只走上面那一段 —— 這一輪是為了重建路線池才跑的，不能順手變成一道
+    // 繞過車輛上限的側門。高速公路車流自己會擋（它比對的是總量的九成，滿載時
+    // 早就超過了），貨運**不會**:貨運車有自己的一份配額，總量滿載時那份配額還
+    // 可能沒填滿。
+    //
+    // 沒有測試守得住這一段。要照出來得有一座「同時滿載、而且真的在出貨」的城市 ——
+    // 小 fixture 裡的工廠撐不到出貨就先被廢棄（汙染、沒有服務涵蓋）。
+    // 通勤車那一側守得住，見 spawnCommuteVehicles 裡的 `if (atCap) continue`。
+    if (!atCap) {
+      // Spawn external highway traffic
+      this.spawnExternalHighwayTraffic(grid, vehicleCap);
 
-    // Spawn freight trucks (industrial↔commercial, factory↔trade, trade↔commercial)
-    this.spawnFreightTraffic(grid, vehicleCap);
+      // Spawn freight trucks (industrial↔commercial, factory↔trade, trade↔commercial)
+      this.spawnFreightTraffic(grid, vehicleCap);
+    }
 
     // Pedestrians: uniform density, trip pool rebuilt on demand
     this.spawnPedestriansFromPool(pop);
@@ -2824,7 +2852,9 @@ export class SimulationLoop {
     let spawned = 0;
 
     for (let i = 0; i < samples; i++) {
-      if (this.state.traffic.getVehicleCount() >= vehicleCap) break;
+      // 沒車位的時候還繼續問，是為了重建行人的路線池。不用重建就直接收工。
+      const atCap = this.state.traffic.getVehicleCount() >= vehicleCap;
+      if (atCap && !this.tripPoolDirty) break;
 
       // Random citizen sampling — route distribution matches real commute patterns
       const citizen = eligible[randomInt(eligible.length)]!;
@@ -2853,6 +2883,10 @@ export class SimulationLoop {
           this.congestionFor(fromPos, toPos),
         ),
       );
+
+      // 問過的人數才是「這一輪重建跑過了」的證據。開車的也算 —— 全城都開車時
+      // 收集到的步行路線就是零條，那是答案，不是「沒跑到」。
+      if (this.tripPoolDirty) this.tripSamplesTaken++;
 
       if (mode !== TransportMode.DRIVE) {
         // Collect walking trips for pedestrian spawning (trip pool)
@@ -2925,6 +2959,10 @@ export class SimulationLoop {
         }
         continue;
       }
+
+      // 這一輪是為了路線池才問的，沒有車位可以放車。開車的人到這裡就結束 ——
+      // 底下整段是找路與寫入通勤快取，那是生車的準備工作。
+      if (atCap) continue;
 
       // --- Check commute cache first ---
       const cached = this.commuteCache.get(citizen.id);
@@ -3299,7 +3337,7 @@ export class SimulationLoop {
    */
   private spawnPedestriansFromPool(population: number): void {
     // Finalize trip pool if it was being rebuilt this rush period
-    if (this.tripPoolDirty && this.pendingTrips.length > 0) {
+    if (this.tripPoolDirty && this.tripSamplesTaken > 0) {
       // Aggregate identical routes using a reusable map
       this.tripAggMap.clear();
       for (const t of this.pendingTrips) {
@@ -3317,6 +3355,7 @@ export class SimulationLoop {
       for (const v of this.tripAggMap.values()) trips.push(v);
       this.walkingTripPool = buildTripPool(trips);
       this.pendingTrips.length = 0;
+      this.tripSamplesTaken = 0;
       this.tripPoolDirty = false;
     }
 
