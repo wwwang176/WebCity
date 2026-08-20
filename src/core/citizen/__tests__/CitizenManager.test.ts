@@ -877,9 +877,17 @@ describe('墓碑不是持久狀態', () => {
     expect(mgr.getPopulation()).toBe(1);
   });
 
-  it('should leave a normally restored citizen without the field', () => {
+  it('should leave a normally restored citizen without the field at all', () => {
+    // 「欄位不存在」與「欄位是 false」不一樣:後者會被序列化寫回存檔，那就成了
+    // 持久狀態。斷言 falsy 的話兩種都會過。
     const mgr = new CitizenManager();
     const c = mgr.restoreCitizen({ homeId: '1,1' });
-    expect('removed' in c && c.removed).toBeFalsy();
+    expect('removed' in c, 'removed 欄位不該存在').toBe(false);
+  });
+
+  it('should drop a false tombstone too', () => {
+    const mgr = new CitizenManager();
+    const c = mgr.restoreCitizen({ homeId: '1,1', removed: false });
+    expect('removed' in c, 'removed:false 被留下來了，會被寫回存檔').toBe(false);
   });
 });

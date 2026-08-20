@@ -44,7 +44,7 @@ import { computeCommuteStats, type CommuteStats } from '../citizen/CommuteStats'
 import { calculateCityHappinessContext } from '../citizen/CityHappinessContext';
 import { computeOccupancyRatios } from '../citizen/OccupancyRatio';
 import type { WorkplaceCandidate } from '../citizen/WorkplaceScore';
-import { relocationTick } from '../citizen/Relocation';
+import { relocationTick, DEFAULT_RELOCATION_CONFIG } from '../citizen/Relocation';
 import { beginJobRelocation, jobRelocationTick, DEFAULT_JOB_RELOCATION_CONFIG,
   type JobRelocationSlicer } from '../citizen/JobRelocation';
 import { roadDistanceToTargets } from '../service/RoadCoverageFlood';
@@ -1693,8 +1693,14 @@ export class SimulationLoop {
     }
   }
 
-  /** 上一次跑的是第幾批、評估了幾位、搬了幾位。測試與量測靠它。 */
-  lastHousingRelocation = { slice: -1, considered: 0, relocated: 0 };
+  /**
+   * 上一次跑的是哪一個 tick、第幾批、配額多少、評估了幾位、搬了幾位。
+   *
+   * `tick` 讓讀的人分得出「這是這個 tick 剛跑的」還是「上一次留下來的」—— 它每
+   * 6 個 tick 才跑一次，不看 tick 的話會把同一次結果數六遍。
+   */
+  lastHousingRelocation =
+    { tick: -1, slice: -1, quota: 0, considered: 0, relocated: 0, cityUnhappy: 0 };
 
   /**
    * Run relocation tick: unhappy citizens may move to better housing.
@@ -1713,7 +1719,10 @@ export class SimulationLoop {
       this.buildingPositions, this.state.grid, this.state.pollution, this.state.parks,
     );
     if (housingCandidates.length === 0) {
-      this.lastHousingRelocation = { slice: -1, considered: 0, relocated: 0 };
+      this.lastHousingRelocation = {
+        tick: this.state.clock.tick, slice: -1, quota: 0,
+        considered: 0, relocated: 0, cityUnhappy: 0,
+      };
       return;
     }
 
@@ -1724,17 +1733,31 @@ export class SimulationLoop {
     // 每一批是一個街區，出事時反應會一區一區掃過去（同 CitizenSlicing）。
     const inSlice = (c: Citizen) => citizenSliceOf(c.id, slices) === mySlice;
 
+    // 一趟掃完:這一批有幾位、以及**全城**有幾位不開心。
+    const cfg = DEFAULT_RELOCATION_CONFIG;
+    let considered = 0;
+    let cityUnhappy = 0;
+    for (const c of citizens) {
+      if (inSlice(c)) considered++;
+      if (c.homeId !== null && c.happiness < cfg.happinessThreshold) cityUnhappy++;
+    }
+
+    // 配額照**全城**算，再用階梯法分給十批 —— 加起來剛好等於一次跑完的 5%。
+    // 讓每批各自取 5% 的話，`Math.max(1, Math.floor(...))` 會讓小批全部進位到 1，
+    // 一圈可以搬掉好幾倍的人。
+    const cycleQuota = Math.max(1, Math.floor(cityUnhappy * cfg.maxRelocateRatio));
+    const quota = Math.floor((mySlice + 1) * cycleQuota / slices)
+      - Math.floor(mySlice * cycleQuota / slices);
+
     // 入住數要數**全部人**，不是這一批 —— 房子有沒有空位跟誰輪到無關。
     const homeOccupancy = countOccupancy(citizens, (c) => c.homeId);
-    let considered = 0;
-    for (const c of citizens) if (inSlice(c)) considered++;
-
     const { relocatedIds } = relocationTick(
-      citizens, housingCandidates, homeOccupancy, undefined, inSlice);
+      citizens, housingCandidates, homeOccupancy, undefined, inSlice, quota);
     // 搬家的市民要清掉通勤快取，路線才會重算。
     for (const id of relocatedIds) this.commuteCache.remove(id);
     this.lastHousingRelocation = {
-      slice: mySlice, considered, relocated: relocatedIds.length,
+      tick: this.state.clock.tick, slice: mySlice, quota,
+      considered, relocated: relocatedIds.length, cityUnhappy,
     };
   }
 

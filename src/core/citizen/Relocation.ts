@@ -37,8 +37,16 @@ export const DEFAULT_RELOCATION_CONFIG: RelocationConfig = {
  * 現在每次呼叫都是**獨立的一場會**:當場拍快照、當場用完、當場丟掉，壽命一個 tick
  * —— 與最初的寫法完全相同，那一整類問題不存在。
  *
- * 上限是「**這一批**不開心的人的 5%」。批數 × 呼叫頻率設成與原本的節奏相同時，
- * 每個遊戲日搬走的人數也就與原本相同。
+ * ### 配額
+ *
+ * 沒有 `quota` 時，上限是「這一次看到的不開心的人的 5%」——與分批之前完全相同。
+ *
+ * 分批的呼叫端**必須自己算 `quota`**。讓每一批各自取 5%，加起來不等於全城的 5%:
+ * `Math.max(1, Math.floor(n × 0.05))` 每批各自取整，100 位不開心的人分十批（每批
+ * 10 位）會變成每批 `max(1, floor(0.5)) = 1`、一圈搬 10 位，而一次跑完只搬
+ * `floor(100 × 0.05) = 5` 位 —— **超搬一倍**。小城市更誇張。
+ *
+ * 給了 `quota` 就不再自己數，`inSlice` 因此每位市民只會被問一次（它不必是純函式）。
  */
 export function relocationTick(
   // Read-only: the pass rewrites `homeId` on the citizens, never the array.
@@ -48,6 +56,8 @@ export function relocationTick(
   config?: Partial<RelocationConfig>,
   /** 這一位屬於這一批嗎。省略等於「全部人都算」。 */
   inSlice: (citizen: Citizen) => boolean = () => true,
+  /** 這一次最多搬幾位。省略時自己數（見上面的「配額」）。 */
+  quota?: number,
 ): { count: number; relocatedIds: number[] } {
   const cfg: RelocationConfig = config
     ? { ...DEFAULT_RELOCATION_CONFIG, ...config }
@@ -55,18 +65,24 @@ export function relocationTick(
 
   if (candidates.length === 0) return { count: 0, relocatedIds: [] };
 
-  // Count unhappy citizens inline (avoid .filter() array allocation)
-  let unhappyCount = 0;
-  for (const c of citizens) {
-    if (c.homeId !== null && c.happiness < cfg.happinessThreshold && inSlice(c)) unhappyCount++;
+  let maxRelocations: number;
+  if (quota === undefined) {
+    // Count unhappy citizens inline (avoid .filter() array allocation)
+    let unhappyCount = 0;
+    for (const c of citizens) {
+      if (c.homeId !== null && c.happiness < cfg.happinessThreshold && inSlice(c)) unhappyCount++;
+    }
+    if (unhappyCount === 0) return { count: 0, relocatedIds: [] };
+    maxRelocations = Math.max(1, Math.floor(unhappyCount * cfg.maxRelocateRatio));
+  } else {
+    maxRelocations = quota;
   }
-  if (unhappyCount === 0) return { count: 0, relocatedIds: [] };
-
-  // Cap the number of relocations per call
-  const maxRelocations = Math.max(1, Math.floor(unhappyCount * cfg.maxRelocateRatio));
+  if (maxRelocations <= 0) return { count: 0, relocatedIds: [] };
   const relocatedIds: number[] = [];
 
   // 現居住宅原本是每位市民 `candidates.find` 線性找一次。
+  // 候選的 `pos` 必須唯一（`buildHousingCandidates` 一格一筆，天然唯一）。重複時
+  // `find` 取第一筆而 Map 留最後一筆 —— 現居住宅的分數會不一樣。
   const byPos = new Map<string, HousingCandidate>();
   for (const c of candidates) byPos.set(c.pos, c);
 

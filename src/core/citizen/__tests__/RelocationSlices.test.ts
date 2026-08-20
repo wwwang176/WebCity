@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { relocationTick, DEFAULT_RELOCATION_CONFIG } from '../Relocation';
+import { citizenSliceOf } from '../../simulation/CitizenSlicing';
 import type { HousingCandidate } from '../HousingScore';
 import { EducationLevel, type Citizen } from '../types';
 
@@ -56,45 +57,58 @@ describe('分批評估', () => {
     }
   });
 
-  it('should cover everyone across a full round of slices', () => {
-    // 有人永遠輪不到的話，他會一直住在爛房子裡。
-    const N = 4;
+  it('should cover everyone across a full round of the production hash', () => {
+    // 用**實際的**分批規則跑完一圈，逐一認人。自己在測試裡寫一份 `id % N` 再遍歷
+    // 全部 N，那是恆真的 —— 實作換了也不會紅。
+    const N = 10;
     const { citizens, candidates, occupancy } = scenario(400);
-    const pick = sliceOf(N);
     const seen = new Set<number>();
     for (let s = 0; s < N; s++) {
-      for (const c of citizens) if (pick(c) === s) seen.add(c.id);
+      for (const c of citizens) if (citizenSliceOf(c.id, N) === s) seen.add(c.id);
     }
-    expect(seen.size, '一輪沒有蓋到全部人').toBe(citizens.length);
+    expect(seen.size, '一圈沒有蓋到全部人').toBe(citizens.length);
   });
 
-  it('should keep the relocation rate the same as one big pass', () => {
-    // 上限是「這一批不開心的人的 5%」。批數 × 頻率與原本相同時，每個遊戲日搬走的
-    // 人數也要相同 —— 上限改成算全城的話，一輪會搬掉 N 倍的人。
-    const N = 4;
-    const oneGo = scenario(400);
-    const all = relocationTick(oneGo.citizens, oneGo.candidates, oneGo.occupancy);
+  it('should keep a whole round within the city-wide 5% cap', () => {
+    // **這是分批最容易搞砸的地方。** 讓每批各自取 5%，加起來不等於全城的 5%:
+    // `Math.max(1, Math.floor(n × 0.05))` 每批各自取整，小批全部進位到 1。
+    // 400 人分 4 批剛好整除，看不出問題 —— 這裡刻意用會產生餘數的數字。
+    for (const [pop, N] of [[100, 10], [390, 10], [37, 10], [1000, 10]] as const) {
+      const oneGo = scenario(pop);
+      const all = relocationTick(oneGo.citizens, oneGo.candidates, oneGo.occupancy);
 
-    const sliced = scenario(400);
-    const pick = sliceOf(N);
-    let total = 0;
-    for (let s = 0; s < N; s++) {
-      total += relocationTick(sliced.citizens, sliced.candidates, sliced.occupancy,
-        undefined, (c) => pick(c) === s).count;
+      const sliced = scenario(pop);
+      const cycleQuota = Math.max(1,
+        Math.floor(pop * DEFAULT_RELOCATION_CONFIG.maxRelocateRatio));
+      let total = 0;
+      for (let s = 0; s < N; s++) {
+        // 呼叫端算配額:階梯法，十批加起來剛好等於 cycleQuota。
+        const quota = Math.floor((s + 1) * cycleQuota / N) - Math.floor(s * cycleQuota / N);
+        total += relocationTick(sliced.citizens, sliced.candidates, sliced.occupancy,
+          undefined, (c) => citizenSliceOf(c.id, N) === s, quota).count;
+      }
+      expect(total, `${pop} 人:一次跑 ${all.count} 位，分 ${N} 批共 ${total} 位`)
+        .toBe(all.count);
     }
-    // 每批各取自己的 5%，加起來就是全城的 5%。整除誤差容忍幾位。
-    expect(Math.abs(total - all.count), `一次跑 ${all.count} 位，分 ${N} 批共 ${total} 位`)
-      .toBeLessThanOrEqual(N);
   });
 
-  it('should cap each call at 5% of that slice', () => {
-    const N = 4;
+  it('should honour an explicit quota exactly', () => {
     const { citizens, candidates, occupancy } = scenario(400);
-    const pick = sliceOf(N);
     const { count } = relocationTick(citizens, candidates, occupancy,
-      undefined, (c) => pick(c) === 0);
-    const inSlice = citizens.filter(c => pick(c) === 0).length;
-    expect(count).toBe(Math.floor(inSlice * DEFAULT_RELOCATION_CONFIG.maxRelocateRatio));
+      undefined, () => true, 7);
+    expect(count, '配額沒有被遵守').toBe(7);
+  });
+
+  it('should ask inSlice once per citizen when a quota is given', () => {
+    // 沒有 quota 時要先數一遍不開心的人，`inSlice` 會被問兩次。給了 quota 就不必數
+    // —— 呼叫端因此不必保證 `inSlice` 是純函式。
+    const { citizens, candidates, occupancy } = scenario(200);
+    const asked = new Map<number, number>();
+    relocationTick(citizens, candidates, occupancy, undefined,
+      (c) => { asked.set(c.id, (asked.get(c.id) ?? 0) + 1); return true; }, 3);
+    for (const [id, n] of asked) {
+      expect(n, `市民 ${id} 被問了 ${n} 次`).toBe(1);
+    }
   });
 
   it('should behave exactly as before when no slice is given', () => {
