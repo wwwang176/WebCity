@@ -5,6 +5,7 @@ import { EducationLevel } from '../../citizen/types';
 import { ZoneType } from '../../grid/types';
 import { HealthService } from '../HealthService';
 import { SchoolService } from '../SchoolService';
+import { EducationService } from '../EducationService';
 
 /**
  * 服務負載改成「先數成每一格幾個人，再去查」。要釘的是**這不是近似**:
@@ -104,6 +105,9 @@ describe('去重之後每一格的總量沒有變', () => {
     const demands = calculatePoliceLoads(
       buildCitizenLocationIndex(people), coverAll, zonedGrid);
     const cells = new Set(demands.map(d => `${d.x},${d.y}`));
+    // `cells` 是從輸出本身建的，所以「筆數 === 格數」在輸出是空陣列時也成立。
+    // 先釘住輸出真的涵蓋了該有的格子，這條才不是恆真的。
+    expect(cells.size, '一筆條目都沒有 —— 底下兩條會恆真').toBe(9 + 4);
     expect(demands.length, `${people.length} 人生出 ${demands.length} 筆條目`)
       .toBe(cells.size);
     expect(demands.length).toBeLessThan(people.length / 20);
@@ -167,6 +171,19 @@ describe('人數有真的傳到服務裡', () => {
     s.updateLoads([{ x: 2, y: 2, count: 37 }], []);
     expect(s.getEnrollment(id), '入學人數沒有乘上 count').toBe(37);
     expect(s.getDemand(id)).toBe(37);
+  });
+
+  it('should carry the count through EducationService to the right school type', () => {
+    // 端到端:SimulationLoop 送的是 EnrolledCitizen（帶 schoolKey），而 EducationService
+    // 只是按學制轉送。轉送時把 count 丟掉的話，只測 SchoolService 的那條看不出來。
+    const edu = new EducationService();
+    const elementaryId = edu.addSchool(0, 0, 'elementary');
+    edu.updateSchoolLoads(
+      [{ x: 2, y: 2, schoolKey: 'elementary', count: 41 }],
+      [{ x: 3, y: 3, schoolKey: 'elementary', count: 9 }],
+    );
+    expect(edu.getSchoolEnrollment(elementaryId), '在學人數沒有一路傳到學校').toBe(41);
+    expect(edu.getSchoolDemand(elementaryId), '候補人數沒有一路傳到學校').toBe(50);
   });
 
   it('should treat a missing count as one', () => {

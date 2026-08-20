@@ -834,3 +834,35 @@ describe('educateTick enrollment & capacity', () => {
     vi.restoreAllMocks();
   });
 });
+
+describe('移除時的墓碑', () => {
+  it('should mark a removed citizen so stale references can tell', () => {
+    // 移除只是把物件從陣列裡拿掉。拿著物件參照的人（換房子與換工作的切片器，
+    // 名單一拍就是幾十個 tick）看不出差別，會繼續拿死人來搬家、吃掉搬遷配額。
+    const mgr = new CitizenManager();
+    const a = mgr.restoreCitizen({ homeId: '1,1' });
+    const b = mgr.restoreCitizen({ homeId: '2,2' });
+
+    mgr.removeCitizen(a.id);
+    expect(a.removed, '單筆移除沒有立墓碑').toBe(true);
+    expect(b.removed, '還在城裡的人被立了墓碑').toBeFalsy();
+
+    mgr.removeCitizens(new Set([b.id]));
+    expect(b.removed, '批次移除沒有立墓碑').toBe(true);
+  });
+
+  it('should leave the survivors untouched on a batch remove', () => {
+    const mgr = new CitizenManager();
+    const kept = [];
+    const dropped = new Set<number>();
+    for (let i = 0; i < 20; i++) {
+      const c = mgr.restoreCitizen({ homeId: `${i},0` });
+      if (i % 3 === 0) dropped.add(c.id); else kept.push(c);
+    }
+    mgr.removeCitizens(dropped);
+    for (const c of kept) {
+      expect(c.removed, `市民 ${c.id} 沒被移除卻被立了墓碑`).toBeFalsy();
+    }
+    expect(mgr.getPopulation()).toBe(kept.length);
+  });
+});

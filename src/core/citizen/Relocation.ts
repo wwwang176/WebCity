@@ -29,6 +29,14 @@ export interface HousingRelocationSlicer {
   /** 還沒評估的市民數。0 表示這一輪跑完了。 */
   readonly pending: number;
   /**
+   * 換上一份新的入住數。
+   *
+   * 開輪時拍的那一份會過期 —— 這一輪橫跨幾十個 tick，中間移民與配房都在填房子。
+   * 不換的話會把人搬進其實已經住滿的樓。傳進來的計數要包含切片器自己已經做過的
+   * 搬遷（從市民的 `homeId` 數出來的就會）。
+   */
+  refreshOccupancy(counts: ReadonlyMap<string, number>): void;
+  /**
    * 評估下一片，最多做 `budget` 次評分。回傳這一片搬遷的市民 id。
    *
    * 被跳過的市民（已經不在城裡、房子被拆了、這時候已經不再不開心）**不消耗預算**
@@ -49,6 +57,16 @@ export function beginHousingRelocation(
   candidates: readonly HousingCandidate[],
   occupancy: Map<string, number>,
   config?: Partial<RelocationConfig>,
+  /**
+   * 這個座標現在還是一棟能住人的樓嗎。
+   *
+   * 候選名單是開輪時拍的，而這一輪橫跨幾十個 tick —— 中間玩家可能拆掉它、火災
+   * 可能燒掉它。搬進去的人不會被那次拆除的驅離掃到（那時他還沒搬），而
+   * `assignCitizenHousing` 看到非 null 的 homeId 也不會救他。
+   *
+   * 省略等於「全部都還在」，給不需要這層檢查的呼叫端（測試、一次跑完）用。
+   */
+  isHousingValid: (pos: string) => boolean = () => true,
 ): HousingRelocationSlicer {
   const cfg: RelocationConfig = config
     ? { ...DEFAULT_RELOCATION_CONFIG, ...config }
@@ -72,12 +90,21 @@ export function beginHousingRelocation(
 
   return {
     get pending(): number { return relocated >= maxRelocations ? 0 : unhappy.length - cursor; },
+    refreshOccupancy(counts: ReadonlyMap<string, number>): void {
+      occupancy.clear();
+      for (const [pos, n] of counts) occupancy.set(pos, n);
+    },
     runSlice(budget: number): number[] {
       const relocatedIds: number[] = [];
       let spent = 0;
       while (cursor < unhappy.length && spent < budget && relocated < maxRelocations) {
         const citizen = unhappy[cursor++]!;
         // 名單是開輪時拍的。這一輪跑到這裡可能已經過了幾十個 tick。
+        //
+        // `removed` 是墓碑:死亡與遷出只是把物件從市民陣列裡拿掉，物件本身還在
+        // 這份名單裡而且 homeId 還在。不擋的話死人也會被搬家，吃掉 5% 的配額，
+        // 讓真正活著的人少一次機會。
+        if (citizen.removed) continue;
         const currentPos = citizen.homeId;
         if (currentPos === null || citizen.happiness >= cfg.happinessThreshold) continue;
 
@@ -104,6 +131,9 @@ export function beginHousingRelocation(
 
         // Only relocate if the score gap is large enough
         if (bestScore - currentScore < cfg.scoreGap) continue;
+
+        // 這一輪跑到現在，那棟樓可能已經被拆了或燒了。
+        if (!isHousingValid(bestCandidate.pos)) continue;
 
         // Perform relocation
         const oldOcc = occupancy.get(currentPos) ?? 0;

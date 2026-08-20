@@ -177,7 +177,11 @@ export class CitizenManager {
 
   removeCitizen(id: number): void {
     const idx = this.citizens.findIndex((c) => c.id === id);
-    if (idx >= 0) this.citizens.splice(idx, 1);
+    if (idx >= 0) {
+      // 立墓碑。拿著物件參照的切片器要看得出這個人已經不在了。
+      this.citizens[idx]!.removed = true;
+      this.citizens.splice(idx, 1);
+    }
   }
 
   /** Batch-remove citizens by id set. Single-pass compaction — no intermediate arrays. */
@@ -185,8 +189,11 @@ export class CitizenManager {
     if (ids.size === 0) return;
     let write = 0;
     for (let read = 0; read < this.citizens.length; read++) {
-      if (!ids.has(this.citizens[read]!.id)) {
-        this.citizens[write++] = this.citizens[read]!;
+      const c = this.citizens[read]!;
+      if (ids.has(c.id)) {
+        c.removed = true;   // 立墓碑，理由見 removeCitizen
+      } else {
+        this.citizens[write++] = c;
       }
     }
     this.citizens.length = write;

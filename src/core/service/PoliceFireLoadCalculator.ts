@@ -98,7 +98,11 @@ export function calculatePoliceLoads(
  * 每一格的消防需求權重。住宅看擠迫程度，工作地看分區。
  *
  * 與警力同一個道理:吃位置索引。住宅那一項的權重原本是逐住戶 `BASE * (1 + 擠迫)`，
- * 同一棟樓每個人都一樣 —— 乘上人數即可，逐位元等價。
+ * 同一棟樓每個人都一樣 —— 乘上人數即可。擠迫的定義沒有變（分母仍是建築容量，
+ * 分子仍是「所有把這裡當家的人」，不受消防覆蓋範圍影響）。
+ *
+ * 數學上等值，但**不是逐位元相同**:實數的 `H × w` 與 `w` 加 H 次在 IEEE-754 下
+ * 最後幾個 bit 可能不同。測試因此用 `toBeCloseTo`。
  *
  * @param getBuildingResidents Optional lookup for building capacity (default: 1).
  */

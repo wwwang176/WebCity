@@ -121,6 +121,60 @@ describe('換房子的切片器', () => {
     expect(before - slicer.pending, '被跳過的人也吃掉了額度').toBeGreaterThan(5);
   });
 
+  it('should not move anyone into a building that vanished mid-round', () => {
+    // 候選名單是開輪時拍的，一輪橫跨幾十個 tick。玩家拆掉那一棟、或火災燒掉它之後，
+    // 後面才輪到的人仍然會被搬進去 —— 而拆除當下的驅離已經跑完了，救不到他。
+    const { citizens, candidates, occupancy } = scenario(400);
+    let goodAlive = true;
+    const slicer = beginHousingRelocation(citizens, candidates, occupancy, undefined,
+      (pos) => pos !== 'good' || goodAlive);
+
+    slicer.runSlice(3);
+    goodAlive = false;   // 'good' 被拆了
+
+    const movedAfter: number[] = [];
+    let guard = 0;
+    while (slicer.pending > 0 && guard++ < 500) movedAfter.push(...slicer.runSlice(5));
+
+    for (const id of movedAfter) {
+      const c = citizens.find(x => x.id === id)!;
+      expect(c.homeId, `市民 ${id} 被搬進已經不存在的建築`).not.toBe('good');
+    }
+  });
+
+  it('should skip citizens who died or emigrated mid-round', () => {
+    // 移除只是把物件從 CitizenManager 的陣列裡拿掉。這份名單握的是物件參照，
+    // homeId 還在 —— 不擋的話死人也會被搬家，吃掉 5% 的配額。
+    const { citizens, candidates, occupancy } = scenario(400);
+    const slicer = beginHousingRelocation(citizens, candidates, occupancy);
+    for (const c of citizens) c.removed = true;
+
+    const moved: number[] = [];
+    let guard = 0;
+    while (slicer.pending > 0 && guard++ < 500) moved.push(...slicer.runSlice(5));
+    expect(moved, '已經不在城裡的人還是被搬了家').toEqual([]);
+  });
+
+  it('should honour a refreshed occupancy map', () => {
+    // 開輪時拍的入住數會過期 —— 這一輪橫跨幾十個 tick，中間移民與配房都在填房子。
+    // 不換新的話會把人搬進其實已經住滿的樓。
+    const { citizens, candidates, occupancy } = scenario(400);
+    const slicer = beginHousingRelocation(citizens, candidates, occupancy);
+    slicer.runSlice(2);
+
+    // 'good' 在這期間被別人填滿了。
+    const good = candidates.find(c => c.pos === 'good')!;
+    slicer.refreshOccupancy(new Map([['bad', 400], ['good', good.capacity]]));
+
+    const moved: number[] = [];
+    let guard = 0;
+    while (slicer.pending > 0 && guard++ < 500) moved.push(...slicer.runSlice(5));
+    for (const id of moved) {
+      const c = citizens.find(x => x.id === id)!;
+      expect(c.homeId, `市民 ${id} 被搬進已經住滿的樓`).not.toBe('good');
+    }
+  });
+
   it('should report nothing pending when nobody is unhappy', () => {
     const citizens = [citizen(1, 'bad', 90)];
     const slicer = beginHousingRelocation(citizens, [candidate('bad', 3)], new Map());

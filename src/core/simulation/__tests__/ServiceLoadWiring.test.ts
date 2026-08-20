@@ -75,6 +75,28 @@ describe('服務負載的人數有傳下去', () => {
     expect(home!.count! / pop).toBeLessThan(1.1);
   });
 
+  it('should have a fresh index on the daily death tick, not slot 4 leftovers', () => {
+    // 每日的死亡結算會呼叫 updateHospitalLoads，而它在慢速槽 5（移民、配房、換房子）
+    // 之後 —— 拿槽 4 的索引會漏掉剛遷入的人、算進剛遷出的人。
+    //
+    // 讀檔更糟:在槽 4 之後、日界之前建立的 SimulationLoop，索引還是空的，醫院需求
+    // 會被算成 0，死亡率拿到錯的低倍率。這裡就重現那個情況。
+    const state = city(800);
+    state.clock.tick = 23;          // 下一個 tick 就是日界（ticksPerDay = 24）
+    const calls = capture(state, state.health, 'updateLoads');
+    const loop = new SimulationLoop(state);
+    loop.tick();
+    expect(state.clock.tick, '沒有踩到日界').toBe(24);
+
+    expect(calls.length, '日界那一個 tick 沒有更新醫院負載').toBeGreaterThan(0);
+    const last = calls[calls.length - 1]!;
+    const home = last.find(e => e.x === 2 && e.y === 2);
+    expect(home, '住宅那一格根本沒送進醫院 —— 索引是空的').toBeDefined();
+    const pop = state.citizens.getPopulation();
+    expect(home!.count! / pop, `醫院收到 ${home!.count} 人，城裡有 ${pop} 人`)
+      .toBeGreaterThan(0.9);
+  });
+
   it('should scale the police demand weight with the headcount', () => {
     const small = city(100);
     const smallCalls = capture(small, small.police, 'updateStationLoads');

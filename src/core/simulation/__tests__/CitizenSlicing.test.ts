@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  citizenSliceCount, citizenSliceOf,
+  citizenSliceCount, citizenSliceOf, SliceCycle,
   CITIZEN_SLICE_PER_TICK, CITIZEN_SLICE_MAX,
 } from '../CitizenSlicing';
 import { SIMULATION } from '../SimulationConstants';
@@ -102,6 +102,44 @@ describe('誰屬於哪一片', () => {
       // 中間插進一堆別的呼叫，藏了狀態的話會被推走。
       for (let other = 0; other < 50; other++) citizenSliceOf(other, 13);
       expect(citizenSliceOf(id, 24)).toBe(first);
+    }
+  });
+});
+
+describe('輪次游標', () => {
+  it('should walk 0..N-1 and only re-evaluate the count at a boundary', () => {
+    // 中途換片數就是所有人重新分片:已經輪過的人可能又被排到後面，還沒輪到的人
+    // 可能被排到走過的片。
+    const cycle = new SliceCycle();
+    let want = 6;
+    const seen: number[] = [];
+    for (let t = 0; t < 6; t++) {
+      want = 20;   // 每個 tick 都想換片數
+      seen.push(cycle.next(() => want).index);
+    }
+    expect(seen, '一輪之內換了片數').toEqual([0, 1, 2, 3, 4, 5]);
+    expect(cycle.next(() => want).slices, '新的一輪沒有換上新片數').toBe(20);
+  });
+
+  it('should start a fresh cycle after reset', () => {
+    const cycle = new SliceCycle();
+    cycle.next(() => 10);
+    cycle.next(() => 10);
+    cycle.reset();
+    const { slices, index } = cycle.next(() => 7);
+    expect(index, 'reset 之後沒有從第 0 片開始').toBe(0);
+    expect(slices).toBe(7);
+  });
+
+  it('should refuse a slice count below one', () => {
+    // 0 會讓 citizenSliceOf 取模得到 NaN —— 一個人都不會被更新，而且游標永遠
+    // 到不了下一輪。負數會讓每次呼叫都重新開輪。
+    for (const bad of [0, -3, NaN, 0.4]) {
+      const cycle = new SliceCycle();
+      const { slices, index } = cycle.next(() => bad);
+      expect(slices, `countFor 回傳 ${bad} 時片數是 ${slices}`).toBeGreaterThanOrEqual(1);
+      expect(Number.isNaN(citizenSliceOf(7, slices)), `片數 ${slices} 讓分片變成 NaN`).toBe(false);
+      expect(index).toBe(0);
     }
   });
 });

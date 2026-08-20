@@ -493,8 +493,6 @@ export class SimulationLoop {
         return this.state.education.getCoverage(x, y, type);
       }, capacity, this.state.ordinances.getCompulsorySchoolingStages());
       this.refreshHappinessContext();
-      // 三個服務共用同一份位置索引，各自再掃一遍市民名單的話就白做了。
-      this.refreshCitizenLocations();
       this.updateHospitalLoads();
       this.updateSchoolLoads();
       this.updatePoliceFireLoads();
@@ -1050,12 +1048,30 @@ export class SimulationLoop {
    * `updateSchoolLoads` 21ms。
    */
   private citizenLocations: CitizenLocationIndex = buildCitizenLocationIndex([]);
+  private citizenLocationsTick = -1;
 
-  private refreshCitizenLocations(): void {
+  /**
+   * 確保這個 tick 的位置索引是新的。
+   *
+   * **誰用誰負責**，不是在慢速槽 4 建好給大家用:每日的死亡結算也會呼叫
+   * `updateHospitalLoads`，而那是在槽 5（移民、配房、換房子）之後 —— 拿槽 4 的
+   * 索引會漏掉剛遷入的人、算進剛遷出的人。讀檔更糟:在槽 4 之後、日界之前建立
+   * 的 SimulationLoop 索引還是空的，醫院需求會被算成 0，死亡率拿到錯的低倍率。
+   *
+   * 同一個 tick 之內重複呼叫是免費的，所以槽 4 那三個服務仍然只建一次。
+   */
+  private ensureCitizenLocations(): void {
+    const tick = this.state.clock.tick;
+    if (this.citizenLocationsTick === tick) return;
     this.citizenLocations = buildCitizenLocationIndex(this.state.citizens.getCitizens());
+    this.citizenLocationsTick = tick;
+    // 換房子那一輪橫跨幾十個 tick，開輪時拍的入住數會過期 —— 中間移民與配房都在
+    // 填房子。趁著剛數完，順手換上新的一份。
+    this.housingRelocationSlicer?.refreshOccupancy(this.citizenLocations.homeCounts);
   }
 
   private updateHospitalLoads(): void {
+    this.ensureCitizenLocations();
     const coveredCitizens: Array<{ x: number; y: number; pollution: number; count: number }> = [];
     for (const [home, count] of this.citizenLocations.homeCounts) {
       const pos = parsePosKey(home);
@@ -1109,6 +1125,7 @@ export class SimulationLoop {
   }
 
   private updatePoliceFireLoads(): void {
+    this.ensureCitizenLocations();
     const grid = this.state.grid;
     const getResidents = (id: number) => getBuildingType(id)?.residents ?? 1;
     const index = this.citizenLocations;
@@ -1709,11 +1726,29 @@ export class SimulationLoop {
 
     const citizens = this.state.citizens.getCitizens();
     const homeOccupancy = countOccupancy(citizens, (c) => c.homeId);
-    const slicer = beginHousingRelocation(citizens, housingCandidates, homeOccupancy);
+    const slicer = beginHousingRelocation(
+      citizens, housingCandidates, homeOccupancy, undefined,
+      (pos) => this.isStillHousing(pos),
+    );
     if (slicer.pending === 0) return;
     this.housingRelocationSlicer = slicer;
     this.housingRelocationBudget = Math.max(1,
       Math.ceil(slicer.pending / SIMULATION.HOUSING_RELOCATION_SPREAD_TICKS));
+  }
+
+  /**
+   * 這個座標現在還是一棟能住人的樓嗎。
+   *
+   * 換房子那一輪的候選名單是開輪時拍的，而一輪橫跨幾十個 tick —— 中間玩家可能
+   * 拆掉它、火災可能燒掉它。
+   */
+  private isStillHousing(pos: string): boolean {
+    const p = parsePosKey(pos);
+    if (!p) return false;
+    const cell = this.state.grid.getCell(p.x, p.y);
+    if (!cell || cell.reserved === ABANDONED || cell.reserved === BURNED) return false;
+    const bt = getBuildingType(cell.buildingId);
+    return bt !== undefined && bt.residents > 0;
   }
 
   /**

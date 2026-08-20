@@ -94,7 +94,9 @@ export class SliceCycle {
    */
   next(countFor: () => number): { slices: number; index: number } {
     if (this.cursor >= this.slices) {
-      this.slices = countFor();
+      // 0 會讓 `citizenSliceOf` 取模得到 NaN（所有人被跳過，而且一輪永遠不結束）；
+      // 負數會讓每次呼叫都重新開輪，部分人反覆落在第 0 片、其餘人永遠輪不到。
+      this.slices = Math.max(1, Math.floor(countFor()) || 1);
       this.cursor = 0;
     }
     return { slices: this.slices, index: this.cursor++ };

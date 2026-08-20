@@ -104,6 +104,27 @@ describe('換房子的接線', () => {
       .toBeLessThan(midRound);
   });
 
+  it('should hand the running round a fresh occupancy count', () => {
+    // 開輪時拍的入住數會過期 —— 這一輪橫跨幾十個 tick，中間移民與配房都在填房子。
+    // 不換新的話會把人搬進其實已經住滿的樓。
+    const state = unhappyCity(900);
+    const loop = new SimulationLoop(state);
+    const inner = loop as unknown as {
+      housingRelocationSlicer: { refreshOccupancy(c: ReadonlyMap<string, number>): void } | null;
+    };
+
+    for (let t = 0; t < 3; t++) loop.tick();
+    const slicer = inner.housingRelocationSlicer;
+    expect(slicer, '這時候應該正在一輪的中間').not.toBeNull();
+
+    let calls = 0;
+    const orig = slicer!.refreshOccupancy.bind(slicer!);
+    slicer!.refreshOccupancy = (c) => { calls++; orig(c); };
+    for (let t = 0; t < SIMULATION.SLOW_TICK_INTERVAL * 2; t++) loop.tick();
+
+    expect(calls, '一輪跑了兩個慢速週期，入住數一次都沒換新').toBeGreaterThan(0);
+  });
+
   it('should still move somebody', () => {
     // 攤開之後一個人都搬不動的話，這一整套等於把功能關掉了。
     const state = unhappyCity(900);
