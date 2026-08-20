@@ -51,6 +51,55 @@ export class RailSystem extends BaseTransportSystem {
   /** Precomputed rail paths per route: routeId → array of path segments (node ID strings). */
   private routePaths = new Map<number, string[][]>();
 
+  /**
+   * `getRoutePathPoints()` 的結果，連同它是從哪一份 `routePaths` 建出來的。
+   *
+   * 那個方法原本每次呼叫都把整條路徑重新解析一遍，而 `TrainAnimator` **每一幀、
+   * 每一列車**呼叫它 —— 其中一次還只是為了讀 `segments.length` 判斷路線變了沒有。
+   * 實測玩家 12 400 人的存檔:`parsePosKeyUnsafe` 佔主執行緒 CPU 的 9.3%（所有 JS
+   * 函式裡最大的一個），而其中 74% 的呼叫來自這裡。
+   *
+   * **失效靠身分比對，不靠記得清。** 存著來源陣列的參照，`routePaths` 換過就對不上，
+   * 自動重建 —— 五個改動點沒有任何一個需要記得通知這裡。
+   */
+  private pathPointsCache = new Map<number, {
+    source: string[][];
+    value: ReadonlyArray<ReadonlyArray<{ x: number; y: number }>>;
+  }>();
+
+  /**
+   * `getSegmentDistances()` 的結果，失效方式同上。
+   *
+   * `BusSystem` 那一支早就有快取（BUG-328，實測省 4.77ms/tick），但這裡**覆寫了它
+   * 而且沒有跟著加** —— 而鐵路這條路徑沒有測試守著，所以漏掉之後沒人發現。
+   * `findAvailableTransit` 每問一個人、每條路線就呼叫一次:實測 12 秒 20 萬次，
+   * 每次把整條路徑的每個節點解析兩遍。
+   */
+  private segmentDistCache = new Map<number, { source: string[][]; value: number[] }>();
+
+  /**
+   * 兩份衍生資料共用的取用方式:對不上來源就重算。
+   *
+   * 比的是**陣列的參照**，不是內容 —— 換路線一定是換一整個新陣列（見 `routePaths`），
+   * 所以五個改動點沒有任何一個需要記得通知這裡。
+   */
+  private cachedFromPaths<T>(
+    cache: Map<number, { source: string[][]; value: T }>,
+    routeId: number,
+    build: (paths: string[][]) => T,
+  ): T | null {
+    const paths = this.routePaths.get(routeId);
+    if (!paths) {
+      cache.delete(routeId);
+      return null;
+    }
+    const hit = cache.get(routeId);
+    if (hit && hit.source === paths) return hit.value;
+    const value = build(paths);
+    cache.set(routeId, { source: paths, value });
+    return value;
+  }
+
   /** Reference to the rail network graph (optional, for track-based validation). */
   private railNetwork: RailNetwork | null = null;
 
@@ -84,9 +133,7 @@ export class RailSystem extends BaseTransportSystem {
 
   /** Return precomputed segment distances from rail path nodes. */
   override getSegmentDistances(routeId: number): number[] | null {
-    const paths = this.routePaths.get(routeId);
-    if (!paths) return null;
-    return paths.map(path => {
+    return this.cachedFromPaths(this.segmentDistCache, routeId, paths => paths.map(path => {
       let dist = 0;
       for (let i = 1; i < path.length; i++) {
         const a = parsePosKeyUnsafe(path[i - 1]!);
@@ -96,7 +143,7 @@ export class RailSystem extends BaseTransportSystem {
         dist += Math.sqrt(dx * dx + dy * dy);
       }
       return dist;
-    });
+    }));
   }
 
   // ── Alias methods for Rail-specific naming ──────────────────────
@@ -261,9 +308,8 @@ export class RailSystem extends BaseTransportSystem {
 
   /** Get all route path segments as parsed {x,y} point arrays (for TrainAnimator full-path cycling). */
   getRoutePathPoints(routeId: number): ReadonlyArray<ReadonlyArray<{ x: number; y: number }>> | null {
-    const paths = this.routePaths.get(routeId);
-    if (!paths) return null;
-    return paths.map(seg => seg.map(nid => parsePosKeyUnsafe(nid)));
+    return this.cachedFromPaths(this.pathPointsCache, routeId,
+      paths => paths.map(seg => seg.map(nid => parsePosKeyUnsafe(nid))));
   }
 
   getTrains(): readonly TransportVehicle[] {
