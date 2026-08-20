@@ -155,16 +155,107 @@ describe('行人路線池跟著大眾運輸走', () => {
   it('should not rebuild from a pass that never asked anybody', () => {
     // 沒有半個可以通勤的市民時，取樣迴圈提早退場，一位都沒問到。
     // 這時候把池子清空是**假的答案** —— 沒問過不等於「零條」。
-    const { state, loop, line } = metroCity();
+    const { state, loop } = metroCity();
     const before = poolOf(loop).trips.length;
     expect(before, 'fixture 的池子本來就是空的').toBeGreaterThan(0);
 
     for (const c of state.citizens.getCitizens()) c.workplaceId = null;
-    state.metro.deleteLine(line.id);
+    loop.markLaneGraphDirty();
     for (let i = 0; i < 12; i++) loop.tick();
 
     expect(poolOf(loop).trips.length, '一位市民都沒問到，池子卻被當成「零條」清掉了')
       .toBe(before);
+  });
+
+  it('should ask a whole sweep of commuters before committing the pool', () => {
+    // 一個 tick 只問得到一小撮人，而步行路線在時間上是**成串**出現的:壅塞高峰時
+    // 一批人翻去搭車，其餘時間一個都沒有。玩家 12 500 人的存檔實測，連續 45 338 次
+    // 詢問收集到 260 條，全部集中在五次爆發裡 —— 隨便挑一個 tick 定案，九成的機率
+    // 收集到零條，路上一個行人都不會有。
+    const { loop } = metroCity();
+    const inner = loop as unknown as Internals;
+
+    loop.markLaneGraphDirty();
+    loop.tick();
+    expect(inner.tripPoolDirty, '只問了一個 tick 的一小撮人就定案了').toBe(true);
+
+    for (let i = 0; i < 12; i++) loop.tick();
+    expect(inner.tripPoolDirty, '問過一輪了還沒定案').toBe(false);
+  });
+
+  it('should not let the sweep target run away from the sweep', () => {
+    // 一輪的長度在開輪時定下來。每個 tick 重新讀人口的話，成長中的城市會讓目標
+    // 跟著進度一起往前跑 —— 問的人數跟人口是平方根關係，目標卻是線性的，那一輪
+    // 永遠不會結束，池子也就永遠不定案。
+    const { state, loop } = metroCity();
+    const inner = loop as unknown as Internals;
+    // 高層住宅，讓遷入不撞到住宅容量的上限 —— 撞到的話人口不會長，
+    // 這個測試就什麼都沒驗到。
+    for (let x = 8; x <= 40; x++) {
+      state.grid.setCell(x, 2, { zoneType: ZoneType.RESIDENTIAL_HIGH, buildingId: 6 });
+    }
+
+    loop.markLaneGraphDirty();
+    const before = state.citizens.getPopulation();
+    for (let i = 0; i < 12; i++) {
+      for (let k = 0; k < 200; k++) {
+        state.citizens.createCitizen({ age: 100, homeId: '6,2', workplaceId: '56,2' });
+      }
+      loop.tick();
+    }
+    expect(state.citizens.getPopulation(), '人口沒有長 —— 遷入撞到住宅容量了')
+      .toBeGreaterThan(before + 2000);
+
+    expect(inner.tripPoolDirty, '城市一邊長大，這一輪就永遠結束不了').toBe(false);
+  });
+
+  it('should still build a first pool for a city that started empty', () => {
+    // 空城的取樣迴圈提早退場，一輪的長度還沒被定下來過。起始值是 0 的話
+    // 「一位都還沒問」就算達標 —— 第一個 tick 就定案成空池子，而且從此不再重建，
+    // 直到玩家剛好動到一條路為止。
+    const state = createGameState(60, 60);
+    corridor(state, 1);
+    state.grid.setCell(6, 2, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 });
+    state.grid.setCell(56, 2, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
+    state.metro.createLine(
+      [state.metro.addStation(7, 1), state.metro.addStation(55, 1)], 2);
+
+    const loop = start(state);   // 一個市民都還沒有
+    expect(poolOf(loop).trips.length, '空城卻有步行路線').toBe(0);
+
+    for (let k = 0; k < 60; k++) {
+      state.citizens.createCitizen({ age: 100, homeId: '6,2', workplaceId: '56,2' });
+    }
+    for (let i = 0; i < 12; i++) loop.tick();
+
+    expect(poolOf(loop).trips.length, '人搬進來了，池子卻沒有重建過')
+      .toBeGreaterThan(0);
+  });
+
+  it('should drop the pool the moment a line goes, not when the sweep ends', () => {
+    // 收集一輪要問過全城（玩家的存檔約 24 個 tick）。這段期間繼續照舊池子生人的話，
+    // 拆掉的車站還會再吐幾秒的行人 —— 那正是這個 bug 被回報的樣子。
+    const { state, loop, line, stationCells } = metroCity();
+    expect(touches(poolOf(loop).trips, stationCells), 'fixture 裡沒有人搭捷運')
+      .toBeGreaterThan(0);
+
+    state.metro.deleteLine(line.id);
+    loop.tick();
+
+    expect(poolOf(loop).trips.length, '要等收集完才丟，中間繼續走向已經沒車的車站')
+      .toBe(0);
+  });
+
+  it('should keep the old pool while a road edit is being swept', () => {
+    // 改道路不丟池子:那些座標還是有效的，變的只是走法。而玩家畫路的頻率高得多，
+    // 丟掉會讓路上的行人每畫一次路就消失一輪。
+    const { loop } = metroCity();
+    const before = poolOf(loop).trips.length;
+
+    loop.markLaneGraphDirty();
+    loop.tick();
+
+    expect(poolOf(loop).trips.length, '玩家每畫一條路，行人就全部消失一輪').toBe(before);
   });
 
   it('should still rebuild in a city sitting at the vehicle cap', () => {

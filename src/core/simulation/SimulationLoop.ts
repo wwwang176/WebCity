@@ -192,6 +192,17 @@ export class SimulationLoop {
    * 拆除前的那一份，行人繼續從已經不存在的車站走出來。
    */
   private tripSamplesTaken = 0;
+  /**
+   * 這一輪要問過幾位才算數 —— 一輪就是全城的通勤人口。
+   *
+   * 一個 tick 只問得到一小撮人（12 500 人的存檔:8 808 位通勤者裡問 375 位），而
+   * 步行路線在時間上是**成串**出現的:壅塞高峰時一批人翻去搭車，其餘時間一個都
+   * 沒有。實測連續 45 338 次詢問收集到 260 條，全部集中在五次爆發裡 —— 隨便挑一個
+   * tick 定案，九成的機率收集到零條，路上一個行人都不會有。
+   *
+   * 起始值是 1 而不是 0:0 的話「一位都還沒問」也算達標，空城會每個 tick 定案一次。
+   */
+  private tripSweepTarget = 1;
   private tripAggMap = new Map<string, AggregatedTrip>();
   private pendingTrips: AggregatedTrip[] = [];
 
@@ -2402,6 +2413,14 @@ export class SimulationLoop {
       // 40 條路線一條沒少，328 位行人繼續走向已經不存在的三個車站。
       //
       // 只掛在**拓樸**版本上:班次加減不會動到走去哪一站，而重建要重問一輪市民。
+      //
+      // 舊的池子**當場丟掉**，不等重新收集完。收集要問過全城一輪（12 500 人的存檔
+      // 約 24 個 tick），這段期間繼續照舊池子生人的話，玩家拆掉的車站還會再吐幾秒
+      // 的行人 —— 那正是這個 bug 被回報的樣子。
+      //
+      // 改**道路**不丟:那些座標還是有效的，變的只是走法，而玩家畫路的頻率高得多，
+      // 丟掉會讓行人每畫一次路就消失一輪。
+      this.walkingTripPool = buildTripPool([]);
       this.tripPoolDirty = true;
     }
   }
@@ -2831,6 +2850,12 @@ export class SimulationLoop {
       }
     }
     if (eligible.length === 0) return;
+
+    // 一輪的長度在開輪時定下來。中途人口變動不改這一輪的目標 —— 目標會跟著
+    // 進度一起漂走，那一輪就永遠不會結束。
+    if (this.tripPoolDirty && this.tripSamplesTaken === 0) {
+      this.tripSweepTarget = eligible.length;
+    }
 
     // The daily transfer-usage rollover and the transfer-graph rebuild used to
     // live here, behind this and two earlier early returns — see
@@ -3337,7 +3362,7 @@ export class SimulationLoop {
    */
   private spawnPedestriansFromPool(population: number): void {
     // Finalize trip pool if it was being rebuilt this rush period
-    if (this.tripPoolDirty && this.tripSamplesTaken > 0) {
+    if (this.tripPoolDirty && this.tripSamplesTaken >= this.tripSweepTarget) {
       // Aggregate identical routes using a reusable map
       this.tripAggMap.clear();
       for (const t of this.pendingTrips) {
