@@ -6,6 +6,7 @@ import { POLICY_CONFIG } from '../../../core/district/PolicyManager';
 import { computeCityScales } from '../../../core/district/PolicyBilling';
 import { policyLevelLabel } from '../../../core/district/PolicyPresentation';
 import { CHART_RANGES, type ChartRange } from '../../../core/economy/ChartSeries';
+import { TAX_RATE_MAX, TAX_RATE_MIN } from '../../../core/economy/Tax';
 import { gameSignals, getGame } from '../../store/gameStore';
 import { PopChart } from '../../charts/PopChart';
 import { EconChart } from '../../charts/EconChart';
@@ -231,12 +232,12 @@ export function EconomyPage(props: EconomyPageProps) {
       <div class="section-title">Tax Rate</div>
       <div class="tax-row">
         <label>Residential Tax</label>
-        <input type="range" min="1" max="20" step="1" value={incomeTax()} onInput={onIncomeTaxChange} />
+        <input type="range" min={TAX_RATE_MIN} max={TAX_RATE_MAX} step="1" value={incomeTax()} onInput={onIncomeTaxChange} />
         <span class="tax-val">{incomeTax()}%</span>
       </div>
       <div class="tax-row">
         <label>Business Tax</label>
-        <input type="range" min="1" max="20" step="1" value={businessTax()} onInput={onBusinessTaxChange} />
+        <input type="range" min={TAX_RATE_MIN} max={TAX_RATE_MAX} step="1" value={businessTax()} onInput={onBusinessTaxChange} />
         <span class="tax-val">{businessTax()}%</span>
       </div>
 

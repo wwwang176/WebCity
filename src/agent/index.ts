@@ -1,6 +1,8 @@
 import type { Game } from '../Game';
 import { serializeGameState } from '../core/save/Serializer';
 import { AgentApi } from './AgentApi';
+import { AgentBudget, type BudgetHost } from './AgentBudget';
+import { AgentPolicy, type PolicyHost } from './AgentPolicy';
 import { AgentRead } from './AgentRead';
 import { AgentSession } from './AgentSession';
 import { AgentRoutes, type ModeAdapter, type RouteHost } from './AgentRoutes';
@@ -8,6 +10,8 @@ import { AgentUi, type CameraTarget, type UiHost } from './AgentUi';
 import { RailServiceType } from '../core/transport/RailSystem';
 
 export { AgentApi, AGENT_LIMITS } from './AgentApi';
+export { AgentBudget } from './AgentBudget';
+export { AgentPolicy } from './AgentPolicy';
 export { AgentRead } from './AgentRead';
 export { AgentRoutes, TRANSIT_MODES } from './AgentRoutes';
 export { AgentSession } from './AgentSession';
@@ -23,6 +27,8 @@ export * from './registry';
  * |---|---|
  * | `act()` | 蓋、拆、劃分區。走 `Game.handleToolAction()`，把工具狀態設滿 |
  * | `routes` | 公車／地鐵／鐵路／渡輪的建線、拆線、加減車 |
+ * | `budget` | 稅率、借款、還款 |
+ * | `policy` | 分區條例、全城條例、城市特化 |
  * | `ui` | 開關面板、圖層、聚焦視角、工具、暫停與速度、鏡頭 |
  * | `read` | 城市數字、建築、居民、服務、大眾運輸、逐格資料 |
  * | `session` | 存檔清單、存檔、匯出、載入、開新局（**沒有刪除**） |
@@ -31,6 +37,8 @@ export interface AgentRoot {
   act: AgentApi['act'];
   history: AgentApi['history'];
   routes: AgentRoutes;
+  budget: AgentBudget;
+  policy: AgentPolicy;
   ui: AgentUi;
   read: AgentRead;
   session: AgentSession;
@@ -125,6 +133,47 @@ function routeHost(game: Game): RouteHost {
   return { bus, metro, rail, ferry };
 }
 
+/**
+ * 稅率的兩根旋鈕。
+ *
+ * 營業稅四個欄位一起動 —— 三個逐區的舊欄位還在被計算，只設 `business` 的話商業區
+ * 會照著舊稅率繳，而面板上看不出來。面板的滑桿也是這樣寫的。
+ */
+function budgetHost(game: Game): BudgetHost {
+  const b = () => game.getState().budget;
+  const t = () => game.getState().taxRates;
+  return {
+    taxRates: t,
+    setIncomeTax: (r) => { t().residential = r; },
+    setBusinessTax: (r) => {
+      const rates = t();
+      rates.business = r;
+      rates.commercial = r;
+      rates.industrial = r;
+      rates.office = r;
+    },
+    funds: () => b().funds,
+    loans: () => b().loans,
+    takeLoan: (n) => game.takeLoan(n),
+    repayLoan: (n) => game.repayLoan(n),
+  };
+}
+
+/** 條例分兩邊放:全城的在 `ordinances`，分區的在 `policies`。 */
+function policyHost(game: Game): PolicyHost {
+  const s = () => game.getState();
+  return {
+    districtIds: () => s().districts.getAllDistricts().map(d => d.id),
+    cityLevel: (type) => s().ordinances.getLevel(type),
+    setCityLevel: (type, level) => s().ordinances.setLevel(type, level),
+    districtLevel: (id, type) => s().policies.getPolicyLevel(id, type),
+    setDistrictLevel: (id, type, level) => s().policies.setPolicyLevel(id, type, level),
+    specialization: () => s().citySpec.getCurrent(),
+    chooseSpecialization: (type) => s().citySpec.choose(type, s().citizens.getPopulation()),
+    population: () => s().citizens.getPopulation(),
+  };
+}
+
 export function createAgent(game: Game): AgentRoot {
   const api = new AgentApi(game);
   const read = new AgentRead(() => game.getState(), game);
@@ -138,6 +187,8 @@ export function createAgent(game: Game): AgentRoot {
     act: (action) => api.act(action),
     history: () => api.history(),
     routes: new AgentRoutes(routeHost(game)),
+    budget: new AgentBudget(budgetHost(game)),
+    policy: new AgentPolicy(policyHost(game)),
     ui,
     read,
     session,

@@ -9,6 +9,15 @@ export interface TaxRates {
 /** Default tax rate percentage used across all tax categories */
 export const DEFAULT_TAX_RATE = 9;
 
+/**
+ * 稅率收得下的範圍，單位是百分點的整數。
+ *
+ * 面板的滑桿與 agent API 讀同一份 —— 兩邊各寫一次的話，某一天調了滑桿而 API 沒跟上，
+ * 程式就設得出面板顯示不出來的稅率。
+ */
+export const TAX_RATE_MIN = 1;
+export const TAX_RATE_MAX = 20;
+
 export const DEFAULT_TAX_RATES: TaxRates = {
   residential: DEFAULT_TAX_RATE,
   commercial: DEFAULT_TAX_RATE,
