@@ -36,6 +36,14 @@ export interface BaseTransportJSON {
   nextVehicleId: number;
 }
 
+/**
+ * 小於這個數的搭乘量就是沒有人。
+ *
+ * 單位是「人次／日」，所以半個人以下在任何地方都已經是 0 —— 面板本來就是
+ * `Math.round` 之後才顯示。存在的理由見 `rolloverDailyRiders()`。
+ */
+export const RIDERS_EPSILON = 0.5;
+
 export const TRANSPORT_SPEED = {
   /**
    * 塞死也還是要爬得動 —— 速度 0 會讓車永遠到不了下一站，班距變成無限大。
@@ -312,12 +320,28 @@ export abstract class BaseTransportSystem {
     return this.routes.reduce((sum, r) => r.suspended ? sum : sum + r.operatingCost, 0);
   }
 
-  /** Roll over daily riders: EMA smooth, then reset dailyRiders. */
+  /**
+   * 跨日結算:平滑昨天的搭乘量，然後把今天歸零。
+   *
+   * 低於半個人就直接寫 0，**不是**讓它自己衰減下去。
+   *
+   * 路線被刪掉之後沒有人搭，公式退化成「每天乘 0.7」，而乘法碰不到零 —— 浮點數在
+   * 最接近零的地方精度崩掉，`0.7 * 5e-324` 算出來還是 `5e-324`，卡在那裡不動。
+   * 玩家存檔裡真的長出過 `7.7e-44` 與 `5e-324` 這種值。
+   *
+   * 而載重率在運能為 0 時看的是「有沒有人要搭」（`riders > 0 ? Infinity : 0`）。
+   * `5e-324 > 0` 成立，於是刪掉路線的運具永遠掛著紅色的 hopeless（BUG-349）。
+   *
+   * 門檻取半個人是因為這個欄位的單位是「人次」—— 面板本來就是 `Math.round` 之後才
+   * 顯示的，不到半個人在任何地方都已經是 0。而真的有人搭的站不會掉到這裡:一天沒人
+   * 只會讓平滑值乘 0.7，要連續空好幾十天才跌破半個人。
+   */
   rolloverDailyRiders(): void {
     const alpha = 0.7;
     for (let i = 0; i < this.stops.length; i++) {
       const s = this.stops[i]!;
-      s.smoothedDailyRiders = alpha * s.smoothedDailyRiders + (1 - alpha) * s.dailyRiders;
+      const smoothed = alpha * s.smoothedDailyRiders + (1 - alpha) * s.dailyRiders;
+      s.smoothedDailyRiders = smoothed < RIDERS_EPSILON ? 0 : smoothed;
       s.lastDayRiders = s.dailyRiders;
       s.dailyRiders = 0;
     }

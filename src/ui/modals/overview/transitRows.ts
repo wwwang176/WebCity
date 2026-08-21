@@ -17,6 +17,14 @@ import {
   formatRouteUsage, routeLoadStatus, type RouteLoadStatus,
 } from '../../../core/transport/RouteLoad';
 import { getRouteRiders } from '../../../core/transport/TransitAvailability';
+
+/**
+ * 系統那一列的狀態。
+ *
+ * 比路線多一種:`'none'` —— **一條路線都沒有**。那不是載重的某一段，是「沒有東西在
+ * 跑」，所以不從 `routeLoadStatus()` 來，也永遠不會出現在路線那一列。
+ */
+export type SystemStatus = RouteLoadStatus | 'none';
 import type { TransportRoute, TransportStop, TransportType } from '../../../core/transport/types';
 
 /** 面板需要一個運輸系統提供的東西。只有這些，不是整個 `BaseTransportSystem`。 */
@@ -56,7 +64,7 @@ export interface TransitSystemRow {
   totalCapacity: number;
   loadFactor: number;
   usage: string;
-  status: RouteLoadStatus;
+  status: SystemStatus;
   totalCost: number;
   routeRows: TransitRouteRow[];
 }
@@ -101,6 +109,12 @@ export function buildTransitRows(
     const totalRiders = ridersOf(sys.stops);
     const totalCapacity = routeRows.reduce((s, r) => s + r.capacity, 0);
     const loadFactor = computeLoadFactor(totalRiders, totalCapacity);
+    // 一條路線都沒有的系統沒有載重可言。
+    //
+    // 站牌被留下來的時候（玩家刪掉路線但沒拆站）它們還記著昨天的搭乘量，而運能是 0
+    // —— `computeLoadFactor` 依定義回 Infinity，狀態就是 hopeless，紅到重新開線為止。
+    // 「沒有東西在跑」跟「跑的東西擠爆了」是兩件事（BUG-349）。
+    const status: SystemStatus = sys.routes.length === 0 ? 'none' : routeLoadStatus(loadFactor);
 
     return {
       type: sys.type,
@@ -111,7 +125,7 @@ export function buildTransitRows(
       totalCapacity,
       loadFactor,
       usage: formatRouteUsage(totalRiders, totalCapacity),
-      status: routeLoadStatus(loadFactor),
+      status,
       totalCost: sys.operatingCost,
       routeRows,
     };

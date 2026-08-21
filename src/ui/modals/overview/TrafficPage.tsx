@@ -4,7 +4,7 @@ import { getTransitSystems } from '../../../core/transport/TransportRegistry';
 import { TransportType } from '../../../core/transport/types';
 import { UI_COLORS } from '../../constants';
 import { type RouteLoadStatus } from '../../../core/transport/RouteLoad';
-import { buildTransitRows, type TransitSystemRow } from './transitRows';
+import { buildTransitRows, type SystemStatus, type TransitSystemRow } from './transitRows';
 import { COMMUTE_BUCKET_EDGES } from '../../../core/citizen/CommuteStats';
 
 const TYPE_LABELS: Record<string, string> = {
@@ -30,7 +30,9 @@ const TYPE_ICONS: Record<string, string> = {
 type SystemRow = TransitSystemRow & { label: string; color: string; icon: string };
 
 /** 載重的顏色。三段的分界不是隨手挑的，見 `routeLoadStatus`。 */
-const USAGE_COLOR: Record<RouteLoadStatus, string> = {
+const USAGE_COLOR: Record<SystemStatus, string> = {
+  // 一條路線都沒有 —— 不是好也不是壞，用中性色。綠色會讓人以為這個系統運作良好。
+  none: UI_COLORS.NEUTRAL,
   comfortable: UI_COLORS.STATUS_GOOD,
   crowded: UI_COLORS.STATUS_WARN,
   overloaded: UI_COLORS.STATUS_BAD,
@@ -39,7 +41,8 @@ const USAGE_COLOR: Record<RouteLoadStatus, string> = {
 };
 
 /** 滑過去才看得到的說明 —— 顏色告訴你有問題，這句告訴你發生了什麼事。 */
-const USAGE_HINT: Record<RouteLoadStatus, string> = {
+const USAGE_HINT: Record<SystemStatus, string> = {
+  none: 'No routes on this system yet.',
   comfortable: 'Everyone gets a seat on the next vehicle.',
   crowded: 'Some riders are left behind and wait for the vehicle after.',
   overloaded: 'The wait for a free seat now exceeds the wait for the vehicle itself.',

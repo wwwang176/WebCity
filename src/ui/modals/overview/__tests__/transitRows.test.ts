@@ -123,3 +123,41 @@ describe('面板的路線載重', () => {
     expect(rows[0]!.routeRows[0]!.suspended).toBe(true);
   });
 });
+
+describe('沒有路線的系統', () => {
+  it('should not be called hopeless when there is nothing to ride', () => {
+    // 玩家刪掉鐵路線之後，那四座車站還在，載重率是「有人要搭 ÷ 零運能」= Infinity，
+    // 於是狀態一路紅到底（BUG-349）。沒有路線不是「擠爆」，是「不存在」。
+    const stops = [stop(0, 0, 3000), stop(50, 0, 3000)];
+    const sys: TransitSystemSource = {
+      type: TransportType.RAIL, routes: [], stops,
+      seatsPerVehicle: 300, speed: 4, vehicleCount: 0, operatingCost: 0,
+      segmentDistances: () => null,
+    };
+
+    const row = buildTransitRows([sys])[0]!;
+    expect(row.routeCount).toBe(0);
+    expect(row.status, '沒有路線卻說它擠爆了').toBe('none');
+    expect(row.usage, '沒有運能就不該印百分比').toBe('\u2014');
+  });
+
+  it('should still call a route with riders and no capacity hopeless', () => {
+    // 這一條是反面:路線還在、車被抽光了，人真的等不到車 —— 那才是 hopeless，
+    // 修 BUG-349 不能把它一起吃掉。
+    const r = route(1, loopOf100(3000), 0);
+    const row = buildTransitRows([busSystem([r], 50, 2)])[0]!;
+
+    expect(row.routeCount).toBe(1);
+    expect(row.status).toBe('hopeless');
+  });
+
+  it('should be quiet about a system that was never built', () => {
+    const sys: TransitSystemSource = {
+      type: TransportType.FERRY, routes: [], stops: [],
+      seatsPerVehicle: 100, speed: 1, vehicleCount: 0, operatingCost: 0,
+      segmentDistances: () => null,
+    };
+
+    expect(buildTransitRows([sys])[0]!.status).toBe('none');
+  });
+});
