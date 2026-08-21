@@ -1,0 +1,157 @@
+import { describe, it, expect } from 'vitest';
+import { AgentRead } from '../AgentRead';
+import { createGameState } from '../../core/simulation/GameState';
+import { ZoneType } from '../../core/grid/types';
+
+/**
+ * 讀城市。
+ *
+ * 這一層的規矩是**吐事實、不吐彙總** —— 面板把一百棟房子縮成一行是因為人只看得下
+ * 一行，程式自己會加總。所以測的是「範圍、篩選、上限有沒有守住」，不是「總數對不對」。
+ */
+
+function city() {
+  const state = createGameState(20, 20);
+  // 兩棟住宅、一棟商業，外加一棟燒毀的。
+  state.grid.setCell(3, 3, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 });
+  state.grid.setCell(4, 3, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 });
+  state.grid.setCell(9, 9, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
+  state.grid.setCell(5, 3, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1, reserved: 2 });
+  return new AgentRead(() => state);
+}
+
+/** 同一座城，但數得出 `getCell` 被問過幾次。 */
+function countingCity() {
+  const state = createGameState(20, 20);
+  state.grid.setCell(3, 3, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 });
+  let calls = 0;
+  const grid = state.grid;
+  const inner = grid.getCell.bind(grid);
+  (grid as unknown as { getCell: typeof inner }).getCell = (x: number, y: number) => {
+    calls++;
+    return inner(x, y);
+  };
+  return { read: new AgentRead(() => state), counted: () => calls };
+}
+
+describe('城市數字', () => {
+  it('should report the headline numbers without throwing on an empty city', () => {
+    const c = new AgentRead(() => createGameState(10, 10)).city();
+
+    expect(c.population).toBe(0);
+    expect(typeof c.funds).toBe('number');
+    expect(c.rci).toHaveProperty('residential');
+    expect(c.power).toHaveProperty('supply');
+    expect(c.water).toHaveProperty('demand');
+  });
+});
+
+describe('建築', () => {
+  it('should find every building when nothing is filtered', () => {
+    expect(city().buildings()).toHaveLength(4);
+  });
+
+  it('should filter by zone', () => {
+    const only = city().buildings({ zone: ['commercial_low'] });
+    expect(only).toHaveLength(1);
+    expect(only[0]).toMatchObject({ x: 9, y: 9, zone: 'commercial_low' });
+  });
+
+  it('should filter by rectangle', () => {
+    const near = city().buildings({ rect: { x1: 0, y1: 0, x2: 5, y2: 5 } });
+    expect(near, '範圍外的也被撈進來了').toHaveLength(3);
+  });
+
+  it('should accept a rectangle given from the far corner', () => {
+    const near = city().buildings({ rect: { x1: 5, y1: 5, x2: 0, y2: 0 } });
+    expect(near, '反向的矩形被當成空的').toHaveLength(3);
+  });
+
+  it('should not scan outside the map for an oversized rectangle', () => {
+    // getCell 界外回 null，所以不夾也不會壞 —— 只是把 550×550 掃完（三十萬格）而不是
+    // 20×20。這是效能守衛，看得到的只有呼叫次數。
+    const { read, counted } = countingCity();
+    read.buildings({ rect: { x1: -50, y1: -50, x2: 500, y2: 500 } });
+    expect(counted(), '掃到地圖外面去了').toBeLessThanOrEqual(20 * 20);
+  });
+
+  it('should respect the limit', () => {
+    expect(city().buildings({ limit: 2 })).toHaveLength(2);
+  });
+
+  it('should be able to list only the derelict ones', () => {
+    const dead = city().buildings({ derelictOnly: true });
+    expect(dead).toHaveLength(1);
+    expect(dead[0]).toMatchObject({ x: 5, y: 3, derelict: true });
+  });
+
+  it('should name the building rather than only numbering it', () => {
+    const b = city().buildings({ rect: { x1: 3, y1: 3, x2: 3, y2: 3 } })[0]!;
+    expect(b.name, '只給了編號，讀的人不知道那是什麼').not.toMatch(/^#/);
+    expect(b.level).toBeGreaterThan(0);
+  });
+});
+
+describe('居民', () => {
+  it('should return nobody for an empty city', () => {
+    expect(new AgentRead(() => createGameState(10, 10)).citizens()).toHaveLength(0);
+  });
+
+  it('should respect the limit', () => {
+    const state = createGameState(20, 20);
+    state.grid.setCell(3, 3, { zoneType: ZoneType.RESIDENTIAL_HIGH, buildingId: 4 });
+    for (let i = 0; i < 30; i++) state.citizens.createCitizen({ age: 300, homeId: '3,3' });
+
+    const read = new AgentRead(() => state);
+    expect(read.citizens({ limit: 5 })).toHaveLength(5);
+    expect(read.citizens().length, '預設也要有上限').toBeLessThanOrEqual(200);
+  });
+
+  it('should look up only the people who live in that building', () => {
+    // 一戶人家看不出差別 —— 全部回傳跟查對了長得一樣。
+    const state = createGameState(20, 20);
+    state.grid.setCell(3, 3, { zoneType: ZoneType.RESIDENTIAL_HIGH, buildingId: 4 });
+    state.grid.setCell(8, 8, { zoneType: ZoneType.RESIDENTIAL_HIGH, buildingId: 4 });
+    state.citizens.createCitizen({ age: 300, homeId: '3,3' });
+    for (let i = 0; i < 5; i++) state.citizens.createCitizen({ age: 300, homeId: '8,8' });
+
+    const found = new AgentRead(() => state).citizens({ homeId: '3,3' });
+    expect(found, '把別戶的人也一起撈回來了').toHaveLength(1);
+    expect(found[0]!.homeId).toBe('3,3');
+  });
+});
+
+describe('服務與運輸', () => {
+  it('should itemise the services by name, not by index', () => {
+    const s = city().services();
+    expect(s.items.map(i => i.key)).toContain('police');
+    expect(s.items.map(i => i.key)).toContain('deathCare');
+    expect(typeof s.total).toBe('number');
+  });
+
+  it('should report transit through the same helper the panel uses', () => {
+    // 面板與這裡各算一次的話，兩邊會靜靜地分家 —— BUG-342 就是這樣來的。
+    const rows = city().transit();
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows[0]).toHaveProperty('usage');
+    expect(rows[0]).toHaveProperty('loadFactor');
+  });
+});
+
+describe('逐格資料', () => {
+  it('should clamp the rectangle to the map', () => {
+    const { read, counted } = countingCity();
+    const cells = read.cells({ x1: -5, y1: -5, x2: 2, y2: 2 });
+
+    expect(cells).toHaveLength(9);
+    expect(cells.every(c => c.x >= 0 && c.y >= 0)).toBe(true);
+    expect(counted(), '界外那幾格也去問了').toBe(9);
+  });
+
+  it('should carry the raw fields through', () => {
+    const cell = city().cells({ x1: 3, y1: 3, x2: 3, y2: 3 })[0]!;
+    expect(cell).toMatchObject({ x: 3, y: 3, buildingId: 1 });
+    expect(cell).toHaveProperty('landValue');
+    expect(cell).toHaveProperty('pollution');
+  });
+});

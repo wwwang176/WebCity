@@ -31,6 +31,35 @@
 
 ## 待修問題
 
+### BUG-349: 刪光路線的運具永遠掛著紅色「hopeless」 ⬜ 未修
+
+- **發現**: 蓋 agent 的讀取層時，`read.transit()` 回報玩家存檔裡的鐵路是
+  `status: "hopeless"` —— 而那個系統有 4 座車站、**0 條路線**、0 位乘客。
+  同樣是 0 的渡輪卻是 `comfortable`。
+- **位置**: `TransitAvailability.rolloverDailyRiders()` → `RouteLoad.computeLoadFactor()`
+- **根因**: **指數平滑永遠到不了 0。**
+
+  路線被刪掉之後搭乘量歸零，`smoothedDailyRiders` 以 alpha 0.7 一路衰減，跑了幾千個
+  tick 之後變成**非正規化浮點數**而不是 0。玩家存檔實測那四座車站:
+
+  | | |
+  |---|---|
+  | `smoothedDailyRiders` | `7.7e-44`、`1.16e-42`、**`5e-324`**、`1.25e-42` |
+  | `lastDayRiders` | 0 |
+
+  於是 `getRouteRiders()` 回 `2.48e-42`（大於 0），而運能是 0 ——
+  `computeLoadFactor(riders > 0, 0)` 依定義回 `Infinity`，
+  `routeLoadStatus(Infinity)` 就是 `hopeless`。
+- **玩家看到什麼**: 使用率那一欄是 `—`（運能 0 時正確地不印 0%），但狀態燈是**紅的**，
+  而且**再也不會變回來** —— 除非重新開線。刪掉一條線的懲罰是永久的紅字。
+- **兩個可以下手的地方**（還沒決定）:
+  1. `rolloverDailyRiders()` 低於某個下限就直接歸零 —— 非正規化浮點數本來就不該存在
+     於一個「人次」的欄位裡。
+  2. 沒有任何路線的系統不該去問 `routeLoadStatus()` —— 沒有路線就沒有載重可言，
+     那不是「擠爆」而是「不存在」。
+- **嚴重性**: 低（純顯示;模擬不受影響，因為沒有路線可搭）
+- **狀態**: 未修 —— 發現於 agent API 那一輪，屬於另一個子系統，沒有順手改
+
 ### BUG-348: 載重拿「今天到現在為止」比「一整天的運能」 ✅ 已修復
 
 - **回報**: 玩家試玩後回報 usage 在 80~100% 之間震盪。

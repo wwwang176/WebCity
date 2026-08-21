@@ -4,7 +4,9 @@ import { loadSaveData } from './core/save/LoadSave';
 import { type GameState } from './core/simulation/GameState';
 import { type MapConfig } from './core/config/MapConfig';
 import { classifySaveError, missingSaveFailure, type SaveFailure } from './core/save/SaveFailure';
-import { AgentApi } from './agent/AgentApi';
+import { createAgent } from './agent';
+import { AgentSession } from './agent/AgentSession';
+import { registerSessionBridge } from './agent/registry';
 
 interface SaveInfo {
   slotId: number;
@@ -45,8 +47,7 @@ async function startGame(loadedState?: GameState, saveInfo?: SaveInfo, mapConfig
 
   const w = window as unknown as Record<string, unknown>;
   w.__game = game;
-  // 讓程式動手蓋東西的入口。讀狀態直接走 __game 就好，這一層管的是「寫」。
-  w.__agent = new AgentApi(game);
+  w.__agent = createAgent(game);
   const ui = createGameUI(game);
   document.body.appendChild(ui);
 
@@ -169,5 +170,21 @@ async function startGameGuarded(
     showMainMenu({ ...failure, message: 'The game could not start. Nothing has been changed.' });
   }
 }
+
+// 載入與開新局住在這裡（它們會把整個 Game 換掉），agent 從註冊表取用。
+// 刪除存檔刻意不註冊 —— 沒有復原功能，存檔是唯一的檢查點。
+registerSessionBridge({
+  newGame: (mapConfig) => startGameGuarded(undefined, undefined, mapConfig as MapConfig | undefined),
+  load: (slotId) => handleLoadGame(slotId),
+});
+
+// 主選單上也要碰得到「有哪些存檔」與「開新局」—— 那時候還沒有 Game，所以先掛一個
+// 只有 session 的版本。開局之後 startGame 會換成完整的。
+(window as unknown as Record<string, unknown>).__agent = {
+  session: new AgentSession(
+    () => { throw new Error('no game is running'); },
+    () => 0,
+  ),
+};
 
 showMainMenu();

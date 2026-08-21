@@ -1,5 +1,6 @@
 import { render } from 'solid-js/web';
-import { createSignal, createEffect, on } from 'solid-js';
+import { createSignal, createEffect, on, onCleanup } from 'solid-js';
+import { registerPanelBridge, type PanelId } from '../agent/registry';
 import { initGameStore, gameSignals } from './store/gameStore';
 import type { Game } from '../Game';
 import './styles/game-ui.css';
@@ -62,6 +63,13 @@ function GameUIRoot() {
   };
 
   const closeModal = () => setOpenModal(null);
+
+  // 面板開關是 Solid 內部的一個 signal，外面（AgentApi）拿不到。反過來註冊出去。
+  registerPanelBridge({
+    get: () => openModal() as PanelId | null,
+    set: (id) => setOpenModal(id),
+  });
+  onCleanup(() => registerPanelBridge(null));
 
   return (
     <div id="game-ui">

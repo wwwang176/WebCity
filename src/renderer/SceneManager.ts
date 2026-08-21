@@ -208,6 +208,50 @@ export class SceneManager {
     this.updateCameraPosition();
   }
 
+  /**
+   * 鏡頭的完整狀態:看向哪一格、畫面裝得下幾格、方位角與俯角。
+   *
+   * `size` 是**正交視錐的高度**，不是相機距離 —— 這是正交投影，`cameraDistance` 改了
+   * 幾乎不影響畫面大小，只影響裁切平面。
+   */
+  getCameraState(): { x: number; y: number; size: number; angle: number; elevation: number } {
+    const t = this.cameraTarget;
+    return {
+      x: t.x,
+      y: t.z,
+      size: (this.camera.top - this.camera.bottom) || 60,
+      angle: this.cameraAngle,
+      elevation: this.cameraElevation,
+    };
+  }
+
+  /**
+   * 設鏡頭。省略的項目不動。
+   *
+   * 夾限刻意跟玩家自己操作時一樣（`zoomCamera` 的 3~200、`orbitCamera` 的
+   * π/18 ~ 4π/9）—— 程式拍得到的角度，玩家自己也拍得到。
+   */
+  setCameraState(t: { x?: number; y?: number; size?: number; angle?: number; elevation?: number }): void {
+    if (t.size !== undefined) {
+      const current = (this.camera.top - this.camera.bottom) || 60;
+      this.zoomCamera(Math.max(3, Math.min(200, t.size)) - current);
+    }
+    if (t.x !== undefined || t.y !== undefined) {
+      const now = this.cameraTarget;
+      this.setCameraTarget(t.x ?? now.x, t.y ?? now.z);
+    }
+    if (t.angle !== undefined) {
+      this.cameraAngle = t.angle;
+      this.targetCameraAngle = t.angle;
+    }
+    if (t.elevation !== undefined) {
+      const e = Math.max(Math.PI / 18, Math.min(Math.PI * 4 / 9, t.elevation));
+      this.cameraElevation = e;
+      this.targetCameraElevation = e;
+    }
+    this.updateCameraPosition();
+  }
+
   zoomCamera(delta: number): void {
     const currentSize = (this.camera.top - this.camera.bottom) || 60;
     const aspect = this.camera.right / (this.camera.top || 1);

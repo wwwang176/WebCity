@@ -994,6 +994,9 @@
   一台公車實測載重在 **5.56 ~ 47.34** 之間跑（今日累計 0 → 6 519）。而且它讓需求
   系統性超打:每天早上路線看起來是空的，所有人都選它。改讀
   `max(昨天的實數, 跨日平滑值)` 之後，同一條路線同一台車是 **0.03 ~ 1.11**。
+- [ ] **刪光路線的運具永遠是紅色 hopeless**（BUG-349）— 指數平滑衰減到非正規化浮點數
+  （`5e-324`）而不是 0，於是「乘客數 > 0、運能 = 0」→ 載重率 `Infinity` → `hopeless`。
+  玩家刪掉一條線就永久掛紅字。發現於 agent 讀取層，沒有順手改。
 - [x] **讓程式（AI）動得了手的入口**（`src/agent/AgentApi.ts`，已做）— `window.__agent.act()`。
   底層走 `Game.handleToolAction()` 而不是直接叫 builder:那支函式裡有一整串失效通知
   （`markLaneGraphDirty`、`roadCoverageDirty`、`invalidateZoneBlockers`），跳過任何
@@ -1001,9 +1004,26 @@
   `currentRotation` **明寫一次**，因為 `setTool()` 對道路與鐵軌不重設 placementMode ——
   實測確認:玩家留下 `elevated` 之後天真地 `setTool` + `handleToolAction`，蓋出來的
   是高架橋（`Cannot build elevated road`），走 AgentApi 才是地面路。
-- [ ] **agent 的 `observe()`** — 還沒做，而且是刻意的。60×60×14 個欄位原封不動丟給
-  LLM 沒有用;要餵什麼得先玩幾輪、看實際會問什麼問題才定得下來。目前讀狀態直接走
-  `window.__game`。
+- [x] **agent 的讀取層與 UI 層**（`AgentRead` / `AgentUi` / `AgentSession`，已做）—
+  原本打算等玩幾輪再定 `observe()` 要餵什麼，後來換了做法:**UI 本身就是一份已經被
+  玩過、篩選過的「該看什麼」清單**，照著它做就好。
+  - `read` 吐**事實**不吐面板的彙總 —— 那八頁的數字算在各自的 `createMemo` 裡（共
+    兩千多行 TSX），抄一份過來就是 BUG-342 那個「兩邊各記一份然後靜靜分家」的錯。
+    已經抽成純模組的（`transitRows.ts`）直接重用，其餘吐原始事實讓呼叫端自己加總。
+  - `ui` 把 `Game` 的**切換式** API 包成**設定式**:`toggleViewMode` → `setViewMode`、
+    `changeSpeed(delta)` → `setSpeed(target)`。後者踩到一個坑:速度是固定檔位
+    （1/3/5/10），目標落在檔位之間時天真的逼近會**在兩側來回震盪**，最後停在哪一檔
+    由迴圈上限決定。改成跨過目標就停。
+  - 面板住在 Solid 的 signal 裡、開新局與載入住在 `main.ts`，兩邊都不是 `Game` 的
+    方法。直接 import 會循環相依，所以改成那兩邊各自把入口**註冊**進 `registry`。
+- [ ] **`load()` / `newGame()` 之後，外面裝的防護不會跟過去** — 那兩個會 `new Game`，
+  舊實例上打的補丁（例如把 `autoSaver.shouldSave` 換成 `() => false`）全部失效，而且
+  **沒有任何提示**。實測時就差點又把玩家存檔寫掉。需要一個「換 Game 時通知」的掛勾。
+- [ ] **agent 還碰不到的**:公車／捷運路線的建立與刪除（走 modal 不是
+  `handleToolAction`）、稅率、政策、行政區筆刷、偉大工程。
+- [ ] **刪除存檔刻意不做** — `SaveManager.deleteSave()` 存在但 `AgentSession` 不包它。
+  沒有復原功能，存檔是唯一的檢查點。`AgentSession.test.ts` 有一條測試守著這件事，
+  日後有人補上去會在那裡絆倒。
 - [ ] **agent 動作的安全網** — 現在只有「拆除單次上限 64 格」與動作記錄。缺:動手前
   自動存檢查點、動作期間停 autosave 直到玩家接受、單場累計花費上限。
 - [ ] **`ok` 不等於「有東西改變」** — 在已經有路的地方再蓋一次不會被拒絕也不花錢，
