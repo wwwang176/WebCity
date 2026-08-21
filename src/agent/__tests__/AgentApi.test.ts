@@ -32,6 +32,7 @@ function fakeHost(opts: { funds?: number; onAction?: (h: FakeHost) => void } = {
     elevationLevel: 1,
     currentRotation: 0,
     notification: null,
+    lastDistrictGesture: null,
     getState: () => ({ budget }),
     calls: [],
     get funds() { return budget.funds; },
@@ -207,3 +208,58 @@ describe('動作記錄', () => {
 });
 
 type AgentActionResultArray = { length: number };
+
+describe('分區筆刷的成敗不能看通知', () => {
+  /** 筆刷畫完會出一句「Downtown +15 cells」—— 那是成功的樣子，不是失敗。 */
+  function districtHost(gesture: 'select' | 'deselect' | 'paint' | null, note: string) {
+    return fakeHost({
+      onAction: (h) => { h.notification = note; h.lastDistrictGesture = gesture; },
+    });
+  }
+
+  it('should count a stroke that painted cells as a success', () => {
+    // 每一筆都要說話是這支筆刷刻意的設計:選取的分區在畫面外時，那一句是唯一的痕跡。
+    const h = districtHost('paint', 'Downtown +15 cells');
+    const r = new AgentApi(h).act({ tool: 'district', x1: 10, y1: 12, x2: 14, y2: 14 });
+
+    expect(r.ok, '畫成功了卻回報失敗').toBe(true);
+    expect(r.reason, '成功的訊息被當成失敗理由').toBeUndefined();
+    expect(r.info, '遊戲說的話被吃掉了').toBe('Downtown +15 cells');
+  });
+
+  it('should count picking a district up as a success', () => {
+    const h = districtHost('select', 'Now editing Docks');
+    expect(new AgentApi(h).act({ tool: 'district', x1: 3, y1: 3 }).ok).toBe(true);
+  });
+
+  it('should still report a stroke the game refused', () => {
+    // 扣除模式手上沒有分區時筆刷什麼都不做,只留下一句話。
+    const h = districtHost(null, 'Pick a district first — click one on the map, or press New.');
+    const r = new AgentApi(h).act({ tool: 'district', x1: 3, y1: 3 });
+
+    expect(r.ok, '什麼都沒發生卻回報成功').toBe(false);
+    expect(r.reason).toContain('Pick a district');
+  });
+
+  it('should not let the previous stroke make this one look successful', () => {
+    const h = districtHost('paint', 'Downtown +15 cells');
+    const api = new AgentApi(h);
+    api.act({ tool: 'district', x1: 10, y1: 12, x2: 14, y2: 14 });
+
+    // 這一筆被擋下來 —— handleToolAction 完全沒動到那個欄位。
+    h.notification = null;
+    const blocked = fakeHost({ onAction: (x) => { x.notification = 'Pick a district first'; } });
+    blocked.lastDistrictGesture = 'paint';
+    const r = new AgentApi(blocked).act({ tool: 'district', x1: 3, y1: 3 });
+
+    expect(r.ok, '上一筆的結果留著，這一筆跟著變成成功').toBe(false);
+  });
+
+  it('should leave every other tool judging by the notification', () => {
+    const h = fakeHost({ onAction: (x) => { x.notification = 'Cannot build on water'; } });
+    const r = new AgentApi(h).act({ tool: 'road', x1: 1, y1: 1, x2: 5, y2: 1 });
+
+    expect(r.ok).toBe(false);
+    expect(r.reason).toBe('Cannot build on water');
+  });
+});

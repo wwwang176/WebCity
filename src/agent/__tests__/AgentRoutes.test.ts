@@ -53,8 +53,9 @@ function fakeAdapter(over: Partial<ModeAdapter> = {}): FakeAdapter {
     },
     removeVehicle(id) {
       calls.push(`remove ${id}`);
+      // 照著 BaseTransportSystem:剩一台就不再理。
       const r = routes.find(x => x.id === id);
-      if (r && r.vehicles > 0) r.vehicles--;
+      if (r && r.vehicles > 1) r.vehicles--;
     },
     ...over,
   };
@@ -176,15 +177,27 @@ describe('動已經在跑的路線', () => {
     expect(routes.removeVehicle('bus', id)).toMatchObject({ ok: true, vehicleCount: 1 });
   });
 
-  it('should refuse to remove a vehicle from a route that has none', () => {
-    // 這一條不擋的話會回一個 ok:true 但什麼都沒發生的結果 —— 那比錯誤更難查。
+  it('should refuse to take away the last vehicle on a route', () => {
+    // 遊戲的 removeVehicleFromRoute 判的是 `vehicles <= 1` 就直接 return ——
+    // 下限是一台不是零。不擋的話會回一個 ok:true 但什麼都沒發生的結果。
+    //
+    // 這一條是在瀏覽器上測出來的:單元測試的假運具照著我寫的下限（零）動，
+    // 兩邊一起錯就看不出來。
     const { routes, bus } = fakeHost();
-    const id = routes.create('bus', [1, 2], 0).routeId!;
+    const id = routes.create('bus', [1, 2], 1).routeId!;
     bus.calls.length = 0;
 
     const r = routes.removeVehicle('bus', id);
-    expect(r.ok).toBe(false);
-    expect(bus.calls, '路線上一台車都沒有還去減').toEqual([]);
+    expect(r.ok, '把最後一台車減掉了').toBe(false);
+    expect(r.vehicleCount, '回報的車數不是實際的').toBe(1);
+    expect(bus.calls, '遊戲那邊根本不會理，還是送出去了').toEqual([]);
+  });
+
+  it('should still remove a vehicle while more than one is running', () => {
+    const { routes } = fakeHost();
+    const id = routes.create('bus', [1, 2], 2).routeId!;
+
+    expect(routes.removeVehicle('bus', id), '下限擋過頭了').toMatchObject({ ok: true, vehicleCount: 1 });
   });
 
   it('should delete a route', () => {

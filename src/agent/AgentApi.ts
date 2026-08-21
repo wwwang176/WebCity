@@ -42,10 +42,15 @@ export interface ToolHost {
   currentRotation: Rotation;
   /** 遊戲拒絕蓋的時候會把理由寫在這裡。 */
   notification: string | null;
+  /** 分區筆刷上一次做了什麼。`null` 是「這一筆被擋下來了」。 */
+  lastDistrictGesture: DistrictGesture;
   getState(): { readonly budget: { readonly funds: number } };
   setTool(tool: ToolType): void;
   handleToolAction(x1: number, y1: number, x2: number, y2: number): void;
 }
+
+/** 分區筆刷一次動作的結果。 */
+export type DistrictGesture = 'select' | 'deselect' | 'paint' | null;
 
 export interface AgentAction {
   tool: ToolType;
@@ -76,6 +81,8 @@ export interface AgentActionResult {
   cost: number;
   /** 被拒絕時遊戲自己的說法。 */
   reason?: string;
+  /** 成功時遊戲還是說了話（分區筆刷每一筆都會說）。 */
+  info?: string;
 }
 
 export const AGENT_LIMITS = {
@@ -116,6 +123,7 @@ export class AgentApi {
 
     // 上一則通知還留著的話，會被當成這一次的失敗理由。
     this.host.notification = null;
+    this.host.lastDistrictGesture = null;
 
     this.host.setTool(action.tool);
     // 順序是有意義的:`setTool` 自己會把 rotation 歸零、把非拖曳工具的 placementMode
@@ -128,13 +136,20 @@ export class AgentApi {
     this.host.handleToolAction(rect.x1, rect.y1, rect.x2, rect.y2);
     const cost = fundsBefore - this.host.getState().budget.funds;
 
-    const reason = this.host.notification;
+    const note = this.host.notification;
+    // 分區筆刷**每一筆都會出聲**,而那是刻意的:選取的分區在畫面外時,那一句
+    // 「Downtown +15 cells」是唯一的痕跡。所以它的成敗不能看有沒有通知 ——
+    // 看的是筆刷到底做了什麼。
+    const ok = action.tool === 'district'
+      ? this.host.lastDistrictGesture !== null
+      : note === null;
+
     return this.record({
-      ok: reason === null,
+      ok,
       tool: action.tool,
       rect,
       cost,
-      ...(reason === null ? {} : { reason }),
+      ...(note === null ? {} : ok ? { info: note } : { reason: note }),
     });
   }
 

@@ -27,6 +27,14 @@ export type TransitMode = 'bus' | 'metro' | 'rail' | 'ferry';
 
 export const TRANSIT_MODES: readonly TransitMode[] = ['bus', 'metro', 'rail', 'ferry'];
 
+/**
+ * 一條在跑的路線至少要留幾台車。
+ *
+ * `BaseTransportSystem.removeVehicleFromRoute()` 的判斷是 `vehicles <= 1` 就
+ * **直接 return** —— 四種運具都繼承這一支。想讓路線停掉要拆線，不是把車減到零。
+ */
+export const MIN_VEHICLES_ON_A_LIVE_ROUTE = 1;
+
 /** 一種運具對外要提供的六件事。 */
 export interface ModeAdapter {
   stops(): readonly TransportStop[];
@@ -144,10 +152,13 @@ export class AgentRoutes {
 
   removeVehicle(mode: string, routeId: number): RouteResult {
     return this.onRoute(mode, routeId, (a, r) => {
-      // 一台都沒有還去減的話，遊戲那邊會靜靜地什麼都不做，然後這裡回一個
-      // `ok: true` 但實際上沒發生任何事的結果 —— 那比直接說不行更難查。
-      if (r.vehicles <= 0) {
-        return { ok: false, mode, routeId, vehicleCount: 0, reason: `${mode} route ${routeId} has no vehicles to remove` };
+      // 減到下限之後遊戲那邊會靜靜地什麼都不做，然後這裡回一個 `ok: true` 但實際上
+      // 沒發生任何事的結果 —— 那比直接說不行更難查。
+      if (r.vehicles <= MIN_VEHICLES_ON_A_LIVE_ROUTE) {
+        return {
+          ok: false, mode, routeId, vehicleCount: r.vehicles,
+          reason: `${mode} route ${routeId} is down to its last vehicle; delete the route instead`,
+        };
       }
       a.removeVehicle(r.id);
       return { ok: true, mode, routeId, vehicleCount: this.vehicleCount(mode, routeId) };

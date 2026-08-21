@@ -1421,16 +1421,19 @@ export class Game {
    * 而那一區的名稱與顏色明明就畫在地圖上。
    */
   private applyDistrictGesture(x1: number, y1: number, x2: number, y2: number): void {
+    this.lastDistrictGesture = null;
     const gesture = resolveDistrictGesture(
       this.state.districts, this.activeDistrictId, x1, y1, x2, y2, this.districtPaintMode);
     if (gesture.kind === 'select') {
       this.setActiveDistrict(gesture.districtId);
       this.showNotification(
         `Now editing ${this.state.districts.getDistrict(gesture.districtId)!.name}`, 2);
+      this.lastDistrictGesture = 'select';
       return;
     }
     if (gesture.kind === 'deselect') {
       this.clearDistrictSelection();
+      this.lastDistrictGesture = 'deselect';
       return;
     }
     // 取代與扣除改的是「現有的那一區」。手上沒有分區時它們無事可做，而順手開一個
@@ -1440,8 +1443,17 @@ export class Game {
       return;
     }
     this.paintDistrict(x1, y1, x2, y2);
+    this.lastDistrictGesture = 'paint';
     this.audioManager.playSfx(SoundType.ZONE);
   }
+
+  /**
+   * 分區筆刷上一筆做了什麼。`null` 是「被擋下來了」。
+   *
+   * 這支筆刷**每一筆都會出聲**，那是刻意的（見 `reportDistrictPaint`）—— 所以
+   * 「有沒有通知」分不出成功與失敗，程式呼叫的那一層（`AgentApi.act`）看的是這裡。
+   */
+  lastDistrictGesture: 'select' | 'deselect' | 'paint' | null = null;
 
   /** 作用中的分區還在嗎。存檔載入或分區被合併掉之後，id 會指向不存在的東西。 */
   private hasActiveDistrict(): boolean {
