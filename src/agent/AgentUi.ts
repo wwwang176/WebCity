@@ -54,6 +54,7 @@ export interface UiHost {
   toggleViewMode(mode: ViewMode): void;
   togglePause(): void;
   setSpeed(speed: GameSpeed): void;
+  deselectBuilding(): void;
   camera(): CameraState;
   setCamera(target: CameraTarget): CameraState;
 }
@@ -174,6 +175,18 @@ export class AgentUi {
   setSpeed(target: number): number {
     this.host.setSpeed(nearestGear(target));
     return this.host.speed;
+  }
+
+  // ── 選取 ────────────────────────────────────────────────────────
+
+  /**
+   * 關掉詳情面板。
+   *
+   * 選取本身是點出來的（`act({ tool: 'select', ... })`），取消沒有對應的點擊 ——
+   * 面板上那顆 X 走的就是這一支。
+   */
+  deselect(): void {
+    this.host.deselectBuilding();
   }
 
   // ── 鏡頭 ────────────────────────────────────────────────────────

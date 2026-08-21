@@ -182,6 +182,7 @@ function stubStats() {
     commute: { average: 7 },
     traffic: { commuteVehicleCount: 5 },
     transfer: { transferRate: 0.25 },
+    selected: { kind: 'zone', x: 3, y: 4 },
   };
   const host = {
     getEconomyBreakdown: () => { calls.push('economy'); return marks.economy; },
@@ -190,6 +191,7 @@ function stubStats() {
     getTrafficStats: () => { calls.push('traffic'); return marks.traffic; },
     getTransferStats: () => { calls.push('transfer'); return marks.transfer; },
     getAbandonmentStress: (x: number, y: number) => { calls.push(`stress ${x},${y}`); return x * 100 + y; },
+    getSelectedBuilding: () => { calls.push('selected'); return marks.selected; },
   } as unknown as StatsHost;
 
   return { read: new AgentRead(() => createGameState(10, 10), host), marks, calls };
@@ -227,5 +229,22 @@ describe('Game 已經算好的那幾份', () => {
 
     expect(read.abandonmentStress(4, 7), 'x 跟 y 掉包了').toBe(407);
     expect(calls).toEqual(['stress 4,7']);
+  });
+});
+
+describe('點開的那一棟', () => {
+  it('should hand back the very same selection the details panel shows', () => {
+    const { read, marks } = stubStats();
+    expect(read.selected()).toBe(marks.selected);
+  });
+
+  it('should be null when nothing is selected', () => {
+    const { read } = stubStats();
+    const empty = new AgentRead(() => createGameState(5, 5), {
+      ...({} as StatsHost), getSelectedBuilding: () => null,
+    } as StatsHost);
+
+    expect(empty.selected()).toBeNull();
+    expect(read.selected()).not.toBeNull();
   });
 });

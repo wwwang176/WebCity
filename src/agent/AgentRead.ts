@@ -45,6 +45,7 @@ export interface StatsHost {
   getTrafficStats(): TrafficStatsResult;
   getTransferStats(): TransferStats;
   getAbandonmentStress(x: number, y: number): number;
+  getSelectedBuilding(): unknown;
 }
 
 /** 一個收費分區的道路量與付費駕駛數。 */
@@ -308,6 +309,16 @@ export class AgentRead {
   /** 某一格的遺棄壓力。滿了就會變成廢墟 —— 用來在出事前先看出來。 */
   abandonmentStress(x: number, y: number): number {
     return this.stats.getAbandonmentStress(x, y);
+  }
+
+  /**
+   * 現在點開的那一棟，跟詳情面板顯示的是同一份。
+   *
+   * 選取是**點出來的** —— `act({ tool: 'select', x1, y1 })`。這裡只負責讀。
+   * 形狀依建築種類而異（`zone` / `infra` / `transport`⋯），所以不在這裡窄化型別。
+   */
+  selected(): unknown {
+    return this.stats.getSelectedBuilding();
   }
 
   /**

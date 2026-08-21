@@ -16,7 +16,7 @@ import type { GameSpeed } from '../../core/simulation/GameClock';
  */
 
 
-function fakeHost(over: Partial<UiHost> = {}): UiHost & { overlaySet: string[]; speedSet: number[] } {
+function fakeHost(over: Partial<UiHost> = {}): UiHost & { overlaySet: string[]; speedSet: number[]; deselects: number } {
   let overlay = 'none';
   const h = {
     currentTool: 'select' as ToolType,
@@ -30,6 +30,8 @@ function fakeHost(over: Partial<UiHost> = {}): UiHost & { overlaySet: string[]; 
     getOverlay: () => overlay as never,
     toggleViewMode(m: ViewMode) { h.viewMode = h.viewMode === m ? ViewMode.NORMAL : m; },
     togglePause() { h.paused = !h.paused; },
+    deselects: 0,
+    deselectBuilding() { h.deselects++; },
     speedSet: [] as number[],
     setSpeed(s: GameSpeed) { h.speedSet.push(s); h.speed = s; h.paused = false; },
     camera: () => ({ x: 30, y: 30, size: 60, angle: 0.78, elevation: 0.52 }),
@@ -38,7 +40,7 @@ function fakeHost(over: Partial<UiHost> = {}): UiHost & { overlaySet: string[]; 
     }),
     ...over,
   };
-  return h as UiHost & { overlaySet: string[]; speedSet: number[] };
+  return h as UiHost & { overlaySet: string[]; speedSet: number[]; deselects: number };
 }
 
 afterEach(() => registerPanelBridge(null));
@@ -179,5 +181,16 @@ describe('圖層與工具', () => {
   it('should switch tools without building anything', () => {
     const h = fakeHost();
     expect(new AgentUi(h).setTool('road_2lane')).toBe('road_2lane');
+  });
+});
+
+describe('取消選取', () => {
+  it('should close the details panel', () => {
+    // 選取是點出來的（`act({ tool: 'select' })`），關掉它沒有對應的點擊 ——
+    // 面板上那顆 X 走的是這一支。
+    const h = fakeHost();
+    new AgentUi(h).deselect();
+
+    expect(h.deselects).toBe(1);
   });
 });

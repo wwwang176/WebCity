@@ -2,15 +2,18 @@ import type { Game } from '../Game';
 import { serializeGameState } from '../core/save/Serializer';
 import { AgentApi } from './AgentApi';
 import { AgentBudget, type BudgetHost } from './AgentBudget';
+import { AgentDistrict, type DistrictHost } from './AgentDistrict';
 import { AgentPolicy, type PolicyHost } from './AgentPolicy';
 import { AgentRead } from './AgentRead';
 import { AgentSession } from './AgentSession';
 import { AgentRoutes, type ModeAdapter, type RouteHost } from './AgentRoutes';
 import { AgentUi, type CameraTarget, type UiHost } from './AgentUi';
 import { RailServiceType } from '../core/transport/RailSystem';
+import type { DistrictPaintMode } from '../core/district/DistrictPaint';
 
 export { AgentApi, AGENT_LIMITS } from './AgentApi';
 export { AgentBudget } from './AgentBudget';
+export { AgentDistrict, PAINT_MODES } from './AgentDistrict';
 export { AgentPolicy } from './AgentPolicy';
 export { AgentRead } from './AgentRead';
 export { AgentRoutes, TRANSIT_MODES } from './AgentRoutes';
@@ -29,6 +32,7 @@ export * from './registry';
  * | `routes` | 公車／地鐵／鐵路／渡輪的建線、拆線、加減車 |
  * | `budget` | 稅率、借款、還款 |
  * | `policy` | 分區條例、全城條例、城市特化 |
+ * | `districts` | 分區的增刪改名換色，以及筆刷指向誰、用什麼模式 |
  * | `ui` | 開關面板、圖層、聚焦視角、工具、暫停與速度、鏡頭 |
  * | `read` | 城市數字、建築、居民、服務、大眾運輸、逐格資料 |
  * | `session` | 存檔清單、存檔、匯出、載入、開新局（**沒有刪除**） |
@@ -39,6 +43,7 @@ export interface AgentRoot {
   routes: AgentRoutes;
   budget: AgentBudget;
   policy: AgentPolicy;
+  districts: AgentDistrict;
   ui: AgentUi;
   read: AgentRead;
   session: AgentSession;
@@ -65,6 +70,7 @@ function uiHost(game: Game): UiHost {
     get notification() { return game.notification; },
     set notification(v) { game.notification = v; },
     setTool: (t) => game.setTool(t),
+    deselectBuilding: () => game.deselectBuilding(),
     setOverlay: (t) => game.setOverlay(t),
     getOverlay: () => g.overlayRenderer.getOverlay() as never,
     toggleViewMode: (m) => game.toggleViewMode(m),
@@ -174,6 +180,32 @@ function policyHost(game: Game): PolicyHost {
   };
 }
 
+/**
+ * 分區。
+ *
+ * 建立走 `Game.createNewDistrict()` 而不是 `DistrictManager.createDistrict()` ——
+ * 前者會挑一個沒撞名的號碼，而且順手把筆刷指過去。
+ */
+function districtHost(game: Game): DistrictHost {
+  const dm = () => game.getState().districts;
+  const g = game as unknown as {
+    activeDistrictId: string | null;
+    districtPaintMode: DistrictPaintMode;
+  };
+  return {
+    all: () => dm().getAllDistricts(),
+    create: (name) => game.createNewDistrict(name),
+    remove: (id) => dm().deleteDistrict(id),
+    rename: (id, name) => dm().renameDistrict(id, name),
+    setColor: (id, colorIndex) => dm().setDistrictColor(id, colorIndex),
+    merge: (keepId, mergedId) => dm().mergeDistricts(keepId, mergedId).id,
+    activeId: () => g.activeDistrictId,
+    setActive: (id) => game.setActiveDistrict(id),
+    paintMode: () => g.districtPaintMode,
+    setPaintMode: (mode) => game.setDistrictPaintMode(mode),
+  };
+}
+
 export function createAgent(game: Game): AgentRoot {
   const api = new AgentApi(game);
   const read = new AgentRead(() => game.getState(), game);
@@ -189,6 +221,7 @@ export function createAgent(game: Game): AgentRoot {
     routes: new AgentRoutes(routeHost(game)),
     budget: new AgentBudget(budgetHost(game)),
     policy: new AgentPolicy(policyHost(game)),
+    districts: new AgentDistrict(districtHost(game)),
     ui,
     read,
     session,

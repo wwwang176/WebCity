@@ -1,5 +1,5 @@
 import { listSaves, saveGame, type SaveSlot } from '../core/save/SaveManager';
-import { exportSaveToFile } from '../core/save/ImportExport';
+import { exportSaveToFile, importSaveFromFile } from '../core/save/ImportExport';
 import { getSessionBridge } from './registry';
 
 /**
@@ -30,6 +30,14 @@ export interface SaveInfo {
 export interface SessionResult {
   ok: boolean;
   reason?: string;
+}
+
+export interface ImportResult extends SessionResult {
+  /** 落在哪一格。 */
+  slotId?: number;
+  name?: string;
+  /** 版本不合等等可以繼續、但值得知道的事。 */
+  warnings?: string[];
 }
 
 function describe(slot: SaveSlot): SaveInfo {
@@ -90,6 +98,35 @@ export class AgentSession {
     if (!slots.some(s => s.id === slotId)) return { ok: false, reason: `no save in slot ${slotId}` };
     await bridge.load(slotId);
     return { ok: true };
+  }
+
+  /**
+   * 匯入一個匯出檔。
+   *
+   * **不會蓋掉任何東西** —— 它寫到第一個空的格子。slot 0 永遠被自動存檔占著，
+   * 所以匯入碰不到它。
+   *
+   * 匯入完不會自動載入，要玩它得再 `load(slotId)`。
+   */
+  async importSave(fileContent: string, name?: string): Promise<ImportResult> {
+    // 空字串一路送下去只會在 JSON.parse 那裡炸開,而那個訊息跟「檔案是空的」無關。
+    if (typeof fileContent !== 'string' || fileContent.trim() === '') {
+      return { ok: false, reason: 'the save file is empty' };
+    }
+    try {
+      const r = await importSaveFromFile(fileContent, name ? { customName: name } : undefined);
+      if (!r.success) {
+        return { ok: false, reason: (r.errors ?? ['import failed']).join('; ') };
+      }
+      return {
+        ok: true,
+        ...(r.slotId !== undefined ? { slotId: r.slotId } : {}),
+        ...(r.saveName !== undefined ? { name: r.saveName } : {}),
+        ...(r.warnings?.length ? { warnings: r.warnings } : {}),
+      };
+    } catch (e) {
+      return { ok: false, reason: String(e) };
+    }
   }
 
   /** 開一局新的。目前這局會被整個丟掉。 */

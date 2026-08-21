@@ -75,3 +75,23 @@ describe('載入與開新局要有橋才做得到', () => {
     expect(got, '地圖設定被吃掉了').toEqual({ size: 80 });
   });
 });
+
+describe('匯入存檔檔案', () => {
+  it('should refuse an empty file instead of asking the database', async () => {
+    // 空字串一路送下去只會在 JSON.parse 那裡炸開，訊息還跟「檔案是空的」無關。
+    expect(await session().importSave('')).toMatchObject({ ok: false });
+    expect((await session().importSave('   ')).reason, '沒說是檔案空的').toMatch(/empty/);
+  });
+
+  it('should report why a broken file was refused', async () => {
+    const r = await session().importSave('not json at all');
+
+    expect(r.ok).toBe(false);
+    expect(r.reason, '拒絕了卻沒說為什麼').toBeTruthy();
+  });
+
+  it('should refuse a file that is not an export of this game', async () => {
+    const r = await session().importSave(JSON.stringify({ hello: 'world' }));
+    expect(r.ok).toBe(false);
+  });
+});
