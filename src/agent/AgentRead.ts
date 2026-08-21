@@ -5,6 +5,10 @@ import { calculateBalance } from '../core/economy/Budget';
 import { getCivicServices, getTotalServiceMaintenanceCost } from '../core/service/ServiceRegistry';
 import { getTransitSystems } from '../core/transport/TransportRegistry';
 import { buildTransitRows, type TransitSystemRow } from '../ui/modals/overview/transitRows';
+import type { EconomyBreakdownResult } from '../core/economy/EconomyBreakdown';
+import type { TrafficStatsResult } from '../core/traffic/TrafficStats';
+import type { CommuteStats } from '../core/citizen/CommuteStats';
+import type { TransferStats } from '../core/transport/TransferStatsQuery';
 
 /**
  * 讀城市。
@@ -21,7 +25,34 @@ import { buildTransitRows, type TransitSystemRow } from '../ui/modals/overview/t
  *   同一支函式。
  * - **其餘吐原始事實**，彙總留給呼叫端。面板要把一百棟房子縮成一行是因為人只看得下
  *   一行;程式自己會加總。
+ * - **`Game` 已經算好的直接轉手** —— 帳本明細、通勤、交通、轉乘、收費分區、遺棄壓力
+ *   都是面板正在讀的那一份，原封不動交出去（見 `StatsHost`）。
  */
+
+/**
+ * `Game` 上那幾支「面板正在讀」的統計。
+ *
+ * 用結構型別而不是 `Game` 本身，是為了能在沒有 Three.js 的情況下測 —— `Game.ts`
+ * 直接 import Three.js，單元測試載不動它。
+ *
+ * **回傳值原封不動往外送**，不重算也不複製。同一個數字兩個地方各記一份就會分家，
+ * 這個 repo 已經因為那件事開過單（BUG-342）。
+ */
+export interface StatsHost {
+  getEconomyBreakdown(): EconomyBreakdownResult;
+  getBillableDistricts(): readonly BillableDistrict[];
+  getCommuteStats(): CommuteStats;
+  getTrafficStats(): TrafficStatsResult;
+  getTransferStats(): TransferStats;
+  getAbandonmentStress(x: number, y: number): number;
+}
+
+/** 一個收費分區的道路量與付費駕駛數。 */
+export interface BillableDistrict {
+  id: string;
+  roadCells: number;
+  chargedDrivers: number;
+}
 
 export interface CityInfo {
   season: string;
@@ -112,7 +143,10 @@ const DEFAULT_CITIZEN_LIMIT = 200;
 const DERELICT_RESERVED: readonly number[] = [1 /* ABANDONED */, 2 /* BURNED */];
 
 export class AgentRead {
-  constructor(private readonly getState: () => GameState) {}
+  constructor(
+    private readonly getState: () => GameState,
+    private readonly stats: StatsHost,
+  ) {}
 
   city(): CityInfo {
     const s = this.getState();
@@ -236,6 +270,44 @@ export class AgentRead {
         segmentDistances: (routeId: number) => system.getSegmentDistances(routeId),
       })),
     );
+  }
+
+  // ── Game 已經算好的 ──────────────────────────────────────────────
+  //
+  // 這一段全是轉手。**沒有加工的餘地** —— 面板讀的就是這幾支，中間多一層轉換就是
+  // 多一份會分家的副本。
+  //
+  // 有兩個欄位是 `Map` / `Set`（`commuteStats().byHome`、分區的 `cells`），
+  // `JSON.stringify` 會把它們變成 `{}`。要跨進程送的話呼叫端自己 `[...map]`。
+
+  /** 帳本明細。收入支出逐項，跟 Economy 面板同一份。 */
+  economyBreakdown(): EconomyBreakdownResult {
+    return this.stats.getEconomyBreakdown();
+  }
+
+  /** 收費分區的道路格數與付費駕駛數。 */
+  billableDistricts(): readonly BillableDistrict[] {
+    return this.stats.getBillableDistricts();
+  }
+
+  /** 通勤時間分佈。`byHome` 是 `Map`。 */
+  commuteStats(): CommuteStats {
+    return this.stats.getCommuteStats();
+  }
+
+  /** 車流量、最塞的路段、平均路徑長度。 */
+  trafficStats(): TrafficStatsResult {
+    return this.stats.getTrafficStats();
+  }
+
+  /** 轉乘率與轉乘熱點。 */
+  transferStats(): TransferStats {
+    return this.stats.getTransferStats();
+  }
+
+  /** 某一格的遺棄壓力。滿了就會變成廢墟 —— 用來在出事前先看出來。 */
+  abandonmentStress(x: number, y: number): number {
+    return this.stats.getAbandonmentStress(x, y);
   }
 
   /**

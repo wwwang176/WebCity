@@ -67,7 +67,7 @@ function uiHost(game: Game): UiHost {
 
 export function createAgent(game: Game): AgentRoot {
   const api = new AgentApi(game);
-  const read = new AgentRead(() => game.getState());
+  const read = new AgentRead(() => game.getState(), game);
   const ui = new AgentUi(uiHost(game));
   const session = new AgentSession(
     () => serializeGameState(game.getState()),

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { AgentRead } from '../AgentRead';
+import { AgentRead, type StatsHost } from '../AgentRead';
 import { createGameState } from '../../core/simulation/GameState';
 import { ZoneType } from '../../core/grid/types';
 
@@ -10,6 +10,15 @@ import { ZoneType } from '../../core/grid/types';
  * 一行，程式自己會加總。所以測的是「範圍、篩選、上限有沒有守住」，不是「總數對不對」。
  */
 
+/** 只讀網格的測試碰不到 `Game`，給一個叫了就爆的空殼。 */
+function noStats(): StatsHost {
+  return new Proxy({}, {
+    get(_t, prop) {
+      return () => { throw new Error(`這個測試不該問 Game 要 ${String(prop)}`); };
+    },
+  }) as StatsHost;
+}
+
 function city() {
   const state = createGameState(20, 20);
   // 兩棟住宅、一棟商業，外加一棟燒毀的。
@@ -17,7 +26,7 @@ function city() {
   state.grid.setCell(4, 3, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 });
   state.grid.setCell(9, 9, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
   state.grid.setCell(5, 3, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1, reserved: 2 });
-  return new AgentRead(() => state);
+  return new AgentRead(() => state, noStats());
 }
 
 /** 同一座城，但數得出 `getCell` 被問過幾次。 */
@@ -31,12 +40,12 @@ function countingCity() {
     calls++;
     return inner(x, y);
   };
-  return { read: new AgentRead(() => state), counted: () => calls };
+  return { read: new AgentRead(() => state, noStats()), counted: () => calls };
 }
 
 describe('城市數字', () => {
   it('should report the headline numbers without throwing on an empty city', () => {
-    const c = new AgentRead(() => createGameState(10, 10)).city();
+    const c = new AgentRead(() => createGameState(10, 10), noStats()).city();
 
     expect(c.population).toBe(0);
     expect(typeof c.funds).toBe('number');
@@ -94,7 +103,7 @@ describe('建築', () => {
 
 describe('居民', () => {
   it('should return nobody for an empty city', () => {
-    expect(new AgentRead(() => createGameState(10, 10)).citizens()).toHaveLength(0);
+    expect(new AgentRead(() => createGameState(10, 10), noStats()).citizens()).toHaveLength(0);
   });
 
   it('should respect the limit', () => {
@@ -102,7 +111,7 @@ describe('居民', () => {
     state.grid.setCell(3, 3, { zoneType: ZoneType.RESIDENTIAL_HIGH, buildingId: 4 });
     for (let i = 0; i < 30; i++) state.citizens.createCitizen({ age: 300, homeId: '3,3' });
 
-    const read = new AgentRead(() => state);
+    const read = new AgentRead(() => state, noStats());
     expect(read.citizens({ limit: 5 })).toHaveLength(5);
     expect(read.citizens().length, '預設也要有上限').toBeLessThanOrEqual(200);
   });
@@ -115,7 +124,7 @@ describe('居民', () => {
     state.citizens.createCitizen({ age: 300, homeId: '3,3' });
     for (let i = 0; i < 5; i++) state.citizens.createCitizen({ age: 300, homeId: '8,8' });
 
-    const found = new AgentRead(() => state).citizens({ homeId: '3,3' });
+    const found = new AgentRead(() => state, noStats()).citizens({ homeId: '3,3' });
     expect(found, '把別戶的人也一起撈回來了').toHaveLength(1);
     expect(found[0]!.homeId).toBe('3,3');
   });
@@ -153,5 +162,70 @@ describe('逐格資料', () => {
     expect(cell).toMatchObject({ x: 3, y: 3, buildingId: 1 });
     expect(cell).toHaveProperty('landValue');
     expect(cell).toHaveProperty('pollution');
+  });
+});
+
+/**
+ * `Game` 自己已經算好的那幾份數字。
+ *
+ * 這裡測的不是「算得對不對」—— 那是 `EconomyBreakdown`、`CommuteStats`、`TrafficStats`
+ * 各自的測試在管。這裡測的是**有沒有原封不動地交出去**:中間只要多一次 `{...}`，
+ * 面板跟 agent 就各拿到一份，然後靜靜地分家（BUG-342 就是這樣來的）。
+ *
+ * 所以用同一性（`toBe`）釘住 —— 複製一份就紅。
+ */
+function stubStats() {
+  const calls: string[] = [];
+  const marks = {
+    economy: { residential: 111 },
+    billable: [{ id: 'd1', roadCells: 9, chargedDrivers: 3 }],
+    commute: { average: 7 },
+    traffic: { commuteVehicleCount: 5 },
+    transfer: { transferRate: 0.25 },
+  };
+  const host = {
+    getEconomyBreakdown: () => { calls.push('economy'); return marks.economy; },
+    getBillableDistricts: () => { calls.push('billable'); return marks.billable; },
+    getCommuteStats: () => { calls.push('commute'); return marks.commute; },
+    getTrafficStats: () => { calls.push('traffic'); return marks.traffic; },
+    getTransferStats: () => { calls.push('transfer'); return marks.transfer; },
+    getAbandonmentStress: (x: number, y: number) => { calls.push(`stress ${x},${y}`); return x * 100 + y; },
+  } as unknown as StatsHost;
+
+  return { read: new AgentRead(() => createGameState(10, 10), host), marks, calls };
+}
+
+describe('Game 已經算好的那幾份', () => {
+  it('should hand back the very same economy breakdown the panel reads', () => {
+    const { read, marks } = stubStats();
+    expect(read.economyBreakdown(), '複製了一份，面板跟 agent 會分家').toBe(marks.economy);
+  });
+
+  it('should hand back the very same commute, traffic and transfer stats', () => {
+    const { read, marks } = stubStats();
+    expect(read.commuteStats()).toBe(marks.commute);
+    expect(read.trafficStats()).toBe(marks.traffic);
+    expect(read.transferStats()).toBe(marks.transfer);
+  });
+
+  it('should hand back the same billable district list', () => {
+    const { read, marks } = stubStats();
+    expect(read.billableDistricts()).toBe(marks.billable);
+  });
+
+  it('should ask the game exactly once per call', () => {
+    // 轉手就是轉手。問兩次代表中間自己又算了一輪。
+    const { read, calls } = stubStats();
+    read.economyBreakdown();
+    read.trafficStats();
+
+    expect(calls).toEqual(['economy', 'traffic']);
+  });
+
+  it('should pass abandonment coordinates through in the right order', () => {
+    const { read, calls } = stubStats();
+
+    expect(read.abandonmentStress(4, 7), 'x 跟 y 掉包了').toBe(407);
+    expect(calls).toEqual(['stress 4,7']);
   });
 });
