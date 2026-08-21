@@ -72,7 +72,7 @@ export interface FlatRoute {
   segDists: number[] | null;
   /** 班距（tick）：整圈時間 ÷ 車輛數。加車會讓它變短。 */
   headway: number;
-  /** 載重率。等車時間隨它上升，過了 `CROWDING.REFUSE_LOAD` 就擠不上去。 */
+  /** 載重率。等車時間隨它上升，沒有上限也沒有拒載門檻。 */
   loadFactor: number;
   /**
    * 來源路線本身，不是它的車輛數。

@@ -13,9 +13,9 @@ import { TransportType, type TransportRoute, type TransportStop } from '../types
  * 路網拓樸時才重建 —— 搭乘人數之後怎麼漲都回不到這裡。玩家 12 500 人的存檔實測:
  * 記著的載重率 **0.0000192**，照當下人數重算是 **308**。
  *
- * 後果是整套擁擠模型形同不存在:`isOverCapacity()` 永遠拿舊值（路線永遠不拒載），
- * `expectedWait()` 的擁擠加成永遠是 1。而同一份判斷在 `findAvailableTransit()` 裡
- * 是**每次現算**的 —— 兩條路徑對同一條路線的看法差了一千六百萬倍。
+ * 後果是整套擁擠模型形同不存在:`expectedWait()` 的擁擠加成永遠是 0。而同一份判斷在
+ * `findAvailableTransit()` 裡是**每次現算**的 —— 兩條路徑對同一條路線的看法差了
+ * 一千六百萬倍。
  */
 
 function stop(x: number, y: number, riders = 0): TransportStop {

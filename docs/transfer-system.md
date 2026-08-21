@@ -46,7 +46,6 @@ SimulationLoop 維護 `transferGraphDirty` 旗標，當大眾運輸路線變更�
 - 使用**深度優先搜尋 (DFS)** 探索轉乘鏈
 - 最大乘車段數: `maxRides = (maxLegs - 1) / 2`（預設 3 段）
 - 避免重複使用同一路線
-- 跳過擠不上去的路線（載重 ≥ 1.5）
 - 快取格式: `"entryRI:entrySI>exitRI:exitSI"` → `StopToStopRoute`
 
 ### 扁平路線 (FlatRoute)
@@ -54,7 +53,12 @@ SimulationLoop 維護 `transferGraphDirty` 旗標，當大眾運輸路線變更�
 路線被扁平化為 `FlatRoute[]`，包含：
 - `segDists`: 段距離陣列，用於距離插值
 - `headway`: 班距（整圈時間 ÷ 車輛數）—— 加車會讓它變短
-- `loadFactor`: 載重率 —— 等車時間隨它上升，超過 1.5 就擠不上去
+- `loadFactor`: 載重率 —— 等車時間隨它上升，沒有上限也沒有拒載門檻
+- `source`: **來源路線的參照**，不是複本
+- `speedOn`: 取這條路線現在實際速度的函式（公車會被壅塞拖慢）
+
+`headway` 與 `loadFactor` 由 `refreshRouteService()` 每 tick 重算。帶參照而不是複製
+數值，是因為複製下來的那一份沒有人會去更新 —— 加車與塞車都不會反映出來（BUG-343）。
 
 ---
 
@@ -80,10 +84,13 @@ SimulationLoop 維護 `transferGraphDirty` 旗標，當大眾運輸路線變更�
 
 乘車段包含：`transitType`（運輸類型）、`routeIdx`（路線索引）、`boardStopIdx`（上車站）、`alightStopIdx`（下車站）。
 
-等待時間 = `班距 × AVERAGE_WAIT_FACTOR (0.5) × 擁擠倍率`
+等待時間 = `班距 × (AVERAGE_WAIT_FACTOR (0.5) + max(0, 載重 - 1))`
 
-班距 = 整圈時間 ÷ 車輛數，擁擠倍率從載重 0.8 起爬升到 4 倍。所以加車同時縮短班距
-與稀釋載重 —— 等車時間降兩次。詳見 transport-system.md。
+班距 = 整圈時間 ÷ 車輛數。所以加車同時縮短班距與稀釋載重 —— 等車時間降兩次。
+
+多等的班數是從等比級數推出來的，不是挑出來的：擠不上這班的機率 `q` 對應期望
+`q / (1 - q)` 班，以 `q = 1 - 1/載重` 代入化簡就是 `載重 - 1`。基本等待是半個班距，
+多等的是整班，單位不同所以相加不相乘。詳見 transport-system.md。
 
 `MultiLegRoute` 另外帶一個 `walkTime`（所有 walk 腿的總和）：比較時要對走路多收一份
 不情願，回報時不收。
@@ -225,7 +232,7 @@ TransferOverlayPanel 作為左側面板堆疊的一員，與 BuildingPanel 和 C
 | 步行到站上限 | 公車 4 / 渡輪 6 / 捷運・火車 8 | 見 `core/transport/WalkRange` |
 | `WALK_KMH` / `DRIVE_REFERENCE_KMH` | 9 / 30 | 兩者相除得到 `WALK_SPEED = 0.3` 格/tick |
 | 步行不情願權重 | 無 2.0 / 國小 1.6 / 高中 1.2 / 大學 0.8 | 見 `core/citizen/WalkWillingness` |
-| `AVERAGE_WAIT_FACTOR` | 0.5 | 等待時間 = 班距 × factor × 擁擠倍率 |
+| `AVERAGE_WAIT_FACTOR` | 0.5 | 等待時間 = 班距 × (factor + max(0, 載重 - 1)) |
 | `MAX_TRIP_LEGS` | 7 | 最大路線腿數（3 段乘車） |
 | `TRANSFER_WALK_RANGE` | 3 | 轉乘圖的站點連接距離 |
 
