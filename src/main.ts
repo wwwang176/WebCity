@@ -4,6 +4,7 @@ import { loadSaveData } from './core/save/LoadSave';
 import { type GameState } from './core/simulation/GameState';
 import { type MapConfig } from './core/config/MapConfig';
 import { classifySaveError, missingSaveFailure, type SaveFailure } from './core/save/SaveFailure';
+import { AgentApi } from './agent/AgentApi';
 
 interface SaveInfo {
   slotId: number;
@@ -42,7 +43,10 @@ async function startGame(loadedState?: GameState, saveInfo?: SaveInfo, mapConfig
 
   updateLoadingProgress(100, 'Ready!');
 
-  (window as unknown as Record<string, unknown>).__game = game;
+  const w = window as unknown as Record<string, unknown>;
+  w.__game = game;
+  // 讓程式動手蓋東西的入口。讀狀態直接走 __game 就好，這一層管的是「寫」。
+  w.__agent = new AgentApi(game);
   const ui = createGameUI(game);
   document.body.appendChild(ui);
 

@@ -942,7 +942,17 @@ export class Game {
     }
   }
 
-  private handleToolAction(x1: number, y1: number, x2: number, y2: number): void {
+  /**
+   * 對一段格子座標套用目前的工具。
+   *
+   * 公開是因為 `AgentApi` 要從這裡進來 —— 直接呼叫底下的 builder 會跳過這支函式裡
+   * 那一整串失效通知（`markLaneGraphDirty`、`roadCoverageDirty`、
+   * `invalidateZoneBlockers`），城市會安靜地壞掉。
+   *
+   * 呼叫前要自己把 `currentTool`、`placementMode`、`elevationLevel`、
+   * `currentRotation` 設好 —— `setTool()` 不會幫非拖曳以外的情況全部重設。
+   */
+  handleToolAction(x1: number, y1: number, x2: number, y2: number): void {
     // Only road/rail tools allow endpoint beyond map edge; clamp for everything else
     const isRoadOrRail = TOOL_TO_ROAD_TYPE[this.currentTool] !== undefined || this.currentTool === 'rail_track';
     if (!isRoadOrRail) {

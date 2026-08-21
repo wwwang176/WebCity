@@ -994,6 +994,23 @@
   一台公車實測載重在 **5.56 ~ 47.34** 之間跑（今日累計 0 → 6 519）。而且它讓需求
   系統性超打:每天早上路線看起來是空的，所有人都選它。改讀
   `max(昨天的實數, 跨日平滑值)` 之後，同一條路線同一台車是 **0.03 ~ 1.11**。
+- [x] **讓程式（AI）動得了手的入口**（`src/agent/AgentApi.ts`，已做）— `window.__agent.act()`。
+  底層走 `Game.handleToolAction()` 而不是直接叫 builder:那支函式裡有一整串失效通知
+  （`markLaneGraphDirty`、`roadCoverageDirty`、`invalidateZoneBlockers`），跳過任何
+  一個城市都會安靜地壞掉。每個動作把 `placementMode` / `elevationLevel` /
+  `currentRotation` **明寫一次**，因為 `setTool()` 對道路與鐵軌不重設 placementMode ——
+  實測確認:玩家留下 `elevated` 之後天真地 `setTool` + `handleToolAction`，蓋出來的
+  是高架橋（`Cannot build elevated road`），走 AgentApi 才是地面路。
+- [ ] **agent 的 `observe()`** — 還沒做，而且是刻意的。60×60×14 個欄位原封不動丟給
+  LLM 沒有用;要餵什麼得先玩幾輪、看實際會問什麼問題才定得下來。目前讀狀態直接走
+  `window.__game`。
+- [ ] **agent 動作的安全網** — 現在只有「拆除單次上限 64 格」與動作記錄。缺:動手前
+  自動存檢查點、動作期間停 autosave 直到玩家接受、單場累計花費上限。
+- [ ] **`ok` 不等於「有東西改變」** — 在已經有路的地方再蓋一次不會被拒絕也不花錢，
+  agent 分不出「成功」與「什麼都沒發生」。要精確知道改了哪幾格得在動作前後比對網格
+  （`getCellDiff` 已經有了），那同時也是 undo 的原料。
+- [ ] **agent 碰不到大眾運輸與稅率** — 公車路線走的是 modal 不是 `handleToolAction`，
+  稅率是另一類。第一版刻意只收走 `handleToolAction` 的那些工具。
 - [ ] **載重還有一個比較慢的日對日震盪** — 日內鋸齒消掉之後，8 台公車實測載重仍在
   **1.10 ~ 9.92** 之間跑（平滑人次 3 149）。合理的懷疑是**回饋延遲**:載重現在反映
   的是**昨天**，而市民照它做今天的決定 —— 延遲的負回饋本來就會震盪。還沒診斷，
