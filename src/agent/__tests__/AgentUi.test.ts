@@ -3,6 +3,7 @@ import { AgentUi, type UiHost } from '../AgentUi';
 import { registerPanelBridge, isPanelId, PANEL_IDS, type PanelId } from '../registry';
 import { ViewMode } from '../../core/ViewMode';
 import type { ToolType } from '../../Game';
+import type { GameSpeed } from '../../core/simulation/GameClock';
 
 /**
  * 「玩家看得到、按得到」的那一層。
@@ -14,9 +15,8 @@ import type { ToolType } from '../../Game';
  *    而程式要的是「設成這個」。用切換去逼近設定值，逼不到就得停，不能轉成無窮迴圈。
  */
 
-const SPEEDS = [1, 3, 5, 10];
 
-function fakeHost(over: Partial<UiHost> = {}): UiHost & { overlaySet: string[] } {
+function fakeHost(over: Partial<UiHost> = {}): UiHost & { overlaySet: string[]; speedSet: number[] } {
   let overlay = 'none';
   const h = {
     currentTool: 'select' as ToolType,
@@ -30,18 +30,15 @@ function fakeHost(over: Partial<UiHost> = {}): UiHost & { overlaySet: string[] }
     getOverlay: () => overlay as never,
     toggleViewMode(m: ViewMode) { h.viewMode = h.viewMode === m ? ViewMode.NORMAL : m; },
     togglePause() { h.paused = !h.paused; },
-    changeSpeed(d: number) {
-      const i = SPEEDS.indexOf(h.speed);
-      const next = SPEEDS[Math.max(0, Math.min(SPEEDS.length - 1, i + d))];
-      if (next !== undefined) h.speed = next;
-    },
+    speedSet: [] as number[],
+    setSpeed(s: GameSpeed) { h.speedSet.push(s); h.speed = s; h.paused = false; },
     camera: () => ({ x: 30, y: 30, size: 60, angle: 0.78, elevation: 0.52 }),
     setCamera: (t: Record<string, number | undefined>) => ({
       x: t.x ?? 30, y: t.y ?? 30, size: t.size ?? 60, angle: t.angle ?? 0.78, elevation: t.elevation ?? 0.52,
     }),
     ...over,
   };
-  return h as UiHost & { overlaySet: string[] };
+  return h as UiHost & { overlaySet: string[]; speedSet: number[] };
 }
 
 afterEach(() => registerPanelBridge(null));
@@ -126,35 +123,48 @@ describe('暫停與速度', () => {
     expect(new AgentUi(h).setPaused(true), '本來就暫停了，再設一次反而繼續跑').toBe(true);
   });
 
-  it('should walk the speed up to the target', () => {
+  it('should go straight to a gear that exists', () => {
     const h = fakeHost();
     expect(new AgentUi(h).setSpeed(10)).toBe(10);
+    expect(h.speedSet, '一檔一檔按上去，不是直接設').toEqual([10]);
   });
 
-  it('should walk the speed back down', () => {
+  it('should go straight back down', () => {
     const h = fakeHost({ speed: 10 });
     expect(new AgentUi(h).setSpeed(1)).toBe(1);
+    expect(h.speedSet).toEqual([1]);
   });
 
-  it('should stop at the gear that passes a target between gears', () => {
-    // 檔位是 1 / 3 / 5 / 10。要 7 的話會在 5 與 10 之間來回跳，除非跨過就停。
-    let presses = 0;
+  it('should snap a target between gears to the nearest one', () => {
+    // 檔位只有 1 / 3 / 5 / 10。7 離 5 比離 10 近。
     const h = fakeHost();
-    const inner = h.changeSpeed.bind(h);
-    h.changeSpeed = (d: number) => { presses++; inner(d); };
-
-    expect(new AgentUi(h).setSpeed(7)).toBe(10);
-    expect(presses, '在目標兩側來回震盪').toBeLessThanOrEqual(3);
+    expect(new AgentUi(h).setSpeed(7)).toBe(5);
+    expect(h.speedSet, '設了一個不存在的檔位').toEqual([5]);
   });
 
-  it('should stop at the top instead of pressing forever', () => {
-    let presses = 0;
-    const h = fakeHost({ speed: 10 });
-    const inner = h.changeSpeed.bind(h);
-    h.changeSpeed = (d: number) => { presses++; inner(d); };
+  it('should break a tie towards the slower gear', () => {
+    // 4 離 3 跟離 5 一樣近。慢的那一檔比較安全 —— 快轉會把玩家還沒看到的事情跑掉。
+    expect(new AgentUi(fakeHost()).setSpeed(4)).toBe(3);
+  });
 
-    expect(new AgentUi(h).setSpeed(99)).toBe(10);
-    expect(presses, '已經到頂了還一直按').toBe(1);
+  it('should clamp instead of running off either end', () => {
+    expect(new AgentUi(fakeHost()).setSpeed(99), '超出最高檔').toBe(10);
+    expect(new AgentUi(fakeHost({ speed: 10 })).setSpeed(-5), '低於最低檔').toBe(1);
+  });
+
+  it('should treat zero as the slowest gear, not as a pause', () => {
+    // 0 在 `GameSpeed` 裡代表暫停，但 `Game.setSpeed(0)` 直接不理。
+    // 暫停有自己的入口，這裡不搶它的工作。
+    expect(new AgentUi(fakeHost({ speed: 10 })).setSpeed(0)).toBe(1);
+  });
+
+  it('should resume the game the way the toolbar speed buttons do', () => {
+    // 選速度就是要它跑。這是遊戲自己的規矩（`Game.setSpeed` 會清掉 paused），
+    // 不在這一層改掉它。
+    const h = fakeHost({ paused: true });
+    new AgentUi(h).setSpeed(3);
+
+    expect(h.paused, '選了速度卻還停著').toBe(false);
   });
 });
 

@@ -56,7 +56,7 @@ function uiHost(game: Game): UiHost {
     getOverlay: () => g.overlayRenderer.getOverlay() as never,
     toggleViewMode: (m) => game.toggleViewMode(m),
     togglePause: () => game.togglePause(),
-    changeSpeed: (d) => game.changeSpeed(d),
+    setSpeed: (s) => game.setSpeed(s),
     camera: () => g.sceneManager.getCameraState(),
     setCamera: (t) => {
       g.sceneManager.setCameraState({ x: t.x, y: t.y, size: t.size, angle: t.angle, elevation: t.elevation });

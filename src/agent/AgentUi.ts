@@ -1,6 +1,7 @@
 import type { OverlayType } from '../renderer/OverlayRenderer';
 import type { ViewMode } from '../core/ViewMode';
 import type { ToolType } from '../Game';
+import { GameClock, type GameSpeed } from '../core/simulation/GameClock';
 import { getPanelBridge, isPanelId, PANEL_IDS, type PanelId } from './registry';
 
 /**
@@ -52,9 +53,18 @@ export interface UiHost {
   getOverlay(): OverlayType;
   toggleViewMode(mode: ViewMode): void;
   togglePause(): void;
-  changeSpeed(delta: number): void;
+  setSpeed(speed: GameSpeed): void;
   camera(): CameraState;
   setCamera(target: CameraTarget): CameraState;
+}
+
+/** 對齊到最近的檔位。一樣近取慢的。 */
+function nearestGear(target: number): GameSpeed {
+  let best = GameClock.SPEEDS[0]!;
+  for (const gear of GameClock.SPEEDS) {
+    if (Math.abs(gear - target) < Math.abs(best - target)) best = gear;
+  }
+  return best;
 }
 
 export class AgentUi {
@@ -152,22 +162,17 @@ export class AgentUi {
   /**
    * 設遊戲速度。
    *
-   * `Game` 只給 `changeSpeed(delta)`（工具列的 +／−），所以只能用相對值逼近。
+   * 速度是固定檔位（1 / 3 / 5 / 10），不是連續值。**不在檔位上的目標先對齊到最近的
+   * 一檔**，一樣近就取慢的那一檔 —— 快轉會把玩家還沒看到的事情跑掉，慢的比較安全。
+   * 超出範圍就夾在兩端。
    *
-   * 速度是固定檔位（1 / 3 / 5 / 10）。目標不在檔位上時，天真的「還沒到就繼續按」會
-   * **在目標兩側來回震盪** —— 要 7 就會 5 → 10 → 5 → 10 一直跳，最後停在哪一檔由
-   * 迴圈上限決定，不是由目標決定。所以跨過目標就停，停在跨過去的那一檔。
+   * `0` 在 `GameSpeed` 裡代表暫停，但遊戲的 `setSpeed(0)` 直接不理它。暫停有自己的
+   * 入口（`setPaused`），這裡不搶它的工作，`0` 一律當成最慢的一檔。
+   *
+   * 選了速度就是要它跑:遊戲的 `setSpeed` 會順手解除暫停，跟工具列的速度鈕一樣。
    */
   setSpeed(target: number): number {
-    for (let guard = 0; guard < 16; guard++) {
-      const now = this.host.speed;
-      if (now === target) break;
-      const goingUp = target > now;
-      this.host.changeSpeed(goingUp ? 1 : -1);
-      const after = this.host.speed;
-      if (after === now) break;                              // 到頂或到底
-      if (goingUp ? after > target : after < target) break;   // 跨過去了
-    }
+    this.host.setSpeed(nearestGear(target));
     return this.host.speed;
   }
 
