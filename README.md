@@ -3,6 +3,37 @@
 網頁版都市經營模擬遊戲，靈感來自 Cities: Skylines 與 SimCity。
 在一塊空地上自由規劃道路、劃設區域、管理經濟與交通，打造一座活生生的城市。
 
+## 遊戲畫面
+
+![黃昏的市中心](docs/images/01-dusk-overview.jpg)
+
+<table>
+<tr>
+<td width="50%"><img src="docs/images/02-night.jpg" alt="入夜的市中心"><br>
+<sub><b>入夜</b> — 路燈在地面拖出光暈，車頭燈排成串，窗戶一格一格亮起來</sub></td>
+<td width="50%"><img src="docs/images/04-dusk-towers.jpg" alt="夕陽下的玻璃帷幕"><br>
+<sub><b>夕陽下的辦公區</b> — 光正面打在玻璃帷幕上，高架橋滿載</sub></td>
+</tr>
+<tr>
+<td><img src="docs/images/03-offices-industry.jpg" alt="辦公區與倉儲"><br>
+<sub><b>辦公、倉儲與高架</b> — 每一台車都走自己的車道，遇紅燈會停</sub></td>
+<td><img src="docs/images/05-residential.jpg" alt="高密度住宅"><br>
+<sub><b>高密度住宅</b> — 每棟樓的窗戶、色調、屋頂都由自己的亂數種子決定</sub></td>
+</tr>
+<tr>
+<td><img src="docs/images/06-south-district.jpg" alt="南區黃昏"><br>
+<sub><b>南區・黃昏</b> — 商業、工業與住宅沿著幹道排開</sub></td>
+<td><img src="docs/images/07-overlay-traffic.jpg" alt="壅塞熱度圖"><br>
+<sub><b>壅塞熱度圖</b> — 15 種地圖圖層之一，紅色是塞住的幹道</sub></td>
+</tr>
+<tr>
+<td><img src="docs/images/08-metro-station.jpg" alt="地鐵站與地下隧道"><br>
+<sub><b>地鐵地下透視</b> — 地面變透明，看得到隧道與正走向車站的通勤者</sub></td>
+<td><img src="docs/images/09-overview-panel.jpg" alt="城市總覽面板"><br>
+<sub><b>城市總覽</b> — 人口、RCI 需求、供水供電、各分區建築與容量</sub></td>
+</tr>
+</table>
+
 ## 快速開始
 
 ```bash
@@ -46,7 +77,7 @@ pnpm dev
 | 語言 | TypeScript |
 | 渲染 | Three.js (3D Low Poly) |
 | 建構 | Vite |
-| 測試 | Vitest (TDD, 394 檔 / 5700+ 測試) |
+| 測試 | Vitest (TDD, 489 檔 / 6584 測試) |
 | 套件管理 | pnpm |
 | 多執行緒 | Web Workers (模擬/交通/尋路) |
 | 資料同步 | SharedArrayBuffer + postMessage |
