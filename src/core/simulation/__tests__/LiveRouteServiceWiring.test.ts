@@ -56,7 +56,7 @@ describe('迴圈餵給路線的班距與載重率', () => {
     loop.tick();
 
     expect(flatOf(loop)[0]!.loadFactor, '扁平路線還記著人還沒上車時的載重率')
-      .toBeGreaterThan(CROWDING.REFUSE_LOAD);
+      .toBeGreaterThan(CROWDING.HOPELESS_LOAD);
     void state;
   });
 
@@ -85,12 +85,12 @@ describe('迴圈餵給路線的班距與載重率', () => {
     const { loop, route } = busCity();
     for (const s of route.stops) { s.dailyRiders = 50_000; s.smoothedDailyRiders = 50_000; }
     loop.tick();
-    expect(flatOf(loop)[0]!.loadFactor).toBeGreaterThan(CROWDING.REFUSE_LOAD);
+    expect(flatOf(loop)[0]!.loadFactor).toBeGreaterThan(CROWDING.HOPELESS_LOAD);
 
     for (const s of route.stops) { s.dailyRiders = 0; s.smoothedDailyRiders = 0; }
     loop.tick();
 
     expect(flatOf(loop)[0]!.loadFactor, '人走光了，路線還被判定為擠不上去')
-      .toBeLessThan(CROWDING.COMFORT_LOAD);
+      .toBeLessThan(1);
   });
 });

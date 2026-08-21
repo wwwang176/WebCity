@@ -78,7 +78,7 @@ describe('面板的路線載重', () => {
     const rows = buildTransitRows(
       [busSystem([route(1, loopOf100(perStop), 1)], 50, 2)]);
 
-    expect(rows[0]!.status, '收合列沒有照模擬的門檻判斷').toBe('refusing');
+    expect(rows[0]!.status, '收合列沒有照模擬的門檻判斷').toBe('hopeless');
     expect(rows[0]!.status).toBe(rows[0]!.routeRows[0]!.status);
   });
 
@@ -101,12 +101,11 @@ describe('面板的路線載重', () => {
   });
 
   it('should count riders the same way the simulation does', () => {
-    // 面板只讀 `smoothedDailyRiders`，模擬讀 `max(今日累計, 跨日平滑)`。白天累計量
-    // 超過平滑值的時候，面板顯示的 % 會比模擬實際採用的低 —— 同一個數字兩個地方
-    // 各記一份，就是 BUG-342 本身那個錯。
+    // 面板只讀 `smoothedDailyRiders`，模擬讀 `max(昨天的實數, 跨日平滑)` —— 同一個
+    // 數字兩個地方各記一份，就是 BUG-342 本身那個錯。
     const s = stop(0, 0, 0);
     s.smoothedDailyRiders = 10;
-    s.dailyRiders = 400;          // 今天特別多人，平滑值還沒跟上
+    s.lastDayRiders = 400;        // 昨天特別多人，平滑值還沒跟上
     const r = route(1, [s, stop(50, 0, 0)], 1);
 
     const rows = buildTransitRows([busSystem([r], 50, 2)]);

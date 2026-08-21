@@ -32,8 +32,8 @@ function makeRoute(
   };
 }
 
-/** 擠到上不去的載重。 */
-const PACKED = CROWDING.REFUSE_LOAD;
+/** 擠到幾乎沒指望的載重 —— 平均要多等 19 班。 */
+const PACKED = 20;
 
 // ── buildTransferGraph ──────────────────────────────────────────
 
@@ -240,18 +240,27 @@ describe('findMultiModalRoutes', () => {
     }
   });
 
-  it('skips full routes', () => {
-    const routes: FlatRoute[] = [
+  it('punishes a packed route with time instead of hiding it', () => {
+    // 沒有拒載門檻了。擠爆的路線照樣列得出來，但等車時間長到它自己輸掉 ——
+    // 而懸崖會自己造出極限環（玩家 12 600 人的存檔實測過）。
+    const packed: FlatRoute[] = [
       makeRoute(1, TransportType.BUS, 2,
         [makeStop(1, 0, 1), makeStop(9, 0, 2)], { loadFactor: PACKED }),
     ];
-    const graph = buildGraphWithCache(routes, TRANSFER_RANGE);
-    const result = findMultiModalRoutes(
+    const empty: FlatRoute[] = [
+      makeRoute(1, TransportType.BUS, 2, [makeStop(1, 0, 1), makeStop(9, 0, 2)]),
+    ];
+    const search = (routes: FlatRoute[]) => findMultiModalRoutes(
       routes, { x: 0, y: 0 }, { x: 10, y: 0 },
-      WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
+      WALK_SPEED, WAIT_FACTOR, buildGraphWithCache(routes, TRANSFER_RANGE), MAX_LEGS,
       openFieldReach,
     );
-    expect(result).toEqual([]);
+
+    const jammed = search(packed)[0];
+    const free = search(empty)[0];
+    expect(jammed, '擠爆的路線被整條藏起來了').toBeDefined();
+    expect(jammed!.totalTime, '擠成這樣跟空車一樣快')
+      .toBeGreaterThan(free!.totalTime * 5);
   });
 
   it('includes walk and wait time in total time estimate', () => {
@@ -312,9 +321,14 @@ describe('findMultiModalRoutes', () => {
       WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
       openFieldReach,
     );
-    // No 5-leg routes because metro is full
+    // 轉乘那一段的捷運擠爆了 —— 路線還在，但慢到不值得。
     const fiveLegs = result.find(r => r.legs.length === 5);
-    expect(fiveLegs).toBeUndefined();
+    const direct = result.find(r => r.legs.length < 5);
+    expect(fiveLegs, '擠爆的轉乘鏈被整條藏起來了').toBeDefined();
+    if (direct) {
+      expect(fiveLegs!.totalTime, '繞去搭擠爆的捷運反而比較快')
+        .toBeGreaterThan(direct.totalTime);
+    }
   });
 });
 
@@ -357,7 +371,7 @@ describe('flattenSystems', () => {
 
   it('measures load against what the fleet carries in a day', () => {
     const stops = [makeStop(0, 0, 1), makeStop(10, 0, 2)];
-    stops[0]!.dailyRiders = 100;
+    stops[0]!.lastDayRiders = 100;
     const systems = [{
       type: TransportType.BUS,
       speed: 2,
@@ -377,16 +391,16 @@ describe('flattenSystems', () => {
     expect(flat[0]!.loadFactor, '一天才 100 人次就算滿了').toBeLessThan(1);
   });
 
-  it('refuses a route that really is over capacity', () => {
+  it('reports a load factor well past capacity', () => {
     const stops = [makeStop(0, 0, 1), makeStop(10, 0, 2)];
-    // 拒載門檻是 1.5，運能是 2 台 × 50 座 × 一天跑幾圈 —— 人次要壓過它。
-    stops[0]!.dailyRiders = 2 * 50 * (TRANSIT_SERVICE_TICKS_PER_DAY / 10) * 2;
+    // 「沒指望」那條線是 3，運能是 2 台 × 50 座 × 一天跑幾圈 —— 人次要壓過它。
+    stops[0]!.lastDayRiders = 2 * 50 * (TRANSIT_SERVICE_TICKS_PER_DAY / 10) * 4;
     const systems = [{
       type: TransportType.BUS, speed: 2, vehicleCapacity: 50,
       routes: [{ id: 1, type: TransportType.BUS, stops, vehicles: 2, operatingCost: 100 }],
       getSegmentDistances: () => [10, 10],
     }];
-    expect(flattenSystems(systems)[0]!.loadFactor).toBeGreaterThan(CROWDING.REFUSE_LOAD);
+    expect(flattenSystems(systems)[0]!.loadFactor).toBeGreaterThan(CROWDING.HOPELESS_LOAD);
   });
 
   it('skips suspended routes', () => {

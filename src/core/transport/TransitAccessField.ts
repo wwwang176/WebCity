@@ -2,7 +2,7 @@ import { toPosKey } from '../grid/GridHelpers';
 import { computeRideDistance } from './TransitAvailability';
 import { chooseModeMultiModal, type AvailableTransport, type ModeChoiceParams } from './ModeChoice';
 import type { StopReach } from '../traffic/StopWalkReach';
-import { expectedWait, isOverCapacity } from './RouteLoad';
+import { expectedWait } from './RouteLoad';
 import { walkRangeFor, WALK_RANGE_BY_TYPE } from './WalkRange';
 import type { FlatRoute } from './MultiModalRouter';
 
@@ -115,7 +115,7 @@ function transitOptions(
     const b = toAccess.find(t => t.routeIdx === a.routeIdx);
     if (!b || b.stopIdx === a.stopIdx) continue;
     const route = routes[a.routeIdx];
-    if (!route || isOverCapacity(route.loadFactor)) continue;
+    if (!route) continue;
 
     const rideDistance = computeRideDistance(route.stops, a.stopIdx, b.stopIdx, route.segDists);
     const wait = expectedWait(route.headway, waitFactor, route.loadFactor);

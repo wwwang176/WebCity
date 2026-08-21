@@ -248,33 +248,45 @@ describe('findAvailableTransit', () => {
       openFieldReach, WALK_SPEED, WAIT_FACTOR);
   }
 
-  it('filters out a route nobody can squeeze onto', () => {
+  it('punishes a route nobody can squeeze onto with time, not silence', () => {
+    // 沒有拒載門檻了。擠爆的路線照樣列出來，只是等車時間長到自己輸掉 ——
+    // 懸崖會自己造出極限環（玩家 12 600 人的存檔實測過）。
     const stops = busStops();
-    stops[0]!.dailyRiders = dailyCapacityOf(stops, 3) * 2;
-    expect(offeredFor(stops, 3)).toEqual([]);
+    stops[0]!.lastDayRiders = dailyCapacityOf(stops, 3) * 2;
+    const packed = offeredFor(stops, 3);
+    expect(packed, '擠爆的路線被整條藏起來了').toHaveLength(1);
+
+    // 載重 2 = 一半的人上不去 = 平均多等**整整一班**。走路與乘車那兩段不變，
+    // 所以兩者的差就是那一班。比倍數沒有意義 —— 走路與乘車會把它稀釋掉。
+    const quiet = busStops();
+    const empty = offeredFor(quiet, 3)[0]!.estimatedTime;
+    const headway = computeHeadway(computeCycleTime(quiet, null, 2), 3);
+    expect(packed[0]!.estimatedTime - empty, '擠成這樣跟空車一樣快')
+      .toBeCloseTo(headway, 6);
   });
 
   it('returns route with remaining capacity', () => {
     const stops = busStops();
-    stops[0]!.dailyRiders = dailyCapacityOf(stops, 3) * 0.3;
+    stops[0]!.lastDayRiders = dailyCapacityOf(stops, 3) * 0.3;
     const result = offeredFor(stops, 3);
     expect(result).toHaveLength(1);
     expect(result[0]!.type).toBe(TransportType.BUS);
   });
 
-  it('adding vehicles increases route capacity (allows more riders)', () => {
+  it('adding vehicles makes an overloaded route usable again', () => {
+    // 加車買到的是**時間**:3 台車時人擠不上去要等好幾班，5 台車就吃得下。
     const stops = busStops();
-    // 3 台車擠爆的人數，5 台車就吃得下
-    stops[0]!.dailyRiders = dailyCapacityOf(stops, 3) * 1.6;
+    stops[0]!.lastDayRiders = dailyCapacityOf(stops, 3) * 1.6;
 
-    expect(offeredFor(stops, 3), '3 台車還撐得住').toEqual([]);
-    expect(offeredFor(stops, 5), '加了兩台車還是擠不上去').toHaveLength(1);
+    const three = offeredFor(stops, 3)[0]!.estimatedTime;
+    const five = offeredFor(stops, 5)[0]!.estimatedTime;
+    expect(five, '加了兩台車，通勤時間一秒都沒有變短').toBeLessThan(three);
   });
 
   it('should make waiting shorter as well, not just raise the ceiling', () => {
     // 加車買到的不只是容量。班距 = 整圈時間 ÷ 車輛數，車多就班次密。
     const stops = busStops();
-    stops[0]!.dailyRiders = dailyCapacityOf(stops, 2) * 0.3;
+    stops[0]!.lastDayRiders = dailyCapacityOf(stops, 2) * 0.3;
     const two = offeredFor(stops, 2)[0]!.estimatedTime;
     const four = offeredFor(stops, 4)[0]!.estimatedTime;
     expect(four, '加車沒有讓等車變短').toBeLessThan(two);
@@ -282,22 +294,22 @@ describe('findAvailableTransit', () => {
 
   it('should make waiting longer as the route fills up', () => {
     const stops = busStops();
-    stops[0]!.dailyRiders = dailyCapacityOf(stops, 3) * 0.2;
+    stops[0]!.lastDayRiders = dailyCapacityOf(stops, 3) * 0.2;
     const quiet = offeredFor(stops, 3)[0]!.estimatedTime;
 
     const packedStops = busStops();
-    packedStops[0]!.dailyRiders = dailyCapacityOf(packedStops, 3) * 1.2;
+    packedStops[0]!.lastDayRiders = dailyCapacityOf(packedStops, 3) * 1.2;
     const packed = offeredFor(packedStops, 3)[0]!.estimatedTime;
 
     expect(packed, '擠成這樣還是等一樣久').toBeGreaterThan(quiet);
   });
 
-  it('filters only full routes, keeps routes with capacity from same system', () => {
+  it('prefers the route with room over the packed one in the same system', () => {
     const stopsA = busStops();
-    stopsA[0]!.dailyRiders = dailyCapacityOf(stopsA, 2) * 2;
+    stopsA[0]!.lastDayRiders = dailyCapacityOf(stopsA, 2) * 2;
 
     const stopsB = [makeStop(2, 2, 3), makeStop(8, 8, 4)];
-    stopsB[0]!.dailyRiders = dailyCapacityOf(stopsB, 2) * 0.1;
+    stopsB[0]!.lastDayRiders = dailyCapacityOf(stopsB, 2) * 0.1;
 
     const systems: TransitSystemInfo[] = [{
       type: TransportType.BUS,
@@ -309,7 +321,12 @@ describe('findAvailableTransit', () => {
       ],
     }];
     const result = findAvailableTransit(systems, { x: 0, y: 0 }, { x: 10, y: 10 }, openFieldReach, WALK_SPEED, WAIT_FACTOR);
-    expect(result).toHaveLength(1);
+    // 兩條都列得出來，但空的那條比較快 —— 運具選擇挑的是最快的那一個。
+    expect(result).toHaveLength(2);
+    const packed = result.find(r => r.boardStop?.id === stopsA[0]!.id)!;
+    const roomy = result.find(r => r.boardStop?.id === stopsB[0]!.id)!;
+    expect(roomy.estimatedTime, '有位子的那條反而比較慢')
+      .toBeLessThan(packed.estimatedTime);
   });
 });
 
@@ -336,19 +353,22 @@ describe('getRouteRiders', () => {
     // 擁擠代價要到傍晚才出現，然後隔天再歸零 —— 一個看得見的鋸齒。
     const stops = [makeStop(0, 0, 1), makeStop(5, 5, 2)];
     stops[0]!.smoothedDailyRiders = 300;
-    stops[0]!.dailyRiders = 5; // 今天才剛開始
+    stops[0]!.lastDayRiders = 5; // 昨天剛好沒什麼人
     const route = { id: 1, type: TransportType.BUS, stops, vehicles: 1, operatingCost: 100 };
 
-    expect(getRouteRiders(route), '一天剛開始就把這條線當成空的').toBe(300);
+    expect(getRouteRiders(route), '昨天的一次低點就把整條線當成空的').toBe(300);
   });
 
-  it('should use today when today is busier than usual', () => {
-    // 新開的線、或今天突然爆量 —— 平滑值還跟不上，要用今天的實數。
+  it('should use yesterday when yesterday was busier than usual', () => {
+    // 昨天暴增的路線 —— 平滑值還跟不上，要用昨天的實數。
+    //
+    // 讀的是**完整的一天**而不是「今天到現在為止」:運能的單位是一天，兩者要對得上。
+    // 讀今天的累計會讓載重每個遊戲日鋸齒一次（玩家存檔實測 5.56 ~ 47.34）。
     const stops = [makeStop(0, 0, 1), makeStop(5, 5, 2)];
     stops[0]!.smoothedDailyRiders = 20;
-    stops[0]!.dailyRiders = 400;
+    stops[0]!.lastDayRiders = 400;
     const route = { id: 1, type: TransportType.BUS, stops, vehicles: 1, operatingCost: 100 };
 
-    expect(getRouteRiders(route), '今天爆量卻還在看昨天的平均').toBe(400);
+    expect(getRouteRiders(route), '昨天暴增卻還在看好幾天的平均').toBe(400);
   });
 });

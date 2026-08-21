@@ -34,16 +34,16 @@ const USAGE_COLOR: Record<RouteLoadStatus, string> = {
   comfortable: UI_COLORS.STATUS_GOOD,
   crowded: UI_COLORS.STATUS_WARN,
   overloaded: UI_COLORS.STATUS_BAD,
-  // 拒載跟超載同一個紅 —— 差別在文案，不在顏色。多一種紅只會讓人分不出來。
-  refusing: UI_COLORS.STATUS_BAD,
+  // 沒指望跟超載同一個紅 —— 差別在文案，不在顏色。多一種紅只會讓人分不出來。
+  hopeless: UI_COLORS.STATUS_BAD,
 };
 
 /** 滑過去才看得到的說明 —— 顏色告訴你有問題，這句告訴你發生了什麼事。 */
 const USAGE_HINT: Record<RouteLoadStatus, string> = {
-  comfortable: 'Waits are unaffected at this load.',
-  crowded: 'Riders are waiting longer — packed vehicles go past.',
-  overloaded: 'Running out of room — add vehicles before riders start being turned away.',
-  refusing: 'Full. This route is no longer offered to commuters — add vehicles.',
+  comfortable: 'Everyone gets a seat on the next vehicle.',
+  crowded: 'Some riders are left behind and wait for the vehicle after.',
+  overloaded: 'The wait for a free seat now exceeds the wait for the vehicle itself.',
+  hopeless: 'Riders watch two full vehicles go past before boarding. Add vehicles.',
 };
 
 export function TrafficPage(props: { onClose?: () => void }) {

@@ -8,13 +8,17 @@ import type { TransportStop } from './types';
  * 班次一點也沒有變密。
  */
 
+/**
+ * 面板把載重分成幾段。**兩個都是顯示用的分界，不是模擬常數。**
+ *
+ * 模擬本身沒有任何門檻 —— 等待是連續的（`extraHeadwaysWaited`），越擠越久，
+ * 沒有上限也沒有懸崖。這裡的兩個數字只決定那一格什麼時候變黃、什麼時候變紅。
+ */
 export const CROWDING = {
-  /** 到這個載重為止，等車時間不受影響。 */
-  COMFORT_LOAD: 0.8,
-  /** 擠到極限時要等這麼多倍 —— 眼睜睜看幾班滿載的車開走。 */
-  MAX_WAIT_MULTIPLIER: 4,
-  /** 超過這個載重就真的上不去了。 */
-  REFUSE_LOAD: 1.5,
+  /** 多等超過半個班距 —— 該加車了。 */
+  OVERLOADED_LOAD: 1.5,
+  /** 眼睜睜看兩班滿載的車開過去。 */
+  HOPELESS_LOAD: 3,
 } as const;
 
 /**
@@ -116,48 +120,46 @@ export function computeLoadFactor(dailyRiders: number, dailyCapacity: number): n
 }
 
 /**
- * 擠不擠得上去，反映在等車時間上。
+ * 擠不上這班，平均還要多等幾班。
  *
- * 車廂滿了就得等下一班、再下一班。原本沒有這一段，只有一個「滿了就整條路線從所有
- * 人的選項裡消失」的懸崖：載到 99% 時它跟空車一樣好，到 100% 的瞬間全城改開車。
- * 改成連續的之後，玩家會先看到通勤時間變長，才輪到有人擠不上去。
+ * 一句話推出來的:這班上不去的機率是 `q`，那要等 1、2、3⋯ 班的機率是等比級數，
+ * 期望值 `q / (1 - q)`。以 `q = 1 - 1 / 載重` 代入（想搭的人是位子的 L 倍，
+ * 就有 `1 - 1/L` 的人這班上不去），化簡剛好是 **載重 - 1**。
+ *
+ * 沒有上限:載重 11 就是多等 10 班。舊模型封在 4 倍，而「再擠也不會更糟」不是真的。
+ *
+ * 沒有懸崖:舊模型在載重 1.5 那一點從「還能搭」變成「這條線不存在」，中間差一個
+ * 乘客。玩家 12 600 人的存檔實測，那道懸崖自己造出一個極限環 —— 加車讓載重衝過
+ * 1.5，全部人被踢出去，載重掉回來，人又回來，再衝過去。
+ *
+ * 也不需要另外一條拒載線:等待自己會發散，而「等到天荒地老」本來就等價於
+ * 「不能搭」—— 運具選擇是比大小的，一條要等十班的路線自己就輸了。
  */
-export function crowdingWaitMultiplier(loadFactor: number): number {
-  if (loadFactor <= CROWDING.COMFORT_LOAD) return 1;
-  const span = CROWDING.REFUSE_LOAD - CROWDING.COMFORT_LOAD;
-  const over = Math.min(1, (loadFactor - CROWDING.COMFORT_LOAD) / span);
-  return 1 + over * (CROWDING.MAX_WAIT_MULTIPLIER - 1);
+export function extraHeadwaysWaited(loadFactor: number): number {
+  return Math.max(0, loadFactor - 1);
 }
-
-/**
- * 面板轉紅的載重。
- *
- * 這是一個**顯示用**的門檻，不是模擬常數 —— 模擬裡九成載重不會發生任何特別的事。
- * 它存在的理由是提前警告:等到一五○%（`REFUSE_LOAD`，路線真的開始拒載）才變紅
- * 的話，玩家看到紅燈時事情已經壞了。紅燈要說的是「現在該加車了」，不是
- * 「已經來不及了」。
- */
-export const USAGE_WARN_LOAD = 0.9;
 
 /**
  * 載重的四個階段。顏色與文案照這個分。
  *
- * 前兩段與最後一段對應模擬裡**真的會發生的事**，中間那道是顯示用的提前警告:
- * - `comfortable`（< 0.8）：等車時間不受影響。
- * - `crowded`（0.8 ~ 0.9）：等車時間開始拉長（`crowdingWaitMultiplier`）。
- * - `overloaded`（>= 0.9）：提前警告，該加車了。
- * - `refusing`（>= 1.5）：真的擠不上去，這條路線從那個人的選項裡消失
- *   （`isOverCapacity`）。顏色跟 `overloaded` 一樣紅，但文案不同 —— 玩家要看得出
- *   「快滿了」跟「已經沒有人搭得上去了」的差別。
+ * 分界點挑的是**模型裡真的會發生事情**的那幾點，不是好看的整數:
+ * - `comfortable`（< 1）：位子夠，沒有人被留在站牌上。
+ * - `crowded`（>= 1）：**開始有人上不去**，多等的班數從零往上走。
+ * - `overloaded`（>= 1.5）：多等超過半個班距 —— 比基本等待還久，該加車了。
+ * - `hopeless`（>= 3）：眼睜睜看兩班滿載的車開過去。
+ *
+ * 最後一段是**標籤，不是懸崖** —— 模擬不會把這條路線藏起來，只是讓它非常慢。
+ * 舊模型那道 `refusing` 懸崖在載重 1.5 那一點把整條線從選項裡拿掉，而玩家實測
+ * 發現它自己造出一個極限環。
  *
  * 抽出來是為了讓面板跟模擬讀同一組數字 —— 各寫一份的話，兩邊會靜靜地分家。
  */
-export type RouteLoadStatus = 'comfortable' | 'crowded' | 'overloaded' | 'refusing';
+export type RouteLoadStatus = 'comfortable' | 'crowded' | 'overloaded' | 'hopeless';
 
 export function routeLoadStatus(loadFactor: number): RouteLoadStatus {
-  if (loadFactor >= CROWDING.REFUSE_LOAD) return 'refusing';
-  if (loadFactor >= USAGE_WARN_LOAD) return 'overloaded';
-  if (loadFactor >= CROWDING.COMFORT_LOAD) return 'crowded';
+  if (loadFactor >= CROWDING.HOPELESS_LOAD) return 'hopeless';
+  if (loadFactor >= CROWDING.OVERLOADED_LOAD) return 'overloaded';
+  if (extraHeadwaysWaited(loadFactor) > 0) return 'crowded';
   return 'comfortable';
 }
 
@@ -175,11 +177,6 @@ export function formatRouteUsage(riders: number, capacity: number): string {
   return `${Math.round((riders / capacity) * 100)}%`;
 }
 
-/** 真的擠不上去了 —— 這條路線對這個人不存在。 */
-export function isOverCapacity(loadFactor: number): boolean {
-  return loadFactor >= CROWDING.REFUSE_LOAD;
-}
-
 /**
  * 站在站牌前預期要等多久。
  *
@@ -187,7 +184,10 @@ export function isOverCapacity(loadFactor: number): boolean {
  * 評分認為他搭得很順、實際派車卻讓他等到天荒地老，兩邊會靜靜地不一致。
  */
 export function expectedWait(headway: number, waitFactor: number, loadFactor: number): number {
-  return headway * waitFactor * crowdingWaitMultiplier(loadFactor);
+  // 基本等待是**半個**班距（乘客隨機到站），多等的則是**整班** —— 兩者的單位不同，
+  // 所以是相加不是相乘。舊寫法是整段乘上一個倍率，那讓「多等一班」的意思被
+  // `waitFactor` 稀釋掉了。
+  return headway * (waitFactor + extraHeadwaysWaited(loadFactor));
 }
 
 /**

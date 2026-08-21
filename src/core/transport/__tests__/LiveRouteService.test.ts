@@ -74,7 +74,7 @@ describe('活的班距與載重率', () => {
     refreshRouteService(routes);
 
     expect(routes[0]!.loadFactor, '扁平路線還記著人還沒上車時的載重率')
-      .toBeGreaterThan(CROWDING.REFUSE_LOAD);
+      .toBeGreaterThan(CROWDING.HOPELESS_LOAD);
   });
 
   it('should shorten the headway without waiting for a re-flatten', () => {

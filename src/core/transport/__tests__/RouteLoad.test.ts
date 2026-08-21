@@ -6,8 +6,7 @@ import {
   computeHeadway,
   computeDailyCapacity,
   computeLoadFactor,
-  crowdingWaitMultiplier,
-  isOverCapacity,
+  extraHeadwaysWaited,
   expectedWait,
 } from '../RouteLoad';
 import { TransportType, type TransportStop } from '../types';
@@ -108,30 +107,16 @@ describe('載重率', () => {
 });
 
 describe('擁擠對等車時間的影響', () => {
-  it('should not punish a route that is not crowded yet', () => {
-    expect(crowdingWaitMultiplier(0)).toBe(1);
-    expect(crowdingWaitMultiplier(CROWDING.COMFORT_LOAD)).toBe(1);
+  // 形狀本身由 GeometricCrowdingWait.test.ts 守著（等比級數推出來的那一條）。
+  // 這裡只守「有位子就不罰、沒位子就開始罰」這個介面層的分界。
+  it('should not punish a route that still has room', () => {
+    expect(extraHeadwaysWaited(0)).toBe(0);
+    expect(extraHeadwaysWaited(1)).toBe(0);
   });
 
-  it('should rise smoothly once it gets crowded', () => {
-    const a = crowdingWaitMultiplier(0.9);
-    const b = crowdingWaitMultiplier(1.1);
-    const c = crowdingWaitMultiplier(1.3);
-    expect(a).toBeGreaterThan(1);
-    expect(b).toBeGreaterThan(a);
-    expect(c).toBeGreaterThan(b);
-  });
-
-  it('should cap so the number stays meaningful', () => {
-    expect(crowdingWaitMultiplier(CROWDING.REFUSE_LOAD)).toBeCloseTo(CROWDING.MAX_WAIT_MULTIPLIER);
-    expect(crowdingWaitMultiplier(99)).toBeCloseTo(CROWDING.MAX_WAIT_MULTIPLIER);
-  });
-
-  it('should give the player warning before the route becomes unusable', () => {
-    // 這是重點：不再是「99% 跟空車一樣好、100% 整條線蒸發」。玩家會先看到
-    // 通勤時間變長，才輪到有人擠不上去。
-    expect(isOverCapacity(0.9)).toBe(false);
-    expect(crowdingWaitMultiplier(0.9)).toBeGreaterThan(1);
+  it('should rise the moment somebody is left behind', () => {
+    expect(extraHeadwaysWaited(1.1)).toBeGreaterThan(0);
+    expect(extraHeadwaysWaited(1.3)).toBeGreaterThan(extraHeadwaysWaited(1.1));
   });
 });
 
@@ -154,13 +139,12 @@ describe('預期等車時間', () => {
   });
 });
 
-describe('擠不上去', () => {
-  it('should let people on below the refusal load', () => {
-    expect(isOverCapacity(CROWDING.REFUSE_LOAD - 0.01)).toBe(false);
-  });
-
-  it('should refuse beyond it', () => {
-    expect(isOverCapacity(CROWDING.REFUSE_LOAD)).toBe(true);
-    expect(isOverCapacity(Infinity)).toBe(true);
+describe('沒有拒載門檻', () => {
+  it('should punish an impossible route with time, not with disappearance', () => {
+    // 舊模型在載重 1.5 那一點把整條線從選項裡拿掉。玩家實測發現那道懸崖自己造出
+    // 一個極限環:加車 → 載重衝過 1.5 → 全部人被踢出去 → 載重掉回來 → 人又回來。
+    const wait = expectedWait(20, 0.5, 99);
+    expect(Number.isFinite(wait), '等待不是一個有限的數字，無法跟開車比大小').toBe(true);
+    expect(wait, '擠成這樣還是很好搭').toBeGreaterThan(expectedWait(20, 0.5, 1) * 50);
   });
 });

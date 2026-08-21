@@ -9,7 +9,7 @@
 import { TransportType, type TransportStop } from './types';
 import { walkDistanceToStop, type StopReach } from '../traffic/StopWalkReach';
 import { computeRideDistance, getRouteRiders, type TransitSystemInfo } from './TransitAvailability';
-import { expectedWait, isOverCapacity, routeService } from './RouteLoad';
+import { expectedWait, routeService } from './RouteLoad';
 import { walkRangeFor, WALK_RANGE_BY_TYPE } from './WalkRange';
 
 // ── Types ───────────────────────────────────────────────────────
@@ -138,7 +138,7 @@ export function flattenSystems(
  * 這兩個值原本只在 `flattenSystems()` 算一次，而扁平路線只有玩家動到路網拓樸時
  * 才重建 —— 搭乘人數之後怎麼漲都回不到這裡。玩家 12 500 人的存檔實測:記著的
  * 載重率 0.0000192，照當下人數重算是 **308**。整套擁擠模型因此形同不存在:
- * `isOverCapacity()` 永遠拿舊值（路線永遠不拒載），`expectedWait()` 的擁擠加成
+ * `expectedWait()` 的擁擠加成
  * 永遠是 1。而同一份判斷在 `findAvailableTransit()` 裡是每次現算的 —— 兩條路徑
  * 對同一條路線的看法差了一千六百萬倍（BUG-343）。
  *
@@ -258,7 +258,7 @@ export function buildStopRouteCache(
     for (const edge of edges) {
       if (usedRoutes.has(edge.toRI)) continue;
       const targetRoute = routes[edge.toRI]!;
-      if (isOverCapacity(targetRoute.loadFactor)) continue;
+      // 擠爆的路線不再被藏起來 —— `expectedWait()` 會讓它慢到自己輸掉。
 
       const targetStop = targetRoute.stops[edge.toSI]!;
       const transferWalkTime = edge.walkDistance / walkSpeed;
@@ -311,7 +311,7 @@ export function buildStopRouteCache(
   // For each entry stop, explore all reachable exits
   for (let ri = 0; ri < routes.length; ri++) {
     const route = routes[ri]!;
-    if (isOverCapacity(route.loadFactor)) continue;
+    // 同上:沒有拒載門檻，慢就是它的懲罰。
 
     for (let si = 0; si < route.stops.length; si++) {
       const entryStop = route.stops[si]!;
@@ -375,7 +375,7 @@ export function findMultiModalRoutes(
   // For each entry stop near origin × each exit stop near destination, lookup cache
   for (let eri = 0; eri < routes.length; eri++) {
     const eRoute = routes[eri]!;
-    if (isOverCapacity(eRoute.loadFactor)) continue;
+    // 同上。
     for (let esi = 0; esi < eRoute.stops.length; esi++) {
       const entryStop = eRoute.stops[esi]!;
       // 沿人行道量，不是直線 —— 直線看不見馬路，會把住戶從對街「走」到站牌。

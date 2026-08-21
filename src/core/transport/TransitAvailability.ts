@@ -1,6 +1,6 @@
 import { TransportType, type TransportRoute, type TransportStop } from './types';
 import { walkDistanceToStop, type StopReach } from '../traffic/StopWalkReach';
-import { routeService, expectedWait, isOverCapacity } from './RouteLoad';
+import { routeService, expectedWait } from './RouteLoad';
 import { walkRangeFor, WALK_RANGE_BY_TYPE } from './WalkRange';
 import type { AvailableTransport } from './ModeChoice';
 
@@ -34,19 +34,30 @@ export function getRouteDailyRiders(route: TransportRoute): number {
 /**
  * 這條路線的常態載客量，用來判斷有多擠。
  *
- * `dailyRiders` 是**今天到現在為止**的累計，每天歸零 —— 直接拿它當載重的話，每天
- * 早上每條路線看起來都是空的，擁擠代價要到傍晚才出現，然後隔天再歸零。取它與
- * 跨日平滑值的較大者：既有的路線用平滑值，新開或正在爆量的路線用今天的實數。
+ * 讀的是**完整的一天** —— 昨天的實數與跨日平滑值取大者。運能的單位是「一天載得動
+ * 幾人次」，所以搭乘量也必須是一整天的。
+ *
+ * 這裡曾經讀 `dailyRiders`，那是**今天到現在為止**的累計，每個遊戲日歸零。兩者單位
+ * 不同，於是載重每天鋸齒一次:早上路線看起來是空的，隨這一天走完慢慢變擠，然後歸零
+ * 重來。玩家 12 600 人的存檔實測（一台公車、連續取樣 151 次）:載重在 **5.56 到
+ * 47.34** 之間跳，而今日累計人次在 **0 到 6 519** 之間跑。玩家回報的
+ * 「usage 在 80~100% 震盪」就是它。
+ *
+ * 而且它同時讓需求失控:每天早上看起來是空的，所有人都選它，載重到傍晚才爆掉。
+ *
+ * 取兩者的較大者是為了兩件事都顧到 —— 昨天暴增的路線今天就反映得出來（讀
+ * `lastDayRiders`），而昨天剛好沒人搭的一次低點不會把整條線當成空的（讀平滑值）。
+ * 代價是新路線第一天看起來是空的:一天的資料要滿一天才有。
  */
 export function getRouteRiders(route: { stops: readonly TransportStop[] }): number {
-  let daily = 0;
+  let lastDay = 0;
   let smoothed = 0;
   for (let i = 0; i < route.stops.length; i++) {
     const s = route.stops[i]!;
-    daily += s.dailyRiders;
+    lastDay += s.lastDayRiders;
     smoothed += s.smoothedDailyRiders;
   }
-  return Math.max(daily, smoothed);
+  return Math.max(lastDay, smoothed);
 }
 
 /**
@@ -86,9 +97,8 @@ export function findAvailableTransit(
       const { headway, loadFactor } = routeService(
         route, getRouteRiders(route), sys.vehicleCapacity ?? 0, speed, segDists,
       );
-      // 擠不上去的路線對這個人不存在。這條線之前的形式是「一整天的人次 ≥
-      // 車輛數 × 座位數」—— 累計量比瞬間量，天花板低了一個數量級。
-      if (isOverCapacity(loadFactor)) continue;
+      // 沒有拒載門檻。擠爆的路線照樣列出來，只是等車時間長到自己輸掉 ——
+      // 「等到天荒地老」本來就等價於「不能搭」，而懸崖會自己造出極限環。
 
       // Find nearest origin and destination stops within walk range
       let bestOriginIdx = -1, bestOriginDist = Infinity;
