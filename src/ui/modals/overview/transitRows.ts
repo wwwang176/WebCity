@@ -16,6 +16,7 @@ import {
   computeCycleTime, computeDailyCapacity, computeLoadFactor,
   formatRouteUsage, routeLoadStatus, type RouteLoadStatus,
 } from '../../../core/transport/RouteLoad';
+import { getRouteRiders } from '../../../core/transport/TransitAvailability';
 import type { TransportRoute, TransportStop, TransportType } from '../../../core/transport/types';
 
 /** 面板需要一個運輸系統提供的東西。只有這些，不是整個 `BaseTransportSystem`。 */
@@ -60,10 +61,15 @@ export interface TransitSystemRow {
   routeRows: TransitRouteRow[];
 }
 
+/**
+ * 搭乘量走模擬那支 —— 面板自己數的話，兩邊會靜靜地分家。
+ *
+ * 差別不是理論上的:`getRouteRiders()` 取「今日累計」與「跨日平滑」的**較大者**
+ * （`dailyRiders` 每天歸零，直接拿它當載重的話每天早上每條路線看起來都是空的）。
+ * 面板原本只讀平滑值，於是白天累計量超過平滑值的時候，顯示的 % 比模擬實際採用的低。
+ */
 function ridersOf(stops: readonly TransportStop[]): number {
-  let sum = 0;
-  for (const s of stops) sum += s.smoothedDailyRiders;
-  return sum;
+  return getRouteRiders({ stops });
 }
 
 export function buildTransitRows(

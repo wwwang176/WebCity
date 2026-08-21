@@ -100,6 +100,21 @@ describe('面板的路線載重', () => {
     expect(rows[0]!.totalCapacity, '運能沒有跨路線加總').toBeCloseTo(perLoop * 4, 6);
   });
 
+  it('should count riders the same way the simulation does', () => {
+    // 面板只讀 `smoothedDailyRiders`，模擬讀 `max(今日累計, 跨日平滑)`。白天累計量
+    // 超過平滑值的時候，面板顯示的 % 會比模擬實際採用的低 —— 同一個數字兩個地方
+    // 各記一份，就是 BUG-342 本身那個錯。
+    const s = stop(0, 0, 0);
+    s.smoothedDailyRiders = 10;
+    s.dailyRiders = 400;          // 今天特別多人，平滑值還沒跟上
+    const r = route(1, [s, stop(50, 0, 0)], 1);
+
+    const rows = buildTransitRows([busSystem([r], 50, 2)]);
+
+    expect(rows[0]!.routeRows[0]!.riders, '面板沒有讀模擬用的那個搭乘量').toBe(400);
+    expect(rows[0]!.totalRiders, '收合列也要讀同一個').toBe(400);
+  });
+
   it('should keep a suspended route visible and still count it', () => {
     // 停駛的路線還在收玩家的錢，面板不能把它藏起來。
     const suspended = { ...route(1, loopOf100(0), 1), suspended: true };
