@@ -77,6 +77,7 @@ WebCity 是一款網頁版都市經營模擬遊戲，靈感來自 Cities: Skylin
 | 文件 | 說明 |
 |------|------|
 | [debug-viewmode.md](debug-viewmode.md) | 除錯工具與檢視模式 — Debug Panel、ViewMode 透明度 |
+| [agent-api.md](agent-api.md) | Agent API — `window.__agent`，讓程式玩這個遊戲的入口 |
 
 ---
 
