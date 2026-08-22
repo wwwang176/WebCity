@@ -441,10 +441,45 @@ repo 一再警告的那個錯 —— 同一個數字兩個地方各記一份，�
 | `export(slotId)` | 匯出成檔案下載 |
 | `importSave(fileContent, name?)` | 匯入匯出檔。**寫到第一個空格子，不蓋任何東西** |
 | `load(slotId)` | 目前這局會被整個換掉 |
-| `newGame(mapConfig?)` | 目前這局會被整個丟掉 |
+| `newGame(mapConfig?)` | 目前這局會被整個丟掉。設定的形狀見下 |
 
 **沒有 `delete`。** `AgentSession.test.ts` 有一條測試列舉了 `delete` / `deleteSave` /
 `remove` / `removeSave` / `clear` / `destroy`，日後有人補上去會在那裡絆倒。
+
+### 開新局的設定
+
+**可以只給幾個欄位**，其餘補預設；完全不給就用遊戲自己的預設。
+
+| 欄位 | 值 |
+|------|-----|
+| `seed` | 1 ~ 2147483646 的整數 |
+| `waterAmount` | `low` / `medium` / `high` / `very_high` |
+| `forestDensity` | `sparse` / `normal` / `dense` |
+| `startingFunds` | `easy`（$75,000）/ `normal`（$50,000）/ `hard`（$25,000） |
+| `disastersEnabled` | `true` / `false` |
+| `disasterFrequency` | `low` / `medium` / `high` |
+
+```bash
+curl -X POST localhost:5173/agent \
+  -d '{"path":"session.newGame","args":[{"waterAmount":"very_high","disastersEnabled":false}]}'
+```
+
+**沒有地圖大小這個選項。** 不認得的欄位會被擋下來，而且錯誤訊息會把六個合法欄位
+全列出來 —— 呼叫端是程式，它只能從訊息裡學會下一次該怎麼寫。
+
+不合法的設定**擋在動手之前**：地形產生器不驗，錯的值會讓開局炸在一半然後退回
+主選單 —— 連帶把正在玩的那一局也賠進去。
+
+### 「沒有 error」不等於「開起來了」
+
+`newGame()` 與 `load()` 等完之後會**再確認一次遊戲真的開起來了**。
+
+遊戲啟動失敗時走的是「退回主選單」，**不是丟例外**（`startGameGuarded` 會吞掉）。
+所以沒有這道確認的話，玩家看到載入畫面閃一下跳回主選單，而 API 回報成功：
+
+```json
+{ "ok": false, "reason": "the game did not start — the game is back on the menu screen" }
+```
 
 ### `load()` 與 `newGame()` 會把整個 `Game` 換掉
 
@@ -484,6 +519,7 @@ window.__agent.read.city(); // 這才是新的
 | `src/agent/AgentRead.ts` | 讀取層 |
 | `src/agent/AgentSession.ts` | 存檔與開局 |
 | `src/agent/status.ts` | `status()` —— 玩家在看什麼 |
+| `src/agent/mapConfig.ts` | 開新局設定的驗證與補齊 |
 | `src/agent/registry.ts` | 面板、開局、畫面狀態的註冊橋 |
 | `src/agent/bridge/dispatch.ts` | 把 `{"path":"read.city"}` 變成真的呼叫，以及路徑的把關 |
 | `src/agent/bridge/client.ts` | 頁面端:收下呼叫、執行、回傳 |

@@ -31,6 +31,33 @@
 
 ## 待修問題
 
+### BUG-350: agent 開新局帶了自己編的設定，遊戲炸在一半退回主選單 ✅ 已修復
+
+- **症狀**: 玩家把 API 交給另一個 AI，AI 呼叫 `session.newGame({size:128,...})`，
+  畫面閃過載入畫面之後**跳回主選單**，而 API 回報 `ok: true`。
+- **根因（兩層）**:
+  1. `docs/agent-api.md` 只寫了 `newGame(mapConfig?)`，**沒寫設定長什麼樣**。呼叫端
+     是程式，看不到型別，只能照常識編一個 —— 而這個遊戲的地圖設定裡**沒有大小**
+     （`seed` / `waterAmount` / `forestDensity` / `startingFunds` /
+     `disastersEnabled` / `disasterFrequency`）。
+  2. 地形產生器**不驗**設定。它直接拿 `config.waterAmount` 查表，值不對就是
+     `Cannot read properties of undefined (reading 'riverHalfWidth')`。
+     `startGameGuarded` 吞掉例外退回主選單 —— 而 `AgentSession.newGame()` 只是
+     `await bridge.newGame()`，那個 Promise **不會 reject**，所以回報成功。
+- **UI 那一邊早就知道**: `NewGameConfig.pick()` 的註解寫著「一個
+  `waterAmount: undefined` 的設定會直接進到地形產生器而不是被拒絕」，並在自己那條路
+  上擋掉了。agent 是**新開的第二條路**，那道防護沒有跟過來。
+- **修法**:
+  1. `checkMapConfig()` —— 收部分設定、補預設，不認得的欄位與不合法的值都**擋在
+     動手之前**，而且錯誤訊息把六個合法欄位／可用的值全列出來（呼叫端只能從訊息
+     裡學會下一次怎麼寫）。
+  2. `newGame()` 與 `load()` 等完之後**再確認一次畫面停在哪**。失敗是「退回主選單」
+     而不是丟例外，所以「await 完了沒爆」不等於「開起來了」。連「卡在載入中」也
+     算失敗 —— 那時候說開好了更糟，呼叫端會立刻去讀一座還不存在的城市。
+- **實機驗證**: 遊戲進行中送一個爛設定，城市完好無損（以前這會把整局賠掉）。
+- **嚴重性**: 高（會毀掉正在玩的那一局，而且回報成功）
+- **狀態**: 已修復
+
 ### BUG-349: 刪光路線的運具永遠掛著紅色「hopeless」 ✅ 已修復
 
 - **發現**: 蓋 agent 的讀取層時，`read.transit()` 回報玩家存檔裡的鐵路是
