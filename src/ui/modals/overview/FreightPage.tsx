@@ -1,8 +1,7 @@
 import { createMemo } from 'solid-js';
 import { gameSignals, getGame } from '../../store/gameStore';
-import { ZoneType } from '../../../core/grid/types';
+import { buildFreightStats } from '../../../core/stats/FreightStats';
 import { TRADE } from '../../../core/traffic/FreightSystem';
-import { HIGHWAY_EXTERNAL } from '../../../core/traffic/HighwayConnection';
 import { UI_COLORS } from '../../constants';
 
 function supplyColor(ratio: number): string {
@@ -14,66 +13,10 @@ function supplyColor(ratio: number): string {
 export function FreightPage() {
   const data = createMemo(() => {
     gameSignals.tick();
-    const state = getGame().getState();
-
-    const freight = state.freight;
-    const demand = freight.getLastDemand();
-    const trade = freight.getLastTrade();
-    const effectiveProd = demand.production - trade.exported + trade.imported;
-    const supplyRatio = demand.consumption > 0 ? effectiveProd / demand.consumption : 1;
-
-    // Counts
-    const suppliedCount = freight.getSuppliedCount();
-    const localCount = freight.getLocalSuppliedCount();
-    const importedCount = freight.getImportedCount();
-
-    // Commercial building count from grid
-    let totalCommercial = 0;
-    state.grid.forEachCell((cell) => {
-      if (cell.buildingId > 0 && (cell.zoneType === ZoneType.COMMERCIAL_LOW || cell.zoneType === ZoneType.COMMERCIAL_HIGH)) {
-        totalCommercial++;
-      }
-    });
-    const unsuppliedCount = totalCommercial - suppliedCount;
-
-    // Trade facilities
-    const rail = state.rail;
-    const extStations = rail.getExternalStationCount();
-    const railThroughput = rail.hasExternalConnection ? extStations * TRADE.RAIL_THROUGHPUT_PER_STATION : 0;
-
-    const airports = state.airport.getAirports();
-    let airportThroughput = 0;
-    const airportDetails: { size: string; cargo: number; operational: boolean }[] = [];
-    for (const ap of airports) {
-      const operational = state.airport.isAirportOperational(ap.id);
-      const effectiveCargo = operational ? ap.cargoPerTick : 0;
-      airportThroughput += effectiveCargo;
-      airportDetails.push({ size: ap.size, cargo: effectiveCargo, operational });
-    }
-
-    const hc = state.highwayConnection;
-    const highwayThroughput = hc.hasExternalConnection ? hc.getThroughput() : 0;
-    const highwayConnections = hc.getEdgeHighwayCellCount();
-
-    const totalThroughput = railThroughput + airportThroughput + highwayThroughput;
-
-    return {
-      supplyRatio,
-      production: demand.production,
-      consumption: demand.consumption,
-      shortage: demand.shortage,
-      suppliedCount, localCount, importedCount, unsuppliedCount, totalCommercial,
-      imported: trade.imported,
-      exported: trade.exported,
-      totalThroughput,
-      railThroughput, extStations, totalStations: rail.getStations().length,
-      hasRailConnection: rail.hasExternalConnection,
-      highwayThroughput, highwayConnections,
-      hasHighwayConnection: hc.hasExternalConnection,
-      airportThroughput, airportDetails,
-      surplusRatio: freight.getSurplusRatio(),
-      isExporting: freight.getIsExporting(),
-    };
+    const s = buildFreightStats(getGame().getState());
+    // 面板跟 agent API 讀同一支 `buildFreightStats` —— 兩份各算一次就會分家
+    // （BUG-342）。這裡只把幾個欄位換成 JSX 沿用的舊名字。
+    return { ...s, extStations: s.externalStations, airportDetails: s.airports };
   }, undefined, {
     equals: (a, b) => JSON.stringify(a) === JSON.stringify(b),
   });
@@ -151,7 +94,7 @@ export function FreightPage() {
             <td class="td-value" style="text-align:right">{data().highwayThroughput}/tick</td>
           </tr>
           {data().airportDetails.length > 0
-            ? data().airportDetails.map((ap, i) => (
+            ? data().airportDetails.map((ap) => (
                 <tr>
                   <td class="td-label">
                     Airport ({ap.size})

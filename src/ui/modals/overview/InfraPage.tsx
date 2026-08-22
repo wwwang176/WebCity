@@ -1,5 +1,6 @@
 import { createMemo } from 'solid-js';
 import { gameSignals, getGame } from '../../store/gameStore';
+import { buildInfraStats } from '../../../core/stats/InfraStats';
 import { UI_COLORS } from '../../constants';
 
 function CapacityRow(props: { label: string; current: number; max: number; unit?: string; color: string }) {
@@ -49,33 +50,21 @@ function SupplyDemandRow(props: { label: string; supply: number; demand: number;
 export function InfraPage() {
   const data = createMemo(() => {
     gameSignals.tick();
-    const state = getGame().getState();
-
-    // Both halves have to describe the same landfills. getTotalCapacity counts
-    // only the reachable, powered ones; pairing it with the unfiltered stored
-    // total printed "1800 / 0" at a healthy 0% (BUG-155).
-    const garbageLoad = state.garbage.getActiveLoad();
-    const garbageCap = state.garbage.getTotalCapacity();
-    const garbageStranded = state.garbage.getStrandedCapacity();
-    const garbageUncollected = state.garbage.getUncollected();
-
-    const sewageUntreated = state.sewage.getUntreated();
-    const sewageCap = state.sewage.getTreatmentCapacity();
-
-    const cemeteries = state.deathCare.getCemeteries();
-    let cemUsed = 0, cemCap = 0;
-    for (const c of cemeteries) { cemUsed += c.currentLoad; cemCap += c.capacity; }
-    const unprocessed = state.deathCare.getUnprocessed();
-
+    const s = buildInfraStats(getGame().getState());
+    // 跟 agent API 同一支。舊名字留給下面的 JSX。
     return {
-      pwrSupply: state.power.getSupply(),
-      pwrDemand: state.power.getDemand(),
-      wtrSupply: state.water.getSupply(),
-      wtrDemand: state.water.getDemand(),
-      garbageLoad, garbageCap, garbageStranded, garbageUncollected,
-      sewageUntreated, sewageCap,
-      cemUsed, cemCap, unprocessed,
-      waterPollution: state.sewage.getWaterPollution(),
+      pwrSupply: s.power.supply, pwrDemand: s.power.demand,
+      wtrSupply: s.water.supply, wtrDemand: s.water.demand,
+      garbageLoad: s.landfillLoad,
+      garbageCap: s.landfillCapacity,
+      garbageStranded: s.landfillStrandedCapacity,
+      garbageUncollected: s.garbageUncollected,
+      sewageUntreated: s.sewageUntreated,
+      sewageCap: s.sewageCapacity,
+      cemUsed: s.cemeteryUsed,
+      cemCap: s.cemeteryCapacity,
+      unprocessed: s.unprocessedDeaths,
+      waterPollution: s.waterPollution,
     };
   }, undefined, {
     equals: (a, b) => JSON.stringify(a) === JSON.stringify(b),

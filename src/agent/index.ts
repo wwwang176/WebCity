@@ -1,10 +1,11 @@
 import type { Game } from '../Game';
+import { gameSignals } from '../ui/store/gameStore';
 import { serializeGameState } from '../core/save/Serializer';
 import { AgentApi } from './AgentApi';
 import { AgentBudget, type BudgetHost } from './AgentBudget';
 import { AgentDistrict, type DistrictHost } from './AgentDistrict';
 import { AgentPolicy, type PolicyHost } from './AgentPolicy';
-import { AgentRead } from './AgentRead';
+import { AgentRead, type StatsHost } from './AgentRead';
 import { AgentSession } from './AgentSession';
 import { AgentRoutes, type ModeAdapter, type RouteHost } from './AgentRoutes';
 import { AgentUi, type CameraTarget, type UiHost } from './AgentUi';
@@ -211,9 +212,37 @@ function districtHost(game: Game): DistrictHost {
   };
 }
 
+/**
+ * `Game` 的統計 + 一支它沒有的。
+ *
+ * 圖表歷史存在 UI 的 store 裡（一天記一筆，不進存檔），`Game` 上沒有這個欄位。
+ * 其餘全部是 `Game` 自己的方法，原封不動轉手。
+ */
+function statsHost(game: Game): StatsHost {
+  // 一支一支寫出來,不用 `Object.create(game)` 那種繼承 —— 那會讓 `this` 指到包裝物
+  // 而不是遊戲本身,任何一支改成會寫欄位的方法都會靜靜地寫到別的地方去。
+  return {
+    getEconomyBreakdown: () => game.getEconomyBreakdown(),
+    getBillableDistricts: () => game.getBillableDistricts(),
+    getCommuteStats: () => game.getCommuteStats(),
+    getTrafficStats: () => game.getTrafficStats(),
+    getTransferStats: () => game.getTransferStats(),
+    getAbandonmentStress: (x, y) => game.getAbandonmentStress(x, y),
+    getSelectedBuilding: () => game.getSelectedBuilding(),
+    // `StatsHost` 收的是任意字串（呼叫端可能亂問），到這裡才收窄成遊戲的列舉;
+    // 認不得的型別由下游各自回空,不在這裡擋。
+    getOverlayData: (type) => game.getOverlayData(type as never),
+    getOverlayColor: (type, value) => game.getOverlayColor(type as never, value),
+    getCoverageCosts: (service) => game.getCoverageCosts(service as never),
+    getOverlaySourceCells: (type) => game.getOverlaySourceCells(type as never),
+    coverageGradient: () => game.coverageGradient(),
+    chartHistory: () => gameSignals.chartHistory(),
+  };
+}
+
 export function createAgent(game: Game): AgentRoot {
   const api = new AgentApi(game);
-  const read = new AgentRead(() => game.getState(), game);
+  const read = new AgentRead(() => game.getState(), statsHost(game));
   const ui = new AgentUi(uiHost(game));
   const session = new AgentSession(
     () => serializeGameState(game.getState()),

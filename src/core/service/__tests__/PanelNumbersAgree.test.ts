@@ -12,7 +12,7 @@ import { SewageService } from '../SewageService';
  *
  * These are the core-side getters the panels need in order to compare like with
  * like. The arithmetic that consumes them is tested in
- * ui/modals/overview/__tests__/facilityLoad.test.ts; what is pinned here is
+ * core/stats/__tests__/facilityLoad.test.ts; what is pinned here is
  * that "active" means the same thing on both sides of the division.
  */
 function roadCity(): Grid {

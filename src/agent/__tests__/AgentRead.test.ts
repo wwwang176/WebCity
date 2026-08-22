@@ -302,3 +302,87 @@ describe('圖層那兩份', () => {
     expect(asked).toContain('color commute 80');
   });
 });
+
+
+describe('Overview 那八頁', () => {
+  /** 一座有東西可以數的城:住宅、商業、工業各一，外加一座警局。 */
+  function overviewCity() {
+    const state = createGameState(20, 20);
+    state.grid.setCell(3, 3, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 });
+    state.grid.setCell(9, 9, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
+    state.grid.setCell(12, 12, { zoneType: ZoneType.INDUSTRIAL, buildingId: 1 });
+    state.police.addStation(5, 5);
+    return { state, read: new AgentRead(() => state, noStats()) };
+  }
+
+  it('should read every page straight off the game state', () => {
+    // 這七支都不碰 `Game` —— `noStats()` 一被問就爆。跑得完就代表沒有一支
+    // 偷偷繞到渲染層或面板的狀態去拿數字。
+    const { read } = overviewCity();
+
+    expect(() => {
+      read.summary();
+      read.demographics();
+      read.environment();
+      read.freight();
+      read.infra();
+      read.serviceStats();
+    }).not.toThrow();
+  });
+
+  it('should give the freight page the goods shops can actually get', () => {
+    const { state, read } = overviewCity();
+    state.freight.getLastDemand().production = 100;
+    state.freight.getLastDemand().consumption = 200;
+    state.freight.getLastTrade().imported = 60;
+
+    const f = read.freight();
+
+    expect(f.effectiveProduction, '進口沒算進來').toBe(160);
+    expect(f.supplyRatio).toBeCloseTo(0.8, 6);
+    expect(f.totalCommercial, '沒數到店家').toBe(1);
+  });
+
+  it('should name what is dragging the city down, not just the score', () => {
+    // 「吸引力 12 分」本身沒有可以動作的資訊。
+    const { state, read } = overviewCity();
+    state.taxRates.residential = 20;
+
+    const s = read.summary();
+
+    expect(s.drags.length).toBeGreaterThan(0);
+    if (s.attractiveness <= s.attractivenessThreshold) {
+      expect(s.worstDrag, '分數不夠卻沒說是哪一項').not.toBeNull();
+    }
+  });
+
+  it('should keep a dead station out of the capacity the city can use', () => {
+    const { state, read } = overviewCity();
+    state.police.updateOperationalStatus(() => false);
+
+    const police = read.serviceStats().services.find(x => x.service === 'police')!;
+
+    expect(police.facilities, '壞掉的局從清單裡消失了').toHaveLength(1);
+    expect(police.capacity, '壞掉的局還在貢獻容量').toBe(0);
+  });
+
+  it('should hand over the chart history the game panel draws', () => {
+    // 這一份**不在 GameState 裡** —— 是 UI 的 store 累積的，所以要靠 host 轉手。
+    const history = { days: [1, 2], pop: [10, 20], happiness: [], funds: [], income: [], expenses: [] };
+    const read = new AgentRead(() => createGameState(8, 8), {
+      chartHistory: () => history,
+    } as unknown as StatsHost);
+
+    expect(read.chartHistory(), '沒有原封不動轉手').toBe(history);
+  });
+
+  it('should not recompute what the panel computes', () => {
+    // 面板跟這裡呼叫的是同一支 `build*Stats`。這條在測「同一個狀態問兩次結果一樣」——
+    // 一旦有人在 read 這層插進自己的算式，兩次之間就會出現差異。
+    const { read } = overviewCity();
+
+    expect(read.summary()).toEqual(read.summary());
+    expect(read.demographics()).toEqual(read.demographics());
+    expect(read.serviceStats()).toEqual(read.serviceStats());
+  });
+});

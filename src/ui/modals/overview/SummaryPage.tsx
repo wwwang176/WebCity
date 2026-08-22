@@ -1,10 +1,7 @@
 import { For, createMemo } from 'solid-js';
 import { gameSignals, getGame } from '../../store/gameStore';
 import { ZoneType } from '../../../core/grid/types';
-import { getBuildingType } from '../../../core/building/types';
-import { calculateAttractiveness, ATTRACTIVENESS } from '../../../core/citizen/Migration';
-import { isWorkingAge } from '../../../core/citizen/types';
-import { DEFAULT_TAX_RATE } from '../../../core/economy/Tax';
+import { buildSummaryStats } from '../../../core/stats/SummaryStats';
 import { UI_COLORS } from '../../constants';
 
 const ZONE_ORDER = [
@@ -21,100 +18,45 @@ const ZONE_LABELS: Record<number, string> = {
   [ZoneType.OFFICE]: 'Office',
 };
 
+/** `SummaryStats.drags` 的鍵 → 畫面上的字。 */
+const DRAG_LABELS: Record<string, string> = {
+  'low happiness': 'Low happiness',
+  'high taxes': 'High taxes',
+  pollution: 'Too much pollution',
+  crime: 'High crime',
+  unemployment: 'High unemployment',
+};
+
 export function SummaryPage() {
   const data = createMemo(() => {
     gameSignals.tick();
-    const state = getGame().getState();
-    const grid = state.grid;
-    const population = state.citizens.getPopulation();
-
+    const s = buildSummaryStats(getGame().getState());
+    // 面板跟 agent API 讀同一支 `buildSummaryStats` —— 兩份各算一次就會分家
+    // （BUG-342）。這裡把它整理成 JSX 沿用的形狀。
     const zoneCounts: Record<number, { count: number; capacity: number }> = {};
-    for (const zt of ZONE_ORDER) zoneCounts[zt] = { count: 0, capacity: 0 };
-
-    let totalPollution = 0;
-    let pollutionCount = 0;
-    grid.forEachCell((cell) => {
-      if (cell.buildingId > 0 || cell.zoneType > 0) {
-        totalPollution += cell.pollution;
-        pollutionCount++;
-      }
-      if (cell.buildingId <= 0 || cell.zoneType === ZoneType.NONE) return;
-      const entry = zoneCounts[cell.zoneType];
-      if (!entry) return;
-      entry.count++;
-      const bt = getBuildingType(cell.buildingId);
-      if (bt) entry.capacity += bt.residents + bt.workers;
-    });
-    const avgPollution = pollutionCount > 0 ? totalPollution / pollutionCount : 0;
-
-    const totalHomes = (zoneCounts[ZoneType.RESIDENTIAL_LOW]?.capacity ?? 0) +
-      (zoneCounts[ZoneType.RESIDENTIAL_HIGH]?.capacity ?? 0);
-    const totalJobs = (zoneCounts[ZoneType.COMMERCIAL_LOW]?.capacity ?? 0) +
-      (zoneCounts[ZoneType.COMMERCIAL_HIGH]?.capacity ?? 0) +
-      (zoneCounts[ZoneType.INDUSTRIAL]?.capacity ?? 0) +
-      (zoneCounts[ZoneType.OFFICE]?.capacity ?? 0);
-    const vacantHomes = Math.max(0, totalHomes - population);
-    // The same definition the simulation uses. countJobOpenings became
-    // `totalJobs - employed`; this panel exists to mirror the migration gate,
-    // and keeping the old `totalJobs - population` made it read
-    // "0 · No openings · cannot migrate" in exactly the mature city where the
-    // sim reports hundreds of openings and immigrates anyway (BUG-166).
-    const jobOpenings = Math.max(0, totalJobs - state.citizens.getEmployedCount());
-
-    const avgHappiness = population > 0
-      ? Math.round(state.citizens.getAverageHappiness())
-      : 70;
-    const taxRate = state.taxRates.residential ?? DEFAULT_TAX_RATE;
-    let workingAgeCount = 0, unemployedCount = 0;
-    for (const c of state.citizens.getCitizens()) {
-      if (isWorkingAge(c.age)) {
-        workingAgeCount++;
-        if (c.workplaceId === null) unemployedCount++;
-      }
+    for (let i = 0; i < ZONE_ORDER.length; i++) {
+      const z = s.zones[i]!;
+      zoneCounts[ZONE_ORDER[i]!] = { count: z.count, capacity: z.capacity };
     }
-    const unemploymentRate = workingAgeCount > 0 ? unemployedCount / workingAgeCount : 0;
-    const crimeRate = Math.min(50, population * 0.02);
-    const attractiveness = calculateAttractiveness({
-      jobOpenings, vacantHomes, avgHappiness, taxRate,
-      pollution: avgPollution, crimeRate,
-      unemploymentRate,
-    });
-    const canMigrate = attractiveness > 40 && vacantHomes > 0 && jobOpenings > 0;
-
-    // Find biggest drag on attractiveness for player hint
-    let appealStatus = 'Attractive';
-    if (attractiveness <= 40) {
-      const drags: { reason: string; penalty: number }[] = [
-        { reason: 'Low happiness', penalty: (70 - avgHappiness) * ATTRACTIVENESS.HAPPINESS_WEIGHT },
-        { reason: 'High taxes', penalty: taxRate * ATTRACTIVENESS.TAX_WEIGHT },
-        { reason: 'Too much pollution', penalty: avgPollution * ATTRACTIVENESS.POLLUTION_WEIGHT },
-        { reason: 'High crime', penalty: crimeRate * ATTRACTIVENESS.CRIME_WEIGHT },
-        { reason: 'High unemployment', penalty: unemploymentRate * ATTRACTIVENESS.UNEMPLOYMENT_WEIGHT },
-      ];
-      const worst = drags.reduce((a, b) => b.penalty > a.penalty ? b : a);
-      appealStatus = `Unappealing \u2014 ${worst.reason}`;
-    }
-
-    const pwrRatio = state.power.getSupplyRatio();
-    const wtrRatio = state.water.getSupplyRatio();
-    const freightDemand = state.freight.getLastDemand();
-    const freightTrade = state.freight.getLastTrade();
-    const effectiveProduction = freightDemand.production - freightTrade.exported + freightTrade.imported;
-    const freightSupplyRatio = freightDemand.consumption > 0
-      ? effectiveProduction / freightDemand.consumption
-      : 1;
-
-    const rci = gameSignals.rciDemand();
+    const appealStatus = s.worstDrag === null
+      ? 'Attractive'
+      : `Unappealing — ${DRAG_LABELS[s.worstDrag.reason] ?? s.worstDrag.reason}`;
 
     return {
-      population, totalHomes, totalJobs, vacantHomes, jobOpenings,
-      avgHappiness, zoneCounts, attractiveness, canMigrate,
-      pwrRatio, wtrRatio, freightSupplyRatio, rci, unemploymentRate,
+      population: s.population,
+      totalHomes: s.totalHomes, totalJobs: s.totalJobs,
+      vacantHomes: s.vacantHomes, jobOpenings: s.jobOpenings,
+      avgHappiness: s.avgHappiness, zoneCounts,
+      attractiveness: s.attractiveness, canMigrate: s.canMigrate,
+      pwrRatio: s.powerRatio, wtrRatio: s.waterRatio,
+      freightSupplyRatio: s.freightSupplyRatio,
+      rci: gameSignals.rciDemand(),
+      unemploymentRate: s.unemploymentRate,
       checks: [
-        { label: 'City Appeal', value: attractiveness.toFixed(1), ok: attractiveness > 40, status: appealStatus },
-        { label: 'Housing', value: String(vacantHomes), ok: vacantHomes > 0, status: vacantHomes > 0 ? `${vacantHomes} vacant` : 'No vacancy' },
-        { label: 'Jobs', value: String(jobOpenings), ok: jobOpenings > 0, status: jobOpenings > 0 ? `${jobOpenings} open` : 'No openings' },
-        { label: 'Unemployment', value: '', ok: unemploymentRate < 0.1, status: unemploymentRate < 0.01 ? 'Full employment' : `${(unemploymentRate * 100).toFixed(0)}% unemployed${unemploymentRate >= 0.4 ? '!' : ''}` },
+        { label: 'City Appeal', value: s.attractiveness.toFixed(1), ok: s.worstDrag === null, status: appealStatus },
+        { label: 'Housing', value: String(s.vacantHomes), ok: s.vacantHomes > 0, status: s.vacantHomes > 0 ? `${s.vacantHomes} vacant` : 'No vacancy' },
+        { label: 'Jobs', value: String(s.jobOpenings), ok: s.jobOpenings > 0, status: s.jobOpenings > 0 ? `${s.jobOpenings} open` : 'No openings' },
+        { label: 'Unemployment', value: '', ok: s.unemploymentRate < 0.1, status: s.unemploymentRate < 0.01 ? 'Full employment' : `${(s.unemploymentRate * 100).toFixed(0)}% unemployed${s.unemploymentRate >= 0.4 ? '!' : ''}` },
       ],
     };
   }, undefined, {

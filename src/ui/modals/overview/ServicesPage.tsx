@@ -1,8 +1,16 @@
 import { For, createMemo } from 'solid-js';
-import { shareFacilityLoad, hasShortage } from './facilityLoad';
+import { hasShortage } from '../../../core/stats/facilityLoad';
+import { buildServicesStats, type FacilityStat } from '../../../core/stats/ServiceStats';
 import { gameSignals, getGame } from '../../store/gameStore';
-import { getResidentialServiceRatios } from '../../../core/service/ServiceCoverageQuery';
 import { UI_COLORS } from '../../constants';
+
+/** 有顏色的一小段字。整行由好幾段接起來。 */
+interface SummarySpan { text: string; color?: string }
+
+/** 學校類別 → 畫面上的字。 */
+const SCHOOL_LABELS: Record<string, string> = {
+  elementary: 'Elementary', highschool: 'High School', university: 'University',
+};
 
 interface ServiceEntry {
   icon: string;
@@ -43,171 +51,126 @@ const OFFLINE = { label: 'Offline', color: UI_COLORS.STATUS_BAD };
 export function ServicesPage() {
   const data = createMemo(() => {
     gameSignals.tick();
-    const state = getGame().getState();
-    const r = getResidentialServiceRatios(state);
+    // 數字全部來自 `buildServicesStats` —— agent API 讀的是同一支。這一段只把
+    // 它排成畫面上的分組、圖示與顏色（BUG-342:同一個數字兩個地方各記一份會分家）。
+    const s = buildServicesStats(getGame().getState());
+    const by = (name: string) => s.services.find(x => x.service === name)!;
 
-    interface SummarySpan { text: string; color?: string }
     const entries: { group: string; items: ServiceEntry[]; summary?: SummarySpan[] }[] = [];
 
-    // helper to build a service entry with loadDetail
-    const mkEntry = (icon: string, name: string, coverage: number, label: string, load: number, cap: number, st: { label: string; color: string }, suffix = ''): ServiceEntry => {
-      const ld = loadDetail(label, load, cap, suffix);
+    /** 一列設施。`suffix` 是接在「載重 x / y」後面的補充。 */
+    const row = (
+      icon: string, name: string, coverage: number, label: string,
+      f: FacilityStat, suffix = '', status?: { label: string; color: string },
+    ): ServiceEntry => {
+      const ld = loadDetail(label, f.load, f.capacity, suffix);
+      const st = status ?? (f.operational
+        ? statusOf(f.capacity > 0 ? f.load / f.capacity : 0)
+        : OFFLINE);
       return { icon, name, coverage, detail: ld.detail, loadPct: ld.pct, status: st.label, statusColor: st.color };
     };
 
-    // ── Power ──
-    const pwrItems: ServiceEntry[] = [];
-    const powerPlants = state.power.getPlants();
-    const pwrTotalSupply = state.power.getSupply();
-    const pwrTotalDemand = state.power.getDemand();
-    let pwrSummary: SummarySpan[];
-    for (const p of powerPlants) {
-      const pLoad = pwrTotalSupply > 0 ? Math.round(pwrTotalDemand * p.output / pwrTotalSupply) : 0;
-      const pSt = statusOf(p.output > 0 ? pLoad / p.output : 0);
-      pwrItems.push(mkEntry('\u26A1', 'Power Plant', r.poweredRatio, 'Load', pLoad, Math.round(p.output), pSt));
-    }
-    if (powerPlants.length === 0) {
-      pwrSummary = [{ text: 'No power plant' }];
-    } else {
-      pwrSummary = [{ text: `Power: ${Math.round(pwrTotalDemand)} / ${Math.round(pwrTotalSupply)}` }];
-      if (pwrTotalDemand > pwrTotalSupply) {
-        pwrSummary.push({ text: ' \u00B7 Shortage', color: UI_COLORS.STATUS_BAD });
-      }
-    }
-    entries.push({ group: 'Power', items: pwrItems, summary: pwrSummary });
+    /** 沒有任何設施時那一列。 */
+    const none = (icon: string, name: string, coverage: number, text: string): ServiceEntry =>
+      ({ icon, name, coverage, detail: text, loadPct: -1, status: 'None', statusColor: UI_COLORS.STATUS_BAD });
 
-    // ── Water ──
-    const wtrItems: ServiceEntry[] = [];
-    const pumpingStations = state.water.getPlants();
-    const wtrTotalSupply = state.water.getSupply();
-    const wtrTotalDemand = state.water.getDemand();
-    for (const wp of pumpingStations) {
-      const wLoad = wtrTotalSupply > 0 ? Math.round(wtrTotalDemand * wp.output / wtrTotalSupply) : 0;
-      const wSt = statusOf(wp.output > 0 ? wLoad / wp.output : 0);
-      wtrItems.push(mkEntry('\uD83D\uDCA7', 'Water Plant', r.wateredRatio, 'Load', wLoad, Math.round(wp.output), wSt));
-    }
-    const treatPlants = state.sewage.getTreatmentPlants();
-    const sewageProduced = Math.round(state.sewage.getProduced());
-    const sewageUntreated = state.sewage.getUntreated();
-    // Only a plant that is road-connected AND powered treats anything, so only
-    // those take a share. Dividing the whole city's sewage by the filtered
-    // capacity gave every plant the full figure \u2014 including the dead ones \u2014
-    // and gave every plant zero, in green, when they were all dead (BUG-153).
-    const sewageSplit = shareFacilityLoad(
-      sewageProduced, treatPlants, tp => tp.capacity, tp => state.sewage.isPlantActive(tp.id),
-    );
-    const sewageTotalCap = sewageSplit.activeCapacity;
-    for (const s of sewageSplit.shares) {
-      wtrItems.push(mkEntry('\uD83D\uDCA7', 'Sewage Plant', r.sewageRatio, 'Load', s.load, s.capacity,
-        s.active ? statusOf(s.ratio) : OFFLINE));
-    }
+    const shortageSpan = (svc: { load: number; capacity: number }): SummarySpan[] =>
+      hasShortage(svc.load, svc.capacity) ? [{ text: ' · Shortage', color: UI_COLORS.STATUS_BAD }] : [];
+
+    // ── Power ──
+    const power = by('power');
+    entries.push({
+      group: 'Power',
+      items: power.facilities.map(f => row('⚡', 'Power Plant', power.coverage, 'Load', f)),
+      summary: power.facilities.length === 0
+        ? [{ text: 'No power plant' }]
+        : [{ text: `Power: ${Math.round(s.powerDemand)} / ${Math.round(s.powerSupply)}` },
+           ...(s.powerDemand > s.powerSupply ? [{ text: ' · Shortage', color: UI_COLORS.STATUS_BAD }] : [])],
+    });
+
+    // ── Water（含污水，畫面上是同一組） ──
+    const water = by('water');
+    const sewage = by('sewage');
+    const wtrItems = [
+      ...water.facilities.map(f => row('💧', 'Water Plant', water.coverage, 'Load', f)),
+      ...sewage.facilities.map(f => row('💧', 'Sewage Plant', sewage.coverage, 'Load', f)),
+    ];
     const wtrSummary: SummarySpan[] = [];
-    if (pumpingStations.length === 0) {
+    if (water.facilities.length === 0) {
       wtrSummary.push({ text: 'No water plant' });
     } else {
-      wtrSummary.push({ text: `Water: ${Math.round(wtrTotalDemand)} / ${Math.round(wtrTotalSupply)}` });
-      if (wtrTotalDemand > wtrTotalSupply) {
-        wtrSummary.push({ text: ' \u00B7 Shortage', color: UI_COLORS.STATUS_BAD });
-      }
+      wtrSummary.push({ text: `Water: ${Math.round(s.waterDemand)} / ${Math.round(s.waterSupply)}` });
+      if (s.waterDemand > s.waterSupply) wtrSummary.push({ text: ' · Shortage', color: UI_COLORS.STATUS_BAD });
     }
     wtrSummary.push({ text: ' | ' });
-    if (treatPlants.length === 0) {
+    if (sewage.facilities.length === 0) {
       wtrSummary.push({ text: 'No sewage plant' });
-      if (sewageProduced > 0) {
-        wtrSummary.push({ text: ` \u00B7 ${sewageProduced} sewage`, color: UI_COLORS.STATUS_BAD });
-      }
+      if (s.sewageProduced > 0) wtrSummary.push({ text: ` · ${s.sewageProduced} sewage`, color: UI_COLORS.STATUS_BAD });
     } else {
-      const untreated = sewageUntreated > 0;
-      wtrSummary.push({ text: `Sewage: ${sewageProduced} / ${sewageTotalCap} \u00B7 ` });
+      const untreated = s.sewageUntreated > 0;
+      wtrSummary.push({ text: `Sewage: ${s.sewageProduced} / ${sewage.capacity} · ` });
       wtrSummary.push({ text: untreated ? 'Untreated' : 'Normal', color: untreated ? UI_COLORS.STATUS_WARN : UI_COLORS.STATUS_GOOD });
     }
     entries.push({ group: 'Water', items: wtrItems, summary: wtrSummary });
 
     // ── Public Safety ──
-    const safetyItems: ServiceEntry[] = [];
-    let policeLoad = 0, policeCap = 0;
-    for (const s of state.police.getStations()) {
-      const load = state.police.getStationLoad(s.id);
-      // Only a working station adds to the city total. Summing every facility
-      // advertised capacity the city could not use \u2014 the same defect the
-      // hospital death-rate divisor had (BUG-100), on the panel instead.
-      const live = state.police.isFacilityOperationalById(s.id);
-      policeLoad += load; if (live) policeCap += s.capacity;
-      safetyItems.push(mkEntry('\uD83D\uDE94', 'Police', r.policeRatio, 'Load', load, s.capacity,
-        live ? statusOf(s.capacity > 0 ? load / s.capacity : 0) : OFFLINE));
-    }
-    if (safetyItems.length === 0) {
-      safetyItems.push({ icon: '\uD83D\uDE94', name: 'Police', coverage: r.policeRatio, detail: 'No station', loadPct: -1, status: 'None', statusColor: UI_COLORS.STATUS_BAD });
-    }
-    let fireLoad = 0, fireCap = 0;
-    const activeFires = state.fire.getActiveFires().length;
-    for (const s of state.fire.getStations()) {
-      const load = state.fire.getStationLoad(s.id);
-      const live = state.fire.isFacilityOperationalById(s.id);
-      fireLoad += load; if (live) fireCap += s.capacity;
-      safetyItems.push(mkEntry('\uD83D\uDE92', 'Fire', r.fireRatio, 'Load', load, s.capacity,
-        live ? statusOf(s.capacity > 0 ? load / s.capacity : 0) : OFFLINE));
-    }
-    if (!state.fire.getStations().length) {
-      safetyItems.push({ icon: '\uD83D\uDE92', name: 'Fire', coverage: r.fireRatio, detail: 'No station', loadPct: -1, status: 'None', statusColor: UI_COLORS.STATUS_BAD });
-    }
-    const safetySummary: SummarySpan[] = [];
-    safetySummary.push({ text: `Police: ${policeLoad} / ${policeCap}` });
-    if (hasShortage(policeLoad, policeCap)) safetySummary.push({ text: ' \u00B7 Shortage', color: UI_COLORS.STATUS_BAD });
-    safetySummary.push({ text: ' \u00B7 ' });
-    safetySummary.push({ text: `Fire: ${fireLoad} / ${fireCap}` });
-    if (hasShortage(fireLoad, fireCap)) safetySummary.push({ text: ' \u00B7 Shortage', color: UI_COLORS.STATUS_BAD });
-    if (activeFires > 0) {
-      safetySummary.push({ text: ' \u00B7 ' });
-      safetySummary.push({ text: `Active Fires ${activeFires}`, color: UI_COLORS.STATUS_BAD });
-    }
-    entries.push({ group: 'Public Safety', items: safetyItems, summary: safetySummary });
+    const police = by('police');
+    const fire = by('fire');
+    const safetyItems = [
+      ...(police.facilities.length
+        ? police.facilities.map(f => row('🚔', 'Police', police.coverage, 'Load', f))
+        : [none('🚔', 'Police', police.coverage, 'No station')]),
+      ...(fire.facilities.length
+        ? fire.facilities.map(f => row('🚒', 'Fire', fire.coverage, 'Load', f))
+        : [none('🚒', 'Fire', fire.coverage, 'No station')]),
+    ];
+    entries.push({
+      group: 'Public Safety',
+      items: safetyItems,
+      summary: [
+        { text: `Police: ${police.load} / ${police.capacity}` }, ...shortageSpan(police),
+        { text: ' · ' },
+        { text: `Fire: ${fire.load} / ${fire.capacity}` }, ...shortageSpan(fire),
+        ...(s.activeFires > 0
+          ? [{ text: ' · ' }, { text: `Active Fires ${s.activeFires}`, color: UI_COLORS.STATUS_BAD }]
+          : []),
+      ],
+    });
 
     // ── Health ──
-    const healthItems: ServiceEntry[] = [];
-    let healthLoad = 0, healthCap = 0;
-    for (const h of state.health.getHospitals()) {
-      const load = state.health.getHospitalLoad(h.id);
-      const live = state.health.isFacilityOperationalById(h.id);
-      healthLoad += load; if (live) healthCap += h.capacity;
-      healthItems.push(mkEntry('\uD83C\uDFE5', 'Hospital', r.healthRatio, 'Load', load, h.capacity,
-        live ? statusOf(h.capacity > 0 ? load / h.capacity : 0) : OFFLINE));
-    }
-    const healthSummary: SummarySpan[] = [];
-    if (healthItems.length === 0) {
-      healthSummary.push({ text: 'No hospital' });
-    } else {
-      healthSummary.push({ text: `Hospital: ${healthLoad} / ${healthCap}` });
-      if (hasShortage(healthLoad, healthCap)) healthSummary.push({ text: ' \u00B7 Shortage', color: UI_COLORS.STATUS_BAD });
-    }
-    entries.push({ group: 'Health', items: healthItems, summary: healthSummary });
+    const health = by('health');
+    entries.push({
+      group: 'Health',
+      items: health.facilities.map(f => row('🏥', 'Hospital', health.coverage, 'Load', f)),
+      summary: health.facilities.length === 0
+        ? [{ text: 'No hospital' }]
+        : [{ text: `Hospital: ${health.load} / ${health.capacity}` }, ...shortageSpan(health)],
+    });
 
     // ── Education ──
-    const schoolLabels: Record<string, string> = { elementary: 'Elementary', highschool: 'High School', university: 'University' };
-    const eduItems: ServiceEntry[] = [];
-    for (const s of state.education.getSchools()) {
-      const enrolled = state.education.getSchoolEnrollment(s.id);
-      const demand = state.education.getSchoolDemand(s.id);
-      const live = state.education.isSchoolOperational(s.id);
-      const st = !live ? OFFLINE
-        : demand > s.capacity ? { label: 'Over capacity', color: UI_COLORS.STATUS_WARN }
-        : statusOf(s.capacity > 0 ? enrolled / s.capacity : 0);
-      eduItems.push(mkEntry('\uD83C\uDFEB', schoolLabels[s.type] ?? s.type, r.educationRatio, 'Students', enrolled, s.capacity, st, ` \u00B7 Need ${demand}`));
-    }
+    const education = by('education');
+    const eduItems = education.facilities.map(f => row(
+      '🏫', SCHOOL_LABELS[f.subtype ?? ''] ?? f.subtype ?? 'School',
+      education.coverage, 'Students', f, ` · Need ${f.demand ?? 0}`,
+      // 想讀的人比座位多就是招生不足,即使目前在學人數還沒滿。
+      !f.operational ? OFFLINE
+        : (f.demand ?? 0) > f.capacity ? { label: 'Over capacity', color: UI_COLORS.STATUS_WARN }
+        : undefined,
+    ));
     const eduSummary: SummarySpan[] = [];
     if (eduItems.length === 0) {
       eduSummary.push({ text: 'No schools' });
     } else {
       const byType: Record<string, { demand: number; capacity: number }> = {};
-      for (const s of state.education.getSchools()) {
-        const label = schoolLabels[s.type] ?? s.type;
+      for (const f of education.facilities) {
+        const label = SCHOOL_LABELS[f.subtype ?? ''] ?? f.subtype ?? 'School';
         if (!byType[label]) byType[label] = { demand: 0, capacity: 0 };
-        byType[label]!.demand += state.education.getSchoolDemand(s.id);
-        if (state.education.isSchoolOperational(s.id)) byType[label]!.capacity += s.capacity;
+        byType[label]!.demand += f.demand ?? 0;
+        if (f.operational) byType[label]!.capacity += f.capacity;
       }
       let first = true;
       for (const [label, { demand, capacity }] of Object.entries(byType)) {
-        if (!first) eduSummary.push({ text: ' \u00B7 ' });
+        if (!first) eduSummary.push({ text: ' · ' });
         first = false;
         eduSummary.push({ text: `${label}: ${demand} / ${capacity}` });
         if (demand > capacity) eduSummary.push({ text: ' Shortage', color: UI_COLORS.STATUS_BAD });
@@ -216,65 +179,48 @@ export function ServicesPage() {
     entries.push({ group: 'Education', items: eduItems, summary: eduSummary });
 
     // ── Garbage ──
-    const garbageItems: ServiceEntry[] = [];
-    const garbageFacilities = state.garbage.getFacilities();
-    for (const f of garbageFacilities) {
-      const fBurnedWk = f.burnDaily ? Math.round(f.burnDaily.reduce((a: number, b: number) => a + b, 0)) : 0;
-      const burnSuffix = ` \u00B7 Burned ${fBurnedWk}/wk`;
-      const fSt = statusOf(f.capacity > 0 ? f.currentLoad / f.capacity : 0);
-      garbageItems.push(mkEntry('\uD83D\uDDD1', 'Landfill', r.garbageRatio, 'Load', f.currentLoad, f.capacity, fSt, burnSuffix));
-    }
-    const awaitingGarbage = state.garbage.getUncollected();
-    const producedWk = state.garbage.getProducedPerWeek();
-    const burnedWk = state.garbage.getBurnedPerWeek();
+    const garbage = by('garbage');
     const garbageSummary: SummarySpan[] = [];
-    if (garbageFacilities.length === 0) {
+    if (garbage.facilities.length === 0) {
       garbageSummary.push({ text: 'No landfill' });
-      if (awaitingGarbage > 0) garbageSummary.push({ text: ` \u00B7 ` }, { text: `Awaiting pickup ${awaitingGarbage}`, color: UI_COLORS.STATUS_BAD });
-      if (producedWk > 0) garbageSummary.push({ text: ` \u00B7 Produced ${producedWk}/wk` });
-    } else {
-      if (awaitingGarbage > 0) {
-        garbageSummary.push({ text: `Awaiting pickup ${awaitingGarbage}`, color: UI_COLORS.STATUS_BAD });
-        garbageSummary.push({ text: ` \u00B7 Produced ${producedWk}/wk \u00B7 Burned ${burnedWk}/wk` });
-      } else {
-        garbageSummary.push({ text: `Awaiting pickup 0 \u00B7 Produced ${producedWk}/wk \u00B7 Burned ${burnedWk}/wk` });
+      if (s.garbageUncollected > 0) {
+        garbageSummary.push({ text: ' · ' }, { text: `Awaiting pickup ${s.garbageUncollected}`, color: UI_COLORS.STATUS_BAD });
       }
+      if (s.garbageProducedPerWeek > 0) garbageSummary.push({ text: ` · Produced ${s.garbageProducedPerWeek}/wk` });
+    } else if (s.garbageUncollected > 0) {
+      garbageSummary.push({ text: `Awaiting pickup ${s.garbageUncollected}`, color: UI_COLORS.STATUS_BAD });
+      garbageSummary.push({ text: ` · Produced ${s.garbageProducedPerWeek}/wk · Burned ${s.garbageBurnedPerWeek}/wk` });
+    } else {
+      garbageSummary.push({ text: `Awaiting pickup 0 · Produced ${s.garbageProducedPerWeek}/wk · Burned ${s.garbageBurnedPerWeek}/wk` });
     }
-    entries.push({ group: 'Garbage', items: garbageItems, summary: garbageSummary });
+    entries.push({
+      group: 'Garbage',
+      items: garbage.facilities.map(f => row('🗑', 'Landfill', garbage.coverage, 'Load', f, ` · Burned ${f.burnedPerWeek ?? 0}/wk`)),
+      summary: garbageSummary,
+    });
 
     // ── Death Care ──
-    const burialItems: ServiceEntry[] = [];
-    const cemeteries = state.deathCare.getCemeteries();
-    for (const c of cemeteries) {
-      const cCrematedWk = c.recentDaily ? Math.round(c.recentDaily.reduce((a: number, b: number) => a + b, 0)) : 0;
-      const cremSuffix = ` \u00B7 Cremated ${cCrematedWk}/wk`;
-      const cSt = statusOf(c.capacity > 0 ? c.currentLoad / c.capacity : 0);
-      burialItems.push(mkEntry('\u26B0', 'Cemetery', r.deathCareRatio, 'Bodies', c.currentLoad, c.capacity, cSt, cremSuffix));
-    }
-    const awaitingPickup = state.deathCare.getPendingDeathQueue().length;
-    const deathsWk = state.deathCare.getRecentDeaths();
-    const crematedWk = state.deathCare.getRecentCremations();
-    const deathCareSummary: SummarySpan[] = [];
-    if (cemeteries.length === 0) {
-      deathCareSummary.push({ text: 'No cemetery' });
-      if (awaitingPickup > 0) deathCareSummary.push({ text: ` \u00B7 ` }, { text: `Awaiting pickup ${awaitingPickup}`, color: UI_COLORS.STATUS_BAD });
-      if (deathsWk > 0) deathCareSummary.push({ text: ` \u00B7 Deaths ${deathsWk}/wk` });
-    } else {
-      if (awaitingPickup > 0) {
-        deathCareSummary.push({ text: `Awaiting pickup ${awaitingPickup}`, color: UI_COLORS.STATUS_BAD });
-        deathCareSummary.push({ text: ` \u00B7 Deaths ${deathsWk}/wk \u00B7 Cremated ${crematedWk}/wk` });
-      } else {
-        deathCareSummary.push({ text: `Awaiting pickup 0 \u00B7 Deaths ${deathsWk}/wk \u00B7 Cremated ${crematedWk}/wk` });
+    const deathCare = by('deathCare');
+    const deathSummary: SummarySpan[] = [];
+    if (deathCare.facilities.length === 0) {
+      deathSummary.push({ text: 'No cemetery' });
+      if (s.deathsAwaitingPickup > 0) {
+        deathSummary.push({ text: ' · ' }, { text: `Awaiting pickup ${s.deathsAwaitingPickup}`, color: UI_COLORS.STATUS_BAD });
       }
+      if (s.deathsPerWeek > 0) deathSummary.push({ text: ` · Deaths ${s.deathsPerWeek}/wk` });
+    } else if (s.deathsAwaitingPickup > 0) {
+      deathSummary.push({ text: `Awaiting pickup ${s.deathsAwaitingPickup}`, color: UI_COLORS.STATUS_BAD });
+      deathSummary.push({ text: ` · Deaths ${s.deathsPerWeek}/wk · Cremated ${s.cremationsPerWeek}/wk` });
+    } else {
+      deathSummary.push({ text: `Awaiting pickup 0 · Deaths ${s.deathsPerWeek}/wk · Cremated ${s.cremationsPerWeek}/wk` });
     }
-    entries.push({ group: 'Death Care', items: burialItems, summary: deathCareSummary });
+    entries.push({
+      group: 'Death Care',
+      items: deathCare.facilities.map(f => row('⚰', 'Cemetery', deathCare.coverage, 'Bodies', f, ` · Cremated ${f.crematedPerWeek ?? 0}/wk`)),
+      summary: deathSummary,
+    });
 
-    // Summary stats
-    const allCoverages = [r.poweredRatio, r.wateredRatio, r.sewageRatio, r.policeRatio, r.fireRatio, r.healthRatio, r.educationRatio, r.garbageRatio, r.deathCareRatio];
-    const avgCoverage = allCoverages.reduce((s, v) => s + v, 0) / allCoverages.length;
-    const gaps = allCoverages.filter(v => v < 0.5).length;
-
-    return { entries, avgCoverage, gaps };
+    return { entries, avgCoverage: s.avgCoverage, gaps: s.gaps };
   }, undefined, {
     equals: (a, b) => JSON.stringify(a) === JSON.stringify(b),
   });

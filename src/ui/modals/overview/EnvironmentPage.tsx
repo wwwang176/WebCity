@@ -1,6 +1,6 @@
 import { createMemo } from 'solid-js';
 import { gameSignals, getGame } from '../../store/gameStore';
-import { BURNED, ABANDONED } from '../../../core/building/InfraPlacement';
+import { buildEnvironmentStats } from '../../../core/stats/EnvironmentStats';
 import { UI_COLORS } from '../../constants';
 
 function StatRow(props: { label: string; value: string; status: 'good' | 'warn' | 'bad' | 'neutral' }) {
@@ -23,46 +23,20 @@ function StatRow(props: { label: string; value: string; status: 'good' | 'warn' 
 export function EnvironmentPage() {
   const data = createMemo(() => {
     gameSignals.tick();
-    const state = getGame().getState();
-    const grid = state.grid;
-
-    let totalGround = 0;
-    let totalNoise = 0;
-    let cellCount = 0;
-
-    grid.forEachCell((cell) => {
-      if (cell.buildingId > 0 || cell.zoneType > 0) {
-        totalGround += cell.pollution;
-        cellCount++;
-      }
-    });
-
-    const avgGround = cellCount > 0 ? totalGround / cellCount : 0;
-    const avgNoise = cellCount > 0 ? totalNoise / cellCount : 0;
-    const waterPollution = state.sewage.getWaterPollution();
-
-    const activeFires = state.fire.getActiveFires();
-    const todayExt = state.fire.getTodayExtinguished();
-    const recentExt = state.fire.getRecentExtinguished();
-
-    let burnedCount = 0;
-    let abandonedCount = 0;
-    grid.forEachCell((cell) => {
-      if (cell.reserved === BURNED) burnedCount++;
-      if (cell.reserved === ABANDONED) abandonedCount++;
-    });
-
+    const s = buildEnvironmentStats(getGame().getState());
+    // 跟 agent API 同一支。舊名字留給下面的 JSX。
     return {
-      avgGround, waterPollution, avgNoise,
-      activeFires: activeFires.length,
-      todayExt, recentExt, burnedCount,
+      avgGround: s.avgGroundPollution,
+      avgNoise: s.avgNoise,
+      waterPollution: s.waterPollution,
+      activeFires: s.activeFires,
+      todayExt: s.extinguishedToday,
+      recentExt: s.extinguishedRecent,
+      burnedCount: s.burnedBuildings,
     };
   }, undefined, {
     equals: (a, b) => JSON.stringify(a) === JSON.stringify(b),
   });
-
-  const pollutionStatus = (val: number): 'good' | 'warn' | 'bad' =>
-    val < 10 ? 'good' : val < 30 ? 'warn' : 'bad';
 
   return (
     <>
@@ -85,7 +59,11 @@ export function EnvironmentPage() {
           <div class="sc-label">Water</div>
         </div>
         <div class="summary-card">
-          <div class="sc-value" style="color:#78909c">-</div>
+          <div class="sc-value" style={{
+            color: data().avgNoise < 10 ? UI_COLORS.STATUS_GOOD : data().avgNoise < 30 ? UI_COLORS.STATUS_WARN : UI_COLORS.STATUS_BAD
+          }}>
+            {data().avgNoise.toFixed(1)}
+          </div>
           <div class="sc-label">Noise</div>
         </div>
       </div>

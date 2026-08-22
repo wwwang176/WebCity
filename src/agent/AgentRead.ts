@@ -9,6 +9,13 @@ import type { EconomyBreakdownResult } from '../core/economy/EconomyBreakdown';
 import type { TrafficStatsResult } from '../core/traffic/TrafficStats';
 import type { CommuteStats } from '../core/citizen/CommuteStats';
 import type { TransferStats } from '../core/transport/TransferStatsQuery';
+import type { ChartHistory } from '../core/economy/ChartSeries';
+import { buildSummaryStats, type SummaryStats } from '../core/stats/SummaryStats';
+import { buildDemographicsStats, type DemographicsStats } from '../core/stats/DemographicsStats';
+import { buildEnvironmentStats, type EnvironmentStats } from '../core/stats/EnvironmentStats';
+import { buildFreightStats, type FreightStats } from '../core/stats/FreightStats';
+import { buildInfraStats, type InfraStats } from '../core/stats/InfraStats';
+import { buildServicesStats, type ServicesStats } from '../core/stats/ServiceStats';
 import {
   buildCoverage, buildOverlayCells, overlayKind, COVERAGE_SERVICES,
   type CoverageInfo, type CoverageService, type OverlayCellInfo, type OverlayKind,
@@ -60,6 +67,13 @@ export interface StatsHost {
   getOverlaySourceCells(type: string): { x: number; y: number }[];
   /** 建築高亮的 10 階色帶。 */
   coverageGradient(): readonly number[];
+  /**
+   * 逐日的圖表歷史。
+   *
+   * 這一份**不在 `GameState` 裡** —— 它是 UI 的 store 一天記一筆累積起來的，
+   * 不進存檔。所以載入存檔之後是空的，開著遊戲跑才會長出來。
+   */
+  chartHistory(): ChartHistory;
 }
 
 /** 一個收費分區的道路量與付費駕駛數。 */
@@ -333,6 +347,65 @@ export class AgentRead {
    */
   selected(): unknown {
     return this.stats.getSelectedBuilding();
+  }
+
+  // ── Overview 那八頁 ─────────────────────────────────────────────
+  //
+  // 一頁一支，跟畫面上的分頁一一對應。**面板讀的是同一支函式** —— 這一層沒有
+  // 自己的算式，所以不會有「API 說 75%、螢幕說 68%」那種分家（BUG-342）。
+  //
+  // 剩下兩頁已經在上面:Economy 是 `economyBreakdown()`，
+  // Traffic 是 `trafficStats()` + `transit()` + `transferStats()`。
+
+  /** 總覽:人口、房子與工作、吸引力，以及**扣分最多的那一項**。 */
+  summary(): SummaryStats {
+    return buildSummaryStats(this.getState());
+  }
+
+  /** 人口組成:年齡與教育分佈，加上教育 × 職業、教育 × 住宅等級兩張交叉表。 */
+  demographics(): DemographicsStats {
+    return buildDemographicsStats(this.getState());
+  }
+
+  /** 環境:地面污染、噪音、水污染、火災與廢墟。 */
+  environment(): EnvironmentStats {
+    return buildEnvironmentStats(this.getState());
+  }
+
+  /**
+   * 貨運供應鏈:產量、消費、進出口，以及三種對外管道的吞吐。
+   *
+   * 商店真正拿得到的貨是 `effectiveProduction`（產量 − 出口 + 進口），
+   * 不是 `production`。
+   */
+  freight(): FreightStats {
+    return buildFreightStats(this.getState());
+  }
+
+  /** 基礎設施:水電供需、掩埋場、污水處理、墓園的存量與流量。 */
+  infra(): InfraStats {
+    return buildInfraStats(this.getState());
+  }
+
+  /**
+   * 服務:九項的覆蓋率、每一座設施的載重與容量。
+   *
+   * `capacity` 只加總**還在運作**的設施 —— 停電的警局不巡邏。壞掉的那幾座照樣
+   * 列在 `facilities` 裡（`operational: false`），這樣才看得出覆蓋率為什麼掉。
+   *
+   * 這跟 `services()` 不一樣:那一支給的是每月維護費。
+   */
+  serviceStats(): ServicesStats {
+    return buildServicesStats(this.getState());
+  }
+
+  /**
+   * 經濟與人口的逐日歷史 —— Economy 頁那兩張圖的資料。
+   *
+   * **不進存檔**:這是 UI 一天記一筆累積起來的，載入存檔之後是空的。
+   */
+  chartHistory(): ChartHistory {
+    return this.stats.chartHistory();
   }
 
   // ── 圖層 ────────────────────────────────────────────────────────

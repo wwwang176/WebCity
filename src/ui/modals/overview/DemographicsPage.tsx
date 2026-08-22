@@ -1,8 +1,7 @@
 import { createMemo } from 'solid-js';
 import { gameSignals, getGame } from '../../store/gameStore';
 import { LifeStage, EducationLevel } from '../../../core/citizen/types';
-import { ZoneType, isResidentialZone, isCommercialZone } from '../../../core/grid/types';
-import { getBuildingType } from '../../../core/building/types';
+import { buildDemographicsStats } from '../../../core/stats/DemographicsStats';
 import { UI_COLORS } from '../../constants';
 
 const STAGE_LABELS: Record<string, string> = {
@@ -35,28 +34,25 @@ const EDU_COLORS: Record<string, string> = {
 
 const EDU_ORDER = [EducationLevel.NONE, EducationLevel.ELEMENTARY, EducationLevel.HIGH_SCHOOL, EducationLevel.UNIVERSITY] as const;
 
+// 鍵跟著 `DemographicsStats` 走 —— 兩邊各定義一套的話，改了一邊就會有一欄變成
+// 原始鍵名出現在畫面上。
 const ZONE_LABELS: Record<string, string> = {
-  COM: 'Commercial',
-  IND: 'Industrial',
-  OFFICE: 'Office',
-  UNEMPLOYED: 'Unemployed',
+  commercial: 'Commercial',
+  industrial: 'Industrial',
+  office: 'Office',
+  unemployed: 'Unemployed',
 };
 const ZONE_COLORS: Record<string, string> = {
-  COM: UI_COLORS.ACCENT,
-  IND: UI_COLORS.STATUS_WARN,
-  OFFICE: '#ab47bc',
-  UNEMPLOYED: UI_COLORS.STATUS_BAD,
+  commercial: UI_COLORS.ACCENT,
+  industrial: UI_COLORS.STATUS_WARN,
+  office: '#ab47bc',
+  unemployed: UI_COLORS.STATUS_BAD,
 };
 
-const LEVEL_LABELS: Record<number, string> = { 1: 'Lv1', 2: 'Lv2', 3: 'Lv3' };
-const LEVEL_COLORS: Record<number, string> = { 1: '#78909c', 2: UI_COLORS.STATUS_GOOD, 3: '#ffd54f' };
-
-function getWorkZoneKey(zoneType: number): string {
-  if (isCommercialZone(zoneType)) return 'COM';
-  if (zoneType === ZoneType.INDUSTRIAL) return 'IND';
-  if (zoneType === ZoneType.OFFICE) return 'OFFICE';
-  return 'COM';
-}
+const HOUSING_LABELS: Record<string, string> = { level1: 'Lv1', level2: 'Lv2', level3: 'Lv3' };
+const HOUSING_COLORS: Record<string, string> = {
+  level1: '#78909c', level2: UI_COLORS.STATUS_GOOD, level3: '#ffd54f',
+};
 
 function DistributionBar(props: { items: { label: string; count: number; color: string }[]; total: number }) {
   return (
@@ -125,105 +121,29 @@ function CrossTable(props: {
 export function DemographicsPage() {
   const stats = createMemo(() => {
     gameSignals.tick();
-    const state = getGame().getState();
-    const grid = state.grid;
-    const citizens = state.citizens.getCitizens();
-    const pop = citizens.length;
-
-    const stages: Record<string, number> = {};
-    const edus: Record<string, number> = {};
-    let totalHappiness = 0;
-    let totalHealth = 0;
-    let unemployed = 0;
-    let homeless = 0;
-    let adults = 0;
-    let employed = 0;
-
-    // Distribution counters
-    const housingLevels: Record<number, number> = { 1: 0, 2: 0, 3: 0 };
-    const workZones: Record<string, number> = { COM: 0, IND: 0, OFFICE: 0 };
-
-    // Cross-tab: education × work zone (rows=edu, cols=COM/IND/OFFICE/Unemployed)
-    const eduWorkCross: Record<string, Record<string, number>> = {};
-    // Cross-tab: education × housing level (rows=edu, cols=Lv1/Lv2/Lv3)
-    const eduHousingCross: Record<string, Record<number, number>> = {};
-    for (const e of EDU_ORDER) {
-      eduWorkCross[e] = { COM: 0, IND: 0, OFFICE: 0, UNEMPLOYED: 0 };
-      eduHousingCross[e] = { 1: 0, 2: 0, 3: 0 };
-    }
-
-    for (const c of citizens) {
-      stages[c.lifeStage] = (stages[c.lifeStage] ?? 0) + 1;
-      edus[c.education] = (edus[c.education] ?? 0) + 1;
-      totalHappiness += c.happiness;
-      totalHealth += c.health;
-      if (c.homelessSince !== null) homeless++;
-
-      // Housing level
-      if (c.homeId) {
-        const [hx, hy] = c.homeId.split(',').map(Number);
-        const homeCell = grid.getCell(hx!, hy!);
-        if (homeCell) {
-          const bt = getBuildingType(homeCell.buildingId);
-          if (bt) {
-            housingLevels[bt.level] = (housingLevels[bt.level] ?? 0) + 1;
-            eduHousingCross[c.education]![bt.level] = (eduHousingCross[c.education]![bt.level] ?? 0) + 1;
-          }
-        }
-      }
-
-      if (c.lifeStage === LifeStage.ADULT) {
-        adults++;
-        if (c.workplaceId) {
-          employed++;
-          const [wx, wy] = c.workplaceId.split(',').map(Number);
-          const workCell = grid.getCell(wx!, wy!);
-          if (workCell) {
-            const zk = getWorkZoneKey(workCell.zoneType);
-            workZones[zk] = (workZones[zk] ?? 0) + 1;
-            eduWorkCross[c.education]![zk] = (eduWorkCross[c.education]![zk] ?? 0) + 1;
-          }
-        } else {
-          if (c.unemployedSince !== null) unemployed++;
-          eduWorkCross[c.education]!.UNEMPLOYED = (eduWorkCross[c.education]!.UNEMPLOYED ?? 0) + 1;
-        }
-      }
-    }
-
-    // Build cross-tab data arrays
-    const workColKeys = ['COM', 'IND', 'OFFICE', 'UNEMPLOYED'];
-    const eduWorkData = EDU_ORDER.map(e => workColKeys.map(z => eduWorkCross[e]![z] ?? 0));
-    const eduWorkTotals = eduWorkData.map(row => row.reduce((a, b) => a + b, 0));
-
-    const levelColKeys = [1, 2, 3];
-    const eduHousingData = EDU_ORDER.map(e => levelColKeys.map(l => eduHousingCross[e]![l] ?? 0));
-    const eduHousingTotals = eduHousingData.map(row => row.reduce((a, b) => a + b, 0));
-
-    const totalWithHome = Object.values(housingLevels).reduce((a, b) => a + b, 0);
-    const totalWorkers = Object.values(workZones).reduce((a, b) => a + b, 0);
+    const s = buildDemographicsStats(getGame().getState());
+    // 面板跟 agent API 讀同一支 `buildDemographicsStats`。這裡只負責把鍵換成
+    // 畫面上的字跟顏色 —— 數字本身一個都不重算（BUG-342）。
+    const label = (items: { key: string; count: number }[], labels: Record<string, string>, colors: Record<string, string>) =>
+      items.map(b => ({ label: labels[b.key] ?? b.key, count: b.count, color: colors[b.key] ?? '#888' }));
 
     return {
-      pop, totalHappiness, totalHealth,
-      avgHappiness: pop > 0 ? totalHappiness / pop : 0,
-      avgHealth: pop > 0 ? totalHealth / pop : 0,
-      adults, employed, unemployed, homeless,
-      employmentRate: adults > 0 ? employed / adults : 0,
-      stageItems: [LifeStage.BABY, LifeStage.CHILD, LifeStage.TEEN, LifeStage.ADULT, LifeStage.SENIOR].map(s => ({
-        label: STAGE_LABELS[s] ?? s, count: stages[s] ?? 0, color: STAGE_COLORS[s] ?? '#888',
-      })),
-      eduItems: EDU_ORDER.map(e => ({
-        label: EDU_LABELS[e] ?? e, count: edus[e] ?? 0, color: EDU_COLORS[e] ?? '#888',
-      })),
-      housingItems: levelColKeys.map(l => ({
-        label: LEVEL_LABELS[l]!, count: housingLevels[l] ?? 0, color: LEVEL_COLORS[l]!,
-      })),
-      totalWithHome,
-      workItems: ['COM', 'IND', 'OFFICE'].map(z => ({
-        label: ZONE_LABELS[z]!, count: workZones[z] ?? 0, color: ZONE_COLORS[z]!,
-      })),
-      totalWorkers,
-      eduWorkData, eduWorkTotals,
-      eduHousingData, eduHousingTotals,
+      pop: s.population,
+      avgHappiness: s.avgHappiness,
+      avgHealth: s.avgHealth,
+      adults: s.adults, employed: s.employed,
+      unemployed: s.unemployed, homeless: s.homeless,
+      employmentRate: s.employmentRate,
+      stageItems: label(s.lifeStages, STAGE_LABELS, STAGE_COLORS),
+      eduItems: label(s.education, EDU_LABELS, EDU_COLORS),
+      housingItems: label(s.housingLevels, HOUSING_LABELS, HOUSING_COLORS),
+      totalWithHome: s.withHome,
+      workItems: label(s.workZones, ZONE_LABELS, ZONE_COLORS),
+      totalWorkers: s.workers,
+      eduWorkData: s.educationByWork.map(r => r.counts),
+      eduWorkTotals: s.educationByWork.map(r => r.total),
+      eduHousingData: s.educationByHousing.map(r => r.counts),
+      eduHousingTotals: s.educationByHousing.map(r => r.total),
     };
   }, undefined, {
     equals: (a, b) => JSON.stringify(a) === JSON.stringify(b),
@@ -264,7 +184,7 @@ export function DemographicsPage() {
         title="Education"
         rowLabels={EDU_ORDER.map(e => EDU_LABELS[e]!)}
         colLabels={['Lv1', 'Lv2', 'Lv3']}
-        colColors={[LEVEL_COLORS[1]!, LEVEL_COLORS[2]!, LEVEL_COLORS[3]!]}
+        colColors={[HOUSING_COLORS.level1!, HOUSING_COLORS.level2!, HOUSING_COLORS.level3!]}
         data={stats().eduHousingData}
         rowTotals={stats().eduHousingTotals}
       />
