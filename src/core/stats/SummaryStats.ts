@@ -4,7 +4,9 @@ import { getBuildingType } from '../building/types';
 import { calculateAttractiveness, ATTRACTIVENESS, IMMIGRATION } from '../citizen/Migration';
 import { isWorkingAge } from '../citizen/types';
 import { DEFAULT_TAX_RATE } from '../economy/Tax';
-import { effectiveCityCrime } from '../environment/CityMetrics';
+import { effectiveCityCrime, getAvgResidentialPollution } from '../environment/CityMetrics';
+import { countResidentialCapacity, countWorkplaceJobs, isActiveZoneCell } from '../building/BuildingQueries';
+import { SIMULATION } from '../simulation/SimulationConstants';
 
 /**
  * 城市總覽 —— Overview 的 Summary 頁。
@@ -76,8 +78,13 @@ const ZONE_KEYS: Record<number, string> = {
   [ZoneType.OFFICE]: 'office',
 };
 
-/** 人口是 0 時幸福度給 70 —— 空城沒有人可以不開心。 */
-const EMPTY_CITY_HAPPINESS = 70;
+/**
+ * 人口是 0 時的幸福度 —— 空城沒有人可以不開心。
+ *
+ * 用模擬的那個常數，不自己寫 70:兩邊各寫一次的話，調了一邊另一邊不會跟上，
+ * 而分家的徵兆是「面板說沒吸引力、人卻一直搬進來」。
+ */
+const EMPTY_CITY_HAPPINESS = SIMULATION.DEFAULT_HAPPINESS;
 
 export function buildSummaryStats(state: GameState): SummaryStats {
   const grid = state.grid;
@@ -87,36 +94,44 @@ export function buildSummaryStats(state: GameState): SummaryStats {
   const counts: Record<number, { count: number; capacity: number }> = {};
   for (const zt of ZONE_ORDER) counts[zt] = { count: 0, capacity: 0 };
 
-  let pollutionTotal = 0;
-  let pollutionCells = 0;
   grid.forEachCell((cell) => {
-    if (cell.buildingId > 0 || cell.zoneType > 0) {
-      pollutionTotal += cell.pollution;
-      pollutionCells++;
-    }
-    if (cell.buildingId <= 0 || cell.zoneType === ZoneType.NONE) return;
+    // 廢墟與燒毀的樓不算。它們住不了人也雇不了人 —— 算進去的話「空房 6889」
+    // 裡有一部分是永遠住不進去的（BUG-359）。`isActiveZoneCell` 就是模擬那邊
+    // `sumBuildingCapacity` 用的同一道篩子，順便擋掉多格建築的次要格。
+    if (!isActiveZoneCell(cell) || cell.zoneType === ZoneType.NONE) return;
     const entry = counts[cell.zoneType];
     if (!entry) return;
     entry.count++;
     const bt = getBuildingType(cell.buildingId);
     if (bt) entry.capacity += bt.residents + bt.workers;
   });
-  const avgPollution = pollutionCells > 0 ? pollutionTotal / pollutionCells : 0;
 
-  const totalHomes = (counts[ZoneType.RESIDENTIAL_LOW]?.capacity ?? 0)
-    + (counts[ZoneType.RESIDENTIAL_HIGH]?.capacity ?? 0);
-  const totalJobs = (counts[ZoneType.COMMERCIAL_LOW]?.capacity ?? 0)
-    + (counts[ZoneType.COMMERCIAL_HIGH]?.capacity ?? 0)
-    + (counts[ZoneType.INDUSTRIAL]?.capacity ?? 0)
-    + (counts[ZoneType.OFFICE]?.capacity ?? 0);
+  /**
+   * 汙染要跟模擬問同一個問題。
+   *
+   * 這裡曾經自己掃一次「有建築**或**有劃分區」的所有格子求平均 —— 那包含工業區,
+   * 而工業區的汙染是設計上就該有的,於是面板算出來的數字被工業區拉高,吸引力被
+   * 多扣了分。模擬看的是**住宅區**的平均:居民感受得到的是自家門口的空氣,
+   * 遠處工廠的煙不該算在他們頭上（BUG-359）。
+   *
+   * Environment 頁那個「Ground Avg」是另一個問題（全城平均），兩者本來就不同。
+   */
+  const avgPollution = getAvgResidentialPollution(grid);
+
+  // 容量也走模擬用的那兩支，不從上面的分區表加總 —— 分區表是給人看的，
+  // 這兩個數字是要拿去跟模擬對答案的。
+  const totalHomes = countResidentialCapacity(grid);
+  const totalJobs = countWorkplaceJobs(grid);
 
   const vacantHomes = Math.max(0, totalHomes - population);
   // 跟模擬用的是同一個定義。舊的 `totalJobs − population` 會在成熟城市印出
   // 「0 職缺、無法遷入」，而模擬那邊回報幾百個職缺並照樣讓人搬進來（BUG-166）。
   const jobOpenings = Math.max(0, totalJobs - employed);
 
+  // 不四捨五入 —— 模擬那邊餵給 `calculateAttractiveness` 的是原始值。這裡先 round
+  // 再算的話，兩邊的吸引力會差到 0.25 分，而門檻是一條硬線。顯示要幾位數是面板的事。
   const avgHappiness = population > 0
-    ? Math.round(state.citizens.getAverageHappiness())
+    ? state.citizens.getAverageHappiness()
     : EMPTY_CITY_HAPPINESS;
   const taxRate = state.taxRates.residential ?? DEFAULT_TAX_RATE;
 

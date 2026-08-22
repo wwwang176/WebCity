@@ -31,6 +31,77 @@
 
 ## 待修問題
 
+### BUG-361: 燒毀的工廠照樣生產，燒毀的商店照樣消費 ⬜ 未修復
+
+- **症狀**: 一棟燒成焦黑的商店仍然被算進貨運的 `consumption`，一座燒毀的工廠仍然
+  被算進 `production`。Freight 頁的供貨率因此被一批不存在的店家拉低。
+- **根因**: `FreightSystem.calculateSupply()` 只檢查 `cell.buildingId === 0`，
+  沒有用 `isActiveZoneCell`。而這個 repo 其他每一條線都用了它 ——
+  `calculateZoneIncomes`（燒毀的樓不繳稅）、`GridPollutionSources`（燒毀的工廠不排放）、
+  `HomeCapacity`（燒毀的樓住不了人）、`countWorkplaceJobs`（燒毀的樓沒有職缺）。
+  貨運是唯一的例外。
+- **為什麼不順手修**: 這會改動遊戲平衡 —— 消費端變小，供貨率會往上跳，
+  進口需求跟著變。那是設計決定，不是筆誤修正。
+- **嚴重性**: 中
+- **狀態**: 未修復
+
+### BUG-360: agent API 把 BURNED 寫成 2，而它是 3 ✅ 已修復
+
+- **症狀**: `read.buildings()` 回報的每一棟燒毀建築都是 `derelict: false`，
+  `read.buildings({ derelictOnly: true })` 一棟也篩不出來 —— 玩家螢幕上明明看得到
+  九棟焦黑的房子。
+- **根因**: `AgentRead` 裡寫著 `[1 /* ABANDONED */, 2 /* BURNED */]`。真正的常數是
+  `ABANDONED = 1`、**`BURNED = 3`**（2 根本不是合法值，`SaveValidator` 的測試就在
+  斷言 `reserved: 2` 無效）。
+- **為什麼測試沒抓到**: 那條測試的 fixture 也寫著 `reserved: 2`。
+  **測試與程式碼共用同一個我自己編的數字**，於是它們一起錯、一起通過。
+- **修法**: 從 `InfraPlacement` 引用 `ABANDONED` / `BURNED`，fixture 一併改。
+  production code 現在沒有任何一處寫死 `reserved` 的數值。
+- **實測**: 玩家的存檔 `derelictOnly` 從 0 棟變成 8 棟。
+- **嚴重性**: 中（agent 看不見城市裡的廢墟，也就不會叫玩家去清）
+- **狀態**: 已修復
+
+### BUG-359: Summary 面板還有三處跟模擬算的不是同一個數字 ✅ 已修復
+
+BUG-358 修的是犯罪那一項。同一個函式裡還有三處同類的分家 —— 全部是「面板自己寫一份，
+而模擬有現成的」：
+
+1. **汙染量錯了範圍**。面板掃「有建築**或**有劃分區」的全部格子求平均;模擬看的是
+   `getAvgResidentialPollution()`，**只算住宅區**。工業區的汙染是設計上就該有的，
+   居民感受到的是自家門口的空氣，遠處工廠的煙不該算在他們頭上（那支函式的註解就
+   這樣寫著）。玩家的存檔實測:**全城 70.5，住宅區 21.1** —— 面板多扣了 9.9 分。
+2. **廢墟被算成房子與工作**。面板的條件是 `buildingId > 0`，模擬用
+   `sumBuildingCapacity` + `isActiveZoneCell`，會排掉燒毀、遺棄與多格建築的次要格。
+   玩家的存檔裡有 8~9 棟燒毀的商店與工廠 —— 面板因此多報了 **250 個職缺**，
+   而模擬認為那座城市**一個職缺也沒有**。「為什麼人口不成長」的答案本來就在畫面上，
+   只是那個數字是假的。
+3. **幸福度先四捨五入才拿去算吸引力**。模擬餵原始值。差最多 0.25 分 —— 小，
+   但門檻 40 是一條硬線。空城的預設值也從寫死的 70 改成引用
+   `SIMULATION.DEFAULT_HAPPINESS`。
+
+- **修法**: 三處全部改成呼叫模擬用的那幾支（`getAvgResidentialPollution`、
+  `countResidentialCapacity`、`countWorkplaceJobs`、`isActiveZoneCell`、
+  `SIMULATION.DEFAULT_HAPPINESS`）。面板要顯示幾位數是面板自己的事，
+  `Math.round` 移到 JSX。
+- **實測**（玩家的 12,408 人存檔）:
+
+  | | 修前 | 修後 |
+  |---|---|---|
+  | 汙染 | 70.5 | 21.1 |
+  | 汙染扣分 | 14.09 | 4.22 |
+  | 總工作數 | 8,890 | 8,640 |
+  | 職缺 | 250 | **0** |
+  | 可以遷入 | 是 | **否** |
+  | 吸引力 | 44.46 | 54.03 |
+  | 最大拖累項 | 汙染 | 犯罪 |
+
+  **「最大拖累項」那一列是重點** —— 修之前 API 給出的診斷是「你的瓶頸是汙染」，
+  那個結論本身建立在錯的數字上。
+- **怎麼發現的**: 使用者問「有沒有其他類似的問題」。`CityAttractiveness` 那個物件
+  被建了兩次（模擬一份、面板一份），逐欄位對照就找出來了。
+- **嚴重性**: 高
+- **狀態**: 已修復
+
 ### BUG-358: Summary 面板的犯罪率當作一座警局都沒有 ✅ 已修復
 
 - **症狀**: Overview → Summary 的 City Appeal 扣分裡，犯罪那一項**蓋再多警局都不會動**。

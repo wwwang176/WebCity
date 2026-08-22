@@ -4,6 +4,10 @@ import { buildSummaryStats } from '../SummaryStats';
 import { IMMIGRATION, ATTRACTIVENESS } from '../../citizen/Migration';
 import { PolicyType } from '../../district/types';
 import { ZoneType } from '../../grid/types';
+import { BURNED, ABANDONED } from '../../building/InfraPlacement';
+import { countResidentialCapacity, countWorkplaceJobs } from '../../building/BuildingQueries';
+import { getAvgResidentialPollution } from '../../environment/CityMetrics';
+import { SIMULATION } from '../../simulation/SimulationConstants';
 
 describe('城市總覽', () => {
   it('should count job openings the way the simulation does', () => {
@@ -161,5 +165,122 @@ describe('犯罪那一項要跟模擬說同一句話', () => {
   it('should never let crime turn into a bonus', () => {
     // 負的犯罪率在下游會變成加分。
     expect(buildSummaryStats(city()).crimeRate).toBeGreaterThanOrEqual(0);
+  });
+});
+
+
+describe('廢墟不是房子', () => {
+  /** 一棟 High Rise（320 人）。 */
+  const HIGH_RISE = 6;
+
+  function withRuin(reserved: number) {
+    const state = createGameState(16, 16);
+    state.grid.setCell(2, 2, { zoneType: ZoneType.RESIDENTIAL_HIGH, buildingId: HIGH_RISE });
+    state.grid.setCell(4, 2, { zoneType: ZoneType.RESIDENTIAL_HIGH, buildingId: HIGH_RISE, reserved });
+    return buildSummaryStats(state);
+  }
+
+  it('should not count a burned tower as housing anyone', () => {
+    // 燒掉的大樓住不了人。算進去的話「空房 6889」裡有一部分是永遠住不進去的,
+    // 而遷入的閘門就是看空房。
+    expect(withRuin(BURNED).totalHomes, '燒毀的樓還在提供床位').toBe(320);
+  });
+
+  it('should not count an abandoned tower either', () => {
+    expect(withRuin(ABANDONED).totalHomes).toBe(320);
+  });
+
+  it('should keep the ruin out of the zone table as well', () => {
+    // 表格說「97 棟」而其中 9 棟是焦黑的，那張表就不是在描述這座城市有什麼。
+    const zone = withRuin(BURNED).zones.find(z => z.zone === 'residential_high')!;
+
+    expect(zone.count, '廢墟還算在建築數裡').toBe(1);
+    expect(zone.capacity).toBe(320);
+  });
+
+  it('should not count a burned factory as a job', () => {
+    const state = createGameState(16, 16);
+    state.grid.setCell(2, 2, { zoneType: ZoneType.INDUSTRIAL, buildingId: 19, reserved: BURNED });
+
+    expect(buildSummaryStats(state).totalJobs).toBe(0);
+  });
+
+  it('should count jobs by what the building employs, not by its capacity column', () => {
+    // 分區表那一欄是「容量」= 住戶 + 員工，給人看的一個數字。職缺不能從它加總 ——
+    // 一棟住宅如果坐落在工業區的格子上（改劃分區時就會這樣），它的 4 個住戶會被
+    // 當成 4 個工作機會，而模擬那邊問的是 `bt.workers`，答案是 0。
+    const state = createGameState(16, 16);
+    state.grid.setCell(2, 2, { zoneType: ZoneType.INDUSTRIAL, buildingId: 1 });
+
+    const s = buildSummaryStats(state);
+
+    expect(s.zones.find(z => z.zone === 'industrial')!.capacity, '容量欄是住戶+員工').toBe(4);
+    expect(s.totalJobs, '把住戶算成了職缺').toBe(0);
+    expect(s.totalJobs).toBe(countWorkplaceJobs(state.grid));
+  });
+
+  it('should agree with the counters the simulation uses', () => {
+    // 這一條才是重點:兩邊分家的話，玩家看到的空房與職缺就不是遷入用的那一組。
+    const state = createGameState(16, 16);
+    state.grid.setCell(2, 2, { zoneType: ZoneType.RESIDENTIAL_HIGH, buildingId: HIGH_RISE });
+    state.grid.setCell(4, 2, { zoneType: ZoneType.RESIDENTIAL_HIGH, buildingId: HIGH_RISE, reserved: BURNED });
+    state.grid.setCell(6, 6, { zoneType: ZoneType.COMMERCIAL_HIGH, buildingId: 12 });
+
+    const s = buildSummaryStats(state);
+
+    expect(s.totalHomes).toBe(countResidentialCapacity(state.grid));
+    expect(s.totalJobs).toBe(countWorkplaceJobs(state.grid));
+  });
+});
+
+describe('汙染要跟模擬問同一個問題', () => {
+  it('should measure the air where people live, not the whole map', () => {
+    // 工業區的汙染是設計上就該有的。把它算進「居民感受到的汙染」,一座正常運作的
+    // 工業城會被扣到搬不進人 —— 而模擬那邊根本沒有這樣扣。
+    const state = createGameState(16, 16);
+    state.grid.setCell(2, 2, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1, pollution: 10 });
+    state.grid.setCell(8, 8, { zoneType: ZoneType.INDUSTRIAL, buildingId: 19, pollution: 90 });
+
+    expect(buildSummaryStats(state).avgPollution, '遠處工廠的煙算到居民頭上了').toBe(10);
+  });
+
+  it('should use the very function the simulation uses', () => {
+    const state = createGameState(16, 16);
+    state.grid.setCell(2, 2, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1, pollution: 24 });
+    state.grid.setCell(3, 2, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1, pollution: 8 });
+
+    expect(buildSummaryStats(state).avgPollution)
+      .toBeCloseTo(getAvgResidentialPollution(state.grid), 6);
+  });
+
+  it('should ignore a burned house when averaging', () => {
+    // `avgResidentialMetric` 只看 `isActiveZoneCell`。面板要跟著。
+    const state = createGameState(16, 16);
+    state.grid.setCell(2, 2, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1, pollution: 10 });
+    state.grid.setCell(3, 2, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1, pollution: 90, reserved: BURNED });
+
+    expect(buildSummaryStats(state).avgPollution).toBe(10);
+  });
+});
+
+describe('幸福度不要先四捨五入', () => {
+  it('should hand the raw average to the appeal formula', () => {
+    // 模擬餵給 `calculateAttractiveness` 的是原始值。先 round 再算，兩邊的吸引力
+    // 會差到 0.25 分 —— 而門檻 40 是一條硬線。
+    const state = createGameState(16, 16);
+    for (let i = 0; i < 3; i++) state.citizens.restoreCitizen({ age: 100 });
+    const cs = state.citizens.getCitizens();
+    cs[0]!.happiness = 50; cs[1]!.happiness = 51; cs[2]!.happiness = 51;
+
+    const s = buildSummaryStats(state);
+
+    expect(s.avgHappiness, '被四捨五入掉了').toBeCloseTo(152 / 3, 6);
+    expect(Number.isInteger(s.avgHappiness)).toBe(false);
+  });
+
+  it('should take the empty-city default from the simulation constants', () => {
+    // 兩邊各寫一個 70 的話，調了一邊另一邊不會跟上。
+    expect(buildSummaryStats(createGameState(8, 8)).avgHappiness)
+      .toBe(SIMULATION.DEFAULT_HAPPINESS);
   });
 });

@@ -69,7 +69,7 @@ export function SummaryPage() {
     <>
       <div class="summary-grid">
         <div class="summary-card"><div class="sc-value stat-accent">{data().population}</div><div class="sc-label">Population</div></div>
-        <div class="summary-card"><div class="sc-value">{data().avgHappiness}</div><div class="sc-label">Happiness</div></div>
+        <div class="summary-card"><div class="sc-value">{Math.round(data().avgHappiness)}</div><div class="sc-label">Happiness</div></div>
         <div class="summary-card"><div class="sc-value">{data().vacantHomes}</div><div class="sc-label">Vacant Homes</div></div>
         <div class="summary-card"><div class="sc-value">{data().jobOpenings}</div><div class="sc-label">Job Openings</div></div>
         <div class="summary-card"><div class="sc-value" style={{ color: data().unemploymentRate > 0.2 ? UI_COLORS.STATUS_BAD : data().unemploymentRate > 0.1 ? UI_COLORS.STATUS_WARN : UI_COLORS.STATUS_GOOD }}>{(data().unemploymentRate * 100).toFixed(0)}%</div><div class="sc-label">Unemployment</div></div>

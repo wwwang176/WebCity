@@ -16,6 +16,7 @@ import { buildEnvironmentStats, type EnvironmentStats } from '../core/stats/Envi
 import { buildFreightStats, type FreightStats } from '../core/stats/FreightStats';
 import { buildInfraStats, type InfraStats } from '../core/stats/InfraStats';
 import { buildServicesStats, type ServicesStats } from '../core/stats/ServiceStats';
+import { ABANDONED, BURNED } from '../core/building/InfraPlacement';
 import { citizenName } from '../core/citizen/CitizenName';
 import { citizenWorkLabel } from '../core/citizen/CitizenPresentation';
 import {
@@ -192,8 +193,12 @@ const DEFAULT_CITIZEN_LIMIT = 200;
  * `reserved` 欄位裡代表「這棟樓沒在運作」的值。
  *
  * 兩個都畫成深灰、都不發光、都會被建商清掉,對讀的人來說是同一件事。
+ *
+ * **從 `InfraPlacement` 引用，不要自己寫數字。** 這裡原本寫死 `[1, 2]`，而
+ * `BURNED` 其實是 3（2 沒有被使用）—— 於是每一棟燒毀的樓都回報 `derelict: false`，
+ * `derelictOnly` 一棟也篩不出來，玩家螢幕上明明看得到九棟焦黑的房子（BUG-360）。
  */
-const DERELICT_RESERVED: readonly number[] = [1 /* ABANDONED */, 2 /* BURNED */];
+const DERELICT_RESERVED: readonly number[] = [ABANDONED, BURNED];
 
 /** `CitizenManager` 吐出來的原始市民。 */
 interface RawCitizen {

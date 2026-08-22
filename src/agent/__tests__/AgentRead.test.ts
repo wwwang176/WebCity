@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { AgentRead, type StatsHost } from '../AgentRead';
 import { createGameState } from '../../core/simulation/GameState';
 import { ZoneType } from '../../core/grid/types';
+import { ABANDONED, BURNED } from '../../core/building/InfraPlacement';
 
 /**
  * 讀城市。
@@ -25,7 +26,9 @@ function city() {
   state.grid.setCell(3, 3, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 });
   state.grid.setCell(4, 3, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 });
   state.grid.setCell(9, 9, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
-  state.grid.setCell(5, 3, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1, reserved: 2 });
+  // `BURNED`，不是寫死的 2。這個 fixture 原本寫 2，而程式碼裡也寫著 2 ——
+  // 兩邊用同一個我自己編的數字，於是測試通過而遊戲裡的焦黑房子全被當成好的（BUG-360）。
+  state.grid.setCell(5, 3, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1, reserved: BURNED });
   return new AgentRead(() => state, noStats());
 }
 
@@ -440,5 +443,48 @@ describe('一個市民,照面板顯示的樣子', () => {
     const fromList = read.citizens().find(c => c.id === worker.id);
 
     expect(fromList).toEqual(read.citizen(worker.id));
+  });
+});
+
+
+describe('廢墟的判定要用遊戲的常數', () => {
+  function burnedCity() {
+    const state = createGameState(20, 20);
+    state.grid.setCell(3, 3, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 });
+    state.grid.setCell(4, 3, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1, reserved: BURNED });
+    state.grid.setCell(5, 3, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1, reserved: ABANDONED });
+    return new AgentRead(() => state, noStats());
+  }
+
+  it('should flag a burned building as derelict', () => {
+    // 這裡原本寫死 `[1, 2]`，而 BURNED 其實是 3 —— 於是玩家螢幕上九棟焦黑的房子，
+    // API 全部回報「好得很」（BUG-360）。
+    const burned = burnedCity().buildings().find(b => b.x === 4 && b.y === 3)!;
+
+    expect(burned.derelict, '燒毀的樓被當成正常的').toBe(true);
+  });
+
+  it('should flag an abandoned building as derelict', () => {
+    const abandoned = burnedCity().buildings().find(b => b.x === 5 && b.y === 3)!;
+
+    expect(abandoned.derelict).toBe(true);
+  });
+
+  it('should leave a healthy building alone', () => {
+    // 反面也要成立 —— 不然「全部都是廢墟」也會讓上面兩條通過。
+    const healthy = burnedCity().buildings().find(b => b.x === 3 && b.y === 3)!;
+
+    expect(healthy.derelict).toBe(false);
+  });
+
+  it('should return exactly the ruins when asked for only ruins', () => {
+    const only = burnedCity().buildings({ derelictOnly: true });
+
+    expect(only.map(b => b.x).sort(), '篩出來的不是那兩棟').toEqual([4, 5]);
+  });
+
+  it('should take the values from the game rather than restating them', () => {
+    // 常數搬家或改值時，寫死的那一份不會跟著動。
+    expect(BURNED).not.toBe(2);
   });
 });
