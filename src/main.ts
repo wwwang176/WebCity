@@ -1,4 +1,4 @@
-import { createMainMenu, createLoadingScreen, updateLoadingProgress, removeLoadingScreen } from './ui/MainMenu';
+import { createMainMenu, removeMenuScreens, createLoadingScreen, updateLoadingProgress, removeLoadingScreen } from './ui/MainMenu';
 import { loadGame, quarantineSave } from './core/save/SaveManager';
 import { loadSaveData } from './core/save/LoadSave';
 import { type GameState } from './core/simulation/GameState';
@@ -37,6 +37,10 @@ async function startGame(loadedState?: GameState, saveInfo?: SaveInfo, mapConfig
   updateLoadingProgress(10, 'Initializing...');
   await new Promise(r => requestAnimationFrame(r));
 
+  // 主選單掛在 body 上，不在 `#app` 裡 —— 清掉 `#app` 碰不到它。
+  // 從按鈕進來時處理器已經先移除過了（那是為了讓選單立刻消失，不用等載入），
+  // 這裡是第二道，也是唯一一道**每個呼叫端都會經過**的。
+  removeMenuScreens();
   app.innerHTML = '';
   app.style.display = 'block';
   const game = new Game(app, loadedState, mapConfig);

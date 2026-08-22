@@ -31,6 +31,28 @@
 
 ## 待修問題
 
+### BUG-351: agent 開局之後畫面停在主選單（遊戲其實正常在跑） ✅ 已修復
+
+- **症狀**: agent 呼叫 `session.newGame()` / `session.load()`，載入畫面閃過，
+  然後**畫面停在主選單** —— 但**音樂在放**，`status()` 回 `screen: 'game'`，
+  城市資料也讀得到。玩家自己按按鈕開局則一切正常。
+- **根因**: `menu.remove()` 只寫在**按鈕的事件處理器裡**（`#btn-new-game` 那一條、
+  點存檔那一條），不在 `startGame()` 裡。主選單掛在 `document.body` 上而不是
+  `#app` 裡，z-index 100，蓋在遊戲畫面（`#game-ui`，z-index 10）上面 ——
+  而 `startGame` 只做 `app.innerHTML = ''`，碰不到它。
+  從按鈕來的開局，處理器先移除了選單;**任何不是從按鈕來的開局都會把選單留在
+  畫面上**。agent 是第一個那樣的呼叫端。
+- **修法**: `removeMenuScreens()`（收掉 `#main-menu` 與 `#new-game-config`），
+  由 `startGame()` 呼叫 —— 那是唯一每個呼叫端都會經過的地方。按鈕處理器裡的
+  `menu.remove()` 留著，那是為了讓選單立刻消失、不用等載入。
+- **為什麼拖了三輪才找到**: 我一直用 API 驗證（`status()` 回 `game` 就當成功），
+  **沒有真的看畫面**。而這個 bug 的每一個 API 指標都是正常的 —— 遊戲真的開起來了，
+  只是被蓋住。玩家說「有音樂」才是關鍵線索。
+- **測試**: 沒有 DOM 測試環境（`vitest` 是 `environment: 'node'`），這一條靠瀏覽器
+  截圖驗證。單元測試 `querySelector().remove()` 也證明不了「誰該負責呼叫它」。
+- **嚴重性**: 高（agent 開局功能等於不能用）
+- **狀態**: 已修復
+
 ### BUG-350: agent 開新局帶了自己編的設定，遊戲炸在一半退回主選單 ✅ 已修復
 
 - **症狀**: 玩家把 API 交給另一個 AI，AI 呼叫 `session.newGame({size:128,...})`，
