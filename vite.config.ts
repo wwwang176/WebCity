@@ -1,9 +1,10 @@
 import { defineConfig } from 'vite';
 import path from 'path';
 import solidPlugin from 'vite-plugin-solid';
+import { agentBridge } from './plugins/agent-bridge';
 
 export default defineConfig({
-  plugins: [solidPlugin()],
+  plugins: [solidPlugin(), agentBridge()],
   resolve: {
     alias: {
       '@core': path.resolve(__dirname, 'src/core'),

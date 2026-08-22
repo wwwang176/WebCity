@@ -6,7 +6,11 @@ import { type MapConfig } from './core/config/MapConfig';
 import { classifySaveError, missingSaveFailure, type SaveFailure } from './core/save/SaveFailure';
 import { createAgent } from './agent';
 import { AgentSession } from './agent/AgentSession';
-import { registerSessionBridge } from './agent/registry';
+import { registerSessionBridge } from './agent/registry';
+
+// 讓 dev server 的 `POST /agent` 轉得進這個分頁。`import.meta.env.DEV` 是靜態的,
+// 正式 build 會整段搖掉 —— 而伺服器那半邊本來就只住在 dev server 裡。
+if (import.meta.env.DEV) void import('./agent/bridge/client');
 
 interface SaveInfo {
   slotId: number;

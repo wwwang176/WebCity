@@ -2,13 +2,78 @@
 
 讓**程式**（而不是滑鼠）玩這個遊戲的入口。遊戲裡看得到、按得到的東西，這裡都有一份。
 
-在瀏覽器主控台或任何跑得到 JS 的地方直接用：
+兩種用法，做得到的事完全一樣：
+
+**在瀏覽器裡**（主控台、chrome-devtools MCP、Playwright⋯）
 
 ```js
-window.__agent.read.city()                       // 現在的城市長怎樣
+window.__agent.read.city()
 window.__agent.act({ tool: 'road', x1: 10, y1: 10, x2: 30, y2: 10 })
-window.__agent.ui.openPanel('overview')          // 幫我把總覽打開
 ```
+
+**用 `curl`**（`npm run dev` 的時候才有，見〈交給另一個 AI〉）
+
+```bash
+curl -X POST localhost:5173/agent -d '{"path":"read.city"}'
+curl -X POST localhost:5173/agent \
+  -d '{"path":"act","args":[{"tool":"road","x1":10,"y1":10,"x2":30,"y2":10}]}'
+```
+
+---
+
+## 交給另一個 AI
+
+你 `npm run dev` 之後，把**網址**跟**這份文件**丟給你自己的 Claude Code / Codex，
+它就能玩了。
+
+### 為什麼需要 `curl` 這條路
+
+`window.__agent` 活在**瀏覽器分頁裡**，不在網址上。對方 AI 拿到網址去 `curl`，
+收到的只有 HTML —— 除非它自己有瀏覽器工具（chrome-devtools MCP、Playwright），
+否則碰不到那個介面。而玩家的 agent 不一定裝了那些。
+
+所以 dev server 上開了一條路，把 HTTP 請求**轉進你開著的那個分頁**：
+
+```
+對方 AI ──POST /agent──▶ dev server ──HMR 通道──▶ 你的分頁 window.__agent
+        ◀──── JSON ─────            ◀────────────
+```
+
+### 怎麼呼叫
+
+`path` 就是這份文件裡的方法名，`args` 是它的參數，照順序。
+
+```bash
+curl -X POST localhost:5173/agent -d '{"path":"read.city"}'
+curl -X POST localhost:5173/agent -d '{"path":"routes.create","args":["bus",[1,2],2]}'
+curl -X POST localhost:5173/agent -d '{"path":"ui.openPanel","args":["overview"]}'
+curl localhost:5173/agent          # GET 會回用法與幾個例子
+```
+
+回應永遠是 `{ ok, result }` 或 `{ ok, error }`，**HTTP 狀態碼一律 200** ——
+看 `ok` 就好，不必同時解讀狀態碼跟內容。
+
+裡面那一層有自己的 `ok`。外層的 `ok` 是「這通呼叫成立」，內層的是「遊戲答應了」：
+
+```json
+{ "ok": true, "result": { "ok": false, "reason": "Cannot build on water" } }
+```
+
+### 兩件會擋下來的事
+
+| 訊息 | 意思 |
+|------|------|
+| `no game page is connected` | 遊戲沒開在瀏覽器裡。橋是轉進分頁的，沒有分頁就沒地方轉 |
+| `refusing to walk into constructor` | 路徑想爬進原型鏈。只走得到這份文件列出來的東西 |
+
+### 這條路只在 `npm run dev` 上
+
+`npm run build` 出來的靜態檔**沒有這一段** —— 不是關掉，是伺服器那半邊根本沒地方住
+（它是 dev server 的 middleware）。頁面端走 `import.meta.hot`，build 之後也不存在。
+
+而且沿用 vite 預設**只綁 localhost**。加了 `--host` 的話，同網段的人就能操作你正在玩
+的那一局（拆房子、蓋掉你的存檔、讀你的城市資料），只有刪存檔碰不到。自己那台電腦上
+的 AI 不需要 `--host`。
 
 ---
 
@@ -374,3 +439,6 @@ window.__agent.read.city(); // 這才是新的
 | `src/agent/AgentRead.ts` | 讀取層 |
 | `src/agent/AgentSession.ts` | 存檔與開局 |
 | `src/agent/registry.ts` | 面板與開局的註冊橋 |
+| `src/agent/bridge/dispatch.ts` | 把 `{"path":"read.city"}` 變成真的呼叫，以及路徑的把關 |
+| `src/agent/bridge/client.ts` | 頁面端:收下呼叫、執行、回傳 |
+| `plugins/agent-bridge.ts` | dev server 的 `POST /agent` |
