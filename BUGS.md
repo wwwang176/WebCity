@@ -31,6 +31,54 @@
 
 ## 待修問題
 
+### BUG-368: `read()` 讀不到「兩格通不通」 ⬜ 未修復
+
+- **症狀**（AI 用 agent API 實測）: 蓋完一座橋之後，程式沒有任何辦法問「A 格和 B 格
+  的車走不走得到」。目前最接近的是 `read.coverage(x, y)` —— 拿服務覆蓋當連通性的
+  代理指標。
+- **根因**: 覆蓋是**有預算上限的 Dijkstra**（`ROAD_COVERAGE.BASE_COST` 1800、
+  警局 540、國小 360），走到預算耗盡就停。所以「0 覆蓋」有兩個意思:真的不連通，
+  或者連通但太遠。橋接對了也會給 0。
+- **不是問題的部分**: 覆蓋的 flood **會走高架**（`RoadCoverageFlood` 是 level-aware，
+  建圖用 `buildRoadCellGraph(UnifiedRoadLookup)`，而通勤可達性
+  `SimulationLoop.getCellGraph()` 呼叫的是同一支）。三層圖都認高架，代理指標沒有被
+  這件事污染。
+- **修法**: `read.connected(from, to)` 走既有的 `RoadCellGraph`，flood 不設預算上限，
+  回 `{ connected, cost }`。
+
+### BUG-367: `read()` 讀不到高架結構 ⬜ 未修復
+
+- **症狀**（AI 用 agent API 實測）: `read.cells()` 每格回的是地面層的
+  `roadType` / `roadFlags` / `railType` / `railFlags`。高架段一個欄位都沒有。
+  `status()` 裡的 `elevated` / `elevationLevel` 是**工具當下的狀態**，不是地圖內容。
+  確認一座橋存在的唯一辦法是故意重蓋一次、讀 `Elevation level already occupied`
+  這句錯誤訊息 —— 靠副作用反推，而且那格如果其實是空的就真的蓋下去了。
+- **根因**: 不是漏了欄位。`read.cells()` 的實作是 `{ x, y, ...grid.getCell(x, y) }`,
+  只吐 Grid 裡的東西;而高架段住在 `ElevationManager`（key = `x,y,level`），
+  **`ElevationManager` 是 `Game` 的 private 欄位，不在 `GameState` 上**。
+  `AgentRead` 拿到的只有 `getState()`，所以它連理論上都摸不到那份資料。
+- **修法**: 走 host bridge（`StatsHost`），`ElevationManager.getAllLevels()` 現成
+  就是要的形狀。
+
+### BUG-366: `demolish` 的回傳值是三個常數 ⬜ 未修復
+
+- **症狀**（AI 用 agent API 實測）: 拆 42 格和拆 0 格，收到的回應一模一樣 ——
+  `{ ok: true, cost: 0 }`。
+- **根因**: 三個欄位全是常數。拆除不動錢包（`case 'demolish'` 沒有任何扣款或退款），
+  所以 `cost` 恆為 0;拆除不產生 notification，而非 district 工具的 `ok` 判定就是
+  `note === null`，所以 `ok` 恆為 true。
+- **連帶**: `docs/agent-api.md` 寫「`cost === 0 && ok` 多半代表這個動作什麼也沒做,
+  唯一的例外是分區筆刷」。例外有兩個。而且 demolish 是更糟的那一個 ——
+  分區筆刷至少還有 `info`。
+- **修法**: 回傳實際拆掉了什麼。資料本來就在算 —— `evictCells`（建築）、
+  `collectRoadCells`（道路）、`demolished` Set（多格基礎設施已去重）。
+- **要小心的兩件事**:
+  - 不要拿 `affectedRoadCells` 當道路數。那是 `removeRoad()` 的回傳，包含**鄰居**
+    （接頭要重畫的格子），會系統性高報。
+  - `classifyDemolishCell` 對空格回的是 `'regular'`，接著照樣寫一次一模一樣的預設值。
+    「有沒有清掉東西」的判斷要加在那支純函式那一側，不能寫在 `Game.ts`
+    —— 那支 import Three.js，vitest 是 node 環境載不動它。
+
 ### BUG-365: 修完 BUG-363 之後，所有人擠到最近那一座設施 ✅ 已修復
 
 - **症狀**: BUG-363 把負載分攤從歐氏直線改成覆蓋的擁有者之後，**每一格的需求全部
