@@ -54,6 +54,30 @@ export interface UiHost {
   toggleViewMode(mode: ViewMode): void;
   togglePause(): void;
   setSpeed(speed: GameSpeed): void;
+
+  // ── 唯讀:畫面上看得到的工具與介面狀態 ──────────────────────────
+  //
+  // 要改這些請走 `act()`（旋轉、高架）或各自的面板 —— 這裡只負責讓呼叫端
+  // 知道玩家現在的設定是什麼。
+
+  /** 基礎設施的擺放角度。0 / 90 / 180 / 270 度。 */
+  rotation(): number;
+  /** 蓋在地面還是高架。 */
+  placementMode(): string;
+  /** 道路工具現在選的路型。 */
+  roadType(): string;
+  /** 高架模式的目標層數 1–3。 */
+  elevationLevel(): number;
+  /** 游標下那一格要花多少錢。沒在預覽就是 `null`。 */
+  previewCost(): number | null;
+  /** 轉乘圖層上點開的那條路線。 */
+  selectedTransferRoute(): string | null;
+  /** 詳細面板上點開的那個市民。 */
+  selectedCitizenId(): number | null;
+  /** 三個靜音開關。 */
+  audio(): { muted: boolean; sfxMuted: boolean; musicMuted: boolean };
+  /** 這局是從哪個存檔載進來的。開新局是 `null`。 */
+  loadedSave(): { slot: number | null; name: string | null };
   deselectBuilding(): void;
   camera(): CameraState;
   setCamera(target: CameraTarget): CameraState;
@@ -202,6 +226,51 @@ export class AgentUi {
   // ── 通知 ────────────────────────────────────────────────────────
 
   /** 遊戲現在顯示的那一則訊息。 */
+  /** 基礎設施的擺放角度,0 / 90 / 180 / 270 度。 */
+  rotation(): number {
+    return this.host.rotation();
+  }
+
+  /**
+   * 工具現在的設定 —— 畫面上那幾個小指示器。
+   *
+   * `previewCost` 只有在游標停在地圖上時才有值:它是 UI 在 hover 時算的,
+   * 不是遊戲狀態的一部分。透過 API 蓋東西不會經過它。
+   */
+  toolState(): {
+    tool: ToolType; rotation: number; placementMode: string;
+    roadType: string; elevationLevel: number; previewCost: number | null;
+  } {
+    return {
+      tool: this.tool(),
+      rotation: this.host.rotation(),
+      placementMode: this.host.placementMode(),
+      roadType: this.host.roadType(),
+      elevationLevel: this.host.elevationLevel(),
+      previewCost: this.host.previewCost(),
+    };
+  }
+
+  /** 三個靜音開關。 */
+  audio(): { muted: boolean; sfxMuted: boolean; musicMuted: boolean } {
+    return this.host.audio();
+  }
+
+  /** 這局是從哪個存檔載進來的。 */
+  loadedSave(): { slot: number | null; name: string | null } {
+    return this.host.loadedSave();
+  }
+
+  /** 轉乘圖層上點開的那條路線。 */
+  selectedTransferRoute(): string | null {
+    return this.host.selectedTransferRoute();
+  }
+
+  /** 詳細面板上點開的那個市民。 */
+  selectedCitizenId(): number | null {
+    return this.host.selectedCitizenId();
+  }
+
   notification(): string | null {
     return this.host.notification;
   }

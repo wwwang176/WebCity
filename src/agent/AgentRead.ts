@@ -16,6 +16,8 @@ import { buildEnvironmentStats, type EnvironmentStats } from '../core/stats/Envi
 import { buildFreightStats, type FreightStats } from '../core/stats/FreightStats';
 import { buildInfraStats, type InfraStats } from '../core/stats/InfraStats';
 import { buildServicesStats, type ServicesStats } from '../core/stats/ServiceStats';
+import { citizenName } from '../core/citizen/CitizenName';
+import { citizenWorkLabel } from '../core/citizen/CitizenPresentation';
 import {
   buildCoverage, buildOverlayCells, overlayKind, COVERAGE_SERVICES,
   type CoverageInfo, type CoverageService, type OverlayCellInfo, type OverlayKind,
@@ -118,11 +120,33 @@ export interface BuildingInfo {
 
 export interface CitizenInfo {
   id: number;
+  /**
+   * 面板上印的名字。
+   *
+   * 從 id 與城市種子算出來的，不存進存檔 —— 所以**同一個 id 在不同城市叫不同名字**。
+   * 要指涉某個人請用 `id`,名字只是給人看的。
+   */
+  name: string;
   age: number;
+  /** BABY / CHILD / TEEN / ADULT / SENIOR。 */
+  lifeStage: string;
   education: string;
   happiness: number;
+  health: number;
   homeId: string | null;
   workplaceId: string | null;
+  /**
+   * 面板上「Work」那一列的字。
+   *
+   * 不是 `workplaceId` 的同義詞 —— 沒工作的人分成 `Unemployed`（工作年齡）、
+   * `Retired`（超齡）、`Student` 與 `Too young to work`。把後三種讀成失業，
+   * 一座滿員的城市點開住宅會看起來像失業率 100%。
+   */
+  workLabel: string;
+  /** 從哪個 tick 開始沒工作。`null` 代表還沒開始找。 */
+  unemployedSince: number | null;
+  /** 從哪個 tick 開始沒地方住。 */
+  homelessSince: number | null;
 }
 
 export interface ServiceInfo {
@@ -170,6 +194,44 @@ const DEFAULT_CITIZEN_LIMIT = 200;
  * 兩個都畫成深灰、都不發光、都會被建商清掉,對讀的人來說是同一件事。
  */
 const DERELICT_RESERVED: readonly number[] = [1 /* ABANDONED */, 2 /* BURNED */];
+
+/** `CitizenManager` 吐出來的原始市民。 */
+interface RawCitizen {
+  id: number;
+  age: number;
+  lifeStage: unknown;
+  education: unknown;
+  happiness: number;
+  health: number;
+  educationProgress: number;
+  homeId: string | null;
+  workplaceId: string | null;
+  unemployedSince: number | null;
+  homelessSince: number | null;
+}
+
+/**
+ * 一個市民，照面板顯示的樣子。
+ *
+ * 名字與「Work」那一列都問 core 的那兩支 —— 面板讀的就是它們，這裡自己拼一份的話
+ * 會出現「API 說 Unemployed、畫面說 Retired」。
+ */
+function describeCitizen(c: RawCitizen, citySeed: number): CitizenInfo {
+  return {
+    id: c.id,
+    name: citizenName(c.id, citySeed),
+    age: c.age,
+    lifeStage: String(c.lifeStage),
+    education: String(c.education),
+    happiness: Math.round(c.happiness),
+    health: Math.round(c.health),
+    homeId: c.homeId ?? null,
+    workplaceId: c.workplaceId ?? null,
+    workLabel: citizenWorkLabel(c),
+    unemployedSince: c.unemployedSince ?? null,
+    homelessSince: c.homelessSince ?? null,
+  };
+}
 
 export class AgentRead {
   constructor(
@@ -249,25 +311,29 @@ export class AgentRead {
     const s = this.getState();
     const limit = query.limit ?? DEFAULT_CITIZEN_LIMIT;
 
-    let pool: readonly { id: number; age: number; education: unknown; happiness: number; homeId?: string | null; workplaceId?: string | null }[];
-    if (query.homeId) pool = s.citizens.getCitizensByHome(query.homeId);
-    else if (query.workplaceId) pool = s.citizens.getCitizensByWorkplace(query.workplaceId);
-    else pool = s.citizens.getCitizens();
+    let pool: readonly RawCitizen[];
+    if (query.homeId) pool = s.citizens.getCitizensByHome(query.homeId) as readonly RawCitizen[];
+    else if (query.workplaceId) pool = s.citizens.getCitizensByWorkplace(query.workplaceId) as readonly RawCitizen[];
+    else pool = s.citizens.getCitizens() as readonly RawCitizen[];
 
     const out: CitizenInfo[] = [];
     for (const c of pool) {
       if (out.length >= limit) break;
       if (query.unemployedOnly && c.workplaceId) continue;
-      out.push({
-        id: c.id,
-        age: c.age,
-        education: String(c.education),
-        happiness: Math.round(c.happiness),
-        homeId: c.homeId ?? null,
-        workplaceId: c.workplaceId ?? null,
-      });
+      out.push(describeCitizen(c, s.citySeed));
     }
     return out;
+  }
+
+  /**
+   * 一個人。跟市民詳細面板顯示的是同一份。
+   *
+   * 找不到就回 `null` —— 市民會死,而 id 不會被回收。
+   */
+  citizen(id: number): CitizenInfo | null {
+    const s = this.getState();
+    const c = s.citizens.getCitizen(id) as RawCitizen | undefined;
+    return c ? describeCitizen(c, s.citySeed) : null;
   }
 
   services(): { total: number; items: ServiceInfo[] } {

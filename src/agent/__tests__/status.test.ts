@@ -36,6 +36,15 @@ function fakeUi(over: Partial<UiHost> = {}): AgentUi {
     deselectBuilding() {},
     camera: () => ({ x: 30, y: 30, size: 60, angle: 0.78, elevation: 0.52 }),
     setCamera: () => ({ x: 30, y: 30, size: 60, angle: 0.78, elevation: 0.52 }),
+    rotation: () => 0,
+    placementMode: () => 'ground',
+    roadType: () => 'TWO_LANE',
+    elevationLevel: () => 1,
+    previewCost: () => null,
+    selectedTransferRoute: () => null,
+    selectedCitizenId: () => null,
+    audio: () => ({ muted: false, sfxMuted: false, musicMuted: false }),
+    loadedSave: () => ({ slot: null, name: null }),
     ...over,
   } as UiHost;
   return new AgentUi(h);
@@ -182,5 +191,74 @@ describe('自己管自己開關的那兩個', () => {
 
     expect(s.settingsOpen).toBe(false);
     expect(s.tutorial).toBeNull();
+  });
+});
+
+
+describe('工具與介面的即時狀態', () => {
+  it('should say which way the next building will face', () => {
+    // 畫面右下角那個 `R: 90°`。以前只有玩家看得到 —— AI 說「幫你轉一下」之前
+    // 根本不知道現在轉到哪。
+    setScreen('game');
+    const st = buildStatus(fakeUi({ rotation: () => 180 }));
+
+    expect(st.rotation).toBe(180);
+  });
+
+  it('should say whether the next road goes on the ground or overhead', () => {
+    setScreen('game');
+    const st = buildStatus(fakeUi({
+      placementMode: () => 'elevated', elevationLevel: () => 3, roadType: () => 'HIGHWAY',
+    }));
+
+    expect(st.placementMode).toBe('elevated');
+    expect(st.elevationLevel).toBe(3);
+    expect(st.roadType, '路型只給數字的話呼叫端得自己去查表').toBe('HIGHWAY');
+  });
+
+  it('should pass the hover price through as null when nothing is hovered', () => {
+    // 這是 UI 在 hover 時算的,不是遊戲狀態 —— 用 API 操作永遠不會經過它。
+    // 給 0 的話呼叫端會以為「這一格免費」。
+    setScreen('game');
+
+    expect(buildStatus(fakeUi()).previewCost).toBeNull();
+  });
+
+  it('should say which transfer route and which citizen are open', () => {
+    setScreen('game');
+    const st = buildStatus(fakeUi({
+      selectedTransferRoute: () => 'bus-3', selectedCitizenId: () => 42,
+    }));
+
+    expect(st.selectedTransferRoute).toBe('bus-3');
+    expect(st.selectedCitizenId).toBe(42);
+  });
+
+  it('should say which switches are muted', () => {
+    // 三個開關是獨立的:總靜音關著但音效單獨靜音，玩家還是聽不到音效。
+    setScreen('game');
+    const st = buildStatus(fakeUi({
+      audio: () => ({ muted: false, sfxMuted: true, musicMuted: false }),
+    }));
+
+    expect(st.audio).toEqual({ muted: false, sfxMuted: true, musicMuted: false });
+  });
+
+  it('should say which save this game came from', () => {
+    setScreen('game');
+    const st = buildStatus(fakeUi({ loadedSave: () => ({ slot: 2, name: 'PlayerCity' }) }));
+
+    expect(st.loadedSave).toEqual({ slot: 2, name: 'PlayerCity' });
+  });
+
+  it('should leave every one of them out on the main menu', () => {
+    // 主選單沒有 Game。回一個假的 rotation 0 / ground，AI 會以為遊戲正在跑。
+    setScreen('menu', 'main');
+    const st = buildStatus(null);
+
+    for (const k of ['rotation', 'placementMode', 'roadType', 'elevationLevel',
+      'previewCost', 'selectedTransferRoute', 'selectedCitizenId', 'audio', 'loadedSave']) {
+      expect(k in st, `${k} 在主選單上還在`).toBe(false);
+    }
   });
 });

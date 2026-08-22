@@ -154,6 +154,17 @@ curl -X POST localhost:5173/agent -d '{"path":"status"}'
 | `settingsOpen` | 設定畫面開著嗎。**它不走面板橋，`panel` 永遠看不到它** |
 | `tutorial` | 新手教程走到哪。`step` 從 1 算起，跟畫面上的「Step 3 of 9」一致 |
 | `tool` `paused` `speed` `viewMode` `overlay` `notification` | **只有 `screen === 'game'` 時才有** |
+| `rotation` | 基礎設施的擺放角度，0 / 90 / 180 / 270 度。畫面右下角那個 `R: 90°` |
+| `placementMode` `elevationLevel` | 地面還是高架、高架第幾層 |
+| `roadType` | 道路工具選的路型，回名字不是數字（`TWO_LANE`、`HIGHWAY`⋯） |
+| `previewCost` | 游標下那一格要花多少。**沒在預覽就是 `null`**，不是 0 |
+| `selectedTransferRoute` `selectedCitizenId` | 轉乘圖層與市民詳情上點開的是誰 |
+| `audio` | `{muted, sfxMuted, musicMuted}`。三個開關是獨立的 |
+| `loadedSave` | `{slot, name}`。開新局而且還沒存過就都是 `null` |
+
+`previewCost` 是 UI 在游標停在地圖上時算的，不是遊戲狀態的一部分 —— 用 API 蓋東西
+永遠不會經過它，所以那時候它一直是 `null`。要知道一個動作花多少錢，看 `act()` 回的
+`cost`。
 
 ### 沒有遊戲的時候那幾欄是不存在的，不是預設值
 
@@ -387,22 +398,27 @@ setCamera({ x?, y?, size?, angle?, elevation? })
 
 ## `read` — 讀
 
-### 吐事實，不吐面板的彙總
+### 面板算的，跟這裡讀的是同一支函式
 
-Overview 那八頁把數字算在各自的 `createMemo` 裡（共兩千多行 TSX）。抄一份過來就是這個
-repo 一再警告的那個錯 —— 同一個數字兩個地方各記一份，然後靜靜地分家（BUG-342 就是
-這樣來的）。所以規則是：
+Overview 那幾頁原本把數字算在各自的 `createMemo` 裡（共兩千多行 TSX），只有玩家的
+螢幕看得到。抄一份過來就是這個 repo 一再警告的那個錯 —— 同一個數字兩個地方各記一份，
+然後靜靜地分家（BUG-342 就是這樣來的）。
 
-- **已經抽成純模組的直接重用**（大眾運輸走 `transitRows.ts`，面板自己也在用那一支）
+所以那些算式被抽到了 `src/core/stats/`，**面板跟這裡呼叫同一支**。不會有「API 說
+75%、螢幕說 68%」這種事。
+
+其餘的規則：
+
 - **`Game` 已經算好的原封不動轉手**，不重算也不複製
-- **其餘吐原始事實**，彙總留給呼叫端
+- **沒有現成彙總的吐原始事實**，加總留給呼叫端
 
 | 方法 | 回什麼 |
 |------|--------|
 | `city()` | 季節、週、日、時、市庫、每 tick 淨收支、人口、就業、幸福、RCI、電力、水 |
 | `buildings(query?)` | 每一棟的座標、型別、分區、等級、容量、住戶、員工、地價、汙染、是否廢棄 |
-| `citizens(query?)` | 年齡、教育、幸福、住哪、在哪上班 |
-| `services()` | 各服務的維運費與總計 |
+| `citizens(query?)` | 一批市民，內容跟詳情面板同一份 |
+| `citizen(id)` | 一個市民。找不到回 `null`（市民會死，id 不回收） |
+| `services()` | 各服務的**維運費**與總計。要覆蓋率與載重請看 `serviceStats()` |
 | `transit()` | 各運具的路線、班距、載重、狀態（跟 Traffic 頁同一份） |
 | `cells(rect)` | 一塊範圍內每一格的原始欄位 |
 | `coverage(service)` | 服務覆蓋 —— **玩家看到的建築顏色**，綠→紅 10 階 |
@@ -412,6 +428,69 @@ repo 一再警告的那個錯 —— 同一個數字兩個地方各記一份，�
 `buildings()` 的查詢：`zone`（分區白名單）、`rect`、`limit`（預設 500）、`derelictOnly`。
 `citizens()` 的查詢：`limit`（預設 200）、`homeId`、`workplaceId`、`unemployedOnly`。
 `homeId` / `workplaceId` 的鍵是 `"x,y"`。
+
+### Overview 那八頁
+
+一頁一支，跟畫面上的分頁一一對應：
+
+| 分頁 | 方法 |
+|------|------|
+| Summary | `summary()` |
+| Demographics | `demographics()` |
+| Economy | `economyBreakdown()` ＋ `chartHistory()` |
+| Services | `serviceStats()` |
+| Freight | `freight()` |
+| Environment | `environment()` |
+| Traffic | `trafficStats()` ＋ `transit()` ＋ `transferStats()` |
+| （Infra，已併進 Services） | `infra()` |
+
+幾個容易讀錯的地方：
+
+**`summary()` 會說是哪一項在扣分。** 「吸引力 12 分」本身沒有可以動作的資訊，所以除了
+`attractiveness` 還有 `drags`（每一項各扣幾分，由大到小）與 `worstDrag`（分數夠的話
+是 `null`）。`canMigrate` 要三個條件同時成立：夠吸引人、有空房、有職缺。
+
+**`freight()` 的 `production` 不是商店拿得到的量。** 真正拿得到的是
+`effectiveProduction`（產量 − 出口 + 進口）。一座靠進口撐著的城市只看 `production`
+會被讀成缺貨。
+
+```json
+{ "production": 285, "consumption": 688, "imported": 230, "exported": 0,
+  "effectiveProduction": 515, "supplyRatio": 0.749,
+  "railThroughput": 200, "highwayThroughput": 30, "totalThroughput": 230 }
+```
+
+**`serviceStats()` 的 `capacity` 只算得動的設施。** 停電的警局不巡邏，所以它的容量
+不計入 `capacity` —— 但那一座照樣列在 `facilities` 裡（`operational: false`），
+不然覆蓋率掉了會找不到原因。`shortage` 是 `load > capacity`，**容量 0 時也算短缺**
+（全城停電正是最該亮燈的時候）。
+
+**`demographics()` 的分母是成年人。** `employmentRate` 是 `employed / adults`，
+不是除以總人口 —— 把嬰兒算成失業人口的話，一座年輕的城市永遠看起來像在崩潰。
+兩張交叉表（`educationByWork`、`educationByHousing`）的欄依 `WORK_KEYS` /
+`HOUSING_LEVELS` 的順序。
+
+**`chartHistory()` 不進存檔。** 那是 UI 一天記一筆累積的，載入存檔之後是空的，
+開著遊戲跑才會長出來。
+
+### 市民
+
+`citizens()` 與 `citizen(id)` 給的是詳情面板上那一份：
+
+| 欄位 | 說明 |
+|------|------|
+| `id` | 要指涉某個人用這個 |
+| `name` | 面板上印的名字。從 id 與**城市種子**算的，不存進存檔 —— 同一個 id 在不同城市叫不同名字 |
+| `age` / `lifeStage` | 生命階段是 `BABY` / `CHILD` / `TEEN` / `ADULT` / `SENIOR` |
+| `education` | `NONE` / `ELEMENTARY` / `HIGH_SCHOOL` / `UNIVERSITY` |
+| `happiness` / `health` | |
+| `homeId` / `workplaceId` | `"x,y"`，沒有就是 `null` |
+| `workLabel` | 面板上「Work」那一列的字 |
+| `unemployedSince` / `homelessSince` | 從哪個 tick 開始的。`null` 代表還沒開始 |
+
+**`workLabel` 不是 `workplaceId` 的同義詞。** 沒工作的人分成 `Unemployed`（工作年齡）、
+`Retired`（超齡）、`Student` 與 `Too young to work`。把後三種讀成失業，一座滿員的
+城市點開住宅會看起來像失業率 100%。
 
 ### `Game` 已經算好的
 

@@ -11,6 +11,7 @@ import { AgentRoutes, type ModeAdapter, type RouteHost } from './AgentRoutes';
 import { AgentUi, type CameraTarget, type UiHost } from './AgentUi';
 import { buildStatus, type AgentStatus } from './status';
 import { RailServiceType } from '../core/transport/RailSystem';
+import { RoadType } from '../core/road/types';
 import type { DistrictPaintMode } from '../core/district/DistrictPaint';
 
 export { AgentApi, AGENT_LIMITS } from './AgentApi';
@@ -57,6 +58,14 @@ export interface AgentRoot {
 
 /** `Game` 的形狀轉成 `AgentUi` 要的樣子。 */
 function uiHost(game: Game): UiHost {
+  const g2 = game as unknown as {
+    currentRotation: number;
+    placementMode: string;
+    currentRoadType: number;
+    elevationLevel: number;
+    loadedSlotId: number | null;
+    loadedSaveName: string | null;
+  };
   const g = game as unknown as {
     overlayRenderer: { getOverlay(): string; };
     sceneManager: {
@@ -82,6 +91,19 @@ function uiHost(game: Game): UiHost {
     toggleViewMode: (m) => game.toggleViewMode(m),
     togglePause: () => game.togglePause(),
     setSpeed: (s) => game.setSpeed(s),
+    rotation: () => g2.currentRotation,
+    placementMode: () => g2.placementMode,
+    roadType: () => RoadType[g2.currentRoadType] ?? String(g2.currentRoadType),
+    elevationLevel: () => g2.elevationLevel,
+    // 這三個是 UI 的訊號,不在 `Game` 上。
+    previewCost: () => gameSignals.previewCost(),
+    selectedTransferRoute: () => gameSignals.selectedTransferRoute(),
+    selectedCitizenId: () => gameSignals.selectedCitizenId(),
+    audio: () => {
+      const a = game.getAudioManager();
+      return { muted: a.isMuted(), sfxMuted: a.isSfxMuted(), musicMuted: a.isMusicMuted() };
+    },
+    loadedSave: () => ({ slot: g2.loadedSlotId, name: g2.loadedSaveName }),
     camera: () => g.sceneManager.getCameraState(),
     setCamera: (t) => {
       g.sceneManager.setCameraState({ x: t.x, y: t.y, size: t.size, angle: t.angle, elevation: t.elevation });

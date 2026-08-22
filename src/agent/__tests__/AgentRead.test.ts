@@ -386,3 +386,59 @@ describe('Overview 那八頁', () => {
     expect(read.serviceStats()).toEqual(read.serviceStats());
   });
 });
+
+
+describe('一個市民,照面板顯示的樣子', () => {
+  function withCitizens() {
+    const state = createGameState(20, 20);
+    state.grid.setCell(3, 3, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 });
+    const worker = state.citizens.restoreCitizen({ age: 100 });
+    worker.homeId = '3,3';
+    worker.workplaceId = '9,9';
+    const retiree = state.citizens.restoreCitizen({ age: 400 });
+    const child = state.citizens.restoreCitizen({ age: 20 });
+    return { state, read: new AgentRead(() => state, noStats()), worker, retiree, child };
+  }
+
+  it('should carry the name the panel prints', () => {
+    // 畫面上寫的是名字,API 只給 id 的話兩邊講的是不同的東西。
+    const { read, worker } = withCitizens();
+    const c = read.citizen(worker.id)!;
+
+    expect(c.name, '沒有名字').toBeTruthy();
+    expect(typeof c.name).toBe('string');
+  });
+
+  it('should not call a retiree or a child unemployed', () => {
+    // 面板分成 Unemployed / Retired / Student / Too young to work。
+    // 把後三種讀成失業，一座滿員的城市點開住宅會像失業率 100%（面板為此開過單）。
+    const { read, worker, retiree, child } = withCitizens();
+
+    expect(read.citizen(worker.id)!.workLabel).toBe('9,9');
+    expect(read.citizen(retiree.id)!.workLabel).toBe('Retired');
+    expect(read.citizen(child.id)!.workLabel, '小孩被算成失業').not.toBe('Unemployed');
+  });
+
+  it('should carry the stage and the health the panel shows', () => {
+    const { read, worker } = withCitizens();
+    const c = read.citizen(worker.id)!;
+
+    expect(c.lifeStage).toBe('ADULT');
+    expect(c.health).toBeGreaterThan(0);
+  });
+
+  it('should return null for an id that is not around any more', () => {
+    // 市民會死，而 id 不回收。丟例外的話呼叫端每問一次都得包 try。
+    const { read } = withCitizens();
+
+    expect(read.citizen(999999)).toBeNull();
+  });
+
+  it('should describe a citizen in a list exactly as it describes them alone', () => {
+    // 兩支各拼一份的話，清單跟詳情會慢慢分家。
+    const { read, worker } = withCitizens();
+    const fromList = read.citizens().find(c => c.id === worker.id);
+
+    expect(fromList).toEqual(read.citizen(worker.id));
+  });
+});
