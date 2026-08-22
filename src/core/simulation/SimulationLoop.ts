@@ -64,7 +64,7 @@ import type { ResidentialShoppingStatus } from '../economy/ShoppingAccess';
 import { applyFireDamage } from '../service/FireDamageProcessor';
 import { getCellServiceScore, getResidentialServiceRatios, getCellServiceCostScore } from '../service/ServiceCoverageQuery';
 import { calculatePoliceLoads, calculateFireLoads } from '../service/PoliceFireLoadCalculator';
-import { getAvgResidentialPollution, avgResidentialAt, calculateCrimeRate } from '../environment/CityMetrics';
+import { getAvgResidentialPollution, avgResidentialAt, calculateCrimeRate, rawCityCrime } from '../environment/CityMetrics';
 import { syncTrafficDensityToGrid } from '../environment/SyncTrafficDensity';
 import { collectTradePositions, type TradePosition } from '../traffic/FreightTradeCollector';
 import { calculateZoneIncomes } from '../economy/IncomeCalculator';
@@ -1368,10 +1368,13 @@ export class SimulationLoop {
    * 幸福度、移民吸引力、棄置壓力看的都是這個數字。少了條例那一項的話，面板上
    * 寫著 Crime −13，居民卻一點感覺也沒有。
    *
+   * 公開的:`SummaryStats` 從 `GameState` 算同一個數字（走 `effectiveCityCrime`），
+   * 而「兩邊算出來一樣」這件事需要有人能問得到這一邊。
+   *
    * 夾在 0 以上:負的犯罪率在下游會變成加分（地價那條線最明顯，`calculateLandValue`
    * 是 `value -= crimeRate * CRIME_PENALTY`），疊越多層賺越多。
    */
-  private getCityCrime(): number {
+  getCityCrime(): number {
     return Math.max(0, this.getRawCityCrime());
   }
 
@@ -1384,7 +1387,11 @@ export class SimulationLoop {
    * 看到 120，兩套系統對同一件事有兩個答案。
    */
   private getRawCityCrime(): number {
-    return this.getAvgCrime() + this.state.ordinances.getCrimeBonus();
+    return rawCityCrime(
+      this.state.citizens.getPopulation(),
+      this.state.police.getStations().length,
+      this.state.ordinances.getCrimeBonus(),
+    );
   }
 
   private countVacantHomes(): number {

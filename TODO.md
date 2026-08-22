@@ -1052,6 +1052,11 @@
   agent 分不出「成功」與「什麼都沒發生」。要精確知道改了哪幾格得在動作前後比對網格
   （`getCellDiff` 已經有了），那同時也是 undo 的原料。
   分區筆刷已經不靠通知判成敗了（`Game.lastDistrictGesture`），但其餘工具還是。
+- [x] **Summary 的犯罪率當作沒有警局**（BUG-358，已修）— 面板自己寫的
+  `min(50, 人口 × 0.02)` 正好是 `calculateCrimeRate` 在警局數 0 時的分支，
+  漏了警力覆蓋（每座 15%、最多減 60%）與全城條例。抽成
+  `effectiveCityCrime()`，模擬與面板走同一支。是 agent 讀了 API 之後照實轉述
+  才被看見的 —— 面板上只印一個「−15」，看不出它怎麼來的。
 - [x] **Overview 八頁的數字全部接進 API**（已做）— 六頁的算式從各自的 `createMemo`
   抽成 `src/core/stats/` 的純模組，**面板與 `read` 呼叫同一支**，不會再有「API 說
   75%、螢幕說 68%」。`read.summary()` / `demographics()` / `environment()` /

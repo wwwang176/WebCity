@@ -4,6 +4,7 @@ import { getBuildingType } from '../building/types';
 import { calculateAttractiveness, ATTRACTIVENESS, IMMIGRATION } from '../citizen/Migration';
 import { isWorkingAge } from '../citizen/types';
 import { DEFAULT_TAX_RATE } from '../economy/Tax';
+import { effectiveCityCrime } from '../environment/CityMetrics';
 
 /**
  * 城市總覽 —— Overview 的 Summary 頁。
@@ -127,7 +128,14 @@ export function buildSummaryStats(state: GameState): SummaryStats {
     if (c.workplaceId === null) jobless++;
   }
   const unemploymentRate = workingAge > 0 ? jobless / workingAge : 0;
-  const crimeRate = Math.min(50, population * 0.02);
+  // 模擬那邊（`SimulationLoop.getCityCrime`）用的是同一支。這裡曾經自己寫了一條
+  // `Math.min(50, population * 0.02)` —— 那正好是 `calculateCrimeRate` 在
+  // **一座警局都沒有**時的回傳值,所以蓋了警局面板照樣扣滿分（BUG-358）。
+  const crimeRate = effectiveCityCrime(
+    population,
+    state.police.getStations().length,
+    state.ordinances.getCrimeBonus(),
+  );
 
   const attractiveness = calculateAttractiveness({
     jobOpenings, vacantHomes, avgHappiness, taxRate,

@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { getAvgResidentialPollution, calculateCrimeRate, avgResidentialMetric } from '../CityMetrics';
+import {
+  getAvgResidentialPollution, calculateCrimeRate, avgResidentialMetric,
+  effectiveCityCrime, rawCityCrime,
+} from '../CityMetrics';
 import { Grid } from '../../grid/Grid';
 import { ZoneType } from '../../grid/types';
 import { SIMULATION } from '../../simulation/SimulationConstants';
@@ -82,5 +85,48 @@ describe('CityMetrics', () => {
       const minCrime = baseCrime * (1 - SIMULATION.CRIME_MAX_REDUCTION);
       expect(manyCops).toBeCloseTo(minCrime, 5);
     });
+  });
+});
+
+
+describe('全城的有效犯罪率', () => {
+  it('should be the unpoliced base when there is not a single station', () => {
+    expect(effectiveCityCrime(1000, 0, 0)).toBe(calculateCrimeRate(1000, 0));
+  });
+
+  it('should come down as stations go up', () => {
+    // 這條就是「警局蓋再多都不會動它」的反例。
+    const none = effectiveCityCrime(10_000, 0, 0);
+    const some = effectiveCityCrime(10_000, 2, 0);
+    const many = effectiveCityCrime(10_000, 7, 0);
+
+    expect(some, '蓋了警局犯罪率沒動').toBeLessThan(none);
+    expect(many, '蓋更多沒有更低').toBeLessThan(some);
+  });
+
+  it('should stop rewarding stations once coverage is full', () => {
+    // 覆蓋率夾在 1，所以第八座之後不再有效果。無限蓋到 0 的話,
+    // 警局就變成一個「花錢就贏」的按鈕。
+    expect(effectiveCityCrime(10_000, 20, 0)).toBe(effectiveCityCrime(10_000, 7, 0));
+  });
+
+  it('should add what the ordinances cost or save', () => {
+    // 賭場 +、監視器網路 −。少了這一項，面板寫著 Crime −13 而居民一點感覺也沒有。
+    const plain = effectiveCityCrime(10_000, 2, 0);
+
+    expect(effectiveCityCrime(10_000, 2, 10)).toBe(plain + 10);
+    expect(effectiveCityCrime(10_000, 2, -5)).toBe(plain - 5);
+  });
+
+  it('should never go below zero', () => {
+    // 負的犯罪率在下游會變成加分 —— `calculateLandValue` 是
+    // `value -= crimeRate * CRIME_PENALTY`，疊越多層賺越多。
+    expect(effectiveCityCrime(10_000, 7, -1000)).toBe(0);
+  });
+
+  it('should clamp only after everything has been added', () => {
+    // 先夾一半的話,基礎 1 加上 −100 會先變成 0，再加 +120 就是 120;
+    // 全部加完再夾是 21。同一格在兩套系統裡會有兩個答案。
+    expect(rawCityCrime(50, 0, -100) + 120).toBe(rawCityCrime(50, 0, 20));
   });
 });

@@ -31,6 +31,38 @@
 
 ## 待修問題
 
+### BUG-358: Summary 面板的犯罪率當作一座警局都沒有 ✅ 已修復
+
+- **症狀**: Overview → Summary 的 City Appeal 扣分裡，犯罪那一項**蓋再多警局都不會動**。
+  agent 讀 `read.summary()` 也拿到同一個數字，於是它給出的建議是「犯罪 −15 分是寫死的
+  公式，警局蓋再多都不會動它」—— 那句話對玩家是錯的診斷，對遊戲是不實的描述。
+- **根因**: `SummaryPage.tsx` 自己寫了一條 `Math.min(50, population * 0.02)`。
+  那**正好是** `calculateCrimeRate(population, 0)` 的回傳值 ——
+  `min(CRIME_BASE_MAX, population × CRIME_POP_FACTOR)`，也就是**警局數為 0** 的分支。
+  真正的公式後面還有一段：
+
+  ```ts
+  const coverageRatio = Math.min(1, stationCount * CRIME_COVERAGE_PER_STATION); // 每座 0.15
+  return baseCrime * (1 - coverageRatio * CRIME_MAX_REDUCTION);                 // 最多減 60%
+  ```
+
+  面板漏掉的還有 `ordinances.getCrimeBonus()`（監視器網路 −13、賭場 +⋯），
+  模擬那邊 `SimulationLoop.getCityCrime()` 兩項都算。
+- **影響**: 面板的 City Appeal 跟**真正決定有沒有人搬進來的那個分數**是兩個數字。
+  差距是 `baseCrime × coverageRatio × 0.6 × CRIME_WEIGHT`：兩座警局差 2.7 分，
+  七座以上（覆蓋率滿）差 9 分。門檻是 40，所以面板可能寫著「Unappealing、無法遷入」
+  而人口正在成長 —— 跟 BUG-166 同一類的錯，只是換一個欄位。
+- **修法**: 抽出 `effectiveCityCrime(population, stationCount, ordinanceBonus)` 到
+  `CityMetrics.ts`，`SummaryStats` 與 `SimulationLoop.getRawCityCrime()` 都走它。
+  夾值只做一次而且在最後（先夾一半的話，基礎 1 加上 −100 會先變成 0，再加 +120
+  就是 120；全部加完再夾是 21）。
+- **怎麼發現的**: 使用者拿 agent 玩遊戲，agent 從 `read.summary()` 的 `drags`
+  讀到那條公式並照實轉述，使用者問「這是什麼」。**把數字接進 API 反而讓面板自己的
+  錯誤變得看得見** —— 面板上只印一個「−15」，看不出它是怎麼來的。
+- **嚴重性**: 高（決定遷入的核心數字，面板與模擬長期不一致）
+- **狀態**: 已修復（實測玩家的 12,408 人存檔：犯罪 50 → 41，吸引力 41.96 → 44.46，
+  最大拖累項從「犯罪」變成「污染 14.1」）
+
 ### BUG-355: Environment 頁的 Noise 永遠印著「-」 ✅ 已修復
 
 - **症狀**: Overview → Environment 的三張卡是 Ground Avg / Water / Noise，

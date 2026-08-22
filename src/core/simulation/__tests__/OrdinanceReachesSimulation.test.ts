@@ -5,6 +5,7 @@ import { buildEconomyBreakdownContext } from '../../economy/EconomyBreakdownCont
 import { computeCityScales } from '../../district/PolicyBilling';
 import { PolicyType } from '../../district/types';
 import { ZoneType } from '../../grid/types';
+import { buildSummaryStats } from '../../stats/SummaryStats';
 
 /**
  * 條例存起來不等於模擬會讀。這幾條走真的路徑。
@@ -89,5 +90,42 @@ describe('全城條例真的接進模擬', () => {
     const after = buildEconomyBreakdownContext(state, null, loop.billableDistricts())
       .getRevenueMultiplier!(7, 11, ZoneType.COMMERCIAL_LOW);
     expect(after, '分區外的格子沒有吃到全城條例').toBeLessThan(1);
+  });
+});
+
+
+describe('全城犯罪率:模擬與面板算的是同一個數字', () => {
+  /** 人口開大是為了讓基礎犯罪率高過條例的 −13，否則測到的是 0 的下限。 */
+  function crimeCity(population: number, stations: number) {
+    const state = createGameState(30, 30);
+    for (let i = 0; i < population; i++) state.citizens.restoreCitizen({ age: 100 });
+    for (let i = 0; i < stations; i++) state.police.addStation(3 + i * 2, 3);
+    return { state, loop: new SimulationLoop(state) };
+  }
+
+  it('should bring the city crime rate down as stations go up', () => {
+    expect(crimeCity(800, 2).loop.getCityCrime())
+      .toBeLessThan(crimeCity(800, 0).loop.getCityCrime());
+  });
+
+  it('should subtract what a city ordinance takes off', () => {
+    // 監視器網路第 2 級是 crime −13。存進 CityOrdinances 不等於模擬會讀。
+    const plain = crimeCity(800, 1);
+    const before = plain.loop.getCityCrime();
+
+    const watched = crimeCity(800, 1);
+    watched.state.ordinances.setLevel(PolicyType.SURVEILLANCE_NETWORK, 2);
+
+    expect(before, '基礎犯罪率不夠高，這條會測成夾值').toBeGreaterThan(13);
+    expect(watched.loop.getCityCrime(), '條例沒有進到模擬').toBeCloseTo(before - 13, 6);
+  });
+
+  it('should agree with what the Summary panel reports', () => {
+    // 面板走 `buildSummaryStats`（從 GameState 算），模擬走 SimulationLoop。
+    // 兩邊分家的話，玩家看到的吸引力就不是讓人搬進來的那一個（BUG-358）。
+    const { state, loop } = crimeCity(800, 2);
+    state.ordinances.setLevel(PolicyType.SURVEILLANCE_NETWORK, 1);
+
+    expect(buildSummaryStats(state).crimeRate).toBeCloseTo(loop.getCityCrime(), 6);
   });
 });

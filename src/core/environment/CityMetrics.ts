@@ -69,3 +69,40 @@ export function calculateCrimeRate(population: number, stationCount: number): nu
   const coverageRatio = Math.min(1, stationCount * SIMULATION.CRIME_COVERAGE_PER_STATION);
   return baseCrime * (1 - coverageRatio * SIMULATION.CRIME_MAX_REDUCTION);
 }
+
+
+/**
+ * 全城的犯罪率,還沒夾值。
+ *
+ * `calculateCrimeRate` 只回「人口 vs 警力」那一半;全城條例（監視器網路、賭場⋯）
+ * 加在這裡。
+ *
+ * 夾值刻意留給 `effectiveCityCrime` 做,而且只做一次 —— 先夾這一半的話,
+ * 基礎 1 加上監視器網路的 −100 會先變成 0,賭場的 +120 再加上去就是 120;
+ * 全部加完再夾是 21。同一格在地價那條線看到 21、在棄置那條線看到 120,
+ * 兩套系統對同一件事會有兩個答案。
+ */
+export function rawCityCrime(
+  population: number, stationCount: number, ordinanceBonus: number,
+): number {
+  return calculateCrimeRate(population, stationCount) + ordinanceBonus;
+}
+
+/**
+ * 全城的有效犯罪率 —— 幸福度、移民吸引力、棄置壓力看的都是這個數字。
+ *
+ * ## 為什麼這一支要存在
+ *
+ * `calculateCrimeRate` 只是其中一半。少了條例那一半、或少了警力那一半,算出來的
+ * 就不是模擬正在用的數字 —— Summary 面板曾經自己寫了一條
+ * `Math.min(50, population * 0.02)`,那正好是**一座警局都沒有**的基礎值,
+ * 於是面板扣的分數永遠比模擬扣的多（BUG-358）。
+ *
+ * 夾在 0 以上:負的犯罪率在下游會變成加分（`calculateLandValue` 是
+ * `value -= crimeRate * CRIME_PENALTY`）,疊越多層賺越多。
+ */
+export function effectiveCityCrime(
+  population: number, stationCount: number, ordinanceBonus: number,
+): number {
+  return Math.max(0, rawCityCrime(population, stationCount, ordinanceBonus));
+}
