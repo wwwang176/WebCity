@@ -405,6 +405,8 @@ repo 一再警告的那個錯 —— 同一個數字兩個地方各記一份，�
 | `services()` | 各服務的維運費與總計 |
 | `transit()` | 各運具的路線、班距、載重、狀態（跟 Traffic 頁同一份） |
 | `cells(rect)` | 一塊範圍內每一格的原始欄位 |
+| `coverage(service)` | 服務覆蓋 —— **玩家看到的建築顏色**，綠→紅 10 階 |
+| `overlay(type)` | 地面色塊那一層 |
 | `selected()` | 現在點開的那一棟（詳情面板那一份） |
 
 `buildings()` 的查詢：`zone`（分區白名單）、`rect`、`limit`（預設 500）、`derelictOnly`。
@@ -423,6 +425,67 @@ repo 一再警告的那個錯 —— 同一個數字兩個地方各記一份，�
 | `trafficStats()` | 車流量、最塞的路段、平均路徑長度 |
 | `transferStats()` | 轉乘率與轉乘熱點 |
 | `abandonmentStress(x, y)` | 某一格的遺棄壓力。滿了就會變成廢墟 |
+
+### 服務覆蓋 `coverage(service)`
+
+打開 Police 圖層時，玩家看到的是**兩層**東西 —— 而真正在傳達訊息的是第二層：
+
+| | 是什麼 | 值 |
+|---|---|---|
+| 地面色塊 | 這一格有沒有警力 | 80 或 0，**二元** |
+| **建築顏色** | 沿馬路從最近的設施走過來的成本 ÷ 預算 | 綠→黃→紅 **10 階** |
+
+```bash
+curl -X POST localhost:5173/agent -d '{"path":"read.coverage","args":["police"]}'
+```
+
+```json
+{
+  "service": "police", "budget": 540, "covered": 886,
+  "cells": [
+    {"x":35,"y":9,  "cost":0,   "ratio":0.000, "tier":0, "color":"#00e676"},
+    {"x":34,"y":24, "cost":234, "ratio":0.433, "tier":4, "color":"#f2ea45"},
+    {"x":30,"y":56, "cost":540, "ratio":1.000, "tier":9, "color":"#ff5252"}
+  ],
+  "sources": [{"x":22,"y":28}, ...]
+}
+```
+
+- **`ratio` 是最有用的那個數字** —— 越接近 1 代表那裡的服務越勉強，1 就是剛好在邊界。
+- **有出現在 `cells` 裡就代表有覆蓋**，所以這一份同時回答「有沒有」跟「有多勉強」。
+- **`sources` 是造成這些顏色的設施本身**（畫面上塗成藍色的那些）。一片紅色看不出
+  是該蓋新的局、還是既有那座蓋得太遠 —— 這一欄就是在回答那個。
+- 有走馬路成本的只有五個：`police` `fire` `health` `education` `garbage`。
+  其餘（如 `park`）只有二元覆蓋，問了會被擋下來並告訴你有哪些可以問。
+
+**不需要那張圖層開著。** 這是從狀態算的，跟畫面上正在顯示什麼無關。
+
+兩個跟畫面不完全一樣的地方（實測比對過）：
+
+- **畫面只塗有建築的格子**，這裡回的是**所有被涵蓋的格子**（空地也在內）——
+  「這片地有警力，可以蓋」對呼叫端是有用的資訊。
+- **設施自己那幾格在畫面上是藍色的**（蓋過漸層），這裡照樣給它們漸層的顏色，
+  另外用 `sources` 標出來。
+
+### 地面色塊 `overlay(type)`
+
+```json
+{ "type": "police", "kind": "binary",
+  "cells": [{"x":5,"y":6,"value":80,"color":"#334cff"}] }
+```
+
+`kind` 說這些數字該怎麼讀：
+
+| kind | 圖層 | 意思 |
+|---|---|---|
+| `binary` | police / fire / health / education / park / garbage | 每格 80 或 0。**一整片一樣的 80 不是漏抓** |
+| `continuous` | traffic / pollution / landValue / crime / commute | 真的漸層，數字可以比大小 |
+| `categorical` | power / water / zone / district | 數字是**標籤**不是數量（分區的值是身分、power 是三階狀態） |
+
+顏色都是問遊戲要的（`OverlayRenderer.colorFor`），不是這一層自己換算 ——
+兩邊各算一次的話，改了色階就會有一邊沒跟上。
+
+---
 
 > **有兩個欄位是 `Map` / `Set`**（`commuteStats().byHome`、分區的 `cells`），
 > `JSON.stringify` 會把它們變成 `{}`。要跨進程送的話呼叫端自己 `[...map]`。
@@ -520,6 +583,7 @@ window.__agent.read.city(); // 這才是新的
 | `src/agent/AgentSession.ts` | 存檔與開局 |
 | `src/agent/status.ts` | `status()` —— 玩家在看什麼 |
 | `src/agent/mapConfig.ts` | 開新局設定的驗證與補齊 |
+| `src/agent/overlays.ts` | 服務覆蓋的階數與顏色、地面層的讀法 |
 | `src/agent/registry.ts` | 面板、開局、畫面狀態的註冊橋 |
 | `src/agent/bridge/dispatch.ts` | 把 `{"path":"read.city"}` 變成真的呼叫，以及路徑的把關 |
 | `src/agent/bridge/client.ts` | 頁面端:收下呼叫、執行、回傳 |

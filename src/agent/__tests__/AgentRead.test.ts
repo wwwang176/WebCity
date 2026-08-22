@@ -248,3 +248,57 @@ describe('點開的那一棟', () => {
     expect(read.selected()).not.toBeNull();
   });
 });
+
+describe('圖層那兩份', () => {
+  /** 帶得動圖層那幾支的假 host。 */
+  function overlayStats() {
+    const asked: string[] = [];
+    const host = {
+      getOverlayData: (t: string) => { asked.push(`data ${t}`); return new Map([['5,6', 80]]); },
+      getOverlayColor: (t: string, v: number) => { asked.push(`color ${t} ${v}`); return 0x112233; },
+      getCoverageCosts: (svc: string) => {
+        asked.push(`costs ${svc}`);
+        return { costs: new Map([['5,6', 270]]), budget: 540 };
+      },
+      getOverlaySourceCells: (t: string) => { asked.push(`sources ${t}`); return [{ x: 1, y: 2 }]; },
+      coverageGradient: () => [0, 1, 2, 3, 4, 0xffe010, 6, 7, 8, 9],
+    } as unknown as StatsHost;
+    return { read: new AgentRead(() => createGameState(10, 10), host), asked };
+  }
+
+  it('should answer coverage from the cost map, not from the render output', () => {
+    // 渲染那一份只有那張圖層開著時才存在，而且 cost 已經被丟掉了。
+    const { read, asked } = overlayStats();
+    const c = read.coverage('police') as { budget: number; cells: { ratio: number; color: string }[] };
+
+    expect(c.budget).toBe(540);
+    expect(c.cells[0]!.ratio).toBeCloseTo(0.5, 6);
+    expect(c.cells[0]!.color, '沒有用遊戲給的那條色帶').toBe('#ffe010');
+    expect(asked).toContain('costs police');
+  });
+
+  it('should refuse a service that has no road-cost gradient', () => {
+    // park 有地面覆蓋，但沒有走馬路的成本圖 —— 硬問會拿到一個空殼。
+    const { read, asked } = overlayStats();
+    const r = read.coverage('park') as { reason: string };
+
+    expect(r.reason, '沒說有哪些服務可以問').toContain('police');
+    expect(asked, '不能問的還是去問了遊戲').toEqual([]);
+  });
+
+  it('should say how to read the numbers of a ground overlay', () => {
+    const { read } = overlayStats();
+    const o = read.overlay('police');
+
+    expect(o.kind, '沒告訴呼叫端這一層是二元的').toBe('binary');
+    expect(o.cells).toEqual([{ x: 5, y: 6, value: 80, color: '#112233' }]);
+  });
+
+  it('should ask the game for the colour of the overlay it was asked about', () => {
+    // 拿別張圖層的色階去上色，顏色會跟畫面對不起來。
+    const { read, asked } = overlayStats();
+    read.overlay('commute');
+
+    expect(asked).toContain('color commute 80');
+  });
+});

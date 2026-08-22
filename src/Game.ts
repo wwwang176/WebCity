@@ -75,6 +75,7 @@ import { getBuildReasonMessage, formatBuildFailure } from './core/grid/BuildReas
 import { getZoneBlocker, summariseZoneBlockers, ZONE_BLOCKER_MESSAGES, type ZoneBlocker, type ZoneBlockerDeps } from './core/zone/ZoneBlocker';
 import { collectBuildingUtilityWarnings } from './core/building/BuildingUtilityWarning';
 import { buildOverlayValue, districtLabelAnchors, districtOverlayValue, type OverlayBuildContext } from './core/overlay/OverlayBuilders';
+import type { CoverageService } from './agent/overlays';
 import { DEFAULT_JOB_RELOCATION_CONFIG } from './core/citizen/JobRelocation';
 import { getTransitSystems } from './core/transport/TransportRegistry';
 
@@ -2573,7 +2574,13 @@ export class Game {
   // ── Coverage highlight (per-building gradient via HighlightManager) ──────
 
   /** 10-tier gradient: green → yellow → red (pre-computed hex values). */
-  private static readonly COV_GRADIENT = (() => {
+  /**
+   * 建築高亮的 10 階色帶，綠 → 黃 → 紅。
+   *
+   * 公開是給 agent 讀的 —— 顏色不能兩邊各算一次（`colorFor` 的註解），所以它
+   * 是被問的那一份，不是被複製的那一份。
+   */
+  static readonly COV_GRADIENT = (() => {
     const near = new THREE.Color(0x00e676);
     const mid = new THREE.Color(0xffeb3b);
     const far = new THREE.Color(0xff5252);
@@ -2732,6 +2739,46 @@ export class Game {
     } else {
       this.setOverlay(type);
     }
+  }
+
+  /**
+   * 某一張圖層每一格的值。渲染器拿去畫的就是這一份。
+   *
+   * 公開是給 agent 讀的。**不需要那張圖層開著** —— 它是從狀態算出來的，
+   * 跟畫面上現在顯示什麼無關。
+   */
+  getOverlayData(type: OverlayType): Map<string, number> | undefined {
+    return this.buildOverlayData(type);
+  }
+
+  /** 某一個服務的走馬路成本圖與它的預算。建築高亮那 10 階就是從這裡來的。 */
+  getCoverageCosts(service: CoverageService): { costs: ReadonlyMap<string, number>; budget: number } | null {
+    const info = this.getRoadCostOverlay(service as unknown as OverlayType);
+    return info ? { costs: info.costMap, budget: info.budget } : null;
+  }
+
+  /** 造成那些顏色的設施本身。畫面上是藍色的那些。 */
+  getOverlaySourceCells(type: OverlayType): { x: number; y: number }[] {
+    if (!hasOverlaySources(type)) return [];
+    const stops: { x: number; y: number }[] = [];
+    for (const { system } of getTransitSystems(this.state)) {
+      for (const stop of system.getStops()) stops.push({ x: stop.x, y: stop.y });
+    }
+    const ctx = Object.assign(
+      Object.create(this.state) as OverlaySourceContext,
+      { transitStops: stops },
+    );
+    return overlaySourceCells(this.state.grid, ctx, type).map(c => ({ x: c.x, y: c.y }));
+  }
+
+  /** 某個數值在那張圖層上的顏色。跟渲染器讀同一支。 */
+  getOverlayColor(type: OverlayType, value: number): number {
+    return this.overlayRenderer.colorFor(type, value);
+  }
+
+  /** 建築高亮的 10 階色帶。 */
+  coverageGradient(): readonly number[] {
+    return Game.COV_GRADIENT;
   }
 
   private buildOverlayData(type: OverlayType): Map<string, number> | undefined {

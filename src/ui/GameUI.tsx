@@ -101,9 +101,36 @@ function GameUIRoot() {
   );
 }
 
+/**
+ * 上一局的 UI。
+ *
+ * `render()` 回傳的是**解除函式**，不是可有可無的東西 —— 丟掉它，那個 Solid root
+ * 的訂閱與 effect 會一直活著。只把 DOM `remove()` 掉不夠。
+ */
+let disposePrevious: (() => void) | null = null;
+let mountedRoot: HTMLElement | null = null;
+
+/**
+ * 拆掉上一局的 UI。
+ *
+ * 換一局遊戲時，`createGameUI` 會做一個新的 `#game-ui`;沒有人拆舊的話，兩份會
+ * **疊在一起** —— 上面那份是舊的，顯示著上一局的人口與市庫，而底下的畫布畫的是
+ * 新的城市。玩家看到的數字跟地圖對不起來。
+ */
+export function removeGameUi(): void {
+  disposePrevious?.();
+  disposePrevious = null;
+  mountedRoot?.remove();
+  mountedRoot = null;
+}
+
 export function createGameUI(game: Game): HTMLElement {
+  // 自己收拾自己的前一份。放在這裡而不是呼叫端 —— 呼叫端每多一個，就多一次
+  // 「忘記拆」的機會，而忘記的徵兆是兩份 UI 疊著，不是錯誤訊息。
+  removeGameUi();
   initGameStore(game);
   const container = document.createElement('div');
-  render(() => <GameUIRoot />, container);
-  return container.firstElementChild as HTMLElement;
+  disposePrevious = render(() => <GameUIRoot />, container);
+  mountedRoot = container.firstElementChild as HTMLElement;
+  return mountedRoot;
 }

@@ -9,6 +9,10 @@ import type { EconomyBreakdownResult } from '../core/economy/EconomyBreakdown';
 import type { TrafficStatsResult } from '../core/traffic/TrafficStats';
 import type { CommuteStats } from '../core/citizen/CommuteStats';
 import type { TransferStats } from '../core/transport/TransferStatsQuery';
+import {
+  buildCoverage, buildOverlayCells, overlayKind, COVERAGE_SERVICES,
+  type CoverageInfo, type CoverageService, type OverlayCellInfo, type OverlayKind,
+} from './overlays';
 
 /**
  * 讀城市。
@@ -46,6 +50,16 @@ export interface StatsHost {
   getTransferStats(): TransferStats;
   getAbandonmentStress(x: number, y: number): number;
   getSelectedBuilding(): unknown;
+  /** 某一張圖層每一格的值。不需要那張圖層開著。 */
+  getOverlayData(type: string): ReadonlyMap<string, number> | undefined;
+  /** 某個數值在那張圖層上的顏色。 */
+  getOverlayColor(type: string, value: number): number;
+  /** 走馬路成本圖與那個服務的預算。 */
+  getCoverageCosts(service: string): { costs: ReadonlyMap<string, number>; budget: number } | null;
+  /** 造成那些顏色的設施。 */
+  getOverlaySourceCells(type: string): { x: number; y: number }[];
+  /** 建築高亮的 10 階色帶。 */
+  coverageGradient(): readonly number[];
 }
 
 /** 一個收費分區的道路量與付費駕駛數。 */
@@ -319,6 +333,52 @@ export class AgentRead {
    */
   selected(): unknown {
     return this.stats.getSelectedBuilding();
+  }
+
+  // ── 圖層 ────────────────────────────────────────────────────────
+
+  /**
+   * 服務覆蓋 —— **玩家在畫面上看到的建築顏色**。
+   *
+   * 綠 → 黃 → 紅，10 階，量的是「沿著馬路從最近的設施走過來的成本 ÷ 這個服務的
+   * 預算」。`ratio` 越接近 1 代表那裡的服務越勉強，1 就是剛好在邊界上。
+   *
+   * **有出現在 `cells` 裡就代表有覆蓋** —— 所以這一份同時回答了「有沒有」跟
+   * 「有多勉強」兩個問題。
+   *
+   * 不需要那張圖層開著:這是從狀態算的，跟畫面上正在顯示什麼無關。
+   */
+  coverage(service: string): CoverageInfo | { service: string; reason: string } {
+    if (!(COVERAGE_SERVICES as readonly string[]).includes(service)) {
+      return { service, reason: `no road-cost coverage for ${service} (have: ${COVERAGE_SERVICES.join(', ')})` };
+    }
+    const src = this.stats.getCoverageCosts(service);
+    if (!src) return { service, reason: `no road-cost coverage for ${service}` };
+
+    return buildCoverage(service as CoverageService, {
+      budget: src.budget,
+      costs: src.costs,
+      sources: this.stats.getOverlaySourceCells(service),
+      gradient: this.stats.coverageGradient(),
+    });
+  }
+
+  /**
+   * 地面色塊那一層。
+   *
+   * `kind` 說這些數字該怎麼讀 —— 覆蓋類的地面層是**二元**的（每格 80 或 0），
+   * 那一片一模一樣的 80 不是漏抓，是它本來就只有兩個值。要「有多勉強」請看
+   * `coverage()`。
+   */
+  overlay(type: string): { type: string; kind: OverlayKind; cells: OverlayCellInfo[] } {
+    return {
+      type,
+      kind: overlayKind(type),
+      cells: buildOverlayCells(
+        this.stats.getOverlayData(type),
+        (value) => this.stats.getOverlayColor(type, value),
+      ),
+    };
   }
 
   /**
