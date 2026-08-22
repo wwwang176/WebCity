@@ -55,6 +55,16 @@ const USAGE = {
   note: 'The game must be open in a browser tab; this relays calls into that tab.',
 };
 
+/**
+ * 上色，但只在真的終端機上。
+ *
+ * 導向檔案時 ANSI 碼不會被任何人解讀，只會留下 `[32m` 這種垃圾在畫面上 ——
+ * vite 自己的訊息會依環境去掉顏色，硬寫的不會。
+ */
+function c(text: string, code: string): string {
+  return process.stdout.isTTY ? `\x1b[${code}m${text}\x1b[0m` : text;
+}
+
 function json(res: ServerResponse, status: number, body: unknown): void {
   const text = JSON.stringify(body, null, 2);
   res.statusCode = status;
@@ -157,10 +167,19 @@ export function agentBridge(): Plugin {
         })();
       });
 
-      const url = server.config.server.host ? '<host>' : 'localhost';
-      server.config.logger.info(
-        `  \x1b[32m➜\x1b[0m  \x1b[1mAgent\x1b[0m:   POST http://${url}:<port>/agent  (docs/agent-api.md)`,
-      );
+      // 印在 vite 自己那幾行網址**後面**。
+      //
+      // 原本是在 configureServer 裡直接印，而 vite 啟動時會清畫面 —— 那行就被
+      // 擦掉了。在 log 檔裡看得到（檔案不會被清），在真的終端機上看不到，
+      // 於是「讓人知道橋在」這個唯一的目的完全落空。
+      const printUrls = server.printUrls.bind(server);
+      server.printUrls = () => {
+        printUrls();
+        const port = server.config.server.port ?? '';
+        server.config.logger.info(
+          `  ${c('➜', '32')}  ${c('Agent', '1')}:   POST http://localhost:${port}/agent  ${c('(docs/agent-api.md)', '2')}`,
+        );
+      };
     },
   };
 }
