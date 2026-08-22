@@ -254,14 +254,19 @@ describe('點開的那一棟', () => {
 
 describe('圖層那兩份', () => {
   /** 帶得動圖層那幾支的假 host。 */
-  function overlayStats() {
+  function overlayStats(load = -1) {
     const asked: string[] = [];
     const host = {
       getOverlayData: (t: string) => { asked.push(`data ${t}`); return new Map([['5,6', 80]]); },
       getOverlayColor: (t: string, v: number) => { asked.push(`color ${t} ${v}`); return 0x112233; },
       getCoverageCosts: (svc: string) => {
         asked.push(`costs ${svc}`);
-        return { costs: new Map([['5,6', 270]]), budget: 540 };
+        return {
+          costs: new Map([['5,6', 270]]),
+          budget: 540,
+          loadAt: () => load,
+          servingFacilityAt: () => 'station_1',
+        };
       },
       getOverlaySourceCells: (t: string) => { asked.push(`sources ${t}`); return [{ x: 1, y: 2 }]; },
       coverageGradient: () => [0, 1, 2, 3, 4, 0xffe010, 6, 7, 8, 9],
@@ -278,6 +283,20 @@ describe('圖層那兩份', () => {
     expect(c.cells[0]!.ratio).toBeCloseTo(0.5, 6);
     expect(c.cells[0]!.color, '沒有用遊戲給的那條色帶').toBe('#ffe010');
     expect(asked).toContain('costs police');
+  });
+
+  it('should redden a cell whose facility is swamped, however close it is', () => {
+    // 距離 270/540 = 0.5（第 5 階）。設施爆到兩倍時嚴重度是 1，該跳到第 9 階。
+    const { read } = overlayStats(2.0);
+    const c = read.coverage('police') as {
+      cells: { ratio: number; load: number; severity: number; tier: number; facilityId: string | null }[];
+    };
+
+    expect(c.cells[0]!.ratio, '距離那一半沒變').toBeCloseTo(0.5, 6);
+    expect(c.cells[0]!.load).toBe(2.0);
+    expect(c.cells[0]!.severity, '負載沒有進到嚴重度').toBe(1);
+    expect(c.cells[0]!.tier, '顏色還是照距離挑的').toBe(9);
+    expect(c.cells[0]!.facilityId, '沒說是哪一座在管這一格').toBe('station_1');
   });
 
   it('should refuse a service that has no road-cost gradient', () => {

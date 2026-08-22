@@ -32,6 +32,9 @@ function source(over: Partial<CoverageSource> = {}): CoverageSource {
   return {
     budget: 540,
     costs: new Map([['12,8', 150], ['30,41', 518]]),
+    // 預設沒有負載資訊 —— 舊的那幾條測的是距離那一半。
+    loadAt: () => -1,
+    servingFacilityAt: () => null,
     sources: [{ x: 20, y: 20 }],
     gradient: GRADIENT,
     ...over,
@@ -156,5 +159,71 @@ describe('這張圖層的數字怎麼讀', () => {
 
   it('should not pretend to know an overlay it has never heard of', () => {
     expect(overlayKind('banana')).toBe('unknown');
+  });
+});
+
+
+describe('顏色不只是距離', () => {
+  it('should paint a swamped facility next door as the worst tier', () => {
+    // 這就是 BUG-362:醫院就在隔壁（成本 0），但爆到兩倍。舊的規則只看距離,
+    // 這一格會是第 0 階、最綠的。
+    const c = buildCoverage('health', source({
+      budget: 100,
+      costs: new Map([['0,0', 0]]),
+      loadAt: () => 2.0,
+    }));
+
+    expect(c.cells[0]!.ratio, '距離那一半照樣是 0').toBe(0);
+    expect(c.cells[0]!.load).toBe(2.0);
+    expect(c.cells[0]!.severity, '負載沒有進到顏色裡').toBe(1);
+    expect(c.cells[0]!.tier).toBe(9);
+    expect(c.cells[0]!.color).toBe('#ff5252');
+  });
+
+  it('should still let distance speak when the facility is empty', () => {
+    const c = buildCoverage('health', source({
+      budget: 100,
+      costs: new Map([['0,0', 90]]),
+      loadAt: () => 0.2,
+    }));
+
+    expect(c.cells[0]!.severity).toBeCloseTo(0.9, 6);
+    expect(c.cells[0]!.tier).toBe(9);
+  });
+
+  it('should say which facility is responsible for that cell', () => {
+    // 一片紅色看不出該去動哪一棟。`sources` 說「有這些設施」,
+    // `facilityId` 說「就是這一座在管你」。
+    const c = buildCoverage('health', source({
+      costs: new Map([['3,4', 10]]),
+      servingFacilityAt: (x, y) => `hospital_${x}_${y}`,
+    }));
+
+    expect(c.cells[0]!.facilityId).toBe('hospital_3_4');
+  });
+
+  it('should keep the distance ratio separate from the severity', () => {
+    // 兩個都要在:呼叫端要分得出「太遠」跟「太滿」——那是兩種不同的處置。
+    const c = buildCoverage('health', source({
+      budget: 100,
+      costs: new Map([['0,0', 20]]),
+      loadAt: () => 1.5,
+    }));
+
+    expect(c.cells[0]!.ratio, '距離').toBeCloseTo(0.2, 6);
+    expect(c.cells[0]!.load, '負載').toBe(1.5);
+    expect(c.cells[0]!.severity, '取比較糟的').toBeCloseTo(0.5, 6);
+  });
+
+  it('should not let an unknown load drag a good cell down', () => {
+    // `-1` 是「這個服務沒有負載的概念」，不是「負載很糟」。
+    const c = buildCoverage('park', source({
+      budget: 100,
+      costs: new Map([['0,0', 0]]),
+      loadAt: () => -1,
+    }));
+
+    expect(c.cells[0]!.severity).toBe(0);
+    expect(c.cells[0]!.tier).toBe(0);
   });
 });

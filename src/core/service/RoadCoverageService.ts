@@ -25,6 +25,13 @@ export abstract class RoadCoverageService<F extends Facility> implements Service
   protected facilities: F[] = [];
   protected coverage = new RoadCoverageMap();
   protected connectedFacilityIds = new Set<string>();
+  /**
+   * 上一次重算覆蓋時餵給洪水的那份清單的 id，**順序就是擁有者索引**。
+   *
+   * 存 id 而不是設施本身:設施陣列會被增刪，而擁有者索引是那一次重算的快照。
+   * 拿舊索引去查新陣列會指到別的設施。
+   */
+  private coveredFacilityIds: string[] = [];
   /** null = no filter (all operational); Set = only listed IDs are operational. */
   protected operationalIds: Set<string> | null = null;
   protected nextId = 1;
@@ -78,6 +85,51 @@ export abstract class RoadCoverageService<F extends Facility> implements Service
     return this.coverage.getCoveredCells();
   }
 
+  /**
+   * 服務這一格的那一座設施 —— **沿馬路走過來最便宜的那一座**。
+   *
+   * 沒有涵蓋、或那一座在上一次重算之後被拆掉了，就回 `null`。
+   *
+   * 注意這跟負載分攤用的規則不一樣:`distributeLoadToNearest` 用的是**歐氏直線**
+   * 距離。河對岸一間直線很近、開車要繞一大圈的設施會吸走負載，但它的道路覆蓋
+   * 到不了這裡（BUG-363）。這裡回的是**覆蓋**的答案，因為圓點與圖層畫的就是覆蓋。
+   */
+  getServingFacilityId(x: number, y: number): string | null {
+    const idx = this.coverage.getOwnerIndex(x, y);
+    if (idx < 0) return null;
+    const id = this.coveredFacilityIds[idx];
+    if (id === undefined) return null;
+    // 重算之後被拆掉的設施:索引還在，設施不在了。
+    return this.facilities.some(f => f.id === id) ? id : null;
+  }
+
+  /**
+   * 服務這一格的那座設施現在多滿。`-1` = 沒有覆蓋。
+   *
+   * 1.0 是剛好滿。**超過 1 是有意義的**（2.0 代表需求是容量的兩倍），所以不夾在 1。
+   * 容量 0 而有需求時是 `Infinity` —— 那是「完全沒有能力」，不是「很空」。
+   *
+   * 子類別要能回報單一設施的負載與容量才有值,`facilityLoadOf` 預設回 `null`。
+   */
+  getLoadRatioAt(x: number, y: number): number {
+    const id = this.getServingFacilityId(x, y);
+    if (id === null) return -1;
+    const lc = this.facilityLoadOf(id);
+    if (!lc) return -1;
+    if (lc.capacity <= 0) return lc.load > 0 ? Infinity : 0;
+    return lc.load / lc.capacity;
+  }
+
+  /**
+   * 單一設施的負載與容量。
+   *
+   * 預設 `null` —— 有些服務（公園）沒有負載的概念，硬掰一個 0 會讓圓點永遠是綠的
+   * 而看起來像是「已經檢查過了」。
+   */
+  protected facilityLoadOf(_id: string): { load: number; capacity: number } | null {
+    return null;
+  }
+
   recalculateCoverage(grid: SizedGrid): void {
     const active = this.operationalIds
       ? this.facilities.filter(f => this.operationalIds!.has(f.id))
@@ -94,6 +146,7 @@ export abstract class RoadCoverageService<F extends Facility> implements Service
     // one empty tile back from a road can still start the coverage flood.
     this.coverage.setSeedReach(this.roadReach);
     this.coverage.recalculate(active, grid, this.coverageBudget, baseW, baseH, getSize);
+    this.coveredFacilityIds = active.map(f => f.id);
     this.updateConnectedFacilities(grid);
   }
 

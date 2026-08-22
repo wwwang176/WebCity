@@ -150,6 +150,17 @@ export class SchoolService extends RoadCoverageService<SchoolFacility> {
     return this.enrollment.get(schoolId) ?? 0;
   }
 
+  /**
+   * 負載看的是**想讀的人數**，不是在學人數。
+   *
+   * 在學人數頂多等於容量 —— 拿它當負載，比值永遠 ≤1，一間超收十倍的學校
+   * 看起來會剛剛好。
+   */
+  protected override facilityLoadOf(id: string): { load: number; capacity: number } | null {
+    const s = this.facilities.find(f => f.id === id);
+    return s ? { load: this.getDemand(id), capacity: s.capacity } : null;
+  }
+
   getDemand(schoolId: string): number {
     return this.demand.get(schoolId) ?? 0;
   }

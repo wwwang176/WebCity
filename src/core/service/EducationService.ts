@@ -113,6 +113,57 @@ export class EducationService {
     return best;
   }
 
+  /**
+   * 服務這一格的學校裡，**最滿的那一間有多滿**。`-1` = 三種都沒有覆蓋。
+   *
+   * 取最糟而不是最好:小學很空、高中超收十一倍，這一格的教育服務就是有問題的。
+   * 取最好會讓那個問題被小學蓋掉。
+   *
+   * 距離那一邊 `getCostRatio()` 取的是**最好**的 —— 兩者方向不同是刻意的:
+   * 「有沒有學校管得到我」問的是任何一間，「我被管得好不好」問的是最糟的那一間。
+   */
+  getLoadRatioAt(x: number, y: number): number {
+    let worst = -1;
+    for (const type of SCHOOL_TYPES) {
+      const r = this.serviceFor(type).getLoadRatioAt(x, y);
+      if (r >= 0 && r > worst) worst = r;
+    }
+    return worst;
+  }
+
+  /**
+   * 服務這一格的學校裡，**最滿的那一間**。三種都沒有覆蓋就回 `null`。
+   *
+   * 跟 `getLoadRatioAt()` 挑的是同一間 —— 兩支各自挑的話，面板會說「負載 11 倍」
+   * 而點進去看到的是一間很空的小學。
+   */
+  getServingFacilityId(x: number, y: number): string | null {
+    let worst = -1;
+    let id: string | null = null;
+    for (const type of SCHOOL_TYPES) {
+      const svc = this.serviceFor(type);
+      const r = svc.getLoadRatioAt(x, y);
+      if (r >= 0 && r > worst) {
+        worst = r;
+        id = svc.getServingFacilityId(x, y);
+      }
+    }
+    return id;
+  }
+
+  /** 全城最滿的那一間學校有多滿。沒有學校時是 0。 */
+  getLoadRatio(): number {
+    let worst = 0;
+    for (const type of SCHOOL_TYPES) {
+      const svc = this.serviceFor(type);
+      const capacity = svc.getTotalCapacity();
+      const demand = svc.getFacilities().reduce((sum, s) => sum + svc.getDemand(s.id), 0);
+      const ratio = capacity > 0 ? demand / capacity : (demand > 0 ? Infinity : 0);
+      if (ratio > worst) worst = ratio;
+    }
+    return worst;
+  }
+
   /** Returns the highest education level available at position (x, y). */
   getEducationLevel(x: number, y: number): EducationLevelResult {
     if (this.university.getCoverage(x, y)) return 'university';

@@ -290,6 +290,11 @@ export class GarbageService extends GlobalCoverageService<GarbageFacility> {
     return this.pendingBags;
   }
 
+  protected override facilityLoadOf(id: string): { load: number; capacity: number } | null {
+    const f = this.facilities.find(x => x.id === id);
+    return f ? { load: f.currentLoad, capacity: f.capacity } : null;
+  }
+
   getFacilities(): readonly GarbageFacility[] {
     return this.facilities;
   }

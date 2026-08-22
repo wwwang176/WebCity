@@ -64,8 +64,13 @@ export interface StatsHost {
   getOverlayData(type: string): ReadonlyMap<string, number> | undefined;
   /** 某個數值在那張圖層上的顏色。 */
   getOverlayColor(type: string, value: number): number;
-  /** 走馬路成本圖與那個服務的預算。 */
-  getCoverageCosts(service: string): { costs: ReadonlyMap<string, number>; budget: number } | null;
+  /** 走馬路成本圖、那個服務的預算，以及逐格的設施負載與服務設施。 */
+  getCoverageCosts(service: string): {
+    costs: ReadonlyMap<string, number>;
+    budget: number;
+    loadAt: (x: number, y: number) => number;
+    servingFacilityAt: (x: number, y: number) => string | null;
+  } | null;
   /** 造成那些顏色的設施。 */
   getOverlaySourceCells(type: string): { x: number; y: number }[];
   /** 建築高亮的 10 階色帶。 */
@@ -484,8 +489,10 @@ export class AgentRead {
   /**
    * 服務覆蓋 —— **玩家在畫面上看到的建築顏色**。
    *
-   * 綠 → 黃 → 紅，10 階，量的是「沿著馬路從最近的設施走過來的成本 ÷ 這個服務的
-   * 預算」。`ratio` 越接近 1 代表那裡的服務越勉強，1 就是剛好在邊界上。
+   * 綠 → 黃 → 紅，10 階。顏色吃的是 `severity` —— **距離與設施負載取比較糟的那一個**。
+   * `ratio` 是距離那一半（1 = 剛好在邊界），`load` 是負載那一半（1 = 剛好滿，
+   * 2 = 需求兩倍於容量）。`facilityId` 是服務那一格的那座設施:一片紅色要去動
+   * 哪一棟，看它。
    *
    * **有出現在 `cells` 裡就代表有覆蓋** —— 所以這一份同時回答了「有沒有」跟
    * 「有多勉強」兩個問題。
@@ -502,6 +509,8 @@ export class AgentRead {
     return buildCoverage(service as CoverageService, {
       budget: src.budget,
       costs: src.costs,
+      loadAt: src.loadAt,
+      servingFacilityAt: src.servingFacilityAt,
       sources: this.stats.getOverlaySourceCells(service),
       gradient: this.stats.coverageGradient(),
     });

@@ -17,9 +17,15 @@ import { buildServiceStatus, SERVICE_STATUS_KEYS, NO_COVERAGE } from '../Service
  * type cannot: that every key the panel renders is actually present, and that
  * "no coverage" keeps its distinct sentinel.
  */
-type Ratio = { getCostRatio(x: number, y: number): number };
+type Ratio = {
+  getCostRatio(x: number, y: number): number;
+  getLoadRatioAt(x: number, y: number): number;
+};
 
-const covered = (ratio: number): Ratio => ({ getCostRatio: () => ratio });
+const covered = (ratio: number, load = NO_COVERAGE): Ratio => ({
+  getCostRatio: () => ratio,
+  getLoadRatioAt: () => load,
+});
 
 function deps(overrides: Partial<Parameters<typeof buildServiceStatus>[0]> = {}) {
   return {
@@ -40,8 +46,9 @@ describe('the panel is given every service it renders', () => {
   it('should return a value for every declared service', () => {
     const status = buildServiceStatus(deps(), 3, 4);
     for (const key of SERVICE_STATUS_KEYS) {
-      expect(status[key], key).toBeTypeOf('number');
-      expect(Number.isNaN(status[key]), `${key} is NaN`).toBe(false);
+      expect(status[key].cost, key).toBeTypeOf('number');
+      expect(status[key].load, `${key} load`).toBeTypeOf('number');
+      expect(Number.isNaN(status[key].cost), `${key} is NaN`).toBe(false);
     }
     // Guards the loop above: an empty key list would satisfy it vacuously.
     expect(SERVICE_STATUS_KEYS.length).toBe(9);
@@ -49,8 +56,8 @@ describe('the panel is given every service it renders', () => {
   });
 
   it('should report sewage, which the zone branch used to omit', () => {
-    expect(buildServiceStatus(deps(), 0, 0).sewage).toBe(0);
-    expect(buildServiceStatus(deps({ sewage: { isSupplied: () => false } }), 0, 0).sewage)
+    expect(buildServiceStatus(deps(), 0, 0).sewage.cost).toBe(0);
+    expect(buildServiceStatus(deps({ sewage: { isSupplied: () => false } }), 0, 0).sewage.cost)
       .toBe(NO_COVERAGE);
   });
 });
@@ -62,24 +69,49 @@ describe('utilities are on/off, services are a cost ratio', () => {
       power: { isPowered: () => false },
       water: { isSupplied: () => false },
     }, 0, 0);
-    expect(off.power).toBe(NO_COVERAGE);
-    expect(off.water).toBe(NO_COVERAGE);
-    expect(buildServiceStatus(deps(), 0, 0).power).toBe(0);
+    expect(off.power.cost).toBe(NO_COVERAGE);
+    expect(off.water.cost).toBe(NO_COVERAGE);
+    expect(buildServiceStatus(deps(), 0, 0).power.cost).toBe(0);
+  });
+
+  it('should not invent a load for a utility', () => {
+    // 電網沒有「這一格由哪一座電廠供電、那座多滿」的概念。給 0 的話,
+    // 圓點會把它讀成「已經檢查過負載，很好」。
+    expect(buildServiceStatus(deps(), 0, 0).power.load).toBe(NO_COVERAGE);
+    expect(buildServiceStatus(deps(), 0, 0).water.load).toBe(NO_COVERAGE);
+    expect(buildServiceStatus(deps(), 0, 0).sewage.load).toBe(NO_COVERAGE);
   });
 
   it('should pass a service ratio through untouched', () => {
     // The panel colours by magnitude, so rounding or clamping here would
     // silently change what the player sees.
     const status = buildServiceStatus(deps({ police: covered(0.37) }), 0, 0);
-    expect(status.police).toBe(0.37);
+    expect(status.police.cost).toBe(0.37);
+  });
+
+  it('should carry the load of the facility serving that cell', () => {
+    // 這是 BUG-362 的核心:距離 0（設施就在隔壁）但負載 2.4（爆到兩倍多）。
+    // 只帶距離的話，面板會把這一格畫成最好的狀態。
+    const status = buildServiceStatus(deps({ health: covered(0, 2.4) }), 0, 0);
+
+    expect(status.health.cost).toBe(0);
+    expect(status.health.load, '負載沒被帶出來').toBe(2.4);
+  });
+
+  it('should not clamp a load above 1', () => {
+    // 「剛好滿」跟「爆到三倍」是兩件事。夾在 1 的話兩者無法分辨。
+    expect(buildServiceStatus(deps({ health: covered(0, 3) }), 0, 0).health.load).toBe(3);
   });
 
   it('should ask each service about the cell it was given', () => {
     const seen: Array<[number, number]> = [];
     buildServiceStatus(deps({
-      police: { getCostRatio: (x, y) => { seen.push([x, y]); return 0; } },
+      police: {
+        getCostRatio: (x, y) => { seen.push([x, y]); return 0; },
+        getLoadRatioAt: (x, y) => { seen.push([x, y]); return NO_COVERAGE; },
+      },
     }), 12, 7);
-    expect(seen).toEqual([[12, 7]]);
+    expect(seen, '兩支都要問同一格').toEqual([[12, 7], [12, 7]]);
   });
 
   it('should keep the no-coverage sentinel below every real ratio', () => {

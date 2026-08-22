@@ -63,6 +63,12 @@ export class PoliceService extends RoadCoverageService<PoliceStation> {
     return Math.round(base * effectiveness);
   }
 
+  /** 這一座局分到多少案子、又只吃得下多少。 */
+  protected override facilityLoadOf(id: string): { load: number; capacity: number } | null {
+    const s = this.facilities.find(f => f.id === id);
+    return s ? { load: this.getStationLoad(id), capacity: s.capacity } : null;
+  }
+
   getStations(): readonly PoliceStation[] {
     return this.facilities;
   }

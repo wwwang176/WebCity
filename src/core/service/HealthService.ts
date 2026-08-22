@@ -152,6 +152,11 @@ export class HealthService extends RoadCoverageService<Hospital> {
     return Math.min(count * HEALTH.BONUS_PER_HOSPITAL, HEALTH.BONUS_CAP);
   }
 
+  protected override facilityLoadOf(id: string): { load: number; capacity: number } | null {
+    const h = this.facilities.find(f => f.id === id);
+    return h ? { load: this.getHospitalLoad(id), capacity: h.capacity } : null;
+  }
+
   getHospitals(): readonly Hospital[] {
     return this.facilities;
   }

@@ -193,3 +193,83 @@ describe('GridCoverageArray', () => {
     arr.clear(); // should not throw
   });
 });
+
+
+describe('哪一座設施涵蓋了這一格', () => {
+  /** 每一格都用同一個成本的一批格子。 */
+  function flood(cells: [number, number][], cost: number): Map<string, number> {
+    return new Map(cells.map(([x, y]) => [`${x},${y}`, cost]));
+  }
+
+  it('should remember which facility reached the cell', () => {
+    // 沒有這一份，圓點就只答得出「有多遠」，答不出「服務我的那間現在多滿」。
+    const arr = new GridCoverageArray(8, 8);
+    arr.applyFlood(flood([[1, 1]], 0), 100, 0);
+    arr.applyFlood(flood([[5, 5]], 0), 100, 1);
+
+    expect(arr.getOwner(1, 1)).toBe(0);
+    expect(arr.getOwner(5, 5)).toBe(1);
+  });
+
+  it('should hand the cell over when a closer facility arrives', () => {
+    // 成本比較低的那一座才是「服務這一格」的那一座 —— 跟 data 保留最小值同一個規則。
+    const arr = new GridCoverageArray(8, 8);
+    arr.applyFlood(flood([[3, 3]], 80), 100, 0);
+    arr.applyFlood(flood([[3, 3]], 20), 100, 1);
+
+    expect(arr.getOwner(3, 3), '比較近的那座沒有接手').toBe(1);
+  });
+
+  it('should keep the owner when a farther facility also reaches it', () => {
+    const arr = new GridCoverageArray(8, 8);
+    arr.applyFlood(flood([[3, 3]], 20), 100, 0);
+    arr.applyFlood(flood([[3, 3]], 80), 100, 1);
+
+    expect(arr.getOwner(3, 3), '比較遠的那座搶走了').toBe(0);
+    expect(arr.getCoverageCount(3, 3), '兩座都該算進涵蓋數').toBe(2);
+  });
+
+  it('should say nobody owns an uncovered cell', () => {
+    // 回 0 的話會跟「第 0 座設施」撞在一起。
+    expect(new GridCoverageArray(8, 8).getOwner(2, 2)).toBe(-1);
+  });
+
+  it('should say nobody owns a cell off the map', () => {
+    // 沒有邊界檢查的話，`undefined - 1` 是 NaN —— 而 NaN 拿去當陣列索引，
+    // 呼叫端會收到一個不存在的設施 id，或者更糟，靜靜地拿到 undefined。
+    const arr = new GridCoverageArray(8, 8);
+
+    expect(arr.getOwner(-1, 0)).toBe(-1);
+    expect(arr.getOwner(0, -1)).toBe(-1);
+    expect(arr.getOwner(8, 0)).toBe(-1);
+    expect(arr.getOwner(0, 8)).toBe(-1);
+  });
+
+  it('should forget the owners when cleared', () => {
+    const arr = new GridCoverageArray(8, 8);
+    arr.applyFlood(flood([[1, 1]], 0), 100, 3);
+    arr.clear();
+
+    expect(arr.getOwner(1, 1)).toBe(-1);
+  });
+
+  it('should carry the owners across a preview merge', () => {
+    // 拖曳預覽是在既有覆蓋上面疊一座新的。既有那幾格的擁有者不能在預覽時消失。
+    const base = new GridCoverageArray(8, 8);
+    base.applyFlood(flood([[1, 1], [2, 2]], 10), 100, 4);
+
+    const preview = new GridCoverageArray(8, 8);
+    preview.applyMerged(flood([[2, 2]], 5), base, 100, 7);
+
+    expect(preview.getOwner(1, 1), '既有的擁有者掉了').toBe(4);
+    expect(preview.getOwner(2, 2), '預覽那座比較近，該由它接手').toBe(7);
+  });
+
+  it('should refuse an owner index it cannot store', () => {
+    // 擁有者存在 Uint16Array 裡（+1 之後），65535 就是天花板。默默地存成別的值
+    // 會讓某一格指向錯的設施 —— 那比不知道更糟。
+    const arr = new GridCoverageArray(8, 8);
+
+    expect(() => arr.applyFlood(flood([[1, 1]], 0), 100, 65535)).toThrow();
+  });
+});

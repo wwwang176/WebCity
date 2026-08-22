@@ -247,6 +247,7 @@ const TOOL_TO_OVERLAY: Partial<Record<ToolType, OverlayType>> = {
  */
 export type { ServiceStatus } from './core/service/ServiceStatusView';
 import { buildServiceStatus, type ServiceStatus } from './core/service/ServiceStatusView';
+import { serviceSeverity } from './core/service/ServiceSeverity';
 import type { SaveCompleteMessage } from './core/save/SaveWorkerHandler';
 import { classifySaveError } from './core/save/SaveFailure';
 import { findWaterPlantSites } from './core/building/WaterPlantSites';
@@ -298,6 +299,13 @@ export interface SelectedZoneBuilding {
   policeLoadRatio: number;
   /** City-wide fire load ratio (> 1 means overloaded). */
   fireLoadRatio: number;
+  /**
+   * 全城最滿的那一種學校有多滿（> 1 是超收）。
+   *
+   * 其他四個服務都有這一欄，唯獨教育沒有 —— 於是超收十一倍的高中在建築面板上
+   * 完全看不出來（BUG-364）。
+   */
+  educationLoadRatio: number;
   /** Number of dead bodies at this building awaiting hearse pickup. */
   pendingDeaths: number;
   /** Number of garbage bags at this building awaiting truck pickup. */
@@ -356,6 +364,22 @@ export interface SelectedEmptyZone {
 }
 
 export type SelectedBuilding = SelectedZoneBuilding | SelectedInfraBuilding | SelectedTransportStop | SelectedEmptyZone;
+
+/**
+ * 服務名稱 → 那個服務物件。
+ *
+ * 只用來回答「哪一座設施服務這一格」。`getRoadCostOverlay` 那張 switch 回的是
+ * 已經算好的資料，拿不到服務本身。
+ */
+const SERVICE_BY_NAME: Record<CoverageService, (s: GameState) => {
+  getServingFacilityId(x: number, y: number): string | null;
+}> = {
+  police: s => s.police,
+  fire: s => s.fire,
+  health: s => s.health,
+  education: s => s.education,
+  garbage: s => s.garbage,
+};
 
 export class Game {
   // The renderers below are built in the 'Preparing graphics...' step of
@@ -2292,6 +2316,7 @@ export class Game {
             taxIncome: calculateSingleBuildingIncome(buildIncomeCalcDeps(this.state), x, y, cell.buildingId),
             garbageLoadRatio: this.getGarbageLoadRatio(),
             hospitalLoadRatio: this.state.health.getLoadRatio(),
+            educationLoadRatio: this.state.education.getLoadRatio(),
             policeLoadRatio: this.state.police.getLoadRatio(),
             fireLoadRatio: this.state.fire.getLoadRatio(),
             pendingDeaths: this.state.deathCare.getPendingDeathQueue().filter(d => d.x === x && d.y === y).length,
@@ -2751,10 +2776,27 @@ export class Game {
     return this.buildOverlayData(type);
   }
 
-  /** 某一個服務的走馬路成本圖與它的預算。建築高亮那 10 階就是從這裡來的。 */
-  getCoverageCosts(service: CoverageService): { costs: ReadonlyMap<string, number>; budget: number } | null {
+  /**
+   * 某一個服務的走馬路成本圖、預算，以及**逐格的設施負載**。
+   *
+   * 建築高亮那 10 階就是從這三樣算出來的。少了負載，agent 看到的顏色會跟畫面
+   * 對不起來（BUG-362）。
+   */
+  getCoverageCosts(service: CoverageService): {
+    costs: ReadonlyMap<string, number>;
+    budget: number;
+    loadAt: (x: number, y: number) => number;
+    servingFacilityAt: (x: number, y: number) => string | null;
+  } | null {
     const info = this.getRoadCostOverlay(service as unknown as OverlayType);
-    return info ? { costs: info.costMap, budget: info.budget } : null;
+    if (!info) return null;
+    const svc = SERVICE_BY_NAME[service](this.state);
+    return {
+      costs: info.costMap,
+      budget: info.budget,
+      loadAt: info.loadAt,
+      servingFacilityAt: (x, y) => svc.getServingFacilityId(x, y),
+    };
   }
 
   /** 造成那些顏色的設施本身。畫面上是藍色的那些。 */
@@ -2833,13 +2875,25 @@ export class Game {
   // ── Coverage overlay: building highlight (green→yellow→red gradient) ──
 
   /** Get road-cost overlay info: cost map + budget for a given overlay type. */
-  private getRoadCostOverlay(overlayType: OverlayType): { costMap: ReadonlyMap<string, number>; budget: number; residentialOnly: boolean } | null {
+  /**
+   * 一張走馬路成本的圖層要畫什麼。
+   *
+   * `loadAt` 回的是**服務那一格的那一座設施**現在多滿。圖層的顏色不能只看成本 ——
+   * 緊鄰一間爆到兩倍的醫院會被畫成最綠的（BUG-362）。
+   */
+  private getRoadCostOverlay(overlayType: OverlayType): {
+    costMap: ReadonlyMap<string, number>;
+    budget: number;
+    residentialOnly: boolean;
+    loadAt: (x: number, y: number) => number;
+  } | null {
+    const s = this.state;
     switch (overlayType) {
-      case OverlayType.POLICE: return { costMap: this.state.police.getCoveredCellsWithCost(), budget: ROAD_COVERAGE.POLICE_BUDGET, residentialOnly: false };
-      case OverlayType.FIRE: return { costMap: this.state.fire.getCoveredCellsWithCost(), budget: ROAD_COVERAGE.FIRE_BUDGET, residentialOnly: false };
-      case OverlayType.GARBAGE: return { costMap: this.state.garbage.getCoveredCellsWithCost(), budget: ROAD_COVERAGE.GARBAGE_BUDGET, residentialOnly: true };
-      case OverlayType.HEALTH: return { costMap: this.state.health.getCoveredCellsWithCost(), budget: ROAD_COVERAGE.HEALTH_BUDGET, residentialOnly: false };
-      case OverlayType.EDUCATION: return { costMap: this.state.education.getCoveredCellsWithCost(), budget: ROAD_COVERAGE.EDUCATION_UNIVERSITY_BUDGET, residentialOnly: false };
+      case OverlayType.POLICE: return { costMap: s.police.getCoveredCellsWithCost(), budget: ROAD_COVERAGE.POLICE_BUDGET, residentialOnly: false, loadAt: (x, y) => s.police.getLoadRatioAt(x, y) };
+      case OverlayType.FIRE: return { costMap: s.fire.getCoveredCellsWithCost(), budget: ROAD_COVERAGE.FIRE_BUDGET, residentialOnly: false, loadAt: (x, y) => s.fire.getLoadRatioAt(x, y) };
+      case OverlayType.GARBAGE: return { costMap: s.garbage.getCoveredCellsWithCost(), budget: ROAD_COVERAGE.GARBAGE_BUDGET, residentialOnly: true, loadAt: (x, y) => s.garbage.getLoadRatioAt(x, y) };
+      case OverlayType.HEALTH: return { costMap: s.health.getCoveredCellsWithCost(), budget: ROAD_COVERAGE.HEALTH_BUDGET, residentialOnly: false, loadAt: (x, y) => s.health.getLoadRatioAt(x, y) };
+      case OverlayType.EDUCATION: return { costMap: s.education.getCoveredCellsWithCost(), budget: ROAD_COVERAGE.EDUCATION_UNIVERSITY_BUDGET, residentialOnly: false, loadAt: (x, y) => s.education.getLoadRatioAt(x, y) };
       default: return null;
     }
   }
@@ -2940,7 +2994,7 @@ export class Game {
     // Road-based services: green→yellow→red gradient
     const roadInfo = this.getRoadCostOverlay(overlayType);
     if (roadInfo) {
-      const { costMap, budget, residentialOnly } = roadInfo;
+      const { costMap, budget, residentialOnly, loadAt } = roadInfo;
       if (costMap.size === 0) return;
       const grid = this.state.grid;
       for (const [key, cost] of costMap) {
@@ -2954,8 +3008,9 @@ export class Game {
         } else {
           if (!isZoneBuilding(cell.buildingId) && !isInfrastructureBuilding(cell.buildingId)) continue;
         }
-        const ratio = Math.min(1, cost / budget);
-        const tier = Math.min(9, Math.floor(ratio * 10));
+        // 距離與負載取比較糟的那一個。只看距離的話，爆量的設施旁邊會是一片綠。
+        const severity = serviceSeverity(cost / budget, loadAt(cx, cy));
+        const tier = Math.min(9, Math.floor(severity * 10));
         this.overlayHighlightCells.push({ x: cx, y: cy, color: Game.COV_GRADIENT[tier]! });
       }
       return;
@@ -3179,6 +3234,7 @@ export class Game {
         hasCustomers: isCommercialZone(sel.zoneType) ? this.state.shopping.getCommercialCustomers(x, y).hasCustomers : undefined,
         garbageLoadRatio: this.getGarbageLoadRatio(),
         hospitalLoadRatio: this.state.health.getLoadRatio(),
+        educationLoadRatio: this.state.education.getLoadRatio(),
         pendingDeaths: this.state.deathCare.getPendingDeathQueue().filter(d => d.x === x && d.y === y).length,
         pendingGarbage: this.state.garbage.getPendingGarbageQueue().filter(g => g.x === x && g.y === y).length,
       };

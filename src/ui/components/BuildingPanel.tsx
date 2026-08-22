@@ -2,6 +2,7 @@ import { Show, Index, For } from 'solid-js';
 import { gameSignals, getGame } from '../store/gameStore';
 import { ZoneType, isResidentialZone, isCommercialZone } from '../../core/grid/types';
 import type { SelectedZoneBuilding, SelectedInfraBuilding, SelectedTransportStop, SelectedEmptyZone, ServiceStatus } from '../../Game';
+import { serviceDotColor, serviceDotHint } from './serviceDot';
 import { ZONE_BLOCKER_COLORS } from '../../core/zone/ZoneBlocker';
 import { UI_COLORS } from '../constants';
 import { STAGE_NAMES } from './citizenLabels';
@@ -63,20 +64,6 @@ const SERVICE_LABELS_NON_RES: { key: keyof ServiceStatus; label: string }[] = [
   { key: 'fire', label: 'Fire' },
 ];
 
-/** Map cost ratio (-1=none, 0=best, 1=worst) to a dot color. */
-function ratioColor(ratio: number): string {
-  if (ratio < 0) return '#616161'; // grey — no coverage
-  const r = Math.min(1, ratio);
-  if (r <= 0.5) {
-    const t = r * 2;
-    const red = Math.round(255 * t);
-    return `rgb(${red},200,50)`;
-  }
-  const t = (r - 0.5) * 2;
-  const green = Math.round(200 * (1 - t));
-  return `rgb(255,${green},50)`;
-}
-
 function ServiceCoverage(props: { services: ServiceStatus; isResidential: boolean }) {
   const labels = () => props.isResidential ? SERVICE_LABELS_ALL : SERVICE_LABELS_NON_RES;
   return (
@@ -84,12 +71,12 @@ function ServiceCoverage(props: { services: ServiceStatus; isResidential: boolea
       <div style="font-size:11px;color:#90a4ae;margin-bottom:2px">Services</div>
       <For each={labels()}>
         {(s) => {
-          const r = () => props.services[s.key];
+          const st = () => props.services[s.key];
           return (
-            <div class="bp-row">
+            <div class="bp-row" title={serviceDotHint(s.label, st())}>
               {s.label}
               <span
-                style={`display:inline-block;width:8px;height:8px;border-radius:50%;background:${ratioColor(r())}`}
+                style={`display:inline-block;width:8px;height:8px;border-radius:50%;background:${serviceDotColor(st())}`}
               />
             </div>
           );
@@ -190,7 +177,7 @@ function collectWarnings(sel: SelectedZoneBuilding): Warning[] {
   }
 
   // Sewage — no treatment plant covering this building (always show)
-  if (sel.services.sewage < 0) {
+  if (sel.services.sewage.cost < 0) {
     warnings.push({ level: 'yellow', text: 'No sewage treatment' });
   }
 
@@ -222,6 +209,15 @@ function collectWarnings(sel: SelectedZoneBuilding): Warning[] {
     warnings.push({ level: 'yellow', text: 'Fire dept over capacity' });
   }
 
+  // Education overloaded — the one service that had no load warning at all.
+  // 那份存檔的 High School 收了 5,872 個學生而容量 500,面板上完全看不出來
+  //（BUG-364）。
+  if (sel.educationLoadRatio > 2) {
+    warnings.push({ level: 'red', text: 'Schools overcrowded' });
+  } else if (sel.educationLoadRatio > 1) {
+    warnings.push({ level: 'yellow', text: 'Schools over capacity' });
+  }
+
   // Dead bodies awaiting hearse pickup
   if (sel.pendingDeaths > 0) {
     warnings.push({ level: sel.pendingDeaths >= 3 ? 'red' : 'yellow', text: `Dead body awaiting pickup (${sel.pendingDeaths})` });
@@ -251,8 +247,8 @@ function ZoneBuildingInfo(props: { sel: SelectedZoneBuilding }) {
   const setSelectedCitizen = gameSignals.setSelectedCitizenId;
 
   const bt = () => props.sel.buildingType;
-  const hasPower = () => props.sel.services.power >= 0;
-  const hasWater = () => props.sel.services.water >= 0;
+  const hasPower = () => props.sel.services.power.cost >= 0;
+  const hasWater = () => props.sel.services.water.cost >= 0;
   const tax = () => `$${props.sel.taxIncome.toFixed(1)}/tick`;
   const level = () => {
     const b = bt();

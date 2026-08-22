@@ -8,10 +8,16 @@
  * | | 是什麼 | 值 |
  * |---|---|---|
  * | **地面色塊** | 這一格有沒有警力 | 80 或 0，**二元** |
- * | **建築高亮** | 沿著馬路走過來的成本 ÷ 預算 | 綠→黃→紅 **10 階** |
+ * | **建築高亮** | 距離與設施負載中比較糟的那一個 | 綠→黃→紅 **10 階** |
  *
  * 玩家真正在讀的是**第二層** —— 它說的不是「有沒有」，是「這棟房子的警力有多勉強」。
  * 只給第一層的話，agent 會拿到一堆沒有資訊量的 80。
+ *
+ * ## 顏色不只是距離
+ *
+ * 那 10 階吃的是 `serviceSeverity(cost / budget, load)` —— 距離與**服務這一格的
+ * 那座設施有多滿**取比較糟的一個。只回距離的話，緊鄰一間爆到兩倍的醫院會被說成
+ * 最好的狀態（BUG-362）。
  *
  * ## 不從渲染結果反推
  *
@@ -23,6 +29,8 @@
  * 顏色是它的衍生物（`tier = floor(ratio × 10)`），不是反過來。
  */
 
+import { serviceSeverity } from '../core/service/ServiceSeverity';
+
 /** 走馬路成本、有 10 階漸層的那幾個服務。 */
 export const COVERAGE_SERVICES = ['police', 'fire', 'health', 'education', 'garbage'] as const;
 
@@ -33,6 +41,10 @@ export interface CoverageSource {
   budget: number;
   /** `"x,y"` → 從最近的設施沿馬路走過來的成本。 */
   costs: ReadonlyMap<string, number>;
+  /** 服務這一格的那座設施的負載 ÷ 容量。`-1` = 問不到。 */
+  loadAt: (x: number, y: number) => number;
+  /** 服務這一格的那座設施的 id。 */
+  servingFacilityAt: (x: number, y: number) => string | null;
   /** 造成這些顏色的設施本身。畫面上是藍色的那些。 */
   sources: readonly { x: number; y: number }[];
   /** 10 階色帶，由 `Game` 給 —— 顏色不能兩邊各算一次。 */
@@ -44,8 +56,19 @@ export interface CoverageCell {
   y: number;
   /** 沿馬路走過來的成本。 */
   cost: number;
-  /** `cost / budget`，夾在 1。越接近 1 代表這裡的服務越勉強。 */
+  /** `cost / budget`，夾在 1。越接近 1 代表這裡**離設施越遠**。 */
   ratio: number;
+  /**
+   * 服務這一格的那座設施現在多滿。1.0 是剛好滿，2.0 是需求兩倍於容量。
+   * `-1` = 問不到（那個服務沒有負載的概念）。**不夾在 1** —— 超過 1 是資訊。
+   */
+  load: number;
+  /** 服務這一格的那座設施。一片紅色要去動哪一棟，看這個。 */
+  facilityId: string | null;
+  /**
+   * 距離與負載取比較糟的那一個，0–1。**畫面上的顏色是照這個挑的。**
+   */
+  severity: number;
   /** 0–9，跟畫面上的色階同一個。 */
   tier: number;
   color: string;
@@ -108,8 +131,17 @@ export function buildCoverage(service: string, src: CoverageSource): CoverageInf
   for (const [key, cost] of src.costs) {
     const [x, y] = parseKey(key);
     const ratio = Math.min(1, cost / src.budget);
-    const tier = Math.min(top, Math.floor(ratio * 10));
-    cells.push({ x, y, cost, ratio, tier, color: hex(src.gradient[tier]!) });
+    const load = src.loadAt(x, y);
+    // 階數走 `serviceSeverity`，跟 `Game` 挑顏色用的是同一支。
+    const severity = Math.max(0, serviceSeverity(cost / src.budget, load));
+    const tier = Math.min(top, Math.floor(severity * 10));
+    cells.push({
+      x, y, cost, ratio, load,
+      facilityId: src.servingFacilityAt(x, y),
+      severity,
+      tier,
+      color: hex(src.gradient[tier]!),
+    });
   }
 
   return {

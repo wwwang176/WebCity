@@ -185,6 +185,11 @@ export class DeathCareService extends GlobalCoverageService<Cemetery> {
     return this.pendingDeathQueue;
   }
 
+  protected override facilityLoadOf(id: string): { load: number; capacity: number } | null {
+    const c = this.facilities.find(x => x.id === id);
+    return c ? { load: c.currentLoad, capacity: c.capacity } : null;
+  }
+
   getCemeteries(): readonly Cemetery[] {
     return this.facilities;
   }

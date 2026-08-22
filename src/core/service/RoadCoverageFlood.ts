@@ -289,12 +289,14 @@ export class RoadCoverageMap {
     this.main!.clear();
     this.lastBudget = budget;
 
-    for (const f of facilities) {
+    // 索引一起帶下去 —— 每一格記得住是被哪一座用最低成本涵蓋的（BUG-362）。
+    for (let i = 0; i < facilities.length; i++) {
+      const f = facilities[i]!;
       const size = getSize ? getSize(f) : { w: facilityWidth, h: facilityHeight };
       const positions = expandFootprint(f.x, f.y, size.w, size.h);
       const roadCov = roadFlood(grid, positions, budget, this.roadLookup, this.seedReach);
       const fullCov = expandCoverageToBuildings(grid, roadCov);
-      this.main!.applyFlood(fullCov, budget);
+      this.main!.applyFlood(fullCov, budget, i);
     }
   }
 
@@ -370,6 +372,14 @@ export class RoadCoverageMap {
 
   getCoverageCount(x: number, y: number): number {
     return this.main?.getCoverageCount(x, y) ?? 0;
+  }
+
+  /**
+   * 用最低成本涵蓋這一格的設施，是上一次 `recalculate()` 收到的清單裡的第幾個。
+   * `-1` = 沒有人涵蓋。
+   */
+  getOwnerIndex(x: number, y: number): number {
+    return this.main?.getOwner(x, y) ?? -1;
   }
 
   /** Backward-compatible: build Map from array. Prefer forEachCovered() for new code. */

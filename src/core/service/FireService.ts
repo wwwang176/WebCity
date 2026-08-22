@@ -90,6 +90,11 @@ export class FireService extends RoadCoverageService<FireStation> {
     this.removeFacilityById(id);
   }
 
+  protected override facilityLoadOf(id: string): { load: number; capacity: number } | null {
+    const s = this.facilities.find(f => f.id === id);
+    return s ? { load: this.getStationLoad(id), capacity: s.capacity } : null;
+  }
+
   getStations(): readonly FireStation[] {
     return this.facilities;
   }
