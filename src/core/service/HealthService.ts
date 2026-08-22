@@ -1,5 +1,6 @@
 import { ROAD_COVERAGE } from './RoadCoverageFlood';
 import { RoadCoverageService } from './RoadCoverageService';
+import { distributeWithSpillover } from './SpilloverLoadDistributor';
 import type { SizedGrid } from '../grid/GridHelpers';
 
 export interface Hospital {
@@ -84,26 +85,24 @@ export class HealthService extends RoadCoverageService<Hospital> {
     this.hospitalDemand.clear();
     for (const h of this.facilities) this.hospitalDemand.set(h.id, 0);
 
-    // 攤給**服務那一格的那一間**醫院 —— 沿馬路走過來最便宜的那一間，跟圓點與
-    // 圖層同一個答案。以前這裡用歐氏直線,河對岸一間直線很近、開車要繞一大圈的
-    // 醫院會吸走這一區的病人,顯示爆量卻服務不到人（BUG-363）。
+    // 近的醫院優先，滿了就換下一間 —— 跟靈車同一個規矩。以前這裡用歐氏直線
+    // 挑唯一一間:河對岸一間直線很近、開車要繞一大圈的醫院會吸走病人（BUG-363），
+    // 而只認最近那一間又讓所有人擠在同一間、第二間永遠空著（BUG-365）。
     //
-    // 覆蓋本來就只從運作中的設施淹出去,所以「不會攤給沒電的那一間」是免費附帶的
+    // 覆蓋本來就只從運作中的設施淹出去，所以「不會攤給沒電的那一間」是免費附帶的
     // （BUG-100 當初要的就是這件事）。
-    const operationalIds = new Set(this.getOperationalFacilities().map(h => h.id));
-    let totalDemand = 0;
-    for (const c of coveredCitizens) {
-      const demand = citizenHospitalDemand(c.pollution) * (c.count ?? 1);
-      totalDemand += demand;
-
-      const id = this.getServingFacilityId(c.x, c.y);
-      if (id !== null && operationalIds.has(id)) {
-        this.hospitalDemand.set(id, (this.hospitalDemand.get(id) ?? 0) + demand);
-      }
-    }
-
-    const cap = this.getTotalCapacity();
-    this.loadRatio = cap > 0 ? totalDemand / cap : (totalDemand > 0 ? Infinity : 0);
+    // 收得了病人的才算 —— `getActiveFacilities()` 同時要求有電**且**接得到路，
+    // 跟 `getTotalCapacity()` 是同一組。分母摻進用不到的床位，城市會在崩潰時
+    // 顯示得比較健康（BUG-100）。
+    const result = distributeWithSpillover(
+      this.getActiveFacilities(),
+      coveredCitizens.map(c => ({
+        x: c.x, y: c.y, weight: citizenHospitalDemand(c.pollution) * (c.count ?? 1),
+      })),
+      this.hospitalDemand,
+      (x, y) => this.getCoveringFacilityIds(x, y),
+    );
+    this.loadRatio = result.loadRatio;
   }
 
   /** Rounded demand for a specific hospital (for UI display). */

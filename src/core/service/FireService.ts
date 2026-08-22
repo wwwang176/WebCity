@@ -3,7 +3,7 @@ import { isZoneBuilding } from '../building/InfraConfig';
 import type { SizedGrid } from '../grid/GridHelpers';
 import { ROAD_COVERAGE } from './RoadCoverageFlood';
 import { RoadCoverageService } from './RoadCoverageService';
-import { distributeLoadToServingFacility } from './StationLoadDistributor';
+import { distributeWithSpillover } from './SpilloverLoadDistributor';
 
 export interface FireStation {
   id: string;
@@ -74,10 +74,10 @@ export class FireService extends RoadCoverageService<FireStation> {
 
   /** Assign weighted demand to nearest station (Euclidean). Delegated to StationLoadDistributor (DRY). */
   updateStationLoads(demands: ReadonlyArray<{ x: number; y: number; weight: number }>): void {
-    const result = distributeLoadToServingFacility(
+    const result = distributeWithSpillover(
       this.getOperationalFacilities(), demands, this.stationLoad,
-      // 跟覆蓋同一個答案 —— 歐氏直線會讓河對岸那間吸走需求（BUG-363）。
-      (x, y) => this.getServingFacilityId(x, y),
+      // 涵蓋得到的都列出來，近的優先、滿了換下一座（BUG-363、BUG-365）。
+      (x, y) => this.getCoveringFacilityIds(x, y),
     );
     this.loadRatio = result.loadRatio;
   }

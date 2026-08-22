@@ -52,13 +52,6 @@ export abstract class GlobalCoverageService<F extends LoadFacility> extends Road
   protected facilityDistanceMaps = new Map<string, Map<string, number>>();
   /** Merged min-distance map across all facilities */
   protected mergedDistanceMap = new Map<string, number>();
-  /**
-   * 每一格是被哪一座設施用最低成本涵蓋的。
-   *
-   * 這個類別不走基底的 `RoadCoverageMap`（它有自己的逐設施距離圖），所以擁有者
-   * 也要自己記一份，跟 `mergedDistanceMap` 同時更新（BUG-362）。
-   */
-  protected mergedOwnerMap = new Map<string, string>();
   /** Injected road lookup for level-aware Dijkstra (DIP). */
   protected roadLookup: UnifiedRoadLookup | null = null;
 
@@ -77,7 +70,6 @@ export abstract class GlobalCoverageService<F extends LoadFacility> extends Road
   protected recomputeDistanceMaps(grid: SizedGrid): void {
     this.facilityDistanceMaps.clear();
     this.mergedDistanceMap.clear();
-    this.mergedOwnerMap.clear();
 
     const active = this.operationalIds
       ? this.facilities.filter(f => this.operationalIds!.has(f.id))
@@ -95,7 +87,6 @@ export abstract class GlobalCoverageService<F extends LoadFacility> extends Road
         const prev = this.mergedDistanceMap.get(key);
         if (prev === undefined || cost < prev) {
           this.mergedDistanceMap.set(key, cost);
-          this.mergedOwnerMap.set(key, fac.id);
         }
       }
     }
@@ -115,8 +106,23 @@ export abstract class GlobalCoverageService<F extends LoadFacility> extends Road
     return this.mergedDistanceMap;
   }
 
-  override getServingFacilityId(x: number, y: number): string | null {
-    return this.mergedOwnerMap.get(toPosKey(x, y)) ?? null;
+  /**
+   * 涵蓋得到這一格的每一座，由近到遠。
+   *
+   * 這個類別不走基底的 `RoadCoverageMap`，但它本來就留著逐設施的距離圖 ——
+   * 靈車就是靠它挑「還有空位的裡面最近的那一座」。
+   */
+  override getCoveringFacilityIds(x: number, y: number): { id: string; cost: number }[] {
+    const key = toPosKey(x, y);
+    const out: { id: string; cost: number }[] = [];
+    for (const [id, distMap] of this.facilityDistanceMaps) {
+      const cost = distMap.get(key);
+      if (cost === undefined) continue;
+      if (!this.facilities.some(f => f.id === id)) continue;
+      out.push({ id, cost });
+    }
+    out.sort((a, b) => a.cost - b.cost);
+    return out;
   }
 
   override previewCoverage(

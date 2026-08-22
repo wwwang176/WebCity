@@ -304,3 +304,132 @@ describe('面板那幾條警告吃的數字', () => {
     expect(r.garbageLoadRatio).toBe(-1);
   });
 });
+
+
+describe('近的滿了，就換下一座', () => {
+  /** 一條路，兩間醫院都在路上，容量都很小。 */
+  function twoSmallHospitals() {
+    const state = createGameState(24, 8);
+    for (let x = 0; x < 24; x++) {
+      state.grid.setCell(x, 4, { roadType: RoadType.TWO_LANE, roadFlags: 0b1111 });
+    }
+    const near = state.health.addHospital(2, 3, 12, 100);
+    const far = state.health.addHospital(10, 3, 12, 100);
+    state.health.recalculateCoverage(state.grid);
+    return { state, near, far };
+  }
+
+  it('should list every hospital that can reach the block, nearest first', () => {
+    const { state, near, far } = twoSmallHospitals();
+
+    const covering = state.health.getCoveringFacilityIds(3, 4);
+
+    expect(covering.map(c => c.id), '第二間沒被列出來').toEqual([near, far]);
+    expect(covering[0]!.cost).toBeLessThan(covering[1]!.cost);
+  });
+
+  it('should leave the second hospital empty while the first has room', () => {
+    const { state, near, far } = twoSmallHospitals();
+    // 需求 30（每人 0.3 → 100 個人），近的那間容量 100，裝得下。
+    state.health.updateLoads([{ x: 3, y: 4, pollution: 0, count: 100 }]);
+
+    expect(state.health.getHospitalLoad(near)).toBe(30);
+    expect(state.health.getHospitalLoad(far), '還沒滿就先溢出去了').toBe(0);
+  });
+
+  it('should spill into the second hospital once the first is full', () => {
+    // 使用者回報的:上一版全部擠到最近那間，第二間永遠是空的。
+    const { state, near, far } = twoSmallHospitals();
+    // 需求 150 —— 近的那間只吃得下 100。
+    state.health.updateLoads([{ x: 3, y: 4, pollution: 0, count: 500 }]);
+
+    expect(state.health.getHospitalLoad(near), '最近那間該收滿').toBe(100);
+    expect(state.health.getHospitalLoad(far), '溢出去的沒有落到第二間').toBe(50);
+  });
+
+  it('should call the block well served while the second hospital still has room', () => {
+    // 最近那間滿了，但第二間很空 —— 這一區其實被照顧到了，圓點不該是紅的。
+    const { state } = twoSmallHospitals();
+    state.health.updateLoads([{ x: 3, y: 4, pollution: 0, count: 500 }]);
+
+    const ratio = state.health.getLoadRatioAt(3, 4);
+
+    expect(ratio, '第二間還很空，這一格卻報爆量').toBeLessThan(1);
+    expect(serviceSeverity(0, ratio)).toBe(0);
+  });
+
+  it('should only go over capacity once every hospital in range is full', () => {
+    const { state, near } = twoSmallHospitals();
+    // 兩間加起來 200，需求 300。
+    state.health.updateLoads([{ x: 3, y: 4, pollution: 0, count: 1000 }]);
+
+    expect(state.health.getLoadRatioAt(3, 4), '全滿了還說沒事').toBeGreaterThan(1);
+    expect(state.health.getServingFacilityId(3, 4), '全滿時該指回最近的那一間').toBe(near);
+  });
+
+  it('should still send nobody to a hospital that cannot reach the block', () => {
+    // 河對岸那一間:直線很近，但覆蓋到不了。溢出也不該溢給它。
+    const state = createGameState(30, 14);
+    for (let x = 0; x < 20; x++) {
+      state.grid.setCell(x, 4, { roadType: RoadType.TWO_LANE, roadFlags: 0b1111 });
+    }
+    for (let y = 8; y < 12; y++) {
+      state.grid.setCell(6, y, { roadType: RoadType.TWO_LANE, roadFlags: 0b1111 });
+    }
+    const onRoad = state.health.addHospital(2, 3, 12, 100);
+    const acrossTheGap = state.health.addHospital(7, 9, 12, 999);
+    state.health.recalculateCoverage(state.grid);
+
+    state.health.updateLoads([{ x: 5, y: 4, pollution: 0, count: 2000 }]);
+
+    expect(state.health.getHospitalLoad(acrossTheGap), '走不到的醫院收了病人').toBe(0);
+    expect(state.health.getHospitalLoad(onRoad), '全部該壓在走得到的那一間').toBe(600);
+  });
+});
+
+
+describe('分母只算收得了人的設施', () => {
+  it('should leave a road-less hospital out of the city capacity', () => {
+    // 一間有電、但沒接到路的醫院。它涵蓋不到任何人 —— 把它的床位算進分母，
+    // 全城負載會被稀釋，而死亡率吃的正是那個比值（BUG-100）。
+    const state = createGameState(24, 12);
+    for (let x = 0; x < 24; x++) {
+      state.grid.setCell(x, 4, { roadType: RoadType.TWO_LANE, roadFlags: 0b1111 });
+    }
+    const onRoad = state.health.addHospital(2, 3, 12, 100);
+    // 荒地上的醫院:附近一格路都沒有。
+    state.health.addHospital(15, 10, 12, 900);
+    state.health.updateOperationalStatus(() => true);
+    state.health.recalculateCoverage(state.grid);
+
+    state.health.updateLoads([{ x: 3, y: 4, pollution: 0, count: 500 }]);
+
+    expect(state.health.getHospitalLoad(onRoad), '需求沒有全壓在走得到的那間').toBe(150);
+    // 分母只算 100（走得到的那間），所以 150/100 = 1.5。摻進 900 的話是 0.15。
+    expect(state.health.getLoadRatio(), '用不到的床位被算進分母了').toBeCloseTo(1.5, 6);
+  });
+
+  it('should never enrol more students in a school than want to go there', () => {
+    // 在學人數與想讀人數必須攤給同一組學校。用不同的規則的話,同一間學校會出現
+    // 「在學 200、想讀 30」這種不可能的組合。
+    const state = createGameState(24, 8);
+    for (let x = 0; x < 24; x++) {
+      state.grid.setCell(x, 4, { roadType: RoadType.TWO_LANE, roadFlags: 0b1111 });
+    }
+    state.education.addSchool(2, 3, 'elementary', undefined, 50);
+    state.education.addSchool(10, 3, 'elementary', undefined, 50);
+    state.education.recalculateCoverage(state.grid);
+
+    state.education.updateSchoolLoads(
+      [{ x: 3, y: 4, count: 80, schoolKey: 'elementary' }],
+      [{ x: 3, y: 4, count: 40, schoolKey: 'elementary' }],
+    );
+
+    for (const s of state.education.getSchools()) {
+      expect(
+        state.education.getSchoolEnrollment(s.id),
+        `${s.id} 的在學人數比想讀的還多`,
+      ).toBeLessThanOrEqual(state.education.getSchoolDemand(s.id));
+    }
+  });
+});

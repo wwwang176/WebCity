@@ -3,6 +3,7 @@
  * backed by RoadCoverageService for rotation-aware coverage and connected tracking.
  */
 import { RoadCoverageService } from './RoadCoverageService';
+import { distributeWithSpillover } from './SpilloverLoadDistributor';
 import { ROAD_COVERAGE } from './RoadCoverageFlood';
 import type { SchoolType } from './EducationService';
 
@@ -116,34 +117,28 @@ export class SchoolService extends RoadCoverageService<SchoolFacility> {
     enrolled: ReadonlyArray<{ x: number; y: number; count?: number }>,
     eligible: ReadonlyArray<{ x: number; y: number; count?: number }>,
   ): void {
-    this.enrollment.clear();
-    this.demand.clear();
-    for (const s of this.getFacilities()) {
-      this.enrollment.set(s.id, 0);
-      this.demand.set(s.id, 0);
-    }
+    // 近的學校優先，滿了就換下一間 —— 跟靈車同一個規矩（BUG-365）。只認最近那間
+    // 的話，所有學生都擠在同一間、第二間永遠空著。
+    //
+    // 收得了學生的才算:`getActiveFacilities()` 要求有電、有水而且接得到路，
+    // 跟 `getTotalCapacity()` 是同一組。
+    const active = this.getActiveFacilities();
+    const covering = (x: number, y: number) => this.getCoveringFacilityIds(x, y);
+    const toDemand = (c: { x: number; y: number; count?: number }) =>
+      ({ x: c.x, y: c.y, weight: c.count ?? 1 });
 
-    for (const c of enrolled) {
-      const id = this.findNearest(c.x, c.y);
-      if (id) this.enrollment.set(id, (this.enrollment.get(id) ?? 0) + (c.count ?? 1));
-    }
-
-    for (const c of [...enrolled, ...eligible]) {
-      const id = this.findNearest(c.x, c.y);
-      if (id) this.demand.set(id, (this.demand.get(id) ?? 0) + (c.count ?? 1));
-    }
-  }
-
-  /**
-   * 服務這一格的那一間學校。
-   *
-   * 問覆蓋，不量直線 —— 圓點、圖層、逐格負載三者才會指同一間學校。以前這裡用
-   * 歐氏距離，而且連**沒電的學校**都算在內（`getFacilities()` 不過濾），所以一間
-   * 停電的學校可以吸走整區的學生（BUG-363、BUG-100 同一類）。覆蓋只從運作中的
-   * 設施淹出去，兩件事一起解決。
-   */
-  private findNearest(x: number, y: number): string | null {
-    return this.getServingFacilityId(x, y);
+    // 兩邊一定要餵同一組學校，否則同一間會出現「在學 200、想讀 30」這種不可能的
+    // 組合。
+    //
+    // 老實說:把上面那個 `active` 換成 `getFacilities()`（全部學校）現在測不出差別 ——
+    // `covering` 只會提到**涵蓋得到那一格**的學校，而覆蓋只從運作中的設施淹出去，
+    // 沒電的學校根本不會出現在名單裡;而第一次呼叫的回傳值又沒有人用。
+    // 所以那是等價的改動，不是漏測。真正在守這件事的是這一行:兩次呼叫共用
+    // 同一個 `active`。
+    distributeWithSpillover(active, enrolled.map(toDemand), this.enrollment, covering);
+    distributeWithSpillover(
+      active, [...enrolled, ...eligible].map(toDemand), this.demand, covering,
+    );
   }
 
   getEnrollment(schoolId: string): number {

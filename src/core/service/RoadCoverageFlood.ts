@@ -255,6 +255,13 @@ export class RoadCoverageMap {
     this.roadLookup = lookup;
   }
 
+  /**
+   * 逐設施的涵蓋圖，順序跟上一次 `recalculate()` 收到的清單一致。
+   *
+   * 合併後的 `main` 只留每格最低的那一個成本;這一份留著「誰涵蓋得到誰」的完整答案。
+   */
+  private perFacility: Map<string, number>[] = [];
+
   /** Ensure arrays are allocated for the given grid dimensions. */
   private ensureArrays(width: number, height: number): void {
     if (!this.main || this.main.width !== width || this.main.height !== height) {
@@ -288,8 +295,13 @@ export class RoadCoverageMap {
     this.ensureArrays(grid.width, grid.height);
     this.main!.clear();
     this.lastBudget = budget;
+    this.perFacility = [];
 
     // 索引一起帶下去 —— 每一格記得住是被哪一座用最低成本涵蓋的（BUG-362）。
+    //
+    // **逐設施那一份也留著。** 合併後的圖只答得出「最近的是誰」，答不出「這一格
+    // 還有哪幾座涵蓋得到」—— 而那正是「近的滿了就換下一座」需要的（BUG-365）。
+    // 這幾張圖本來就算出來了，只是以前合併完就丟掉。
     for (let i = 0; i < facilities.length; i++) {
       const f = facilities[i]!;
       const size = getSize ? getSize(f) : { w: facilityWidth, h: facilityHeight };
@@ -297,6 +309,7 @@ export class RoadCoverageMap {
       const roadCov = roadFlood(grid, positions, budget, this.roadLookup, this.seedReach);
       const fullCov = expandCoverageToBuildings(grid, roadCov);
       this.main!.applyFlood(fullCov, budget, i);
+      this.perFacility.push(fullCov);
     }
   }
 
@@ -380,6 +393,25 @@ export class RoadCoverageMap {
    */
   getOwnerIndex(x: number, y: number): number {
     return this.main?.getOwner(x, y) ?? -1;
+  }
+
+  /**
+   * 涵蓋得到這一格的**每一座**設施，由近到遠。
+   *
+   * 索引是上一次 `recalculate()` 收到的那份清單的索引。回空陣列代表沒有人涵蓋。
+   *
+   * 合併後的圖只留最低成本的那一座 —— 要做「近的滿了就換下一座」就得知道還有誰
+   * 涵蓋得到。靈車（`GlobalCoverageService.collectPending`）一直是這樣挑的。
+   */
+  getCoveringIndices(x: number, y: number): { index: number; cost: number }[] {
+    const key = toPosKey(x, y);
+    const out: { index: number; cost: number }[] = [];
+    for (let i = 0; i < this.perFacility.length; i++) {
+      const cost = this.perFacility[i]!.get(key);
+      if (cost !== undefined) out.push({ index: i, cost });
+    }
+    out.sort((a, b) => a.cost - b.cost);
+    return out;
   }
 
   /** Backward-compatible: build Map from array. Prefer forEachCovered() for new code. */

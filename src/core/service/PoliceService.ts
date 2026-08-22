@@ -1,7 +1,7 @@
 import type { SizedGrid } from '../grid/GridHelpers';
 import { ROAD_COVERAGE } from './RoadCoverageFlood';
 import { RoadCoverageService } from './RoadCoverageService';
-import { distributeLoadToServingFacility } from './StationLoadDistributor';
+import { distributeWithSpillover } from './SpilloverLoadDistributor';
 
 export interface PoliceStation {
   id: string;
@@ -42,9 +42,9 @@ export class PoliceService extends RoadCoverageService<PoliceStation> {
    * 答案。以前這裡用歐氏直線，於是河對岸那間會吸走需求卻服務不到人（BUG-363）。
    */
   updateStationLoads(demands: ReadonlyArray<{ x: number; y: number; weight: number }>): void {
-    const result = distributeLoadToServingFacility(
+    const result = distributeWithSpillover(
       this.getOperationalFacilities(), demands, this.stationLoad,
-      (x, y) => this.getServingFacilityId(x, y),
+      (x, y) => this.getCoveringFacilityIds(x, y),
     );
     this.loadRatio = result.loadRatio;
   }

@@ -86,25 +86,48 @@ export abstract class RoadCoverageService<F extends Facility> implements Service
   }
 
   /**
-   * 服務這一格的那一座設施 —— **沿馬路走過來最便宜的那一座**。
+   * 涵蓋得到這一格的**每一座**設施，由近到遠。
    *
-   * 沒有涵蓋、或那一座在上一次重算之後被拆掉了，就回 `null`。
+   * 「最近的那一座」不夠用 —— 它滿了的時候，需求應該溢到第二近的（靈車一直是這樣
+   * 做的，見 `SpilloverLoadDistributor`）。上一版只認最近的那一座，於是所有人都擠到
+   * 同一間，第二間永遠空著（BUG-365）。
    *
-   * 注意這跟負載分攤用的規則不一樣:`distributeLoadToNearest` 用的是**歐氏直線**
-   * 距離。河對岸一間直線很近、開車要繞一大圈的設施會吸走負載，但它的道路覆蓋
-   * 到不了這裡（BUG-363）。這裡回的是**覆蓋**的答案，因為圓點與圖層畫的就是覆蓋。
+   * 上一次重算之後被拆掉的設施會被濾掉。
+   */
+  getCoveringFacilityIds(x: number, y: number): { id: string; cost: number }[] {
+    const out: { id: string; cost: number }[] = [];
+    for (const { index, cost } of this.coverage.getCoveringIndices(x, y)) {
+      const id = this.coveredFacilityIds[index];
+      if (id === undefined) continue;
+      if (!this.facilities.some(f => f.id === id)) continue;
+      out.push({ id, cost });
+    }
+    return out;
+  }
+
+  /**
+   * 服務這一格的那一座設施 —— **還有空位的裡面最近的那一座**。
+   *
+   * 跟靈車同一個規矩。全部滿了就回最近的那一座（它就是會超載的那一座）。
+   * 沒有任何設施涵蓋得到就回 `null`。
    */
   getServingFacilityId(x: number, y: number): string | null {
-    const idx = this.coverage.getOwnerIndex(x, y);
-    if (idx < 0) return null;
-    const id = this.coveredFacilityIds[idx];
-    if (id === undefined) return null;
-    // 重算之後被拆掉的設施:索引還在，設施不在了。
-    return this.facilities.some(f => f.id === id) ? id : null;
+    const covering = this.getCoveringFacilityIds(x, y);
+    if (covering.length === 0) return null;
+    for (const c of covering) {
+      const lc = this.facilityLoadOf(c.id);
+      // 問不到負載（例如公園）就當作有空位 —— 沒有理由跳過最近的那一座。
+      if (!lc) return c.id;
+      if (lc.capacity > 0 && lc.load < lc.capacity) return c.id;
+    }
+    return covering[0]!.id;
   }
 
   /**
    * 服務這一格的那座設施現在多滿。`-1` = 沒有覆蓋。
+   *
+   * 「服務這一格的」是**還有空位的裡面最近的那一座** —— 所以最近那間滿了、
+   * 第二間還很空時，這一格是被照顧到的，數字會反映第二間。全部滿了才會超過 1。
    *
    * 1.0 是剛好滿。**超過 1 是有意義的**（2.0 代表需求是容量的兩倍），所以不夾在 1。
    * 容量 0 而有需求時是 `Infinity` —— 那是「完全沒有能力」，不是「很空」。
