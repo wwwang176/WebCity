@@ -3,6 +3,10 @@ import { AgentRead, type StatsHost } from '../AgentRead';
 import { createGameState } from '../../core/simulation/GameState';
 import { ZoneType } from '../../core/grid/types';
 import { ABANDONED, BURNED } from '../../core/building/InfraPlacement';
+import { ElevationManager } from '../../core/elevation/ElevationManager';
+import { RoadType, RoadDirection } from '../../core/road/types';
+import { UnifiedRoadLookup } from '../../core/road/UnifiedRoadLookup';
+import { buildRoadCellGraph } from '../../core/road/RoadCellGraph';
 
 /**
  * 讀城市。
@@ -15,6 +19,17 @@ import { ABANDONED, BURNED } from '../../core/building/InfraPlacement';
 function noStats(): StatsHost {
   return new Proxy({}, {
     get(_t, prop) {
+      return () => { throw new Error(`這個測試不該問 Game 要 ${String(prop)}`); };
+    },
+  }) as StatsHost;
+}
+
+/** 空殼加上這個測試真的要用的那幾支。 */
+function noStatsBut(overrides: Partial<StatsHost>): StatsHost {
+  return new Proxy(overrides, {
+    get(t, prop) {
+      const own = (t as Record<string | symbol, unknown>)[prop];
+      if (own !== undefined) return own;
       return () => { throw new Error(`這個測試不該問 Game 要 ${String(prop)}`); };
     },
   }) as StatsHost;
@@ -505,5 +520,112 @@ describe('廢墟的判定要用遊戲的常數', () => {
   it('should take the values from the game rather than restating them', () => {
     // 常數搬家或改值時，寫死的那一份不會跟著動。
     expect(BURNED).not.toBe(2);
+  });
+});
+
+describe('高架結構', () => {
+  /** 一座橋、一段疊在它上面的第二層，以及一段別處的。 */
+  function bridgeCity() {
+    const state = createGameState(20, 20);
+    const em = new ElevationManager();
+    const seg = (isRamp = false) => ({
+      roadType: RoadType.HIGHWAY, roadFlags: 0, railType: 0, railFlags: 0,
+      isRamp, rampAscendDirection: 0,
+    });
+    // 刻意不照順序放 —— 照順序放的話「有沒有排序」就測不出來。
+    em.set(15, 15, 1, seg());
+    em.set(6, 5, 2, seg());
+    em.set(5, 5, 1, seg(true));
+    em.set(6, 5, 1, seg());
+    const host = { ...noStatsBut({ elevatedSegments: () => em.toJSON() }) };
+    return new AgentRead(() => state, host);
+  }
+
+  it('should list every elevated segment when no rect is given', () => {
+    // 在這之前確認一座橋存在的唯一辦法，是故意重蓋一次讀錯誤訊息（BUG-367）。
+    expect(bridgeCity().elevated()).toHaveLength(4);
+  });
+
+  it('should report both levels stacked on one cell', () => {
+    const stacked = bridgeCity().elevated().filter(s => s.x === 6 && s.y === 5);
+
+    expect(stacked.map(s => s.level), '疊起來的第二層不見了').toEqual([1, 2]);
+  });
+
+  it('should carry the ramp flag', () => {
+    const ramp = bridgeCity().elevated().find(s => s.x === 5 && s.y === 5)!;
+
+    expect(ramp.isRamp, '匝道看不出來 —— 那座橋就下不來了').toBe(true);
+    expect(ramp.roadType).toBe(RoadType.HIGHWAY);
+  });
+
+  it('should keep only what falls inside the rect', () => {
+    const near = bridgeCity().elevated({ x1: 0, y1: 0, x2: 9, y2: 9 });
+
+    expect(near).toHaveLength(3);
+  });
+
+  it('should accept a rect given from the far corner', () => {
+    const near = bridgeCity().elevated({ x1: 9, y1: 9, x2: 0, y2: 0 });
+
+    expect(near, '反向的矩形被當成空的').toHaveLength(3);
+  });
+
+  it('should come back in a stable order', () => {
+    // 每次順序不同的話，呼叫端沒辦法比對兩次讀取之間差了什麼。
+    const rows = bridgeCity().elevated();
+
+    expect(rows.map(s => `${s.x},${s.y},${s.level}`))
+      .toEqual(['5,5,1', '6,5,1', '6,5,2', '15,15,1']);
+  });
+
+  it('should say nothing when the city has no bridges', () => {
+    const read = new AgentRead(
+      () => createGameState(10, 10),
+      noStatsBut({ elevatedSegments: () => [] }),
+    );
+
+    expect(read.elevated()).toEqual([]);
+  });
+});
+
+describe('兩格通不通', () => {
+  function roadCity(build: (road: (x: number, y: number) => void) => void) {
+    const state = createGameState(20, 20);
+    build((x, y) => state.grid.setCell(x, y, {
+      roadType: RoadType.TWO_LANE, roadFlags: RoadDirection.EAST | RoadDirection.WEST,
+    }));
+    const graph = buildRoadCellGraph(UnifiedRoadLookup.fromGrid(state.grid));
+    return new AgentRead(() => state, noStatsBut({ roadCellGraph: () => graph }));
+  }
+
+  it('should answer for two points on the same road', () => {
+    const read = roadCity(road => { for (let x = 0; x <= 9; x++) road(x, 2); });
+
+    const r = read.connected({ x: 0, y: 2 }, { x: 9, y: 2 });
+
+    expect(r.connected).toBe(true);
+    expect(r.cost).toBeGreaterThan(0);
+  });
+
+  it('should answer for two roads that never meet', () => {
+    const read = roadCity(road => {
+      for (let x = 0; x <= 5; x++) road(x, 1);
+      for (let x = 12; x <= 18; x++) road(x, 8);
+    });
+
+    expect(read.connected({ x: 0, y: 1 }, { x: 18, y: 8 }))
+      .toEqual({ connected: false, cost: -1 });
+  });
+
+  it('should say not connected when there is no road graph yet', () => {
+    // 存檔剛載入、路網 lookup 還沒接上的那一瞬間。回 true 會比回 false 糟糕得多。
+    const read = new AgentRead(
+      () => createGameState(10, 10),
+      noStatsBut({ roadCellGraph: () => null }),
+    );
+
+    expect(read.connected({ x: 0, y: 0 }, { x: 5, y: 5 }))
+      .toEqual({ connected: false, cost: -1 });
   });
 });

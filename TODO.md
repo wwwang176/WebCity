@@ -1048,15 +1048,16 @@
   日後有人補上去會在那裡絆倒。
 - [ ] **agent 動作的安全網** — 現在只有「拆除單次上限 64 格」與動作記錄。缺:動手前
   自動存檢查點、動作期間停 autosave 直到玩家接受、單場累計花費上限。
-- [ ] **`demolish` 的回傳值是三個常數**（BUG-366）— `cost` 恆 0（拆除不動錢包）、
-  `ok` 恆 true（拆除不產生 notification）、沒有 `reason` 也沒有 `info`。拆 42 格與
-  拆 0 格的回應一字不差。要回傳實際拆掉了什麼，資料本來就在算。順帶
-  `docs/agent-api.md` 那句「唯一的例外是分區筆刷」要改成兩個例外。
-- [ ] **`read()` 讀不到高架結構**（BUG-367）— `ElevationManager` 是 `Game` 的
-  private 欄位，不在 `GameState` 上，而 `AgentRead` 只拿得到 `getState()`。
-  要走 host bridge。
-- [ ] **`read()` 讀不到「兩格通不通」**（BUG-368）— 只能拿服務覆蓋當代理，而覆蓋是
-  有預算上限的 Dijkstra，「0 覆蓋」分不出「不連通」與「太遠」。
+- [x] **`demolish` 的回傳值是三個常數**（BUG-366，已修）— `cost` 恆 0、`ok` 恆 true，
+  拆 42 格與拆 0 格的回應一字不差。做法:新增純模組 `DemolishTally`，在**拆之前**
+  掃一遍矩形（計數與破壞分開，計數就完全測得到），結果放進 `demolished` 欄位。
+  高架段也算 —— 橫過空地的橋只看 `Grid` 會回答「什麼也沒拆」。
+- [x] **`read()` 讀不到高架結構**（BUG-367，已修）— `ElevationManager` 是 `Game` 的
+  欄位而不是 `GameState` 的，所以 `read.cells()`（它吐 `Grid`）永遠看不到橋。
+  做法:`read.elevated(rect?)` 走 host bridge，一段一列。
+- [x] **`read()` 讀不到「兩格通不通」**（BUG-368，已修）— 只能拿服務覆蓋當代理，而
+  覆蓋是有預算上限的 Dijkstra，「0 覆蓋」分不出「不連通」與「太遠」。做法:
+  `read.connected(from, to)` 走既有的 `RoadCellGraph`，flood 不設上限。
 - [ ] **`ok` 不等於「有東西改變」** — 在已經有路的地方再蓋一次不會被拒絕也不花錢，
   agent 分不出「成功」與「什麼都沒發生」。要精確知道改了哪幾格得在動作前後比對網格
   （`getCellDiff` 已經有了），那同時也是 undo 的原料。

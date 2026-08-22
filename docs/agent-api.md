@@ -116,7 +116,7 @@ curl localhost:5173/agent          # GET 會回用法與幾個例子
 | `policy` | 分區條例、全城條例、城市特化 |
 | `districts` | 分區的增刪改名換色合併，筆刷指向誰、用什麼模式 |
 | `ui` | 面板、圖層、視角模式、工具、暫停與速度、鏡頭、取消選取 |
-| `read` | 城市數字、建築、居民、服務、大眾運輸、逐格資料、面板統計 |
+| `read` | 城市數字、建築、居民、服務、大眾運輸、逐格資料、高架、連通、面板統計 |
 | `session` | 存檔清單、存檔、匯出、匯入、載入、開新局 |
 
 ---
@@ -203,10 +203,39 @@ act(action: AgentAction): AgentActionResult
 | `cost` | number | 花掉多少。負數是退錢 |
 | `reason` | string? | 被拒絕時遊戲自己的說法 |
 | `info` | string? | 成功時遊戲還是說了話（分區筆刷每一筆都會說） |
+| `demolished` | DemolishTally? | **只有 `demolish` 有**，而且一定有。這一下清掉了什麼 |
 
 > **`ok` 不等於「有東西改變」。** 在已經有路的地方再蓋一次不會被拒絕，也不會花錢。
-> `cost === 0 && ok` 多半代表這個動作什麼也沒做。唯一的例外是分區筆刷 —— 它有自己的
-> 判定（見下）。
+> `cost === 0 && ok` 多半代表這個動作什麼也沒做。**有兩個例外**：分區筆刷有自己的
+> 判定（見下），而拆除的 `cost` **恆為 0** —— 拆東西不用錢，所以那條規則對它完全
+> 失效。拆除要看 `demolished`。
+
+### 拆除拆掉了什麼
+
+拆除不動錢包（`cost` 恆 0）也不出聲（`ok` 恆 true），所以拆 42 格和拆 0 格的回應
+原本一字不差。`demolished` 是唯一分得出來的東西：
+
+```js
+a.act({ tool: 'demolish', x1: 10, y1: 10, x2: 13, y2: 12 })
+// { ok: true, cost: 0, demolished:
+//   { cells: 7, buildings: 3, roads: 4, rails: 0, infrastructure: 0, zones: 3, elevated: 0 } }
+```
+
+| 欄位 | 意思 |
+|------|------|
+| `cells` | 有東西被清掉的格子數。**不重複計算** —— 橋和它底下的路是一格 |
+| `buildings` | 分區建築（住商工辦） |
+| `roads` | 地面道路格 |
+| `rails` | 地面鐵軌格 |
+| `infrastructure` | 公共設施。多格建築算**一座**，不是一格一座 |
+| `zones` | 被清掉的分區格 |
+| `elevated` | 高架**段**數。同一格疊了兩層就是 2 |
+
+`cells === 0` 就是白做工。分類是另外一個問題 —— `buildings` 與 `zones` 會重疊
+（一格上有房子的住宅地兩邊都算），要不重複的總數就看 `cells`。
+
+被 64 格上限擋下來時 `ok` 是 `false`，`demolished` 是一份全零的 —— 欄位仍然在，
+呼叫端不必為了拒絕路徑多寫一個 `undefined` 判斷。
 
 ### 工具
 
@@ -589,6 +618,38 @@ curl -X POST localhost:5173/agent -d '{"path":"read.coverage","args":["police"]}
 
 `cells(rect)` 是最貴的讀法 —— 60×60 全開是 3600 筆。用來看一小塊地能不能蓋，
 不是用來看全城。
+
+### 高架 `elevated(rect?)`
+
+**`cells()` 回的 `roadType` / `railType` 全部是地面層。** 高架段不住在網格裡
+（它們在 `ElevationManager`），所以橋、匝道、疊層在 `cells()` 上一個欄位都看不到。
+
+```js
+a.read.elevated({ x1: 0, y1: 0, x2: 20, y2: 20 })
+// [{ x: 5, y: 5, level: 1, roadType: 5, roadFlags: 0, railType: 0, railFlags: 0,
+//    isRamp: true, rampAscendDirection: 2 }, ...]
+```
+
+一段一列 —— 同一格疊了兩層就是兩列。省略 `rect` 就是全城。順序固定為 y、x、level，
+所以兩次讀取之間比得出差異。
+
+`isRamp` 值得看：**沒有匝道的橋是下不來的橋**，車走不上去也走不下來。
+
+### 連通 `connected(from, to)`
+
+```js
+a.read.connected({ x: 3, y: 3 }, { x: 40, y: 28 })
+// { connected: true, cost: 396 }
+// { connected: false, cost: -1 }   ← 走不到
+```
+
+**不要拿 `coverage()` 當連通性的代理。** 覆蓋是**有預算上限**的 flood（一般設施
+1800，警局 540，國小 360），走到預算耗盡就停 —— 它的「0 覆蓋」分不出「不連通」與
+「連通但太遠」。橋接對了也可以是 0。`connected()` 沒有上限，它的 `false` 就真的是
+不連通。
+
+`cost` 與覆蓋是同一把尺，所以拿它跟預算比得出「一座警局蓋在這裡罩不罩得到那裡」。
+兩端都不必是道路格 —— 跟分區、公共設施一樣附掛到 2 格內的路上。高架與匝道自動算數。
 
 ---
 

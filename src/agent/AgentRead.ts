@@ -10,6 +10,9 @@ import type { TrafficStatsResult } from '../core/traffic/TrafficStats';
 import type { CommuteStats } from '../core/citizen/CommuteStats';
 import type { TransferStats } from '../core/transport/TransferStatsQuery';
 import type { ChartHistory } from '../core/economy/ChartSeries';
+import type { ElevatedSegment } from '../core/elevation/types';
+import type { RoadCellGraph } from '../core/road/RoadCellGraph';
+import { roadConnectivity, type ConnectivityResult } from '../core/road/RoadConnectivity';
 import { buildSummaryStats, type SummaryStats } from '../core/stats/SummaryStats';
 import { buildDemographicsStats, type DemographicsStats } from '../core/stats/DemographicsStats';
 import { buildEnvironmentStats, type EnvironmentStats } from '../core/stats/EnvironmentStats';
@@ -76,6 +79,21 @@ export interface StatsHost {
   /** 建築高亮的 10 階色帶。 */
   coverageGradient(): readonly number[];
   /**
+   * 全城的高架段。
+   *
+   * **這一份不在 `GameState` 裡** —— `ElevationManager` 是 `Game` 的欄位，所以
+   * `read` 只能從這裡拿。少了它，程式確認一座橋存在的唯一辦法是故意重蓋一次、
+   * 讀 `Elevation level already occupied` 那句錯誤訊息（BUG-367）。
+   */
+  elevatedSegments(): Array<{ x: number; y: number; level: number; data: ElevatedSegment }>;
+  /**
+   * 路網的格子層圖，含高架與匝道。`null` = 路網 lookup 還沒接上。
+   *
+   * 這是 `SimulationLoop` 以 `commuteCache.roadGeneration` 為鍵快取的那一份 ——
+   * 服務覆蓋與通勤可達性走的都是它。**不要在這裡重建**，那是 O(路格數)。
+   */
+  roadCellGraph(): RoadCellGraph | null;
+  /**
    * 逐日的圖表歷史。
    *
    * 這一份**不在 `GameState` 裡** —— 它是 UI 的 store 一天記一筆累積起來的，
@@ -105,6 +123,13 @@ export interface CityInfo {
   rci: { residential: number; commercial: number; industrial: number };
   power: { supply: number; demand: number };
   water: { supply: number; demand: number };
+}
+
+/** 一段高架路段/鐵軌。`level` 1–3，`x`/`y` 是它站的那一格。 */
+export interface ElevatedInfo extends ElevatedSegment {
+  x: number;
+  y: number;
+  level: number;
 }
 
 export interface BuildingInfo {
@@ -553,5 +578,46 @@ export class AgentRead {
       }
     }
     return out;
+  }
+
+  /**
+   * 高架路段與鐵軌 —— 一段一列，同一格疊了兩層就是兩列。
+   *
+   * `cells()` 回的 `roadType` / `railType` **全部是地面層**（它吐的是 `Grid`，
+   * 而高架住在 `ElevationManager`）。橋、匝道、疊層只有這裡看得到。
+   *
+   * 順序固定為 y、x、level —— 兩次讀取之間比得出差異。
+   */
+  elevated(rect?: { x1: number; y1: number; x2: number; y2: number }): ElevatedInfo[] {
+    const bounds = rect ? {
+      x1: Math.min(rect.x1, rect.x2), x2: Math.max(rect.x1, rect.x2),
+      y1: Math.min(rect.y1, rect.y2), y2: Math.max(rect.y1, rect.y2),
+    } : null;
+
+    const out: ElevatedInfo[] = [];
+    for (const e of this.stats.elevatedSegments()) {
+      if (bounds && (e.x < bounds.x1 || e.x > bounds.x2 || e.y < bounds.y1 || e.y > bounds.y2)) continue;
+      out.push({ x: e.x, y: e.y, level: e.level, ...e.data });
+    }
+    out.sort((a, b) => (a.y - b.y) || (a.x - b.x) || (a.level - b.level));
+    return out;
+  }
+
+  /**
+   * 兩格之間走不走得到。
+   *
+   * `coverage()` 答不了這件事 —— 它是**有預算上限**的 flood，「0 覆蓋」分不出
+   * 「不連通」與「連通但太遠」（BUG-368）。這一支沒有上限。
+   *
+   * `cost` 與 `coverage()` 是同一把尺，所以拿它跟 `ROAD_COVERAGE` 的預算比得出
+   * 「一座警局蓋在這裡罩不罩得到那裡」。走不到是 `-1`。
+   *
+   * 兩端都不必是道路格 —— 跟分區、公共設施一樣附掛到 2 格內的路上。
+   */
+  connected(from: { x: number; y: number }, to: { x: number; y: number }): ConnectivityResult {
+    const graph = this.stats.roadCellGraph();
+    // 路網還沒接上時說「通」會比說「不通」糟糕得多 —— 前者會讓呼叫端把橋當成蓋好了。
+    if (!graph) return { connected: false, cost: -1 };
+    return roadConnectivity(graph, from, to);
   }
 }

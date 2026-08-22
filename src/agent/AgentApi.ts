@@ -1,5 +1,6 @@
 import type { PlacementMode, ToolType } from '../Game';
 import type { Rotation } from '../core/building/InfraConfig';
+import { EMPTY_DEMOLISH_TALLY, type DemolishTally } from '../core/building/DemolishTally';
 
 export type { PlacementMode, Rotation };
 
@@ -44,6 +45,8 @@ export interface ToolHost {
   notification: string | null;
   /** 分區筆刷上一次做了什麼。`null` 是「這一筆被擋下來了」。 */
   lastDistrictGesture: DistrictGesture;
+  /** 上一次拆除清掉了什麼。`null` 是「這一輪沒有拆過」。 */
+  lastDemolishTally: DemolishTally | null;
   getState(): { readonly budget: { readonly funds: number } };
   setTool(tool: ToolType): void;
   handleToolAction(x1: number, y1: number, x2: number, y2: number): void;
@@ -83,6 +86,14 @@ export interface AgentActionResult {
   reason?: string;
   /** 成功時遊戲還是說了話（分區筆刷每一筆都會說）。 */
   info?: string;
+  /**
+   * 這一下拆掉了什麼。**只有 `demolish` 有這個欄位**，而且一定有 ——
+   * 被上限擋下來時是一份全零的。
+   *
+   * 拆除不動錢包也不出聲，所以 `cost` 恆 0、`ok` 恆 true。拆 42 格與拆 0 格的
+   * 回應原本一字不差（BUG-366），這一份是唯一分得出來的東西。
+   */
+  demolished?: DemolishTally;
 }
 
 export const AGENT_LIMITS = {
@@ -116,6 +127,7 @@ export class AgentApi {
           tool: action.tool,
           rect,
           cost: 0,
+          demolished: { ...EMPTY_DEMOLISH_TALLY },
           reason: `demolish area too large: ${cells} cells (limit ${AGENT_LIMITS.DEMOLISH_CELLS})`,
         });
       }
@@ -124,6 +136,8 @@ export class AgentApi {
     // 上一則通知還留著的話，會被當成這一次的失敗理由。
     this.host.notification = null;
     this.host.lastDistrictGesture = null;
+    // 跟通知一樣是留在 Game 上的狀態 —— 不清的話會把上一次拆掉的東西算到這次頭上。
+    this.host.lastDemolishTally = null;
 
     this.host.setTool(action.tool);
     // 順序是有意義的:`setTool` 自己會把 rotation 歸零、把非拖曳工具的 placementMode
@@ -149,6 +163,9 @@ export class AgentApi {
       tool: action.tool,
       rect,
       cost,
+      ...(action.tool === 'demolish'
+        ? { demolished: this.host.lastDemolishTally ?? { ...EMPTY_DEMOLISH_TALLY } }
+        : {}),
       ...(note === null ? {} : ok ? { info: note } : { reason: note }),
     });
   }

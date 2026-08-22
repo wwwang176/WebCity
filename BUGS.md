@@ -31,7 +31,7 @@
 
 ## 待修問題
 
-### BUG-368: `read()` 讀不到「兩格通不通」 ⬜ 未修復
+### BUG-368: `read()` 讀不到「兩格通不通」 ✅ 已修復
 
 - **症狀**（AI 用 agent API 實測）: 蓋完一座橋之後，程式沒有任何辦法問「A 格和 B 格
   的車走不走得到」。目前最接近的是 `read.coverage(x, y)` —— 拿服務覆蓋當連通性的
@@ -44,9 +44,18 @@
   `SimulationLoop.getCellGraph()` 呼叫的是同一支）。三層圖都認高架，代理指標沒有被
   這件事污染。
 - **修法**: `read.connected(from, to)` 走既有的 `RoadCellGraph`，flood 不設預算上限，
-  回 `{ connected, cost }`。
+  回 `{ connected, cost }`。圖是 `SimulationLoop` 以 `roadGeneration` 為鍵快取的
+  那一份（`SimulationLoop.roadCellGraph()`），不重建 —— 重建一次是 O(路格數)。
+- **測試**: `RoadConnectivity.test.ts`。突變驗證逼出兩件事:成本要取**最便宜**的那條路
+  （不提早結束的話取到的是最後碰到的目標，所以有一條把成本釘到 `5 × 36`），以及
+  「沒有匝道的橋不是通路」（不然「橋走得通」那條會被任何把高架當平面的實作通過）。
+  `targets.size === 0` 那個早退是**等價變異**，程式碼裡註明了 —— 拿掉答案一樣，
+  只是會白跑一次全城 flood。
+- **瀏覽器實測**: 一條 55 格長的雙線道，`connected` 回 `{ connected: true, cost: 1836 }`
+  —— 而 1836 > `BASE_COST` 1800，也就是任何服務覆蓋都會回「沒涵蓋」的距離。
+  這正是代理指標分不出來的那一格。
 
-### BUG-367: `read()` 讀不到高架結構 ⬜ 未修復
+### BUG-367: `read()` 讀不到高架結構 ✅ 已修復
 
 - **症狀**（AI 用 agent API 實測）: `read.cells()` 每格回的是地面層的
   `roadType` / `roadFlags` / `railType` / `railFlags`。高架段一個欄位都沒有。
@@ -57,10 +66,15 @@
   只吐 Grid 裡的東西;而高架段住在 `ElevationManager`（key = `x,y,level`），
   **`ElevationManager` 是 `Game` 的 private 欄位，不在 `GameState` 上**。
   `AgentRead` 拿到的只有 `getState()`，所以它連理論上都摸不到那份資料。
-- **修法**: 走 host bridge（`StatsHost`），`ElevationManager.getAllLevels()` 現成
-  就是要的形狀。
+- **修法**: `read.elevated(rect?)`，走 host bridge（`StatsHost.elevatedSegments()`
+  → `Game.getElevatedSegments()` → `ElevationManager.toJSON()`）。一段一列，同一格
+  疊了兩層就是兩列;順序固定為 y、x、level，兩次讀取之間比得出差異。
+- **測試**: `AgentRead.test.ts` 的「高架結構」。fixture **刻意不照順序放** ——
+  照順序放的話「有沒有排序」這條會被沒有排序的實作通過（突變驗證抓到的）。
+- **瀏覽器實測**: 蓋一段 40→47 的高架，`read.elevated()` 回六段、兩端 `isRamp: true`，
+  而同一批格子的 `read.cells()` 仍然是 `roadType: 0`（地面確實沒有路）。
 
-### BUG-366: `demolish` 的回傳值是三個常數 ⬜ 未修復
+### BUG-366: `demolish` 的回傳值是三個常數 ✅ 已修復
 
 - **症狀**（AI 用 agent API 實測）: 拆 42 格和拆 0 格，收到的回應一模一樣 ——
   `{ ok: true, cost: 0 }`。
@@ -78,6 +92,19 @@
   - `classifyDemolishCell` 對空格回的是 `'regular'`，接著照樣寫一次一模一樣的預設值。
     「有沒有清掉東西」的判斷要加在那支純函式那一側，不能寫在 `Game.ts`
     —— 那支 import Three.js，vitest 是 node 環境載不動它。
+- **實際修法**: 新增純模組 `core/building/DemolishTally.ts`，在**拆之前**掃一遍矩形。
+  計數與破壞分開，計數就完全是純函式（代價是同一塊矩形走兩遍）;分類**共用
+  `classifyDemolishCell`**，所以兩遍看到的是同一套規則。`Game` 把結果放在
+  `lastDemolishTally`，`AgentApi` 照 `lastDistrictGesture` 的老規矩動作前先清空。
+  高架段也算 —— 一座橫過空地的橋，只看 `Grid` 會回答「什麼也沒拆」。
+- **測試**: `DemolishTally.test.ts`（14 條）與 `AgentApi.test.ts` 的「拆除要說出自己
+  拆了什麼」。突變驗證逼出一條:1×1 的公車站其實走的是 `multi_cell_infra` 分支
+  （`findPrimaryCell` 對 1×1 回的是它自己），所以 `single_cell_infra` 那一支要另外
+  用「找不到主格的孤兒設施格」才測得到。
+- **沒有做的**: `reserved` 不單獨計數。整份 repo 沒有任何地方在 `buildingId === 0`
+  的格子上寫它，所以它永遠跟著建築或設施一起被算到 —— 單獨判它會是一條測不出來的死枝。
+- **瀏覽器實測**: 空地上拆 4×4 回 `cells: 0`;拆一塊混著路、分區、警局的地回
+  `{ cells: 13, roads: 5, zones: 4, infrastructure: 1 }` —— 警局佔四格但算**一座**。
 
 ### BUG-365: 修完 BUG-363 之後，所有人擠到最近那一座設施 ✅ 已修復
 

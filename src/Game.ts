@@ -58,6 +58,7 @@ import { INFRA_SERVICE_ACTIONS, type InfraServiceContext } from './core/building
 import { getInfraDetails as getInfraDetailsFromCtx, type InfraDetailContext } from './core/building/InfraDetails';
 import { classifyBuilding } from './core/building/BuildingClassifier';
 import { classifyDemolishCell } from './core/building/DemolishClassifier';
+import { tallyDemolish, type DemolishTally } from './core/building/DemolishTally';
 import { getEconomyBreakdown as computeEconomyBreakdown } from './core/economy/EconomyBreakdown';
 import { buildEconomyBreakdownContext } from './core/economy/EconomyBreakdownContext';
 import { buildIncomeCalcDeps } from './core/economy/IncomeCalcAdapter';
@@ -1011,6 +1012,10 @@ export class Game {
         this.handleSelectClick(x1, y1);
         break;
       case 'demolish': {
+        // 先數，再拆。計數是純函式（`DemolishTally`），拿的是還沒被動過的網格。
+        // 拆除不動錢包也不出聲，所以這一份是 agent 唯一分得出「拆到東西」與
+        // 「白做工」的依據（BUG-366）。
+        this.lastDemolishTally = tallyDemolish(this.state.grid, this.elevationManager, x1, y1, x2, y2);
         // Demolish elevated segments first across entire drag area
         const { minX, maxX, minY, maxY } = normalizeRect(x1, y1, x2, y2);
         let anyElevatedRemoved = false;
@@ -1498,6 +1503,9 @@ export class Game {
    * 「有沒有通知」分不出成功與失敗，程式呼叫的那一層（`AgentApi.act`）看的是這裡。
    */
   lastDistrictGesture: 'select' | 'deselect' | 'paint' | null = null;
+
+  /** 上一次拆除清掉了什麼。`null` 是「這一輪沒有拆過」。agent API 讀它。 */
+  lastDemolishTally: DemolishTally | null = null;
 
   /** 作用中的分區還在嗎。存檔載入或分區被合併掉之後，id 會指向不存在的東西。 */
   private hasActiveDistrict(): boolean {
@@ -2828,6 +2836,26 @@ export class Game {
   /** 建築高亮的 10 階色帶。 */
   coverageGradient(): readonly number[] {
     return Game.COV_GRADIENT;
+  }
+
+  /**
+   * 全城的高架段。
+   *
+   * agent API 讀它 —— `ElevationManager` 是 `Game` 的欄位而不是 `GameState` 的，
+   * 所以 `read.cells()`（它吐 `Grid`）永遠看不到橋（BUG-367）。
+   */
+  getElevatedSegments(): ReturnType<ElevationManager['toJSON']> {
+    return this.elevationManager.toJSON();
+  }
+
+  /**
+   * 路網的格子層圖，含高架與匝道。`null` = 路網 lookup 還沒接上。
+   *
+   * 轉手 `SimulationLoop` 那份以 `roadGeneration` 為鍵快取的 —— 服務覆蓋與通勤
+   * 可達性走的都是它。
+   */
+  getRoadCellGraph(): ReturnType<SimulationLoop['roadCellGraph']> {
+    return this.simLoop.roadCellGraph();
   }
 
   private buildOverlayData(type: OverlayType): Map<string, number> | undefined {

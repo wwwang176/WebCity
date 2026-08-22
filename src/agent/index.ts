@@ -38,7 +38,7 @@ export * from './registry';
  * | `policy` | 分區條例、全城條例、城市特化 |
  * | `districts` | 分區的增刪改名換色，以及筆刷指向誰、用什麼模式 |
  * | `ui` | 開關面板、圖層、聚焦視角、工具、暫停與速度、鏡頭 |
- * | `read` | 城市數字、建築、居民、服務、大眾運輸、逐格資料 |
+ * | `read` | 城市數字、建築、居民、服務、大眾運輸、逐格資料、高架、連通 |
  * | `session` | 存檔清單、存檔、匯出、載入、開新局（**沒有刪除**） |
  * | `status()` | 玩家現在在看什麼:主選單／載入中／遊戲中、哪個面板、教程走到哪 |
  */
@@ -258,6 +258,8 @@ function statsHost(game: Game): StatsHost {
     getCoverageCosts: (service) => game.getCoverageCosts(service as never),
     getOverlaySourceCells: (type) => game.getOverlaySourceCells(type as never),
     coverageGradient: () => game.coverageGradient(),
+    elevatedSegments: () => game.getElevatedSegments(),
+    roadCellGraph: () => game.getRoadCellGraph(),
     chartHistory: () => gameSignals.chartHistory(),
   };
 }

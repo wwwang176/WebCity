@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { AgentApi, AGENT_LIMITS, type PlacementMode, type Rotation, type ToolHost } from '../AgentApi';
 import type { ToolType } from '../../Game';
+import { EMPTY_DEMOLISH_TALLY } from '../../core/building/DemolishTally';
 
 /**
  * 程式動手蓋東西的那一層。
@@ -33,6 +34,7 @@ function fakeHost(opts: { funds?: number; onAction?: (h: FakeHost) => void } = {
     currentRotation: 0,
     notification: null,
     lastDistrictGesture: null,
+    lastDemolishTally: null,
     getState: () => ({ budget }),
     calls: [],
     get funds() { return budget.funds; },
@@ -168,6 +170,55 @@ describe('沒有復原功能，所以爆炸半徑要有上限', () => {
 
     expect(r.ok).toBe(true);
     expect(h.calls).toHaveLength(1);
+  });
+});
+
+describe('拆除要說出自己拆了什麼', () => {
+  // 拆除不動錢包也不出聲,所以 `cost` 恆 0、`ok` 恆 true —— 拆 42 格和拆 0 格
+  // 的回應本來一字不差（BUG-366）。
+  it('should say plainly that it did nothing', () => {
+    const h = fakeHost({ onAction: (host) => { host.lastDemolishTally = { ...EMPTY_DEMOLISH_TALLY }; } });
+    const r = new AgentApi(h).act({ tool: 'demolish', x1: 0, y1: 0, x2: 5, y2: 5 });
+
+    expect(r.ok).toBe(true);
+    expect(r.cost).toBe(0);
+    expect(r.demolished, '白做工看不出來').toEqual(EMPTY_DEMOLISH_TALLY);
+  });
+
+  it('should report what actually came down', () => {
+    const tally = { ...EMPTY_DEMOLISH_TALLY, cells: 7, buildings: 3, roads: 4 };
+    const h = fakeHost({ onAction: (host) => { host.lastDemolishTally = tally; } });
+    const r = new AgentApi(h).act({ tool: 'demolish', x1: 0, y1: 0, x2: 5, y2: 5 });
+
+    expect(r.demolished).toEqual(tally);
+  });
+
+  it('should report zeros when the cap refused the action', () => {
+    // 擋下來的時候連 handleToolAction 都沒呼叫,所以遊戲那邊不會寫 tally。
+    // 欄位仍然要在 —— 呼叫端不該為了拒絕路徑多寫一個 undefined 判斷。
+    const h = fakeHost();
+    const side = Math.ceil(Math.sqrt(AGENT_LIMITS.DEMOLISH_CELLS)) + 1;
+    const r = new AgentApi(h).act({ tool: 'demolish', x1: 0, y1: 0, x2: side - 1, y2: side - 1 });
+
+    expect(r.ok).toBe(false);
+    expect(r.demolished).toEqual(EMPTY_DEMOLISH_TALLY);
+  });
+
+  it('should not put a tally on anything other than demolish', () => {
+    const h = fakeHost({ onAction: (host) => { host.lastDemolishTally = { ...EMPTY_DEMOLISH_TALLY, cells: 9 }; } });
+    const r = new AgentApi(h).act({ tool: 'road_2lane', x1: 0, y1: 0, x2: 5, y2: 0 });
+
+    expect(r.demolished, '蓋路也回報拆了幾格').toBeUndefined();
+  });
+
+  it('should not inherit the tally from an earlier demolish', () => {
+    // `lastDemolishTally` 跟 `notification` 一樣是留在 Game 上的狀態。
+    const h = fakeHost({ onAction: () => {} });
+    const api = new AgentApi(h);
+    h.lastDemolishTally = { ...EMPTY_DEMOLISH_TALLY, cells: 42 };
+    const r = api.act({ tool: 'demolish', x1: 0, y1: 0, x2: 1, y2: 1 });
+
+    expect(r.demolished, '上一次拆掉的東西被算到這一次頭上').toEqual(EMPTY_DEMOLISH_TALLY);
   });
 });
 

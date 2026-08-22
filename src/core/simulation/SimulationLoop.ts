@@ -372,6 +372,14 @@ export class SimulationLoop {
     return this._cellGraph;
   }
 
+  /**
+   * 路網圖給外面讀。快取與通勤共用同一份 —— 重建一次是 O(路格數)，
+   * agent API 每問一次連通性就重建一次的話會很痛。
+   */
+  roadCellGraph(): import('../road/RoadCellGraph').RoadCellGraph | null {
+    return this.getCellGraph();
+  }
+
   setRoadLookup(lookup: import('../road/UnifiedRoadLookup').UnifiedRoadLookup): void {
     this._roadLookup = lookup;
   }
