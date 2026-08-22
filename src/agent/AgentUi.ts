@@ -2,6 +2,8 @@ import type { OverlayType } from '../renderer/OverlayRenderer';
 import type { ViewMode } from '../core/ViewMode';
 import type { ToolType } from '../Game';
 import { GameClock, type GameSpeed } from '../core/simulation/GameClock';
+import { OverlayType as OverlayTypes } from '../renderer/OverlayRenderer';
+import { ViewMode as ViewModes } from '../core/ViewMode';
 import { getPanelBridge, isPanelId, PANEL_IDS, type PanelId } from './registry';
 
 /**
@@ -40,6 +42,23 @@ export interface CameraState {
   angle: number;
   elevation: number;
 }
+
+/**
+ * Layers 面板上真的有按鈕的那幾層。
+ *
+ * 跟 `OverlayType` 不是同一組 —— 那個列舉裡的 `crime` 渲染器實作了，面板上卻沒有
+ * 入口。呼叫端問「玩家看得到什麼」跟「程式開得起來什麼」是兩個問題。
+ */
+const LAYERS_PANEL_OVERLAYS: ReadonlySet<string> = new Set([
+  'power', 'water',
+  'traffic', 'commute', 'zone', 'landValue', 'pollution',
+  'police', 'fire', 'health', 'education', 'park', 'garbage', 'district',
+]);
+
+/** Layers 面板上真的有按鈕的視角模式。 */
+const LAYERS_PANEL_MODES: ReadonlySet<string> = new Set([
+  'UNDERGROUND', 'RAIL_FOCUS', 'FERRY_FOCUS', 'BUS_FOCUS',
+]);
 
 /** AgentUi 碰得到的東西。用結構型別是為了能在沒有 Three.js 的情況下測。 */
 export interface UiHost {
@@ -124,6 +143,32 @@ export class AgentUi {
   }
 
   // ── 圖層與視角 ──────────────────────────────────────────────────
+
+  /**
+   * 有哪些圖層可以開。
+   *
+   * `inLayersPanel` 說的是**玩家按得到嗎** —— `crime` 渲染器做得出來,但 Layers
+   * 面板上沒有那一格，鍵盤也沒有捷徑。API 開得起來,玩家開不起來。
+   *
+   * 要知道那一層的數字怎麼讀（二元／連續／分類）請看 `read.overlay(type).kind`。
+   */
+  overlays(): { type: OverlayType; inLayersPanel: boolean }[] {
+    return Object.values(OverlayTypes)
+      .filter(t => t !== OverlayTypes.NONE)
+      .map(type => ({ type, inLayersPanel: LAYERS_PANEL_OVERLAYS.has(type) }));
+  }
+
+  /**
+   * 有哪些視角模式。
+   *
+   * `inLayersPanel` 同樣是「玩家按得到嗎」:`TRANSFER_FOCUS` 是點轉乘路線時自動
+   * 切過去的，面板上沒有那個按鈕。
+   */
+  viewModes(): { mode: ViewMode; inLayersPanel: boolean }[] {
+    return Object.values(ViewModes)
+      .filter(m => m !== ViewModes.NORMAL)
+      .map(mode => ({ mode, inLayersPanel: LAYERS_PANEL_MODES.has(mode) }));
+  }
 
   overlay(): OverlayType {
     return this.host.getOverlay();

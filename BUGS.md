@@ -31,6 +31,49 @@
 
 ## 待修問題
 
+### BUG-355: Environment 頁的 Noise 永遠印著「-」 ✅ 已修復
+
+- **症狀**: Overview → Environment 的三張卡是 Ground Avg / Water / Noise，
+  第三張永遠是灰色的「-」。
+- **根因**: 那份 `createMemo` 裡宣告了 `let totalNoise = 0`，然後**沒有任何一行加值**，
+  算出來的 `avgNoise` 恆為 0，而 JSX 乾脆寫死了「-」。`cell.noiseLevel` 一直都在
+  格子裡，`updateLandValue` 每 60 tick 寫一次。
+- **修法**: `buildEnvironmentStats` 真的去讀 `cell.noiseLevel`，面板顯示那個數字。
+  只算**有建築**的格子 —— `updateLandValue` 在 `buildingId === 0` 提早回去，空的
+  分區地讀到的 0 是「沒有人寫過這一格」而不是「這裡很安靜」，算進去會依「還沒蓋起來
+  的比例」稀釋整個平均（BUG-092 就是這個坑）。
+- **怎麼發現的**: 把 Overview 的數字接進 agent API 時，逐頁比對面板算了什麼、
+  API 該吐什麼 —— 這一格是面板自己算了卻沒有用。
+- **嚴重性**: 低（一個永遠不顯示的欄位）
+- **狀態**: 已修復（實測 12,408 人的存檔顯示 47.9）
+
+### BUG-356: `crime` 圖層做得出來，玩家永遠打不開 ⬜ 未修復
+
+- **症狀**: `OverlayType.CRIME` 在 `OverlayRenderer` 裡有完整的上色分支，但
+  **Layers 面板上沒有那一格，鍵盤也沒有捷徑**。整張圖層只有程式叫得動。
+- **根因**: `LayersModal` 的三組清單（Infrastructure / City Data / Services）是手寫的，
+  漏了 crime。列舉與面板清單沒有任何一方會強迫另一方跟上。
+- **影響**: 犯罪率會進吸引力的算式（`ATTRACTIVENESS.CRIME_WEIGHT`），玩家看得到
+  分數被扣，卻沒有辦法在地圖上看是哪一區在扣。
+- **暫時的出口**: agent API 開得起來 —— `ui.setOverlay('crime')`。`ui.overlays()`
+  會把 `inLayersPanel: false` 標出來，講明這是玩家按不到的那一層。
+- **嚴重性**: 中（一整張已經寫好的圖層等於不存在）
+- **狀態**: 未修復（要不要放進面板是設計決定，不是筆誤）
+
+### BUG-357: 讀完存檔的前 60 tick，Freight 頁說鐵路沒有車站 ⬜ 未修復
+
+- **症狀**: 載入存檔之後，Overview → Freight 的 Trade Facilities 寫著
+  「Rail (0/4 stations) 0/tick」，過幾秒才跳回正確的 4 座與 200/tick。
+- **根因**: `RailSystem.toJSON()` 存了 `hasExternalConnection`，`fromJSON()` 也還原了它，
+  但**沒有存也沒有還原 `externalStations` 這個集合**。那個集合只有
+  `updateExternalConnection()` 會填，而 `SimulationLoop` 每 60 tick 才叫它一次。
+  於是讀檔後有一段時間旗標是 `true`、計數是 `0`，兩者互相矛盾。
+- **為什麼不是「順手修一下」**: 有兩條路 —— 把集合一起存進存檔（要改存檔格式與遷移），
+  或在載入完成時立刻叫一次 `updateExternalConnection()`（要拿得到 grid，而載入流程
+  裡它的建立順序得先確認）。兩條都不是一行。
+- **嚴重性**: 低（最多 60 tick 的暫態，而且會自己好）
+- **狀態**: 未修復
+
 ### BUG-352: 換一局之後兩份 UI 疊在一起 ✅ 已修復
 
 - **症狀**: agent 載入存檔之後，HUD 顯示的是**上一局**的人口與市庫，而地圖畫的是

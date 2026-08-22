@@ -194,3 +194,49 @@ describe('取消選取', () => {
     expect(h.deselects).toBe(1);
   });
 });
+
+
+describe('可以開哪些圖層與視角', () => {
+  it('should list the overlays without listing "none" as one of them', () => {
+    // `none` 是「關掉」，不是一張圖層。列進去的話呼叫端會去問它的資料。
+    const list = new AgentUi(fakeHost()).overlays();
+
+    expect(list.some(o => o.type === 'none'), '把關閉當成一張圖層').toBe(false);
+    expect(list.length).toBeGreaterThan(10);
+  });
+
+  it('should say which overlays the player can actually reach', () => {
+    // crime 渲染器做得出來，但 Layers 面板上沒有那一格，鍵盤也沒有捷徑 ——
+    // API 開得起來，玩家開不起來。這個差別要講出來。
+    const list = new AgentUi(fakeHost()).overlays();
+    const crime = list.find(o => o.type === 'crime')!;
+    const police = list.find(o => o.type === 'police')!;
+
+    expect(crime, 'crime 圖層不見了').toBeDefined();
+    expect(crime.inLayersPanel, 'crime 在面板上其實按不到').toBe(false);
+    expect(police.inLayersPanel).toBe(true);
+  });
+
+  it('should list the focus modes without listing NORMAL', () => {
+    // NORMAL 是「取消聚焦」，不是一種聚焦。
+    const list = new AgentUi(fakeHost()).viewModes();
+
+    expect(list.some(m => m.mode === 'NORMAL')).toBe(false);
+    expect(list.find(m => m.mode === 'UNDERGROUND')!.inLayersPanel).toBe(true);
+  });
+
+  it('should say the transfer focus has no button of its own', () => {
+    // 它是點轉乘路線時自動切過去的。
+    const transfer = new AgentUi(fakeHost()).viewModes().find(m => m.mode === 'TRANSFER_FOCUS')!;
+
+    expect(transfer.inLayersPanel).toBe(false);
+  });
+
+  it('should only name overlays that setOverlay would accept', () => {
+    // 清單跟能設的值分家的話，照著清單設會被打回票。
+    const ui = new AgentUi(fakeHost());
+    for (const { type } of ui.overlays()) {
+      expect(() => ui.setOverlay(type), `${type} 設不進去`).not.toThrow();
+    }
+  });
+});

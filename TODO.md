@@ -1052,6 +1052,25 @@
   agent 分不出「成功」與「什麼都沒發生」。要精確知道改了哪幾格得在動作前後比對網格
   （`getCellDiff` 已經有了），那同時也是 undo 的原料。
   分區筆刷已經不靠通知判成敗了（`Game.lastDistrictGesture`），但其餘工具還是。
+- [x] **Overview 八頁的數字全部接進 API**（已做）— 六頁的算式從各自的 `createMemo`
+  抽成 `src/core/stats/` 的純模組，**面板與 `read` 呼叫同一支**，不會再有「API 說
+  75%、螢幕說 68%」。`read.summary()` / `demographics()` / `environment()` /
+  `freight()` / `infra()` / `serviceStats()` / `chartHistory()`。
+  `facilityLoad.ts` 一併從 `ui/modals/overview` 搬到 `core/stats`（core 不能 import ui）。
+- [x] **市民詳情與工具狀態接進 API**（已做）— `read.citizens()` 補上名字、生命階段、
+  健康與「Work」那一列的字（`workLabel`:Unemployed / Retired / Student /
+  Too young to work 是四件事，混為一談會讓滿員的城市看起來像失業率 100%），
+  另加 `read.citizen(id)`。`status()` 補上 rotation、placementMode、roadType、
+  elevationLevel、previewCost、selectedTransferRoute、selectedCitizenId、
+  audio 三個開關、loadedSave。
+- [x] **`ui.overlays()` / `ui.viewModes()`**（已做）— 呼叫端本來只能猜圖層的名字。
+  兩支都標出 `inLayersPanel`:程式開得起來，不代表玩家按得到（見 BUG-356）。
+- [ ] **`InfraPage.tsx` 是死碼** — `OverviewModal` 上寫著「InfraPage merged into
+  ServicesPage」，沒有任何地方 render 它。留著會讓下一個人以為那是活的分頁。
+  刪掉之前要先確認 Services 頁真的涵蓋了它顯示的每一個數字（掩埋場擱淺容量、
+  未處理污水、墓園佔用）—— `read.infra()` 現在給的就是那一份。
+- [ ] **`crime` 圖層沒有入口**（BUG-356）— 放進 Layers 面板，或者明確決定不做。
+- [ ] **讀檔後 60 tick 內 Freight 的鐵路數字是錯的**（BUG-357）。
 - [x] **服務覆蓋與地面圖層接進 API**（已做）— `read.coverage(service)` 給的是玩家真正
   在讀的那一層:走馬路成本 ÷ 預算的 10 階漸層，加上造成那些顏色的設施位置。
   `read.overlay(type)` 給地面色塊，並標明那一層的數字是二元／連續／分類。
