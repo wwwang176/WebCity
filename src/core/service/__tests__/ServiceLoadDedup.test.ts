@@ -6,6 +6,22 @@ import { ZoneType } from '../../grid/types';
 import { HealthService } from '../HealthService';
 import { SchoolService } from '../SchoolService';
 import { EducationService } from '../EducationService';
+import { createGameState } from '../../simulation/GameState';
+import { RoadType } from '../../road/types';
+
+/**
+ * 一條橫貫的路。
+ *
+ * 負載跟著**覆蓋**走（BUG-363），所以要有路、也要先算過覆蓋 —— 沒有覆蓋就沒有人
+ * 在服務那一格，需求不該落到任何一座設施頭上。
+ */
+function roadTown(width = 12) {
+  const state = createGameState(width, 10);
+  for (let x = 0; x < width; x++) {
+    state.grid.setCell(x, 4, { roadType: RoadType.TWO_LANE, roadFlags: 0b1111 });
+  }
+  return state;
+}
 
 /**
  * 服務負載改成「先數成每一格幾個人，再去查」。要釘的是**這不是近似**:
@@ -166,9 +182,11 @@ describe('人數有真的傳到服務裡', () => {
   });
 
   it('should scale school enrolment by the count on each entry', () => {
+    const state = roadTown();
     const s = new SchoolService('elementary');
-    const id = s.addSchool(0, 0);
-    s.updateLoads([{ x: 2, y: 2, count: 37 }], []);
+    const id = s.addSchool(1, 3);
+    s.recalculateCoverage(state.grid);
+    s.updateLoads([{ x: 2, y: 4, count: 37 }], []);
     expect(s.getEnrollment(id), '入學人數沒有乘上 count').toBe(37);
     expect(s.getDemand(id)).toBe(37);
   });
@@ -176,11 +194,13 @@ describe('人數有真的傳到服務裡', () => {
   it('should carry the count through EducationService to the right school type', () => {
     // 端到端:SimulationLoop 送的是 EnrolledCitizen（帶 schoolKey），而 EducationService
     // 只是按學制轉送。轉送時把 count 丟掉的話，只測 SchoolService 的那條看不出來。
+    const state = roadTown();
     const edu = new EducationService();
-    const elementaryId = edu.addSchool(0, 0, 'elementary');
+    const elementaryId = edu.addSchool(1, 3, 'elementary');
+    edu.recalculateCoverage(state.grid);
     edu.updateSchoolLoads(
-      [{ x: 2, y: 2, schoolKey: 'elementary', count: 41 }],
-      [{ x: 3, y: 3, schoolKey: 'elementary', count: 9 }],
+      [{ x: 2, y: 4, schoolKey: 'elementary', count: 41 }],
+      [{ x: 3, y: 4, schoolKey: 'elementary', count: 9 }],
     );
     expect(edu.getSchoolEnrollment(elementaryId), '在學人數沒有一路傳到學校').toBe(41);
     expect(edu.getSchoolDemand(elementaryId), '候補人數沒有一路傳到學校').toBe(50);
@@ -188,9 +208,11 @@ describe('人數有真的傳到服務裡', () => {
 
   it('should treat a missing count as one', () => {
     // 既有的呼叫端（與測試）不帶 count。預設值換掉的話它們會靜靜地全部歸零。
+    const state = roadTown();
     const s = new SchoolService('elementary');
-    const id = s.addSchool(0, 0);
-    s.updateLoads([{ x: 2, y: 2 }, { x: 2, y: 2 }], []);
+    const id = s.addSchool(1, 3);
+    s.recalculateCoverage(state.grid);
+    s.updateLoads([{ x: 2, y: 4 }, { x: 2, y: 4 }], []);
     expect(s.getEnrollment(id)).toBe(2);
   });
 });

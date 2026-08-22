@@ -84,24 +84,21 @@ export class HealthService extends RoadCoverageService<Hospital> {
     this.hospitalDemand.clear();
     for (const h of this.facilities) this.hospitalDemand.set(h.id, 0);
 
-    const operational = this.getOperationalFacilities();
+    // 攤給**服務那一格的那一間**醫院 —— 沿馬路走過來最便宜的那一間，跟圓點與
+    // 圖層同一個答案。以前這裡用歐氏直線,河對岸一間直線很近、開車要繞一大圈的
+    // 醫院會吸走這一區的病人,顯示爆量卻服務不到人（BUG-363）。
+    //
+    // 覆蓋本來就只從運作中的設施淹出去,所以「不會攤給沒電的那一間」是免費附帶的
+    // （BUG-100 當初要的就是這件事）。
+    const operationalIds = new Set(this.getOperationalFacilities().map(h => h.id));
     let totalDemand = 0;
     for (const c of coveredCitizens) {
       const demand = citizenHospitalDemand(c.pollution) * (c.count ?? 1);
       totalDemand += demand;
 
-      // Assign to nearest OPERATIONAL hospital. An unpowered one could be the
-      // closest and absorb demand nothing was actually serving (BUG-100).
-      let nearestId = '';
-      let nearestDist = Infinity;
-      for (const h of operational) {
-        const dx = c.x - h.x;
-        const dy = c.y - h.y;
-        const dist = dx * dx + dy * dy;
-        if (dist < nearestDist) { nearestDist = dist; nearestId = h.id; }
-      }
-      if (nearestId) {
-        this.hospitalDemand.set(nearestId, (this.hospitalDemand.get(nearestId) ?? 0) + demand);
+      const id = this.getServingFacilityId(c.x, c.y);
+      if (id !== null && operationalIds.has(id)) {
+        this.hospitalDemand.set(id, (this.hospitalDemand.get(id) ?? 0) + demand);
       }
     }
 

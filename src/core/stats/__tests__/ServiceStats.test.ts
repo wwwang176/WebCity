@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { createGameState } from '../../simulation/GameState';
 import { buildServicesStats } from '../ServiceStats';
+import { RoadType } from '../../road/types';
 
 describe('服務統計', () => {
   it('should list every service the coverage panel scores', () => {
@@ -55,9 +56,14 @@ describe('服務統計', () => {
     // 舊的 `capacity > 0 && load > capacity` 在全城停電時把警示關掉了 ——
     // 正是最該亮的時候。這裡把負載分配好之後才讓警局斷電:負載留著，容量歸零。
     const state = createGameState(8, 8);
+    // 要有路才有覆蓋，要有覆蓋才有人收得到需求（BUG-363）。
+    for (let x = 0; x < 8; x++) {
+      state.grid.setCell(x, 4, { roadType: RoadType.TWO_LANE, roadFlags: 0b1111 });
+    }
     state.police.addStation(3, 3);
     state.police.updateOperationalStatus(() => true);
-    state.police.updateStationLoads([{ x: 3, y: 3, weight: 500 }]);
+    state.police.recalculateCoverage(state.grid);
+    state.police.updateStationLoads([{ x: 3, y: 4, weight: 500 }]);
     state.police.updateOperationalStatus(() => false);
 
     const police = buildServicesStats(state).services.find(x => x.service === 'police')!;

@@ -1,7 +1,7 @@
 import type { SizedGrid } from '../grid/GridHelpers';
 import { ROAD_COVERAGE } from './RoadCoverageFlood';
 import { RoadCoverageService } from './RoadCoverageService';
-import { distributeLoadToNearest } from './StationLoadDistributor';
+import { distributeLoadToServingFacility } from './StationLoadDistributor';
 
 export interface PoliceStation {
   id: string;
@@ -35,9 +35,17 @@ export class PoliceService extends RoadCoverageService<PoliceStation> {
     return id;
   }
 
-  /** Assign weighted demand to nearest station (Euclidean). Delegated to StationLoadDistributor (DRY). */
+  /**
+   * 把需求攤到**服務那一格的那一座局**頭上。
+   *
+   * 「服務那一格」問的是覆蓋 —— 沿馬路走過來最便宜的那一座，跟圓點與圖層同一個
+   * 答案。以前這裡用歐氏直線，於是河對岸那間會吸走需求卻服務不到人（BUG-363）。
+   */
   updateStationLoads(demands: ReadonlyArray<{ x: number; y: number; weight: number }>): void {
-    const result = distributeLoadToNearest(this.getOperationalFacilities(), demands, this.stationLoad);
+    const result = distributeLoadToServingFacility(
+      this.getOperationalFacilities(), demands, this.stationLoad,
+      (x, y) => this.getServingFacilityId(x, y),
+    );
     this.loadRatio = result.loadRatio;
   }
 

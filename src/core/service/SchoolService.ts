@@ -134,16 +134,16 @@ export class SchoolService extends RoadCoverageService<SchoolFacility> {
     }
   }
 
+  /**
+   * 服務這一格的那一間學校。
+   *
+   * 問覆蓋，不量直線 —— 圓點、圖層、逐格負載三者才會指同一間學校。以前這裡用
+   * 歐氏距離，而且連**沒電的學校**都算在內（`getFacilities()` 不過濾），所以一間
+   * 停電的學校可以吸走整區的學生（BUG-363、BUG-100 同一類）。覆蓋只從運作中的
+   * 設施淹出去，兩件事一起解決。
+   */
   private findNearest(x: number, y: number): string | null {
-    let nearestId = '';
-    let nearestDist = Infinity;
-    for (const s of this.getFacilities()) {
-      const dx = x - s.x;
-      const dy = y - s.y;
-      const dist = dx * dx + dy * dy;
-      if (dist < nearestDist) { nearestDist = dist; nearestId = s.id; }
-    }
-    return nearestId || null;
+    return this.getServingFacilityId(x, y);
   }
 
   getEnrollment(schoolId: string): number {

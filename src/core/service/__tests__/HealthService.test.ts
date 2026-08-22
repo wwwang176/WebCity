@@ -1,7 +1,17 @@
 import { describe, it, expect } from 'vitest';
-import { HealthService, HEALTH, HOSPITAL_LOAD, citizenHospitalDemand, loadRatioToDeathMultiplier, uncoveredPollutionMultiplier } from '../HealthService';
+import { createGameState } from '../../simulation/GameState';
 import { RoadType } from '../../road/types';
+import { HealthService, HEALTH, HOSPITAL_LOAD, citizenHospitalDemand, loadRatioToDeathMultiplier, uncoveredPollutionMultiplier } from '../HealthService';
 import type { SizedGrid } from '../../grid/GridHelpers';
+
+/** 一條橫貫的路。負載跟著覆蓋走，所以測試也要有路可走。 */
+function roadTown(width: number) {
+  const state = createGameState(width, 12);
+  for (let x = 0; x < width; x++) {
+    state.grid.setCell(x, 4, { roadType: RoadType.TWO_LANE, roadFlags: 0b1111 });
+  }
+  return { state };
+}
 
 /** Grid with a cross-shaped road centered at (cx, cy). */
 function makeCrossRoadGrid(size: number, cx: number, cy: number): SizedGrid {
@@ -275,34 +285,58 @@ describe('HealthService hospital load', () => {
   });
 
   it('getHospitalLoad returns per-hospital demand', () => {
-    const health = new HealthService();
-    const id1 = health.addHospital(0, 0, 12, 100);
-    const id2 = health.addHospital(20, 20, 12, 100);
-    // 10 citizens near hospital 1 (at x=1), none near hospital 2
-    const citizens = Array.from({ length: 10 }, () => ({ x: 1, y: 1, pollution: 0 }));
-    health.updateLoads(citizens);
-    expect(health.getHospitalLoad(id1)).toBe(Math.round(10 * 0.3)); // 3
-    expect(health.getHospitalLoad(id2)).toBe(0);
+    // 負載跟著**覆蓋**走，所以要有路、也要先算過覆蓋 —— 沒有覆蓋就沒有人在服務
+    // 那一格，需求不該落到任何一間醫院頭上（BUG-363）。
+    const { state } = roadTown(40);
+    const id1 = state.health.addHospital(1, 3, 12, 100);
+    const id2 = state.health.addHospital(30, 3, 12, 100);
+    state.health.recalculateCoverage(state.grid);
+
+    const citizens = Array.from({ length: 10 }, () => ({ x: 2, y: 4, pollution: 0 }));
+    state.health.updateLoads(citizens);
+
+    expect(state.health.getHospitalLoad(id1)).toBe(Math.round(10 * 0.3)); // 3
+    expect(state.health.getHospitalLoad(id2)).toBe(0);
   });
 
-  it('citizens assigned to nearest hospital', () => {
-    const health = new HealthService();
-    const id1 = health.addHospital(0, 0, 12, 100);
-    const id2 = health.addHospital(10, 0, 12, 100);
-    // Citizen at (3,0) → closer to hospital 1
-    // Citizen at (8,0) → closer to hospital 2
-    health.updateLoads([
-      { x: 3, y: 0, pollution: 0 },
-      { x: 8, y: 0, pollution: 0 },
+  it('should follow the road, not the straight line', () => {
+    // 這是 BUG-363 的核心。醫院 B 在直線上比較近，但它蓋在一條**斷開的**路上,
+    // 開車到不了;醫院 A 在同一條路上，遠一點但真的服務得到。
+    // 舊的歐氏規則會把病人記在 B 頭上 —— B 顯示爆量卻服務不到人，A 顯示很空。
+    const state = createGameState(40, 12);
+    for (let x = 0; x < 30; x++) {
+      state.grid.setCell(x, 4, { roadType: RoadType.TWO_LANE, roadFlags: 0b1111 });
+    }
+    // 斷開的另一條路，離病人只有兩格，但跟主路不相連。
+    for (let y = 8; y < 11; y++) {
+      state.grid.setCell(20, y, { roadType: RoadType.TWO_LANE, roadFlags: 0b1111 });
+    }
+    const onRoad = state.health.addHospital(1, 3, 12, 100);
+    const acrossTheGap = state.health.addHospital(21, 9, 12, 100);
+    state.health.recalculateCoverage(state.grid);
+
+    state.health.updateLoads(Array.from({ length: 10 }, () => ({ x: 20, y: 4, pollution: 0 })));
+
+    expect(state.health.getServingFacilityId(20, 4), '覆蓋指到的不是路上那一間').toBe(onRoad);
+    expect(state.health.getHospitalLoad(onRoad), '需求沒跟著覆蓋走').toBe(3);
+    expect(state.health.getHospitalLoad(acrossTheGap), '直線近的那間吸走了病人').toBe(0);
+  });
+
+  it('should split demand between two hospitals on the same road', () => {
+    // 反面:兩間都在路上時，各自收自己那一段的需求。不然「全部記給第一間」
+    // 也會讓上面那條通過。
+    const { state } = roadTown(40);
+    const west = state.health.addHospital(1, 3, 12, 100);
+    const east = state.health.addHospital(35, 3, 12, 100);
+    state.health.recalculateCoverage(state.grid);
+
+    state.health.updateLoads([
+      ...Array.from({ length: 20 }, () => ({ x: 2, y: 4, pollution: 0 })),
+      ...Array.from({ length: 5 }, () => ({ x: 34, y: 4, pollution: 0 })),
     ]);
-    expect(health.getHospitalLoad(id1)).toBe(Math.round(0.3)); // 0
-    expect(health.getHospitalLoad(id2)).toBe(Math.round(0.3)); // 0
-    // With more citizens to see rounding
-    const nearH1 = Array.from({ length: 20 }, () => ({ x: 2, y: 0, pollution: 0 }));
-    const nearH2 = Array.from({ length: 5 }, () => ({ x: 9, y: 0, pollution: 0 }));
-    health.updateLoads([...nearH1, ...nearH2]);
-    expect(health.getHospitalLoad(id1)).toBe(Math.round(20 * 0.3)); // 6
-    expect(health.getHospitalLoad(id2)).toBe(Math.round(5 * 0.3)); // 2
+
+    expect(state.health.getHospitalLoad(west)).toBe(Math.round(20 * 0.3)); // 6
+    expect(state.health.getHospitalLoad(east)).toBe(Math.round(5 * 0.3)); // 2
   });
 
   it('fromJSON restores loadRatio to 0', () => {

@@ -248,6 +248,7 @@ const TOOL_TO_OVERLAY: Partial<Record<ToolType, OverlayType>> = {
 export type { ServiceStatus } from './core/service/ServiceStatusView';
 import { buildServiceStatus, type ServiceStatus } from './core/service/ServiceStatusView';
 import { serviceSeverity } from './core/service/ServiceSeverity';
+import { serviceLoadRatiosAt, type ServiceLoadRatios } from './core/service/ServiceLoadAt';
 import type { SaveCompleteMessage } from './core/save/SaveWorkerHandler';
 import { classifySaveError } from './core/save/SaveFailure';
 import { findWaterPlantSites } from './core/building/WaterPlantSites';
@@ -291,16 +292,26 @@ export interface SelectedZoneBuilding {
   workerCapacity: number;
   /** Pre-calculated actual tax income for this building. */
   taxIncome: number;
-  /** City-wide garbage load ratio (totalLoad / totalCapacity). >1 = overflowing. */
+  // ── 服務這一棟的那一座設施現在多滿 ─────────────────────────────
+  //
+  // **逐格，不是全城平均。** 這五個原本都是 `service.getLoadRatio()` —— 全城總需求
+  // ÷ 全城總容量。於是城市另一頭的醫院爆量，這一棟也跳警告;而隔壁那間爆量、
+  // 全城平均還好時，反而不跳。玩家看到的是「旁邊的國小明明很空，面板卻說教育爆量」
+  //（BUG-362 的後半）。
+  //
+  // `> 1` 是剛好滿，`> 2` 是需求兩倍於容量。**`-1` 代表沒有覆蓋** —— 那是灰色圓點
+  // 的事，不該觸發「爆量」警告，所以面板的 `> 1` 判斷天然擋掉了它。
+
+  /** 服務這一棟的那座掩埋場多滿。>1 = 溢出。 */
   garbageLoadRatio: number;
-  /** City-wide hospital load ratio (> 1 means overloaded). */
+  /** 服務這一棟的那間醫院多滿。 */
   hospitalLoadRatio: number;
-  /** City-wide police load ratio (> 1 means overloaded). */
+  /** 服務這一棟的那間警局多滿。 */
   policeLoadRatio: number;
-  /** City-wide fire load ratio (> 1 means overloaded). */
+  /** 服務這一棟的那間消防隊多滿。 */
   fireLoadRatio: number;
   /**
-   * 全城最滿的那一種學校有多滿（> 1 是超收）。
+   * 服務這一棟的學校裡**最滿的那一間**有多滿（> 1 是超收）。
    *
    * 其他四個服務都有這一欄，唯獨教育沒有 —— 於是超收十一倍的高中在建築面板上
    * 完全看不出來（BUG-364）。
@@ -2314,11 +2325,7 @@ export class Game {
             workerCount: this.state.citizens.getCitizensByWorkplace(`${x},${y}`).length,
             workerCapacity: cls.buildingType.workers,
             taxIncome: calculateSingleBuildingIncome(buildIncomeCalcDeps(this.state), x, y, cell.buildingId),
-            garbageLoadRatio: this.getGarbageLoadRatio(),
-            hospitalLoadRatio: this.state.health.getLoadRatio(),
-            educationLoadRatio: this.state.education.getLoadRatio(),
-            policeLoadRatio: this.state.police.getLoadRatio(),
-            fireLoadRatio: this.state.fire.getLoadRatio(),
+            ...this.serviceLoadAt(x, y),
             pendingDeaths: this.state.deathCare.getPendingDeathQueue().filter(d => d.x === x && d.y === y).length,
             pendingGarbage: this.state.garbage.getPendingGarbageQueue().filter(g => g.x === x && g.y === y).length,
           };
@@ -3156,13 +3163,14 @@ export class Game {
     return this.audioManager;
   }
 
-  private getGarbageLoadRatio(): number {
-    const facs = this.state.garbage.getFacilities();
-    const cap = facs.reduce((s, f) => s + f.capacity, 0);
-    const uncollected = this.state.garbage.getUncollected();
-    if (cap <= 0) return uncollected > 0 ? Infinity : 0;
-    const load = facs.reduce((s, f) => s + f.currentLoad, 0) + uncollected;
-    return load / cap;
+  /**
+   * 服務 (x, y) 的那幾座設施現在各自多滿。
+   *
+   * 算式在 `ServiceLoadAt.ts` —— `Game` 載入 Three.js，單元測試載不動它，
+   * 留在這裡的邏輯等於沒有測試在看。
+   */
+  private serviceLoadAt(x: number, y: number): ServiceLoadRatios {
+    return serviceLoadRatiosAt(this.state, x, y);
   }
 
   private getInfraDetails(type: InfraType, cx: number, cy: number): Record<string, string | number> {
@@ -3232,9 +3240,7 @@ export class Game {
         shoppingAccess: isResidentialZone(sel.zoneType) ? this.state.shopping.getResidentialAccess(x, y).hasAccess : undefined,
         customerRatio: isCommercialZone(sel.zoneType) ? this.state.shopping.getCommercialCustomers(x, y).ratio : undefined,
         hasCustomers: isCommercialZone(sel.zoneType) ? this.state.shopping.getCommercialCustomers(x, y).hasCustomers : undefined,
-        garbageLoadRatio: this.getGarbageLoadRatio(),
-        hospitalLoadRatio: this.state.health.getLoadRatio(),
-        educationLoadRatio: this.state.education.getLoadRatio(),
+        ...this.serviceLoadAt(x, y),
         pendingDeaths: this.state.deathCare.getPendingDeathQueue().filter(d => d.x === x && d.y === y).length,
         pendingGarbage: this.state.garbage.getPendingGarbageQueue().filter(g => g.x === x && g.y === y).length,
       };

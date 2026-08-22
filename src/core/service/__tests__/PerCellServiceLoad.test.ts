@@ -3,6 +3,7 @@ import { createGameState, type GameState } from '../../simulation/GameState';
 import { RoadType } from '../../road/types';
 import { serviceSeverity } from '../ServiceSeverity';
 import { buildServiceStatus } from '../ServiceStatusView';
+import { serviceLoadRatiosAt, garbageLoadRatioAt } from '../ServiceLoadAt';
 
 /**
  * 逐格的「服務我的那一座設施現在多滿」。
@@ -163,5 +164,143 @@ describe('學校的負載看的是想讀的人，不是坐得下的人', () => {
 
     expect(worst, '取到最空的那一間了').toBeGreaterThan(1);
     expect(state.education.getServingFacilityId(4, 4), '指到的不是最滿的那一間').toBe(high);
+  });
+});
+
+
+describe('遠處的學校爆滿，不該讓旁邊這一棟跳警告', () => {
+  /**
+   * 使用者回報的情境:住宅旁邊就是國小、那間沒爆量，但面板寫著教育爆量 ——
+   * 因為爆的是城市另一頭那間，而警告吃的是全城平均。
+   */
+  function twoSchoolTown() {
+    const state = createGameState(60, 8);
+    for (let x = 0; x < 60; x++) {
+      state.grid.setCell(x, 4, { roadType: RoadType.TWO_LANE, roadFlags: 0b1111 });
+    }
+    const near = state.education.addSchool(2, 3, 'elementary', undefined, 400);
+    const far = state.education.addSchool(50, 3, 'elementary', undefined, 400);
+    state.education.recalculateCoverage(state.grid);
+    // 遠處那間旁邊擠了 4000 個學生，近的這間旁邊只有 10 個。
+    state.education.updateSchoolLoads([], [
+      { x: 51, y: 4, count: 4000, schoolKey: 'elementary' },
+      { x: 3, y: 4, count: 10, schoolKey: 'elementary' },
+    ]);
+    return { state, near, far };
+  }
+
+  it('should keep the demand on the school that actually serves each block', () => {
+    const { state, near, far } = twoSchoolTown();
+
+    expect(state.education.getSchoolDemand(near), '近的那間被記上了遠處的學生').toBe(10);
+    expect(state.education.getSchoolDemand(far)).toBe(4000);
+  });
+
+  it('should leave the block next to the empty school alone', () => {
+    // 這一格的答案是「你旁邊那間很空」——不是「全城平均爆了」。
+    const { state } = twoSchoolTown();
+
+    expect(state.education.getLoadRatioAt(3, 4), '旁邊那間很空卻報爆量')
+      .toBeCloseTo(10 / 400, 6);
+  });
+
+  it('should still shout at the block next to the swamped one', () => {
+    // 反面:遠處那一區確實爆了，警告要照亮。
+    const { state } = twoSchoolTown();
+
+    expect(state.education.getLoadRatioAt(51, 4)).toBeCloseTo(10, 6);
+  });
+
+  it('should not be the city-wide average any more', () => {
+    // 全城比值是 5.01 —— 舊的警告吃這個，於是整座城市每一棟都跳「Schools
+    // overcrowded」，包括旁邊那間空到不行的。
+    const { state } = twoSchoolTown();
+
+    expect(state.education.getLoadRatio(), '全城比值本身沒變（Services 頁還在用）')
+      .toBeGreaterThan(4);
+    expect(state.education.getLoadRatioAt(3, 4), '逐格的還是跟著全城走')
+      .toBeLessThan(1);
+  });
+});
+
+
+describe('面板那幾條警告吃的數字', () => {
+  /** 兩間學校:一間在主路上，一間在斷開的路上（直線比較近）。 */
+  function splitTown() {
+    const state = createGameState(40, 14);
+    for (let x = 0; x < 30; x++) {
+      state.grid.setCell(x, 4, { roadType: RoadType.TWO_LANE, roadFlags: 0b1111 });
+    }
+    for (let y = 8; y < 12; y++) {
+      state.grid.setCell(20, y, { roadType: RoadType.TWO_LANE, roadFlags: 0b1111 });
+    }
+    return state;
+  }
+
+  it('should send students to the school they can actually get to', () => {
+    // 學校 B 在直線上只有五格遠，但那條路跟主路不相連 —— 走不到。
+    // 舊的歐氏規則會把學生全記在 B 頭上（而且連沒電的學校都算），
+    // 於是 B 顯示爆滿卻沒服務到人（BUG-363）。
+    const state = splitTown();
+    const onRoad = state.education.addSchool(14, 3, 'elementary', undefined, 400);
+    const acrossTheGap = state.education.addSchool(20, 9, 'elementary', undefined, 400);
+    state.education.recalculateCoverage(state.grid);
+
+    // 學生在 (20,4)。B 在直線上只有五格遠、A 有六格多 —— 歐氏規則會挑 B。
+    // 但 B 那條路跟主路不相連，走不到。
+    expect(state.education.getCoverage(20, 4, 'elementary'), '這一格不在覆蓋內，測不到東西').toBe(true);
+    state.education.updateSchoolLoads([], [
+      { x: 20, y: 4, count: 300, schoolKey: 'elementary' },
+    ]);
+
+    expect(state.education.getSchoolDemand(onRoad), '學生沒跟著道路走').toBe(300);
+    expect(state.education.getSchoolDemand(acrossTheGap), '走不到的學校吸走了學生').toBe(0);
+  });
+
+  it('should count the rubbish nobody has picked up yet', () => {
+    // 掩埋場只有半滿，而街上堆滿沒人收的垃圾 —— 只看 currentLoad 會說一切正常，
+    // 但玩家看到的問題就是那些垃圾。
+    const state = createGameState(20, 8);
+    for (let x = 0; x < 20; x++) {
+      state.grid.setCell(x, 4, { roadType: RoadType.TWO_LANE, roadFlags: 0b1111 });
+    }
+    state.garbage.addFacility(2, 3);
+    state.garbage.recalculateCoverage(state.grid);
+    const fac = state.garbage.getFacilities()[0]!;
+    fac.currentLoad = 0;
+
+    const clean = garbageLoadRatioAt(state, 3, 4);
+    state.garbage.reportGarbage(3, 4, fac.capacity * 2);
+    const dirty = garbageLoadRatioAt(state, 3, 4);
+
+    expect(clean).toBe(0);
+    expect(dirty, '沒人收的垃圾沒算進去').toBeGreaterThan(1);
+  });
+
+  it('should hand the panel a per-cell number for every service', () => {
+    // 五個一起，因為它們是同一組警告。少接一個就是那一條警告停在全城平均。
+    const { state, near } = cityWithTwoHospitals();
+    const cap = state.health.getHospitals().find(h => h.id === near)!.capacity;
+    state.health.updateLoads([{ x: 3, y: 4, pollution: 0, count: Math.ceil(cap * 2 / 0.3) }]);
+
+    const atNear = serviceLoadRatiosAt(state, 3, 4);
+    const atFar = serviceLoadRatiosAt(state, 31, 4);
+
+    expect(atNear.hospitalLoadRatio, '這一頭該爆').toBeGreaterThan(1.5);
+    expect(atFar.hospitalLoadRatio, '另一頭跟著爆 = 還是全城平均').toBe(0);
+  });
+
+  it('should say -1 where the service does not reach, so no warning fires', () => {
+    // 面板的判斷是 `> 1`。沒有覆蓋要回 -1 —— 回 0 也不會觸發警告,
+    // 但那是「很輕鬆」的意思，跟「沒有人管得到你」是兩件事。
+    const state = createGameState(20, 8);
+
+    const r = serviceLoadRatiosAt(state, 10, 4);
+
+    expect(r.hospitalLoadRatio).toBe(-1);
+    expect(r.educationLoadRatio).toBe(-1);
+    expect(r.policeLoadRatio).toBe(-1);
+    expect(r.fireLoadRatio).toBe(-1);
+    expect(r.garbageLoadRatio).toBe(-1);
   });
 });
