@@ -6,7 +6,8 @@ import { type MapConfig } from './core/config/MapConfig';
 import { classifySaveError, missingSaveFailure, type SaveFailure } from './core/save/SaveFailure';
 import { createAgent } from './agent';
 import { AgentSession } from './agent/AgentSession';
-import { registerSessionBridge } from './agent/registry';
+import { registerSessionBridge, setScreen } from './agent/registry';
+import { buildStatus } from './agent/status';
 
 // 讓 dev server 的 `POST /agent` 轉得進這個分頁。`import.meta.env.DEV` 是靜態的,
 // 正式 build 會整段搖掉 —— 而伺服器那半邊本來就只住在 dev server 裡。
@@ -20,6 +21,8 @@ interface SaveInfo {
 async function startGame(loadedState?: GameState, saveInfo?: SaveInfo, mapConfig?: MapConfig): Promise<void> {
   const app = document.getElementById('app');
   if (!app) return;
+
+  setScreen('loading');
 
   // Show loading screen
   const loading = createLoadingScreen();
@@ -55,6 +58,8 @@ async function startGame(loadedState?: GameState, saveInfo?: SaveInfo, mapConfig
   const ui = createGameUI(game);
   document.body.appendChild(ui);
 
+  setScreen('game');
+
   // Hold 100% for at least 300ms so it doesn't flash
   await new Promise(r => setTimeout(r, 300));
   removeLoadingScreen();
@@ -63,6 +68,9 @@ async function startGame(loadedState?: GameState, saveInfo?: SaveInfo, mapConfig
 function showMainMenu(failure?: SaveFailure, note?: string): void {
   const app = document.getElementById('app');
   if (!app) return;
+  // 載入失敗也會走到這裡 —— 少了這行，畫面狀態會卡在 'loading'，而 agent 會一直
+  // 回報「還在載入」。
+  setScreen('menu', 'main');
   app.innerHTML = '';
   app.style.display = 'block';
   const menu = createMainMenu(
@@ -185,6 +193,9 @@ registerSessionBridge({
 // 主選單上也要碰得到「有哪些存檔」與「開新局」—— 那時候還沒有 Game，所以先掛一個
 // 只有 session 的版本。開局之後 startGame 會換成完整的。
 (window as unknown as Record<string, unknown>).__agent = {
+  // 開局前沒有 Game，所以只有這兩塊。`status()` 在這裡也答得出來 —— 那正是
+  // 「我現在該做什麼」最需要它的時候。
+  status: () => buildStatus(null),
   session: new AgentSession(
     () => { throw new Error('no game is running'); },
     () => 0,

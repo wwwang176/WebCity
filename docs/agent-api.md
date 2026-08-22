@@ -109,6 +109,7 @@ curl localhost:5173/agent          # GET 會回用法與幾個例子
 
 | | 做什麼 |
 |---|---|
+| `status()` | **玩家現在在看什麼。** 主選單上也答得出來 |
 | `act()` / `history()` | 蓋、拆、劃分區、畫分區 —— 所有工具列上的工具 |
 | `routes` | 公車／地鐵／鐵路／渡輪的建線、拆線、加減車 |
 | `budget` | 稅率、借款、還款 |
@@ -117,6 +118,50 @@ curl localhost:5173/agent          # GET 會回用法與幾個例子
 | `ui` | 面板、圖層、視角模式、工具、暫停與速度、鏡頭、取消選取 |
 | `read` | 城市數字、建築、居民、服務、大眾運輸、逐格資料、面板統計 |
 | `session` | 存檔清單、存檔、匯出、匯入、載入、開新局 |
+
+---
+
+## `status()` — 玩家現在在看什麼
+
+**每一輪對話的第一句就該問這個。** 它在主選單上也答得出來 —— 那正是最需要它的時候。
+
+```bash
+curl -X POST localhost:5173/agent -d '{"path":"status"}'
+```
+
+還沒開始遊戲：
+
+```json
+{ "screen": "menu", "menuPage": "main",
+  "panel": null, "settingsOpen": false, "tutorial": null }
+```
+
+遊戲中：
+
+```json
+{ "screen": "game", "menuPage": null,
+  "panel": "overview", "settingsOpen": false,
+  "tutorial": { "active": true, "step": 1, "total": 9 },
+  "tool": "select", "paused": false, "speed": 1,
+  "viewMode": "NORMAL", "overlay": "none", "notification": null }
+```
+
+| 欄位 | 說明 |
+|------|------|
+| `screen` | `menu` / `loading` / `game` |
+| `menuPage` | 主選單停在哪一頁:`main` / `newGame` / `load`。不在主選單時是 `null` |
+| `panel` | 開著哪個面板 |
+| `settingsOpen` | 設定畫面開著嗎。**它不走面板橋，`panel` 永遠看不到它** |
+| `tutorial` | 新手教程走到哪。`step` 從 1 算起，跟畫面上的「Step 3 of 9」一致 |
+| `tool` `paused` `speed` `viewMode` `overlay` `notification` | **只有 `screen === 'game'` 時才有** |
+
+### 沒有遊戲的時候那幾欄是不存在的，不是預設值
+
+主選單與載入中都沒有 `Game`，所以工具、速度那些欄位**整個不出現**，而不是 `0` /
+`'select'` / `false`。回一個假的預設值會讓呼叫端以為遊戲正在跑而且暫停著。
+
+這對「載入中」尤其要緊:遊戲中按「載入存檔」的時候，`window.__agent` 還指著**上一局**
+（要等新的 `Game` 做好才換）。照著回報的話，會拿一座正在被丟掉的城市回答問題。
 
 ---
 
@@ -438,7 +483,8 @@ window.__agent.read.city(); // 這才是新的
 | `src/agent/AgentUi.ts` | 面板、圖層、鏡頭 |
 | `src/agent/AgentRead.ts` | 讀取層 |
 | `src/agent/AgentSession.ts` | 存檔與開局 |
-| `src/agent/registry.ts` | 面板與開局的註冊橋 |
+| `src/agent/status.ts` | `status()` —— 玩家在看什麼 |
+| `src/agent/registry.ts` | 面板、開局、畫面狀態的註冊橋 |
 | `src/agent/bridge/dispatch.ts` | 把 `{"path":"read.city"}` 變成真的呼叫，以及路徑的把關 |
 | `src/agent/bridge/client.ts` | 頁面端:收下呼叫、執行、回傳 |
 | `plugins/agent-bridge.ts` | dev server 的 `POST /agent` |

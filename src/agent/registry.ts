@@ -49,3 +49,84 @@ export function registerSessionBridge(bridge: SessionBridge | null): void {
 export function getSessionBridge(): SessionBridge | null {
   return sessionBridge;
 }
+
+/* ------------------------------------------------------------------ */
+/*  玩家在看哪個畫面                                                    */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 狀態的擁有者有三個，所以分兩種機制。
+ *
+ * **導覽用推的**（`setScreen`）:畫面與選單分頁很少變，而且每一次都是離散的事件
+ * （按了 Load Game、開始載入、載完了）。呼叫端就那幾個地方。
+ *
+ * **即時狀態用拉的**（`UiStateBridge`）:設定畫面與教程每一幀都可能不一樣，用推的
+ * 話每個切換點都得記得通知 —— 漏掉一個不會有任何徵兆，只是靜靜地過時。
+ */
+
+export type Screen = 'menu' | 'loading' | 'game';
+
+/** 主選單停在哪一頁。 */
+export type MenuPage = 'main' | 'newGame' | 'load';
+
+export interface TutorialStatus {
+  active: boolean;
+  /** 第幾步，從 1 算起。 */
+  step: number;
+  total: number;
+}
+
+/**
+ * 這兩個**各自註冊**，不合成一個 bridge。
+ *
+ * 設定畫面的開關是 `SettingsMenu` 的模組層級 signal，教程的進度住在
+ * `TutorialOverlay` 元件自己身上（每次開局都是新的一份）。合成一個介面會逼出一個
+ * 「同時擁有兩者」的假擁有者，而實際上沒有那個東西。
+ */
+export type SettingsProbe = () => boolean;
+export type TutorialProbe = () => TutorialStatus | null;
+
+// 預設是主選單。猜錯的方向很重要:說「在遊戲中」而其實還沒開局，呼叫端會照著一個
+// 不存在的城市講話;說「在主選單」最多只是慢一步。
+let screen: Screen = 'menu';
+let menuPage: MenuPage = 'main';
+let settingsProbe: SettingsProbe | null = null;
+let tutorialProbe: TutorialProbe | null = null;
+
+/**
+ * 換畫面了。
+ *
+ * `menuPage` 一律跟著寫下去，不必判斷是不是在主選單 —— `buildStatus()` 只有在
+ * `screen === 'menu'` 時才讀它，其餘時候回 `null`。多一道「只在主選單時才寫」的
+ * 判斷守不住任何看得出來的差別。
+ */
+export function setScreen(next: Screen, page: MenuPage = 'main'): void {
+  screen = next;
+  menuPage = page;
+}
+
+export function getScreen(): Screen {
+  return screen;
+}
+
+export function getMenuPage(): MenuPage {
+  return menuPage;
+}
+
+export function registerSettingsProbe(probe: SettingsProbe | null): void {
+  settingsProbe = probe;
+}
+
+export function registerTutorialProbe(probe: TutorialProbe | null): void {
+  tutorialProbe = probe;
+}
+
+/** 設定畫面開著嗎。UI 還沒起來就當作沒開 —— 單元測試裡沒有 UI。 */
+export function isSettingsOpen(): boolean {
+  return settingsProbe?.() ?? false;
+}
+
+/** 教程走到哪。沒在跑、或 UI 還沒起來，都是 `null`。 */
+export function getTutorialStatus(): TutorialStatus | null {
+  return tutorialProbe?.() ?? null;
+}

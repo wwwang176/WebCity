@@ -8,6 +8,7 @@ import { AgentRead } from './AgentRead';
 import { AgentSession } from './AgentSession';
 import { AgentRoutes, type ModeAdapter, type RouteHost } from './AgentRoutes';
 import { AgentUi, type CameraTarget, type UiHost } from './AgentUi';
+import { buildStatus, type AgentStatus } from './status';
 import { RailServiceType } from '../core/transport/RailSystem';
 import type { DistrictPaintMode } from '../core/district/DistrictPaint';
 
@@ -19,6 +20,7 @@ export { AgentRead } from './AgentRead';
 export { AgentRoutes, TRANSIT_MODES } from './AgentRoutes';
 export { AgentSession } from './AgentSession';
 export { AgentUi } from './AgentUi';
+export { buildStatus, type AgentStatus } from './status';
 export * from './registry';
 
 /**
@@ -36,8 +38,11 @@ export * from './registry';
  * | `ui` | 開關面板、圖層、聚焦視角、工具、暫停與速度、鏡頭 |
  * | `read` | 城市數字、建築、居民、服務、大眾運輸、逐格資料 |
  * | `session` | 存檔清單、存檔、匯出、載入、開新局（**沒有刪除**） |
+ * | `status()` | 玩家現在在看什麼:主選單／載入中／遊戲中、哪個面板、教程走到哪 |
  */
 export interface AgentRoot {
+  /** 玩家現在在看什麼。主選單上也答得出來。 */
+  status: () => AgentStatus;
   act: AgentApi['act'];
   history: AgentApi['history'];
   routes: AgentRoutes;
@@ -216,6 +221,7 @@ export function createAgent(game: Game): AgentRoot {
   );
 
   return {
+    status: () => buildStatus(ui),
     act: (action) => api.act(action),
     history: () => api.history(),
     routes: new AgentRoutes(routeHost(game)),

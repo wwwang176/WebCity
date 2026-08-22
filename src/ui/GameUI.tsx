@@ -1,6 +1,7 @@
 import { render } from 'solid-js/web';
 import { createSignal, createEffect, on, onCleanup } from 'solid-js';
-import { registerPanelBridge, type PanelId } from '../agent/registry';
+import { registerPanelBridge, registerSettingsProbe, type PanelId } from '../agent/registry';
+import { settingsOpen } from './components/SettingsMenu';
 import { initGameStore, gameSignals } from './store/gameStore';
 import type { Game } from '../Game';
 import './styles/game-ui.css';
@@ -57,6 +58,11 @@ function LeftPanelStack() {
 
 function GameUIRoot() {
   const [openModal, setOpenModal] = createSignal<string | null>(null);
+
+  // 設定畫面不走面板橋（它自己有一個模組層級的 signal），所以 `status()` 另外問它。
+  // 少了這一條，玩家開著設定而 agent 以為他在看地圖。
+  registerSettingsProbe(() => settingsOpen());
+  onCleanup(() => registerSettingsProbe(null));
 
   const toggleModal = (id: string) => {
     setOpenModal(prev => prev === id ? null : id);

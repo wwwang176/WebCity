@@ -1,10 +1,22 @@
-import { createSignal, Show } from 'solid-js';
+import { createSignal, onCleanup, onMount, Show } from 'solid-js';
 import { Tutorial as TutorialCore } from '../../core/tutorial/Tutorial';
+import { registerTutorialProbe } from '../../agent/registry';
 
 export function TutorialOverlay() {
   const tutorial = new TutorialCore();
   const [stepIndex, setStepIndex] = createSignal(tutorial.getStepIndex());
   const [active, setActive] = createSignal(tutorial.isActive());
+
+  // 讓 `agent.status()` 看得到教程走到哪。這一份狀態只有這個元件有 ——
+  // 每次開局都 `new` 一個新的，不是全域單例。
+  onMount(() => {
+    registerTutorialProbe(() => ({
+      active: active(),
+      step: stepIndex() + 1,   // 對外從 1 算起，跟畫面上的「Step 3 of 9」一致
+      total: tutorial.getTotalSteps(),
+    }));
+  });
+  onCleanup(() => registerTutorialProbe(null));
 
   const step = () => tutorial.getCurrentStep();
   const isLast = () => tutorial.getStepIndex() === tutorial.getTotalSteps() - 1;

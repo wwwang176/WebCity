@@ -4,6 +4,7 @@ import { exportSaveToFile, importSaveFromFile } from '../core/save/ImportExport'
 import { sanitizeSaveName } from '../core/save/SaveValidator';
 import { createNewGameConfig } from './NewGameConfig';
 import { type MapConfig } from '../core/config/MapConfig';
+import { setScreen } from '../agent/registry';
 
 export function createMainMenu(onNewGame: (config: MapConfig) => void, onLoadGame: (slotId: number) => void): HTMLElement {
   const menu = document.createElement('div');
@@ -185,10 +186,12 @@ export function createMainMenu(onNewGame: (config: MapConfig) => void, onLoadGam
   `;
 
   menu.querySelector('#btn-new-game')!.addEventListener('click', () => {
+    setScreen('menu', 'newGame');
     menu.remove();
     const configScreen = createNewGameConfig(
       (config) => { configScreen.remove(); onNewGame(config); },
       () => {
+        setScreen('menu', 'main');
         configScreen.remove();
         // Re-create main menu
         const newMenu = createMainMenu(onNewGame, onLoadGame);
@@ -201,6 +204,7 @@ export function createMainMenu(onNewGame: (config: MapConfig) => void, onLoadGam
   menu.querySelector('#btn-back')!.addEventListener('click', () => {
     (menu.querySelector('#save-container') as HTMLElement).style.display = 'none';
     (menu.querySelector('#menu-main') as HTMLElement).style.display = 'flex';
+    setScreen('menu', 'main');
   });
 
   function showDeleteModal(saveName: string, onConfirm: () => void) {
@@ -344,6 +348,7 @@ export function createMainMenu(onNewGame: (config: MapConfig) => void, onLoadGam
     const saveList = menu.querySelector('#save-list') as HTMLElement;
     mainBtns.style.display = 'none';
     saveContainer.style.display = 'flex';
+    setScreen('menu', 'load');
     renderSaveList(saveList);
   });
 
