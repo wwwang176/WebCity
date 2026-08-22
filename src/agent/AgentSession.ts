@@ -1,6 +1,6 @@
 import { listSaves, saveGame, type SaveSlot } from '../core/save/SaveManager';
 import { exportSaveToFile, importSaveFromFile } from '../core/save/ImportExport';
-import { getScreen, getSessionBridge } from './registry';
+import { getScreen, getSessionBridge, getStartFailure, setStartFailure } from './registry';
 import { checkMapConfig } from './mapConfig';
 import type { MapConfig } from '../core/config/MapConfig';
 
@@ -66,9 +66,15 @@ function describe(slot: SaveSlot): SaveInfo {
  * 所以只能回頭看畫面停在哪。這跟 `status()` 讀的是同一份狀態，不另外記帳。
  */
 function started(reason: string): SessionResult {
-  return getScreen() === 'game'
-    ? { ok: true }
-    : { ok: false, reason: `${reason} — the game is back on the ${getScreen()} screen` };
+  if (getScreen() === 'game') return { ok: true };
+  // 遊戲那邊記下的真正原因。沒有的話至少說出畫面停在哪。
+  const detail = getStartFailure();
+  return {
+    ok: false,
+    reason: detail
+      ? `${reason}: ${detail}`
+      : `${reason} — the game is back on the ${getScreen()} screen`,
+  };
 }
 
 export class AgentSession {
@@ -116,6 +122,7 @@ export class AgentSession {
     if (!bridge) return { ok: false, reason: 'session bridge not registered (no UI?)' };
     const slots = await listSaves();
     if (!slots.some(s => s.id === slotId)) return { ok: false, reason: `no save in slot ${slotId}` };
+    setStartFailure(null);
     await bridge.load(slotId);
     return started(`could not load slot ${slotId}`);
   }
@@ -163,6 +170,8 @@ export class AgentSession {
     const checked = checkMapConfig(mapConfig);
     if (!checked.ok) return { ok: false, reason: checked.reason };
 
+    // 上一次的原因不能留到這一次。
+    setStartFailure(null);
     await bridge.newGame(checked.config);
     return started('the game did not start');
   }

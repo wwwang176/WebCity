@@ -14,7 +14,7 @@ vi.mock('../../core/save/SaveManager', async (importOriginal) => ({
   listSaves: async () => fakeSaves,
 }));
 import { AgentSession } from '../AgentSession';
-import { registerSessionBridge, setScreen } from '../registry';
+import { registerSessionBridge, setScreen, setStartFailure } from '../registry';
 import type { MapConfig } from '../../core/config/MapConfig';
 
 /**
@@ -34,6 +34,7 @@ afterEach(() => {
   registerSessionBridge(null);
   setScreen('menu', 'main');
   fakeSaves = [];
+  setStartFailure(null);
 });
 
 /**
@@ -183,7 +184,51 @@ describe('開起來了沒', () => {
     expect(r.reason).toBeTruthy();
   });
 
-it('should not claim success while the game is still stuck loading', async () => {
+  it('should hand back the reason the game actually failed to start', async () => {
+    // 沒有這一條的話，呼叫端只知道「沒開起來」，真正的原因躺在瀏覽器主控台裡 ——
+    // 而呼叫端是另一個 process，它看不到那裡。玩家得自己開 devtools 貼給它。
+    registerSessionBridge({
+      newGame: async () => {
+        setStartFailure("Cannot read properties of undefined (reading 'riverHalfWidth')");
+        setScreen('menu', 'main');
+      },
+      load: async () => {},
+    });
+
+    const r = await session().newGame();
+    expect(r.ok).toBe(false);
+    expect(r.reason, '真正的錯誤沒有傳出來').toContain('riverHalfWidth');
+  });
+
+  it('should not blame this failure on the last one', async () => {
+    // 上一次的失敗理由留著的話，下一次失敗會報出一個過期的原因 —— 那比沒有原因
+    // 更糟，因為它看起來像是查到了。
+    setStartFailure('something from last time');
+    registerSessionBridge({
+      newGame: async () => { setScreen('menu', 'main'); },
+      load: async () => {},
+    });
+
+    const r = await session().newGame();
+    expect(r.ok).toBe(false);
+    expect(r.reason ?? '', '報的是上一次的失敗理由').not.toContain('last time');
+  });
+
+  it('should not blame a failed load on the last one either', async () => {
+    // 載入走的是另一支，兩支都要自己清 —— 只清一邊的話，另一邊會報出過期的原因。
+    fakeSaves = [{ id: 1, name: 'Save' }];
+    setStartFailure('something from last time');
+    registerSessionBridge({
+      newGame: async () => {},
+      load: async () => { setScreen('menu', 'main'); },
+    });
+
+    const r = await session().load(1);
+    expect(r.ok).toBe(false);
+    expect(r.reason ?? '', '報的是上一次的失敗理由').not.toContain('last time');
+  });
+
+  it('should not claim success while the game is still stuck loading', async () => {
     // 退回主選單不是唯一的失敗樣子。開局卡在載入中（例如錯誤處理自己也炸了）時，
     // 畫面會停在 'loading' —— 那時候說「開好了」比說「退回選單」更糟，因為呼叫端
     // 會立刻去讀一座還不存在的城市。

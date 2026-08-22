@@ -6,7 +6,7 @@ import { type MapConfig } from './core/config/MapConfig';
 import { classifySaveError, missingSaveFailure, type SaveFailure } from './core/save/SaveFailure';
 import { createAgent } from './agent';
 import { AgentSession } from './agent/AgentSession';
-import { registerSessionBridge, setScreen } from './agent/registry';
+import { registerSessionBridge, setScreen, setStartFailure } from './agent/registry';
 import { buildStatus } from './agent/status';
 
 // 讓 dev server 的 `POST /agent` 轉得進這個分頁。`import.meta.env.DEV` 是靜態的,
@@ -179,6 +179,8 @@ async function startGameGuarded(
     removeLoadingScreen();
     const failure = classifySaveError(err, 'load');
     console.error('[game] failed to start:', failure.detail);
+    // 主控台只有坐在瀏覽器前面的人看得到。程式呼叫的那一端在另一個 process。
+    setStartFailure(failure.detail ?? String(err));
     showMainMenu({ ...failure, message: 'The game could not start. Nothing has been changed.' });
   }
 }

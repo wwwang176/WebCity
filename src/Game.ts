@@ -507,9 +507,12 @@ export class Game {
     const mapSize = loadedState ? loadedState.grid.width : 60;
 
     // Audio
+    //
+    // **建構子只建，不放。** 環境音改在 `initPhases()` 跑完之後才開始 ——
+    // 建構子裡地形產生就會丟例外（設定不合法時），而那時候音訊已經在響了。
+    // 那個 Game 之後沒有人會再碰它，於是玩家退回主選單，音樂繼續放。
     this.audioManager = new AudioManager();
     this.audioManager.init();
-    this.audioManager.startAmbient();
 
     // Auto-save every 100 ticks
     this.autoSaver = new AutoSaver(100);
@@ -813,6 +816,11 @@ export class Game {
       });
       if (result instanceof Promise) await result;
     }
+
+    // 全部跑完了才放音樂。建構子或任何一個 init 步驟丟例外的話，`startGameGuarded`
+    // 會退回主選單，而那個半成品的 Game 沒有人會再碰它 —— 音樂要是已經開始，
+    // 就會在主選單上一直放下去。
+    this.audioManager.startAmbient();
   }
 
   private setupInput(_container: HTMLElement): void {

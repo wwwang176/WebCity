@@ -113,6 +113,26 @@ export function getMenuPage(): MenuPage {
   return menuPage;
 }
 
+/**
+ * 最後一次開局失敗的原因。
+ *
+ * 開局失敗走的是「印到主控台然後退回主選單」。呼叫端在**另一個 process**，
+ * 它看不到那個主控台 —— 少了這一份，它只知道「沒開起來」，玩家得自己開 devtools
+ * 把錯誤貼給它。
+ *
+ * 開始一次新的嘗試就要清掉:留著上一次的原因，下一次失敗會報出一個過期的答案，
+ * 而那比沒有答案更糟 —— 它看起來像是查到了。
+ */
+let startFailure: string | null = null;
+
+export function setStartFailure(detail: string | null): void {
+  startFailure = detail;
+}
+
+export function getStartFailure(): string | null {
+  return startFailure;
+}
+
 export function registerSettingsProbe(probe: SettingsProbe | null): void {
   settingsProbe = probe;
 }
