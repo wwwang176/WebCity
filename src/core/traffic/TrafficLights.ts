@@ -1,4 +1,17 @@
-import { toPosKey } from '../grid/GridHelpers';
+/**
+ * 號誌表的鍵摺成一個數字。
+ *
+ * `canPass` 是**逐車逐幀**被叫的 —— 4 萬人存檔實測 `parsePosKeyUnsafe` 佔主執行緒
+ * 4.4% 的自身時間，其中 35.5% 來自 `canAdvanceThrough → canPass` 這條路:呼叫端把
+ * 字串鍵拆成數字，`canPass` 再用 `toPosKey` 把它拼回字串去查表。一來一回，每幀
+ * 每台車各一次。
+ *
+ * 座標留在 SMI 範圍內（y < 8192），Map 的鍵就不會被裝箱。
+ */
+const LIGHT_KEY_STRIDE = 8192;
+function lightKey(x: number, y: number): number {
+  return x * LIGHT_KEY_STRIDE + y;
+}
 import { RoadType, RoadDirection } from '../road/types';
 
 /**
@@ -49,7 +62,7 @@ export const TRAFFIC_LIGHT = {
 } as const;
 
 export class TrafficLightSystem {
-  private lights = new Map<string, TrafficLight>();
+  private lights = new Map<number, TrafficLight>();
 
   addLight(
     x: number, y: number,
@@ -58,7 +71,7 @@ export class TrafficLightSystem {
     roadFlags: number = RoadDirection.NORTH | RoadDirection.SOUTH
       | RoadDirection.EAST | RoadDirection.WEST,
   ): void {
-    const key = toPosKey(x, y);
+    const key = lightKey(x, y);
     if (this.lights.has(key)) return;
     // Stagger phase start by position hash to avoid all lights syncing
     const stagger = ((x * 7 + y * 13) % 10) / 10 * phaseDuration;
@@ -69,7 +82,7 @@ export class TrafficLightSystem {
   }
 
   removeLight(x: number, y: number): void {
-    this.lights.delete(toPosKey(x, y));
+    this.lights.delete(lightKey(x, y));
   }
 
   /** Advance all lights by dt seconds (frame-based, not tick-based). */
@@ -97,7 +110,7 @@ export class TrafficLightSystem {
    * for the vehicle's direction.
    */
   canPass(fromX: number, fromY: number, toX: number, toY: number): boolean {
-    const light = this.lights.get(toPosKey(toX, toY));
+    const light = this.lights.get(lightKey(toX, toY));
     if (!light) return true;
 
     // All-red clearance: nobody passes
@@ -112,7 +125,7 @@ export class TrafficLightSystem {
   }
 
   getLight(x: number, y: number): TrafficLight | undefined {
-    return this.lights.get(toPosKey(x, y));
+    return this.lights.get(lightKey(x, y));
   }
 
   getLights(): TrafficLight[] {

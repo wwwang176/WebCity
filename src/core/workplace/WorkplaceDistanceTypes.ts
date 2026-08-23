@@ -1,3 +1,5 @@
+import type { WorkplaceDistanceBuffers } from './WorkplaceDistanceTable';
+
 /** Position of a workplace building. */
 export interface WorkplacePosition {
   pos: string;   // "x,y" key
@@ -5,12 +7,6 @@ export interface WorkplacePosition {
   y: number;
 }
 
-/** Worker → Main: computed distance table for one workplace. */
-export interface WorkplaceDistanceEntry {
-  workplacePos: string;
-  /** posKey → road cost */
-  distances: Record<string, number>;
-}
 
 /** Main → Worker messages */
 export interface WDWorkerRequest {
@@ -35,7 +31,13 @@ export interface WDWorkerRequest {
   maxBudget: number;
 }
 
-/** Worker → Main messages */
+/**
+ * Worker → Main messages
+ *
+ * `table` 的三個檢視是**用 transfer list 搬過來的**，不是複製。舊格式是逐工作地
+ * 一份 `Record<string, number>`，4 萬人存檔實測光是讀一次 `e.data` 就要 1.1 秒
+ * （375 個工作地、合計 408,712 個字串鍵）。
+ */
 export type WDWorkerResponse =
-  | { type: 'RESULT'; requestId: number; entries: WorkplaceDistanceEntry[] }
+  | { type: 'RESULT'; requestId: number; table: WorkplaceDistanceBuffers }
   | { type: 'ERROR'; requestId: number; message: string };

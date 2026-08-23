@@ -1,9 +1,10 @@
 import { Grid } from '../grid/Grid';
-import { toPosKey, parsePosKeyUnsafe, FOUR_NEIGHBORS } from '../grid/GridHelpers';
+import { toPosKey, parsePosKeyUnsafe, parseLevelFromKey, FOUR_NEIGHBORS } from '../grid/GridHelpers';
+import { CoverageBits } from './CoverageBits';
+import { UtilityFloodScratch, GROUP_NONE } from './UtilityFloodScratch';
 import { RoadType } from '../road/types';
 import { ZoneType, isResidentialZone, isCommercialZone } from '../grid/types';
 import { type UnifiedRoadLookup } from '../road/UnifiedRoadLookup';
-import { MULTI_CELL_OCCUPIED, isPrimaryCellReserved, findPrimaryCell } from '../building/InfraPlacement';
 
 /**
  * Shared network coverage algorithm used by both PowerGrid and WaterNetwork.
@@ -77,8 +78,9 @@ export function calculateNetworkCoverage(
     relayMap.set(seedKey, relayRange);
     queue.push([seedKey, relayRange]);
   }
-  while (queue.length > 0) {
-    const [curKey, remaining] = queue.shift()!;
+  let head = 0;
+  while (head < queue.length) {
+    const [curKey, remaining] = queue[head++]!;
     const { x, y } = parsePosKeyUnsafe(curKey);
 
     for (const [ddx, ddy] of FOUR_NEIGHBORS) {
@@ -145,94 +147,120 @@ export function calculateNetworkCoverage(
 // ── Shared BFS utilities for PowerGrid / WaterNetwork ──────────────
 
 /** Check if a cell can relay utility network connectivity. */
-function canRelay(
-  cell: { roadType: number; buildingId: number },
-  key: string,
-  infra?: Set<string>,
-): boolean {
-  return cell.roadType !== RoadType.NONE
-    || cell.buildingId !== 0
-    || (infra?.has(key) ?? false);
+function canRelay(roadType: number, buildingId: number, isInfra: boolean): boolean {
+  return roadType !== RoadType.NONE || buildingId !== 0 || isInfra;
+}
+
+const DX = [0, 0, -1, 1] as const;
+const DY = [-1, 1, 0, 0] as const;
+
+/** `"x,y"` 或 `"x,y,level"` → 節點編號。界外回 -1。 */
+function nodeOfKey(key: string, width: number, height: number, totalCells: number): number {
+  const { x, y } = parsePosKeyUnsafe(key);
+  if (x < 0 || y < 0 || x >= width || y >= height) return -1;
+  return parseLevelFromKey(key) * totalCells + y * width + x;
+}
+
+/** 節點 → `UnifiedRoadLookup` 認得的字串鍵。只有真的碰到高架時才會走到。 */
+function keyOfNode(x: number, y: number, level: number): string {
+  return level === 0 ? toPosKey(x, y) : `${x},${y},${level}`;
 }
 
 /**
+ * 走到隔壁那一格的地面道路上 —— `getCompatibleNeighborKeys` 在「來源在地面、
+ * 鄰居沒有高架」時的特化，兩支 flood 各用一次。
+ *
+ * 那條通用路徑每個鄰居都要:解析來源字串鍵三次（層級、座標、是不是匝道）、配一個
+ * 結果陣列、再配一個十四欄位的格子物件。而 `isCompatible(0, false, 0, false)`
+ * 恆為真、`sourceIsRamp` 為假，所以在這個情形下它的答案就只是「鄰居是不是地面
+ * 道路」。規則本身留在 `UnifiedRoadLookup` 裡，這裡只是繞過它。
+ *
+ * 200x200 全蓋滿、24 座廠的測資:光是電力那一輪，帶 lookup 3 102ms、完全不帶
+ * lookup 1 555ms —— 那一半就是這裡。
+ */
+
+/**
  * Pure BFS flood through roads/buildings from a starting position.
- * Adds all reachable cells to the given set. No budget limit.
+ * Adds all reachable cells to the given coverage bitmap. No budget limit.
  * Level-aware when UnifiedRoadLookup is set; falls back to ground-only otherwise.
- * Shared between PowerGrid and WaterNetwork.
+ * Shared between PowerGrid, WaterNetwork and SewageService.
+ *
+ * `scratch` 帶著走訪狀態與這一輪的基礎設施位置;呼叫端要先 `beginPass`。
  */
 export function bfsRoadNetworkFlood(
   grid: Grid,
   startX: number,
   startY: number,
-  coverage: Set<string>,
-  infra?: Set<string>,
+  coverage: CoverageBits,
+  scratch: UtilityFloodScratch,
   roadLookup?: UnifiedRoadLookup | null,
 ): void {
   const rl = roadLookup ?? null;
-  const startPosKey = toPosKey(startX, startY);
-  if (coverage.has(startPosKey)) return;
+  const { width, height, totalCells } = scratch;
+  if (startX < 0 || startY < 0 || startX >= width || startY >= height) return;
 
-  const visited = new Set<string>();
-  const queue: string[] = [];
+  const startIdx = startY * width + startX;
+  if (coverage.hasIdx(startIdx)) return;
 
+  scratch.beginFlood();
   // Always seed from start position (plant/facility is always a source)
-  visited.add(startPosKey);
-  queue.push(startPosKey);
-  coverage.add(startPosKey);
+  scratch.markVisited(startIdx);
+  scratch.push(startIdx);
+  coverage.addIdx(startIdx);
 
   // Also seed elevated road keys at start position (level-aware)
   if (rl) {
-    const startKeys = rl.getAllKeysAtPosition(startX, startY);
-    for (const k of startKeys) {
-      if (!visited.has(k)) {
-        visited.add(k);
-        queue.push(k);
-      }
+    for (const k of rl.getAllKeysAtPosition(startX, startY)) {
+      const node = nodeOfKey(k, width, height, totalCells);
+      if (node >= 0 && scratch.markVisited(node)) scratch.push(node);
     }
   }
 
-  while (queue.length > 0) {
-    const curKey = queue.shift()!;
-    const { x, y } = parsePosKeyUnsafe(curKey);
+  while (scratch.hasQueued) {
+    const node = scratch.shift();
+    const level = (node / totalCells) | 0;
+    const idx = node - level * totalCells;
+    const x = idx % width;
+    const y = (idx / width) | 0;
 
-    for (const [dx, dy] of FOUR_NEIGHBORS) {
-      const nx = x + dx!;
-      const ny = y + dy!;
-      const posKey = toPosKey(nx, ny);
+    for (let d = 0; d < 4; d++) {
+      const nx = x + DX[d]!;
+      const ny = y + DY[d]!;
+      if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+      const nidx = ny * width + nx;
 
       // Level-aware: get compatible road neighbors
       if (rl) {
-        const compatibleKeys = rl.getCompatibleNeighborKeys(curKey, nx, ny);
-        for (const nk of compatibleKeys) {
-          if (visited.has(nk)) continue;
-          visited.add(nk);
-          coverage.add(posKey);
-          queue.push(nk);
+        if (level > 0 || rl.hasElevatedAt(nx, ny)) {
+          const compatibleKeys = rl.getCompatibleNeighborKeys(keyOfNode(x, y, level), nx, ny);
+          for (const nk of compatibleKeys) {
+            const nnode = nodeOfKey(nk, width, height, totalCells);
+            if (nnode < 0 || !scratch.markVisited(nnode)) continue;
+            coverage.addIdx(nidx);
+            scratch.push(nnode);
+          }
+        } else if (!scratch.hasVisited(nidx)
+          && grid.getField(nx, ny, 'roadType') !== RoadType.NONE) {
+          scratch.markVisited(nidx);
+          coverage.addIdx(nidx);
+          scratch.push(nidx);
         }
       }
 
       // Ground-level cells: buildings, infra, zones (and roads when no lookup)
-      if (!visited.has(posKey)) {
-        const cell = grid.getCell(nx, ny);
-        if (!cell) continue;
-        if (canRelay(cell, posKey, infra)) {
-          visited.add(posKey);
-          coverage.add(posKey);
-          queue.push(posKey);
-        } else if (cell.zoneType !== 0) {
+      if (!scratch.hasVisited(nidx)) {
+        if (canRelay(grid.getField(nx, ny, 'roadType'),
+                     grid.getField(nx, ny, 'buildingId'), scratch.isInfra(nidx))) {
+          scratch.markVisited(nidx);
+          coverage.addIdx(nidx);
+          scratch.push(nidx);
+        } else if (grid.getField(nx, ny, 'zoneType') !== 0) {
           // Zoned cells receive coverage from adjacent relay cells but don't relay
-          coverage.add(posKey);
+          coverage.addIdx(nidx);
         }
       }
     }
   }
-}
-
-/** What reaching one cell costs: its footprint group (null = settles alone) and demand. */
-export interface CellCharge {
-  group: string | null;
-  demand: number;
 }
 
 /** Minimal plant shape needed by bfsBudgetDrainFlood. */
@@ -244,10 +272,10 @@ export interface UtilityPlant {
 
 /**
  * BFS from a single plant through roads/buildings, draining budget per cell demand.
- * Cells already in `supplied` set are skipped (no double-drain).
+ * Cells already in `supplied` are skipped (no double-drain).
  * Level-aware when UnifiedRoadLookup is set; falls back to ground-only otherwise.
  * `getDemand(x, y)` returns the demand for the cell at (x, y).
- * Shared between PowerGrid and WaterNetwork.
+ * Shared between PowerGrid, WaterNetwork and SewageService.
  *
  * Multi-cell facilities settle as ONE unit. Their whole consumption sits on the
  * primary cell and the secondaries report 0 (that is what keeps the city-wide
@@ -256,145 +284,112 @@ export interface UtilityPlant {
  * police station skipped the primary but supplied — and RELAYED THROUGH — the
  * other three, so the station showed 3/4 powered and passed power to whatever
  * lay beyond it. Charging is keyed by footprint instead: paid once, all or none.
+ *
+ * 已付款的 footprint 記在 `scratch` 上，**跨這一輪所有的廠共用** —— 因為
+ * `supplied` 也是。每座廠各記一份的話:A 在主格付掉最後一塊預算、`budget <= 0`
+ * 在主格出隊之前就 break，另外三格沒被供應;B 走到附屬格，`supplied` 裡沒有它、
+ * 自己那份新的已付清單裡也沒有，於是整棟再付一次 —— 那正是 BUG-070 修掉的重複
+ * 計費，換成跨廠又犯一次。
  */
 export function bfsBudgetDrainFlood(
   grid: Grid,
   plant: UtilityPlant,
-  supplied: Set<string>,
+  supplied: CoverageBits,
   getDemand: (x: number, y: number) => number,
-  infra?: Set<string>,
+  scratch: UtilityFloodScratch,
   roadLookup?: UnifiedRoadLookup | null,
-  /** Shared across the plants of one pass — see the comment on `paid` below. */
-  paidGroups?: Set<string>,
-  /** Shared per-position charge memo for one pass. */
-  chargeCache?: Map<string, CellCharge>,
 ): void {
   const rl = roadLookup ?? null;
+  const { width, height, totalCells } = scratch;
+  if (plant.x < 0 || plant.y < 0 || plant.x >= width || plant.y >= height) return;
+
   let budget = plant.output;
-  const startPosKey = toPosKey(plant.x, plant.y);
-
-  /**
-   * Footprints already paid for, keyed by primary-cell position.
-   *
-   * SHARED across the plants of one coverage pass, because `supplied` is too.
-   * Per-plant, a footprint left partially supplied by plant A was charged again
-   * in full by plant B: A pays at the primary, its budget lands on exactly 0,
-   * the `budget <= 0` break fires before the primary is dequeued, and the other
-   * three cells are never supplied. B then reaches a secondary, sees neither
-   * that cell in `supplied` nor the group in its own fresh set, and pays the
-   * whole facility a second time — draining 10 for something getDemand() counts
-   * as 5. That is the double-count BUG-070 removed, reintroduced across plants.
-   */
-  const paid = paidGroups ?? new Set<string>();
-
-  /**
-   * Resolve what reaching (x, y) actually costs.
-   *
-   * `group` is null for ordinary cells (each settles on its own) and the
-   * primary cell's key for any cell of a multi-cell facility.
-   *
-   * Memoised: findPrimaryCell scans an O(max(w,h)^2) box — 81 lookups per
-   * secondary cell of a Large Airport — and Grid.getCell allocates. Without the
-   * cache that ran per cell, per plant, and again for power, water and sewage
-   * on the same slow slot. The grid cannot change during a coverage pass, so
-   * one entry per position is safe for the whole pass.
-   */
-  const chargeFor = (x: number, y: number, posKey: string): CellCharge => {
-    const hit = chargeCache?.get(posKey);
-    if (hit) return hit;
-    const cell = grid.getCell(x, y);
-    let result: CellCharge;
-    if (!cell || cell.buildingId === 0
-      || (cell.reserved !== MULTI_CELL_OCCUPIED && !isPrimaryCellReserved(cell.reserved))) {
-      result = { group: null, demand: getDemand(x, y) };
-    } else {
-      const primary = findPrimaryCell(grid, x, y);
-      result = primary
-        ? { group: toPosKey(primary.x, primary.y), demand: getDemand(primary.x, primary.y) }
-        : { group: null, demand: getDemand(x, y) };
-    }
-    chargeCache?.set(posKey, result);
-    return result;
-  };
+  const startIdx = plant.y * width + plant.x;
 
   /**
    * Charge for a cell and record it as supplied. Returns false when the budget
    * cannot cover it — the caller must then neither supply nor relay through it.
    */
-  const trySupply = (x: number, y: number, posKey: string): boolean => {
-    if (supplied.has(posKey)) return true;
-    const { group, demand } = chargeFor(x, y, posKey);
-    if (group !== null && paid.has(group)) {
-      supplied.add(posKey);
+  const trySupply = (x: number, y: number, idx: number): boolean => {
+    if (supplied.hasIdx(idx)) return true;
+    const group = scratch.chargeOf(grid, idx, x, y, getDemand);
+    if (group !== GROUP_NONE && scratch.isPaid(group)) {
+      supplied.addIdx(idx);
       return true;
     }
+    const demand = scratch.demandAt(idx);
     if (demand > 0) {
       if (budget < demand) return false;
       budget -= demand;
     }
-    if (group !== null) paid.add(group);
-    supplied.add(posKey);
+    if (group !== GROUP_NONE) scratch.markPaid(group);
+    supplied.addIdx(idx);
     return true;
   };
 
-  const visited = new Set<string>();
-  const queue: string[] = [];
-
+  scratch.beginFlood();
   // Always seed from plant position (plant is always a source)
-  visited.add(startPosKey);
-  queue.push(startPosKey);
-  supplied.add(startPosKey);
+  scratch.markVisited(startIdx);
+  scratch.push(startIdx);
+  supplied.addIdx(startIdx);
 
   // Also seed elevated road keys at plant position (level-aware)
   if (rl) {
-    const startKeys = rl.getAllKeysAtPosition(plant.x, plant.y);
-    for (const k of startKeys) {
-      if (!visited.has(k)) {
-        visited.add(k);
-        queue.push(k);
-      }
+    for (const k of rl.getAllKeysAtPosition(plant.x, plant.y)) {
+      const node = nodeOfKey(k, width, height, totalCells);
+      if (node >= 0 && scratch.markVisited(node)) scratch.push(node);
     }
   }
 
-  while (queue.length > 0) {
+  while (scratch.hasQueued) {
     if (budget <= 0) break;
-    const curKey = queue.shift()!;
-    const { x, y } = parsePosKeyUnsafe(curKey);
+    const node = scratch.shift();
+    const level = (node / totalCells) | 0;
+    const idx = node - level * totalCells;
+    const x = idx % width;
+    const y = (idx / width) | 0;
 
-    for (const [dx, dy] of FOUR_NEIGHBORS) {
-      const nx = x + dx!;
-      const ny = y + dy!;
-      const posKey = toPosKey(nx, ny);
+    for (let d = 0; d < 4; d++) {
+      const nx = x + DX[d]!;
+      const ny = y + DY[d]!;
+      if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+      const nidx = ny * width + nx;
 
       // Level-aware: get compatible road neighbors
       let processedAsRoad = false;
       if (rl) {
-        const compatibleKeys = rl.getCompatibleNeighborKeys(curKey, nx, ny);
-        for (const nk of compatibleKeys) {
-          if (visited.has(nk)) continue;
-          visited.add(nk);
+        if (level > 0 || rl.hasElevatedAt(nx, ny)) {
+          const compatibleKeys = rl.getCompatibleNeighborKeys(keyOfNode(x, y, level), nx, ny);
+          for (const nk of compatibleKeys) {
+            const nnode = nodeOfKey(nk, width, height, totalCells);
+            if (nnode < 0 || !scratch.markVisited(nnode)) continue;
+            processedAsRoad = true;
+
+            if (!trySupply(nx, ny, nidx)) continue;
+
+            scratch.push(nnode);
+          }
+        } else if (!scratch.hasVisited(nidx)
+          && grid.getField(nx, ny, 'roadType') !== RoadType.NONE) {
+          scratch.markVisited(nidx);
           processedAsRoad = true;
-
-          if (!trySupply(nx, ny, posKey)) continue;
-
-          queue.push(nk);
+          if (trySupply(nx, ny, nidx)) scratch.push(nidx);
         }
       }
 
       // Ground-level cells: buildings, infra, zones (and roads when no lookup)
-      if (!processedAsRoad && !visited.has(posKey)) {
-        const cell = grid.getCell(nx, ny);
-        if (!cell) continue;
-        if (canRelay(cell, posKey, infra)) {
-          visited.add(posKey);
+      if (!processedAsRoad && !scratch.hasVisited(nidx)) {
+        if (canRelay(grid.getField(nx, ny, 'roadType'),
+                     grid.getField(nx, ny, 'buildingId'), scratch.isInfra(nidx))) {
+          scratch.markVisited(nidx);
           // An unaffordable cell is not supplied AND must not relay: that is
           // how an unpaid facility footprint used to conduct power onward.
-          if (!trySupply(nx, ny, posKey)) continue;
-          queue.push(posKey);
-        } else if (cell.zoneType !== 0) {
+          if (!trySupply(nx, ny, nidx)) continue;
+          scratch.push(nidx);
+        } else if (grid.getField(nx, ny, 'zoneType') !== 0) {
           // Zoned cells receive supply from adjacent relay cells but don't relay
-          visited.add(posKey);
-          trySupply(nx, ny, posKey);
+          scratch.markVisited(nidx);
+          trySupply(nx, ny, nidx);
         }
       }
     }

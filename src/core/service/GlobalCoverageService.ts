@@ -55,6 +55,26 @@ export abstract class GlobalCoverageService<F extends LoadFacility> extends Road
   /** Injected road lookup for level-aware Dijkstra (DIP). */
   protected roadLookup: UnifiedRoadLookup | null = null;
 
+  /**
+   * 待處理佇列被動過幾次。
+   *
+   * 給「從佇列導出來的東西」判斷自己過期了沒。快樂度每個 tick 都要一張「哪一格
+   * 有幾筆待處理」的表，而佇列只在服務 tick（每 6 個）、跨日的死亡、以及玩家拆
+   * 房子的時候會動。4 萬人的存檔實測:**24 547 筆待收垃圾只落在 311 個格子上**，
+   * 六個 tick 裡有五個重數出來的結果一模一樣，而那一支佔掉主執行緒的 4.9%。
+   *
+   * 只保證**單調遞增**,不保證每次變動只加一 —— 讀的人只比對「跟上次一不一樣」。
+   *
+   * 漏掉一次遞增的後果是那張表晚幾個 tick 才更新，不是算錯。三個入口
+   * （report / tick / clearPendingAt）各有一條測試釘著。
+   */
+  private pendingQueueVersion = 0;
+
+  get pendingVersion(): number { return this.pendingQueueVersion; }
+
+  /** 動過待處理佇列。 */
+  protected bumpPendingVersion(): void { this.pendingQueueVersion++; }
+
   /** Set the road lookup for level-aware flood fill. Call after construction. */
   setRoadLookup(lookup: UnifiedRoadLookup): void {
     this.roadLookup = lookup;

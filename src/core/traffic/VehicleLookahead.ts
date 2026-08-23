@@ -1,4 +1,5 @@
 import type { LaneEdge } from './LaneGraph';
+import { NO_ENTRY, type EdgeVehicleIndex } from './EdgeVehicleIndex';
 
 /** Distance (grid units) to stop behind the intersection edge, matching the rendered stop line position. */
 export const STOP_LINE_OFFSET = 0.25;
@@ -6,19 +7,6 @@ export const STOP_LINE_OFFSET = 0.25;
 /** Maximum lookahead distance (grid units) for gap/red-light checks. */
 const LOOKAHEAD_DISTANCE = 5;
 
-/** Compact representation of a vehicle on an edge, for O(1) lookup. */
-export interface EdgeEntry {
-  vid: number;
-  progress: number;
-  halfLen: number;
-  /**
-   * Held back by something ahead — following, a red light, or a junction.
-   *
-   * Only queueing traffic can block a junction. A car that is merely close but
-   * running free will be long gone by the time anyone reaches it.
-   */
-  queueing: boolean;
-}
 
 /** Minimal vehicle state needed for lookahead calculations. */
 export interface LookaheadVehicle {
@@ -45,7 +33,7 @@ export interface LookaheadVehicle {
 export function findGapAhead(
   v: LookaheadVehicle,
   edgePath: readonly LaneEdge[],
-  edgeIndex: ReadonlyMap<string, readonly EdgeEntry[]>,
+  edgeIndex: EdgeVehicleIndex,
   maxHalfLen = Infinity,
 ): number {
   let gap = Infinity;
@@ -57,19 +45,19 @@ export function findGapAhead(
     const myProgress = ei === v.edgeIndex ? v.edgeProgress : 0;
     const edgeRemain = edge.length - myProgress;
 
-    const entries = edgeIndex.get(edge.id);
-    if (entries) {
-      for (const e of entries) {
-        if (e.vid === v.id) continue;
-        if (ei === v.edgeIndex) {
-          if (e.progress < v.edgeProgress) continue;
-          if (e.progress === v.edgeProgress && e.vid > v.id) continue;
-          const dist = (e.progress - v.edgeProgress) - myHalfLen - e.halfLen;
-          if (dist < gap) gap = dist;
-        } else {
-          const dist = distAhead + e.progress - myHalfLen - e.halfLen;
-          if (dist < gap) gap = dist;
-        }
+    for (let i = edgeIndex.firstOf(edge.id); i !== NO_ENTRY; i = edgeIndex.nextOf(i)) {
+      const eVid = edgeIndex.vidAt(i);
+      if (eVid === v.id) continue;
+      const eProgress = edgeIndex.progressAt(i);
+      const eHalfLen = edgeIndex.halfLenAt(i);
+      if (ei === v.edgeIndex) {
+        if (eProgress < v.edgeProgress) continue;
+        if (eProgress === v.edgeProgress && eVid > v.id) continue;
+        const dist = (eProgress - v.edgeProgress) - myHalfLen - eHalfLen;
+        if (dist < gap) gap = dist;
+      } else {
+        const dist = distAhead + eProgress - myHalfLen - eHalfLen;
+        if (dist < gap) gap = dist;
       }
     }
 
@@ -117,7 +105,7 @@ export function findGapAhead(
 export function findBlockedJunctionDistance(
   v: LookaheadVehicle,
   edgePath: readonly LaneEdge[],
-  edgeIndex: ReadonlyMap<string, readonly EdgeEntry[]>,
+  edgeIndex: EdgeVehicleIndex,
   gap: number,
   minGap: number,
 ): number {
@@ -160,22 +148,21 @@ export function findBlockedJunctionDistance(
   let d = 0;
   for (let ei = v.edgeIndex; ei < edgePath.length; ei++) {
     const edge = edgePath[ei]!;
-    const entries = edgeIndex.get(edge.id);
-    if (entries) {
-      for (const e of entries) {
-        if (e.vid === v.id || !e.queueing) continue;
-        let at: number;
-        if (ei === v.edgeIndex) {
-          if (e.progress < v.edgeProgress) continue;
-          if (e.progress === v.edgeProgress && e.vid > v.id) continue;
-          at = e.progress - v.edgeProgress;
-        } else {
-          at = d + e.progress;
-        }
-        // 這台排隊中的車讓我的中心最多只能走到這裡。
-        if (at - halfLen - e.halfLen - minGap < needed) {
-          return Math.max(0, enter - halfLen - STOP_LINE_OFFSET);
-        }
+    for (let i = edgeIndex.firstOf(edge.id); i !== NO_ENTRY; i = edgeIndex.nextOf(i)) {
+      const eVid = edgeIndex.vidAt(i);
+      if (eVid === v.id || !edgeIndex.queueingAt(i)) continue;
+      const eProgress = edgeIndex.progressAt(i);
+      let at: number;
+      if (ei === v.edgeIndex) {
+        if (eProgress < v.edgeProgress) continue;
+        if (eProgress === v.edgeProgress && eVid > v.id) continue;
+        at = eProgress - v.edgeProgress;
+      } else {
+        at = d + eProgress;
+      }
+      // 這台排隊中的車讓我的中心最多只能走到這裡。
+      if (at - halfLen - edgeIndex.halfLenAt(i) - minGap < needed) {
+        return Math.max(0, enter - halfLen - STOP_LINE_OFFSET);
       }
     }
     d += edge.length - (ei === v.edgeIndex ? v.edgeProgress : 0);

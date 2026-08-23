@@ -5,7 +5,27 @@ import { RoadBuilder } from '../../road/RoadBuilder';
 import { RoadType } from '../../road/types';
 import { UnifiedRoadLookup } from '../../road/UnifiedRoadLookup';
 import { LaneGraph, isIntersectionCell, type LaneEdge } from '../LaneGraph';
-import { STOP_LINE_OFFSET, findBlockedJunctionDistance, type EdgeEntry } from '../VehicleLookahead';
+import { EdgeVehicleIndex, type EdgeVehicleView } from '../EdgeVehicleIndex';
+
+/**
+ * fixture 用的殼:維持 `Map` 的寫法，底下建的是真的 `EdgeVehicleIndex`。
+ *
+ * 正式路徑走 `begin()` / `add()` / `finish()`（每幀重建，不配物件）。這裡包一層是
+ * 為了讓斷言講「這條邊上有誰」，而不是講 CSR 的索引算術。
+ */
+class TestIndex extends EdgeVehicleIndex {
+  private started = false;
+  constructor(init?: Array<[string, EdgeVehicleView[]]>) {
+    super();
+    if (init) for (const [k, v] of init) this.set(k, v);
+  }
+  set(edgeId: string, entries: EdgeVehicleView[]): void {
+    if (!this.started) { this.begin(); this.started = true; }
+    for (const e of entries) this.add(edgeId, e.vid, e.progress, e.halfLen, e.queueing);
+  }
+}
+
+import { STOP_LINE_OFFSET, findBlockedJunctionDistance } from '../VehicleLookahead';
 
 /**
  * 不要把車停在路口裡。
@@ -150,7 +170,7 @@ describe('進去之前的那一問', () => {
   function ask(d: number, queueing: boolean, route = ROUTE, car = CAR): number {
     const at = car.edgeIndex + car.edgeProgress + d;   // 每段長 1，索引即距離
     const ei = Math.floor(at);
-    const index = new Map<string, EdgeEntry[]>([
+    const index = new TestIndex([
       [route[ei]!.id, [{ vid: 2, progress: at - ei, halfLen: HALF, queueing }]],
     ]);
     return findBlockedJunctionDistance(car, route, index, d - HALF * 2, MIN_GAP);
@@ -185,7 +205,7 @@ describe('進去之前的那一問', () => {
 
   it('should not look at all when the road ahead is empty', () => {
     // 自由車流是絕大多數的情況，要在第一行就回頭 —— 這是這條規則不花錢的原因。
-    const empty = new Map<string, EdgeEntry[]>();
+    const empty = new TestIndex();
     expect(findBlockedJunctionDistance(CAR, ROUTE, empty, Infinity, MIN_GAP)).toBe(Infinity);
     expect(ask(distFor(0.5), true, path(6, -1))).toBe(Infinity);
   });

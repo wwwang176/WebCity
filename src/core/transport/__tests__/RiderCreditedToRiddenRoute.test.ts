@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { findAvailableTransit, type TransitSystemInfo } from '../TransitAvailability';
+import { availableTransitFor } from './availableTransitFor';
+import { type TransitSystemInfo } from '../TransitAvailability';
 import { chooseModeMultiModal } from '../ModeChoice';
 import { TransportType, TransportMode, type TransportStop, type TransportRoute } from '../types';
 import { openFieldReach } from './openFieldReach';
@@ -53,7 +54,7 @@ const SYSTEM: TransitSystemInfo = {
 };
 
 function options() {
-  return findAvailableTransit(
+  return availableTransitFor(
     [SYSTEM], HOME, WORK, openFieldReach, WALK_SPEED, WAIT_FACTOR);
 }
 

@@ -1,9 +1,10 @@
 import { Grid } from '../grid/Grid';
-import { toPosKey } from '../grid/GridHelpers';
 import { ZoneType } from '../grid/types';
 import { getBuildingType } from '../building/types';
 import { getInfraBuildingId } from '../building/InfraConfig';
-import { bfsRoadNetworkFlood, bfsBudgetDrainFlood, type CellCharge } from './NetworkCoverage';
+import { bfsRoadNetworkFlood, bfsBudgetDrainFlood } from './NetworkCoverage';
+import { CoverageBits } from './CoverageBits';
+import { UtilityFloodScratch } from './UtilityFloodScratch';
 import { calculateUtilityCellDemand, type UtilityCellDemandConfig } from './UtilityCellDemand';
 
 export interface PowerPlant {
@@ -91,8 +92,13 @@ const POWER_DEMAND_CONFIG: UtilityCellDemandConfig = {
 
 export class PowerGrid {
   private plants: PowerPlant[] = [];
-  private powered = new Set<string>();
-  private fullCoverage = new Set<string>();
+  private powered = new CoverageBits();
+  private fullCoverage = new CoverageBits();
+  /**
+   * flood 的走訪狀態與這一輪共用的記錄。跨呼叫重複使用 —— 每 6 個 tick 重配
+   * 一組跟地圖一樣大的 typed array 是白花的。
+   */
+  private readonly floodScratch = new UtilityFloodScratch();
   private totalDemand = 0;
   /** Injected road lookup for level-aware BFS (DIP). */
   private roadLookup: import('../road/UnifiedRoadLookup').UnifiedRoadLookup | null = null;
@@ -117,23 +123,19 @@ export class PowerGrid {
    * fullCoverage = all reachable cells via road/building BFS (no budget limit).
    * powered = same BFS but each plant drains its output budget per building reached.
    */
-  calculateCoverage(grid: Grid, infrastructurePositions?: Set<string>): Set<string> {
+  calculateCoverage(grid: Grid, infrastructurePositions?: Set<string>): CoverageBits {
     // Phase 1: compute fullCoverage (no budget limit) — shows where the network reaches
-    this.fullCoverage.clear();
+    this.floodScratch.beginPass(grid, infrastructurePositions);
+    this.fullCoverage.reset(grid.width, grid.height);
     for (const plant of this.plants) {
-      bfsRoadNetworkFlood(grid, plant.x, plant.y, this.fullCoverage, infrastructurePositions, this.roadLookup);
+      bfsRoadNetworkFlood(grid, plant.x, plant.y, this.fullCoverage, this.floodScratch, this.roadLookup);
     }
 
     // Phase 2: BFS budget-drain per plant to determine actual powered cells
-    this.powered.clear();
+    this.powered.reset(grid.width, grid.height);
     const getDemand = (x: number, y: number) => this.getCellDemand(grid, x, y);
-    // Shared across plants: `powered` already is, so the paid-footprint set and
-    // the charge memo must be too — otherwise a facility half-supplied by one
-    // plant is charged again in full by the next.
-    const paidGroups = new Set<string>();
-    const chargeCache = new Map<string, CellCharge>();
     for (const plant of this.plants) {
-      bfsBudgetDrainFlood(grid, plant, this.powered, getDemand, infrastructurePositions, this.roadLookup, paidGroups, chargeCache);
+      bfsBudgetDrainFlood(grid, plant, this.powered, getDemand, this.floodScratch, this.roadLookup);
     }
     return this.powered;
   }
@@ -158,11 +160,11 @@ export class PowerGrid {
   }
 
   isPowered(x: number, y: number): boolean {
-    return this.powered.has(toPosKey(x, y));
+    return this.powered.has(x, y);
   }
 
   isInCoverage(x: number, y: number): boolean {
-    return this.fullCoverage.has(toPosKey(x, y));
+    return this.fullCoverage.has(x, y);
   }
 
   getTotalOutput(): number {

@@ -1,9 +1,10 @@
 import { Grid } from '../grid/Grid';
-import { toPosKey } from '../grid/GridHelpers';
 import { ZoneType } from '../grid/types';
 import { getBuildingType } from '../building/types';
 import { getInfraBuildingId } from '../building/InfraConfig';
-import { bfsRoadNetworkFlood, bfsBudgetDrainFlood, type CellCharge } from './NetworkCoverage';
+import { bfsRoadNetworkFlood, bfsBudgetDrainFlood } from './NetworkCoverage';
+import { CoverageBits } from './CoverageBits';
+import { UtilityFloodScratch } from './UtilityFloodScratch';
 import { calculateUtilityCellDemand, type UtilityCellDemandConfig } from './UtilityCellDemand';
 export interface WaterPlant {
   x: number;
@@ -83,8 +84,13 @@ const WATER_DEMAND_CONFIG: UtilityCellDemandConfig = {
 
 export class WaterNetwork {
   private plants: WaterPlant[] = [];
-  private supplied = new Set<string>();
-  private fullCoverage = new Set<string>();
+  private supplied = new CoverageBits();
+  private fullCoverage = new CoverageBits();
+  /**
+   * flood 的走訪狀態與這一輪共用的記錄。跨呼叫重複使用 —— 每 6 個 tick 重配
+   * 一組跟地圖一樣大的 typed array 是白花的。
+   */
+  private readonly floodScratch = new UtilityFloodScratch();
   private totalDemand = 0;
   /** 節水法規的逐格乘數。1 = 沒有條例。 */
   private demandMultiplier = 1;
@@ -105,20 +111,19 @@ export class WaterNetwork {
     return false;
   }
 
-  calculateCoverage(grid: Grid, infrastructurePositions?: Set<string>): Set<string> {
+  calculateCoverage(grid: Grid, infrastructurePositions?: Set<string>): CoverageBits {
     // Phase 1: compute fullCoverage (no budget limit)
-    this.fullCoverage.clear();
+    this.floodScratch.beginPass(grid, infrastructurePositions);
+    this.fullCoverage.reset(grid.width, grid.height);
     for (const plant of this.plants) {
-      bfsRoadNetworkFlood(grid, plant.x, plant.y, this.fullCoverage, infrastructurePositions, this.roadLookup);
+      bfsRoadNetworkFlood(grid, plant.x, plant.y, this.fullCoverage, this.floodScratch, this.roadLookup);
     }
 
     // Phase 2: BFS budget-drain per plant
-    this.supplied.clear();
+    this.supplied.reset(grid.width, grid.height);
     const getDemand = (x: number, y: number) => this.getCellDemandAt(grid, x, y);
-    const paidGroups = new Set<string>();
-    const chargeCache = new Map<string, CellCharge>();
     for (const plant of this.plants) {
-      bfsBudgetDrainFlood(grid, plant, this.supplied, getDemand, infrastructurePositions, this.roadLookup, paidGroups, chargeCache);
+      bfsBudgetDrainFlood(grid, plant, this.supplied, getDemand, this.floodScratch, this.roadLookup);
     }
     return this.supplied;
   }
@@ -145,11 +150,11 @@ export class WaterNetwork {
   }
 
   isSupplied(x: number, y: number): boolean {
-    return this.supplied.has(toPosKey(x, y));
+    return this.supplied.has(x, y);
   }
 
   isInCoverage(x: number, y: number): boolean {
-    return this.fullCoverage.has(toPosKey(x, y));
+    return this.fullCoverage.has(x, y);
   }
 
   getTotalOutput(): number {

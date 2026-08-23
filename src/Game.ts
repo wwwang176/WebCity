@@ -1041,7 +1041,11 @@ export class Game {
         // 事件機制。少了這一行，拆掉的橋還留在圖裡，而且是靜默的 —— 市民只是
         // 「莫名其妙還走得到已經不存在的路」。見
         // simulation/__tests__/ElevatedRoadInvalidatesGraph.test.ts。
-        this.simLoop.markLaneGraphDirty([...elevatedKeys, ...demolishedRoadCells, ...buildingCells]);
+        // 這一下有沒有拿掉路。沒有的話（純拆建築、拆分區）就沒有任何通勤會因此
+        // 不通 —— 而那正是 `skipUnreachableCheck` 的意思，也讓工作距離表得以續用。
+        const removedRoad = elevatedKeys.length > 0 || demolishedRoadCells.length > 0;
+        this.simLoop.markLaneGraphDirty(
+          [...elevatedKeys, ...demolishedRoadCells, ...buildingCells], !removedRoad);
         // Restore incremental AFTER demolish's markAllDirty (which sets full rebuild)
         if (anyElevatedRemoved) {
           // Normalize "x,y,level" keys to "x,y" for ground road renderer

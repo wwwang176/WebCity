@@ -1,7 +1,8 @@
 import { RoadType, ROAD_CONFIGS } from '../road/types';
 import type { LaneEdge } from './LaneGraph';
 import { interpolateEdgePosition, interpolateEdgeTangent, interpolateEdgePositionInto, interpolateEdgeTangentInto } from './EdgeInterpolation';
-import { findGapAhead, findRedLightDistance, findBlockedJunctionDistance, type EdgeEntry } from './VehicleLookahead';
+import { findGapAhead, findRedLightDistance, findBlockedJunctionDistance } from './VehicleLookahead';
+import { EdgeVehicleIndex, NO_ENTRY } from './EdgeVehicleIndex';
 import { SpatialHash, type SpatialEntry } from './SpatialHash';
 import { findCrossEdgeGap } from './CrossEdgeCollision';
 import { pickWeighted } from '../utils/random';
@@ -48,6 +49,14 @@ export interface Vehicle {
    * 上萬次（871 台車約 8 500 次比較）。
    */
   sortKey: number;
+  /**
+   * 這台車這一幀在 `EdgeVehicleIndex` 裡的筆號。
+   *
+   * 與 `sortKey` 一樣是**每幀重寫的暫存**，不是車輛狀態 —— 只在
+   * `advanceEdgeVehicles` 之內有意義。放在車上而不是查表，是因為索引在同一幀之內
+   * 會被改（車換邊、位置更新），而查表一幀要查上萬次。
+   */
+  edgeEntry?: number;
   citizenId?: number;  // present only for commute vehicles (prevents duplicate spawning)
   sourceBuildingKey?: string;  // present only for freight vehicles (origin building "x,y")
   busState?: BusVehicleState;  // present only for bus vehicles
@@ -212,8 +221,13 @@ export class TrafficSimulation {
   private predictedFlow: Map<string, number> | null = null;
   /** Reusable scratch array for active vehicles (avoids per-frame allocation). */
   private activeVehicleScratch: Vehicle[] = [];
-  /** Reusable edge index map (cleared each frame instead of re-allocated). */
-  private edgeIndexMap = new Map<string, EdgeEntry[]>();
+  /**
+   * 這一幀每條邊上有哪些車。
+   *
+   * 平行的 typed array，不是逐車一個物件 —— 1 829 台車 × 每秒 60 幀是每秒十萬個
+   * 短命物件，實測某些幀有 16.4% 的自身時間在垃圾回收上。細節見 `EdgeVehicleIndex`。
+   */
+  private edgeIndexMap = new EdgeVehicleIndex();
   /** Reusable per-frame sort key store (see advanceEdgeVehicles). */
   /** Reusable spatial hash for cross-edge collision detection. */
   /**
@@ -619,7 +633,7 @@ export class TrafficSimulation {
     // Build edge index: edgeId → list of { vehicleId, progress, halfLen }
     // Reuse persistent Map (clear instead of re-allocate each frame).
     const edgeIndex = this.edgeIndexMap;
-    edgeIndex.clear();
+    edgeIndex.begin();
     // 跟車查詢提前收工要用「路上最長的那台車」當門檻（見 `findGapAhead`）。
     //
     // 這是**這一幀路上實際的**最大值，不是照車身表寫死的常數 —— 常數等於一條
@@ -628,15 +642,21 @@ export class TrafficSimulation {
     // 代價是這個本來就要跑的迴圈裡多一次比較。
     let maxHalfLen = 0;
     for (const v of edgeVehicles) {
+      // 先作廢上一幀的筆號:被跳過的車留著舊筆號的話，更新段會拿它去改別台車
+      // 這一幀的那一筆。**沒有測試守得住這一行** —— 今天走不到（三處換
+      // `edgePath` 的地方都同時把 `edgeIndex` 歸零），而且就算走到也會自癒
+      // （受害者自己處理到最後會把自己那一筆寫回去，而覆寫者一定排在它前面）。
+      // 留著是為了讓這個不變式是**這裡看得到的**，不是散在四個檔案裡的約定。
+      v.edgeEntry = NO_ENTRY;
       if (v.arrived) continue;
       const ep = v.edgePath;
       const edge = ep[v.edgeIndex];
       if (!edge) continue;
-      let arr = edgeIndex.get(edge.id);
-      if (!arr) { arr = []; edgeIndex.set(edge.id, arr); }
       const halfLen = v.length / 2;
       if (halfLen > maxHalfLen) maxHalfLen = halfLen;
-      arr.push({ vid: v.id, progress: v.edgeProgress, halfLen, queueing: v.braking });
+      // 筆號記在車上 —— 這一幀晚一點要就地改它的位置或搬到下一條邊，而查表
+      // 一幀要查上萬次（`sortKey` 放在車上也是同一個理由）。
+      v.edgeEntry = edgeIndex.add(edge.id, v.id, v.edgeProgress, halfLen, v.braking);
     }
 
     // Build spatial hash for cross-edge collision detection.
@@ -714,7 +734,6 @@ export class TrafficSimulation {
 
       // 1. Gap to nearest vehicle ahead on the SAME edge path
       const gap = findGapAhead(v, ep, edgeIndex, maxHalfLen);
-      const myHalfLen = v.length / 2;
 
       // 1b. Gap to nearest vehicle on a DIFFERENT edge (cross-edge spatial check)
       const mySpatial = vidToSpatial.get(v.id);
@@ -840,29 +859,12 @@ export class TrafficSimulation {
       // Update edge index for trailing vehicles to see our new position
       const oldEdge = currentEdge;
       const newEdge = ep[v.edgeIndex];
-      if (oldEdge && newEdge && oldEdge.id !== newEdge.id) {
-        // Remove from old edge
-        const oldArr = edgeIndex.get(oldEdge.id);
-        if (oldArr) {
-          const idx = oldArr.findIndex(e => e.vid === v.id);
-          if (idx >= 0) oldArr.splice(idx, 1);
-        }
-        // Add to new edge
-        let newArr = edgeIndex.get(newEdge.id);
-        if (!newArr) { newArr = []; edgeIndex.set(newEdge.id, newArr); }
-        // 這一筆是迴圈中途才進索引的。它的半車身早就算進 `maxHalfLen` 了
-        // （上面那個建表迴圈走過每一台），所以門檻不必再動。
-        newArr.push({ vid: v.id, progress: v.edgeProgress, halfLen: myHalfLen, queueing: v.braking });
-      } else if (oldEdge) {
-        // Same edge, just update progress
-        const arr = edgeIndex.get(oldEdge.id);
-        if (arr) {
-          const entry = arr.find(e => e.vid === v.id);
-          if (entry) {
-            entry.progress = v.edgeProgress;
-            entry.queueing = v.braking;
-          }
-        }
+      const entry = v.edgeEntry;
+      if (entry !== undefined && entry >= 0) {
+        // 換邊只是把這一筆從一條串列摘下來掛到另一條上，半車身不變 ——
+        // 它早就算進 `maxHalfLen` 了（上面那個建表迴圈走過每一台）。
+        if (oldEdge && newEdge && oldEdge.id !== newEdge.id) edgeIndex.moveTo(entry, newEdge.id);
+        edgeIndex.setProgress(entry, v.edgeProgress, v.braking);
       }
     }
 

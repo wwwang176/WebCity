@@ -31,6 +31,13 @@ export class UnifiedRoadLookup {
     private em: ElevationManager,
   ) {}
 
+  /**
+   * 地圖尺寸。走這一層而不是要呼叫端自己帶 —— 拿得到 lookup 就拿得到尺寸，
+   * 兩邊各記一份遲早會對不上。
+   */
+  get width(): number { return this.grid.width; }
+  get height(): number { return this.grid.height; }
+
   /** Create a lookup from a plain Grid (no elevation). */
   static fromGrid(grid: GridLike): UnifiedRoadLookup {
     return new UnifiedRoadLookup(grid, new ElevationManager());
@@ -48,6 +55,18 @@ export class UnifiedRoadLookup {
     const seg = this.em.get(x, y, level);
     if (!seg || seg.roadType === RoadType.NONE) return null;
     return { roadType: seg.roadType, roadFlags: seg.roadFlags };
+  }
+
+  /**
+   * 這個位置有沒有任何高架層。
+   *
+   * 給熱迴圈用的**快速否定**:`getCompatibleNeighborKeys` 每次呼叫都要解析來源
+   * 字串鍵、配一個陣列、再問一次格子;而水電覆蓋的 flood 每個鄰居都會呼叫它一次。
+   * 一座只有幾段高架的城市裡，那些工作幾乎全部白做 —— 這一支讓呼叫端能先問
+   * 「這裡到底有沒有高架」，沒有就走地面那條便宜的路。
+   */
+  hasElevatedAt(x: number, y: number): boolean {
+    return this.em.levelsAt(x, y) !== 0;
   }
 
   /** Check if a cell key represents a ramp. */
@@ -87,8 +106,15 @@ export class UnifiedRoadLookup {
       }
     }
 
-    // Check all elevated levels at neighbor
+    // Check all elevated levels at neighbor.
+    //
+    // 先問一次「這一格有哪幾層」的位元遮罩。沒有高架的位置就到此為止 ——
+    // 原本無條件問三層，每問一次配一個 `x,y,level` 字串再查一次 Map。4 萬人的
+    // 存檔實測 `ElevationManager.get` 佔主執行緒 5.8%，而那座城市總共 7 段高架。
+    const mask = this.em.levelsAt(nx, ny);
+    if (mask === 0) return result;
     for (let lv = MIN_ELEVATION_LEVEL; lv <= MAX_ELEVATION_LEVEL; lv++) {
+      if ((mask & (1 << lv)) === 0) continue;
       const seg = this.em.get(nx, ny, lv);
       if (seg && seg.roadType !== RoadType.NONE) {
         if (this.isCompatible(sourceLevel, sourceIsRamp, lv, seg.isRamp)
@@ -114,7 +140,9 @@ export class UnifiedRoadLookup {
     }
 
     // Check all elevated levels
+    const mask = this.em.levelsAt(x, y);
     for (let lv = MIN_ELEVATION_LEVEL; lv <= MAX_ELEVATION_LEVEL; lv++) {
+      if ((mask & (1 << lv)) === 0) continue;
       const seg = this.em.get(x, y, lv);
       if (seg && seg.roadType !== RoadType.NONE) {
         result.push(`${x},${y},${lv}`);

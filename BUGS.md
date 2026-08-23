@@ -31,6 +31,58 @@
 
 ## 待修問題
 
+### BUG-371: 停駛的路線照樣被推薦給通勤者 ✅ 已修復
+- **位置**: `src/core/transport/TransitAvailability.ts` `findAvailableTransit()`
+- **問題**: 「停駛」是路線的道路被拆斷、車子沒在跑（`BusSystem.onRoadChanged` 設
+  `route.suspended = true`，`BaseTransportSystem` 連營運成本都不收了）。轉乘那條路徑
+  在扁平化時就跳過它（`flattenSystems` 的 `if (route.suspended) continue`），
+  **單一運具這條沒有** —— 它直接走 `sys.routes`。
+- **後果**: 同一條停駛的公車，一條路徑說搭不到、另一條說搭得到;而說搭得到的那條
+  還會把人記成它的乘客（`dailyRiders`）。玩家拆掉一段路之後，面板上那條線的搭乘數
+  會繼續漲。
+- **修法**: `findAvailableTransit` 改讀 `FlatRoute`（見 TODO 的逐格索引那一項），
+  停駛在扁平化那一步就被擋掉了，兩條路徑從此只有一份名單。
+- **嚴重性**: 中
+- **狀態**: ✅ 已修復
+
+### BUG-370: 同一個函式裡用了兩個車速 —— 班距含壅塞，乘車時間不含 ✅ 已修復
+- **位置**: `src/core/transport/TransitAvailability.ts` `findAvailableTransit()`
+- **問題**: 這一支先算出含壅塞的車速再拿去算班距，**估計時間卻用設定值**:
+
+  ```ts
+  const speed = sys.speedOn?.(route.id) ?? sys.speed;   // 含壅塞
+  const { headway, loadFactor } = routeService(route, ..., speed, segDists);
+  ...
+  estimatedTime: walkTime + expectedWait(headway, waitFactor, loadFactor)
+    + rideDistance / sys.speed,                         // 不含壅塞
+  ```
+
+- **後果**: 同一趟通勤會因為走哪一條程式碼而得到不同的答案 ——
+  - `findAvailableTransit()`（單一運具）: 乘車時間用**原始車速**
+  - `findMultiModalRoutes()` / `TransitAccessField`: 用 `FlatRoute.speed`，
+    那個是 `refreshRouteService()` 每個 tick 重讀的**含壅塞車速**
+
+  塞死的公車路線在單一運具那條路徑上看起來仍然跑得跟空街一樣快。捷運不受地面壅塞
+  影響（`getSpeedOn` 等於 `getSpeed`），所以只有公車會踩到。
+
+- **為什麼現有測試是綠的**: `RideTimeIncludesCongestion.test.ts` 最後一條
+  （「should reach the single-mode path as well」）只斷言 `estimatedTime` **變大**。
+  壅塞讓班距變長，`expectedWait` 那一項就已經變大了 —— 乘車那一項有沒有跟上，
+  這個斷言照不出來。要照出來得把班距那一路固定住（車輛數補到讓班距不變），
+  或直接斷言乘車那一段的秒數。
+
+- **這正是 BUG-343 的形狀再犯一次**: 兩條路徑各讀各的車速。`refreshRouteService()`
+  的註解本身就寫著「同一份判斷在 `findAvailableTransit()` 裡是每次現算的」。
+- **順帶**: `findAvailableTransit()` 每問一位市民就把每條路線的 `routeService()`
+  與 `getRouteRiders()` 重算一次，而 `refreshRouteService()` 已經在**同一個 tick 的
+  前幾行**用一模一樣的輸入算過了（`SimulationLoop.tick()` 第 695 行，在
+  `spawnVehicles()` 之前）。改成讀 `FlatRoute` 可以同時修掉這個 bug 與那份重算。
+- **嚴重性**: 中（估計偏差，不會當掉）
+- **修法**: 乘車那一段改用同一個 `speed`（一個字）。測試把走路與等車兩段扣掉，
+  直接斷言剩下的乘車時間等於 `rideDistance / flat.speed` —— 壅塞 1 的公車實測
+  `10` 對 `20`，剛好差一倍。
+- **狀態**: ✅ 已修復
+
 ### BUG-368: `read()` 讀不到「兩格通不通」 ✅ 已修復
 
 - **症狀**（AI 用 agent API 實測）: 蓋完一座橋之後，程式沒有任何辦法問「A 格和 B 格
@@ -54,6 +106,56 @@
 - **瀏覽器實測**: 一條 55 格長的雙線道，`connected` 回 `{ connected: true, cost: 1836 }`
   —— 而 1836 > `BASE_COST` 1800，也就是任何服務覆蓋都會回「沒涵蓋」的距離。
   這正是代理指標分不出來的那一格。
+
+### BUG-369: 走不通的通勤路線每一輪都在主執行緒重算一次 ✅ 已修復
+
+- **症狀**: 41k 人的存檔、速度 3，`advanceCommuteFill` 佔掉主執行緒 **9.9%**
+  （27.4 秒裡 2 727 毫秒），其中 **95.3% 是 `findLanePathVariants`** —— 主執行緒上的
+  同步 lane A*。而每個 tick 的同步搜尋額度只有 2（`COMMUTE_FILL_SEARCH_PER_TICK`），
+  也就是那兩次每次要 4 毫秒左右，而且**一直在跑**。
+- **根因**: 重試計數把兩個不同的答案當成同一件事。
+
+  `advanceCommuteFill` 先請 pathfinding worker 算，排過 `COMMUTE_FILL_MAX_ATTEMPTS`
+  （3）次還拿不到就自己算。但 worker 回傳**空陣列**（真的沒有路）時，
+  `pathBatcher.onResult` 的第一行就是 `if (!graphMapping || variants.length === 0) return;`
+  —— 答案被丟在地上，沒有人記得它回答過。於是「已經知道沒有路」跟「還在等」對這段
+  程式長得一模一樣:計數照長，超過額度之後每一輪游標繞回來就在主執行緒重算一次，
+  而 `findLanePathVariants` 對同一份 lane graph 是**決定性的**，答案永遠一樣。
+
+  結案的判斷也接不上。原本是 `if (searched)` —— 「這一輪剛好輪到我自己算」而不是
+  「我確定沒有路」，所以 worker 交回來的「沒有路」永遠結不了案。
+- **量測**（瀏覽器實測，41 283 人、1 955 台車，數字是確定性的計數不是 wall-clock）:
+
+  | | |
+  |---|---|
+  | 永久失敗的路線條數 | **3 362** |
+  | 已經燒掉的同步 A* 次數 | **9 838** |
+  | 用完 worker 額度之後**成功**的次數 | **0** |
+  | 單一路線最高重算次數 | **200**（`46,7->57,21`） |
+
+  同一時刻只有 88 位市民是未結案的，而游標一圈是 46 個 tick、額度 2 次／tick ≈ 92 次
+  —— 剛好把額度**吃滿**。這不是尖峰，是穩態。
+- **修法**: `CommuteCache` 多一份 `unroutable`，記「這一代路網裡算過而且沒有路」。
+  跟 `routeIndex` 同一個生命週期，所以 `bumpGeneration()` 一起清;`setRouteVariants`
+  存進非空的路線時順手 `delete` —— 兩份記錄講相反的話是這個 repo 一再出事的那一類，
+  所以只留一個地方決定答案。三個寫入點:worker 回空、主執行緒自己算出來是空、
+  以及路網變了就全忘。
+- **只信任證明過自己會找路的 worker**: `WarmupCoverage.test.ts` 釘著一件事 —— worker
+  可以活著、可以回應，而每一組起迄都交白卷（沒有 SAB、圖沒同步過…）。那時候空答案
+  的意思是「這個 worker 壞了」，不是「沒有路」，照單全收的話補完會永遠停在排隊。
+  所以多一個 `pathWorkerFoundAPath`:交出過至少一條路才算數。它是對 **worker 的健康
+  檢查**，不是對路線的猜測。真實城市第一個 tick 就會交出上萬條。
+- **結案改讀答案本身**: `isUnroutable(morningKey) && isUnroutable(eveningKey)`。
+  兩個方向都**確定**沒有路才標 failed，讓 `runJobRelocation` 去處理。額度用完而還沒
+  問到答案的不算數 —— 那是「還不知道」，標下去就等於這一代路網再也不會算他一次。
+- **測試**: `CommuteCacheUnroutable.test.ts`（5）+ `UnroutableCommuteRetry.test.ts`（7）。
+  測資是兩條**互不相連**的路廊:兩端都有連接點（請求送得出去），中間沒有路（A* 一定
+  交白卷）。突變驗證 11 種改法全部變紅，其中兩種是自己補出來的:
+  - 「只看單一方向就結案」原本活著 —— 測資裡兩個方向同生共死，照不出來。補了一條
+    「額度被用完 ≠ 沒有路」:把路線池倒掉讓前面那位吃光額度，只有早上那條是確定沒路的。
+  - 「換 worker 不重置信任」也活著，查過之後發現 `setPathfindingWorker` 只有一個
+    呼叫點而且每盤新遊戲都是新的 `SimulationLoop` —— 那行是死的，**刪掉**而不是硬補測試。
+- **嚴重性**: 高（效能）
 
 ### BUG-367: `read()` 讀不到高架結構 ✅ 已修復
 

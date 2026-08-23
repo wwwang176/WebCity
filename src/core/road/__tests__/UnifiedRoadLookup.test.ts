@@ -41,6 +41,45 @@ describe('UnifiedRoadLookup', () => {
     });
   });
 
+
+  // --- getAllKeysAtPosition ---
+
+  describe('getAllKeysAtPosition', () => {
+    // 這幾條是突變驗證逼出來的:高架那一段原本沒有任何測試守著，把它整段
+    // 短路掉全套測試仍然全綠。而 `NetworkCoverage` 的水電洪水正是靠它找起點,
+    // 少了高架就是「橋上的路不通電」。
+    it('should list the ground road', () => {
+      grid.setCell(4, 4, { roadType: RoadType.TWO_LANE });
+
+      expect(lookup.getAllKeysAtPosition(4, 4)).toEqual(['4,4']);
+    });
+
+    it('should list an elevated road standing over empty ground', () => {
+      em.set(4, 4, 2, { roadType: RoadType.HIGHWAY, roadFlags: 0, railType: 0, railFlags: 0, isRamp: false, rampAscendDirection: 0 });
+
+      expect(lookup.getAllKeysAtPosition(4, 4)).toEqual(['4,4,2']);
+    });
+
+    it('should list every level, ground first', () => {
+      grid.setCell(4, 4, { roadType: RoadType.TWO_LANE });
+      em.set(4, 4, 1, { roadType: RoadType.HIGHWAY, roadFlags: 0, railType: 0, railFlags: 0, isRamp: false, rampAscendDirection: 0 });
+      em.set(4, 4, 3, { roadType: RoadType.HIGHWAY, roadFlags: 0, railType: 0, railFlags: 0, isRamp: false, rampAscendDirection: 0 });
+
+      expect(lookup.getAllKeysAtPosition(4, 4)).toEqual(['4,4', '4,4,1', '4,4,3']);
+    });
+
+    it('should skip an elevated rail deck', () => {
+      // 高架鐵軌住在同一張表裡，`roadType` 是 NONE。它不是路。
+      em.set(4, 4, 1, { roadType: RoadType.NONE, roadFlags: 0, railType: 1, railFlags: 0, isRamp: false, rampAscendDirection: 0 });
+
+      expect(lookup.getAllKeysAtPosition(4, 4)).toEqual([]);
+    });
+
+    it('should say nothing outside the grid', () => {
+      expect(lookup.getAllKeysAtPosition(-1, 4)).toEqual([]);
+      expect(lookup.getAllKeysAtPosition(4, 999)).toEqual([]);
+    });
+  });
   // --- getCompatibleNeighborKeys ---
 
   describe('getCompatibleNeighborKeys', () => {

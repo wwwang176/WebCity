@@ -76,6 +76,7 @@ import { billableDistricts } from '../district/DistrictManager';
 import { calculateElevatedMaintenance } from '../elevation/ElevationMaintenance';
 import { randomInt } from '../utils/random';
 import { findAvailableTransit } from '../transport/TransitAvailability';
+import { StopProximityIndex } from '../transport/StopProximityIndex';
 import { ServiceVehicleManager, type ServiceFacilityProvider, type ServiceVehicleType } from '../traffic/ServiceVehicleManager';
 import { SidewalkGraph } from '../traffic/SidewalkGraph';
 import { PedestrianManager, getMaxPedestrians, buildTripPool, sampleTrip, type AggregatedTrip, type WalkingTripPool } from '../traffic/PedestrianManager';
@@ -216,6 +217,8 @@ export class SimulationLoop {
   private stopReach!: SidewalkStopReach;
   /** 每一格走得到哪些路線。與 transferGraph 同時重建。 */
   private transitAccess!: TransitAccessField;
+  /** 每一格走得到哪些站。挑站牌那兩條路徑都靠它，跟著路線一起重建。 */
+  private stopIndex!: StopProximityIndex;
 
   /**
    * 這一趟通勤要花多久（tick）—— 住房評分、就業評分與換工作判斷共用同一把尺。
@@ -385,6 +388,14 @@ export class SimulationLoop {
   }
 
   /**
+   * 這個 worker 交出過至少一條路。
+   *
+   * 「它說沒有路」要不要算數，看的是這個 —— 一條都沒交出來過的 worker，空答案
+   * 代表的是它自己壞了。跨路網世代保留:worker 會不會找路跟路網長什麼樣無關。
+   */
+  private pathWorkerFoundAPath = false;
+
+  /**
    * Enable async off-main-thread pathfinding via a Web Worker.
    * When set, pathfinding requests are batched and sent to the worker each tick.
    * Results arrive 1-2 ticks later and are written into the CommuteCache routeIndex.
@@ -396,7 +407,20 @@ export class SimulationLoop {
 
     // Wire up result callback: convert edge indices → LaneEdge[] and store in routeIndex
     this.pathBatcher.onResult = (routeKey: string, variants: number[][]) => {
-      if (!this.graphMapping || variants.length === 0) return;
+      if (!this.graphMapping) return;
+      if (variants.length === 0) {
+        // worker 算完了，答案是「這一代路網裡沒有路」。這跟「還沒算完」是兩件
+        // 事，而舊版把空結果直接丟掉，兩者對 `advanceCommuteFill` 長得一模一樣
+        // —— 於是重試計數一路長到額度上限，之後每一輪都在主執行緒重算一次同一
+        // 個答案（BUG-369）。
+        //
+        // **只信任證明過自己會找路的 worker。** worker 不是只有「在」跟「不在」
+        // 兩種狀態:它可以活著、可以回應，而每一組起迄都交白卷（沒有 SAB、圖
+        // 沒同步過…），那時候空答案的意思是「這個 worker 壞了」而不是「沒有
+        // 路」。照單全收的話補完會永遠停在那裡 —— `WarmupCoverage` 釘著這件事。
+        if (this.pathWorkerFoundAPath) this.commuteCache.markUnroutable(routeKey);
+        return;
+      }
       const edgeOriginals = this.graphMapping.edgeOriginals;
       const laneEdgeVariants: LaneEdge[][] = [];
       for (const v of variants) {
@@ -408,6 +432,7 @@ export class SimulationLoop {
         if (edges.length > 0) laneEdgeVariants.push(edges);
       }
       if (laneEdgeVariants.length > 0) {
+        this.pathWorkerFoundAPath = true;
         this.commuteCache.setRouteVariants(routeKey, laneEdgeVariants);
       }
     };
@@ -428,6 +453,7 @@ export class SimulationLoop {
     // 要在這裡建，不能寫成欄位初始值。
     this.stopReach = new SidewalkStopReach(state.sidewalkGraph);
     this.transitAccess = TransitAccessField.build([], SIMULATION.WALK_SPEED, this.stopReach);
+    this.stopIndex = StopProximityIndex.build([], this.stopReach);
     // The current day/month have already had their blocks run — either by the
     // session that produced this save, or (for a new game at tick 0) because no
     // time has elapsed yet. Both blocks belong to day/month *transitions*.
@@ -1069,7 +1095,30 @@ export class SimulationLoop {
    * 每個 tick 都重建 —— 佇列長度是「還沒收走的幾筆」，與人口無關。放進慢速槽的
    * 快照裡的話，一輪之內只有頭幾片看得到當時的事件。
    */
+  /**
+   * 還沒數過任何一次。
+   *
+   * 「第一次一定要數」不能靠版本號表達:版本號從 0 開始，而**讀檔建出來的服務
+   * 佇列裡本來就有東西**，版本也是 0 —— 拿 `-1` 當哨兵要兩個欄位同時是 -1 才成立，
+   * 那是同一件事用兩個地方講，壞掉的時候互相遮蔽。
+   */
+  private pendingCountsEverCounted = false;
+  /** 上次數的時候那兩條佇列是第幾版。 */
+  private pendingCountsDeathVersion = 0;
+  private pendingCountsGarbageVersion = 0;
+
   private refreshPendingCounts(): void {
+    // 兩條佇列都沒動就沿用上一張表。這一支每個 tick 都被呼叫，而佇列每 6 個 tick
+    // 才動一次 —— 見 `GlobalCoverageService.pendingVersion`。
+    const deathVersion = this.state.deathCare.pendingVersion;
+    const garbageVersion = this.state.garbage.pendingVersion;
+    if (this.pendingCountsEverCounted
+      && deathVersion === this.pendingCountsDeathVersion
+      && garbageVersion === this.pendingCountsGarbageVersion) return;
+    this.pendingCountsEverCounted = true;
+    this.pendingCountsDeathVersion = deathVersion;
+    this.pendingCountsGarbageVersion = garbageVersion;
+
     this.pendingDeathCounts.clear();
     for (const d of this.state.deathCare.getPendingDeathQueue()) {
       const key = toPosKey(d.x, d.y);
@@ -1091,6 +1140,25 @@ export class SimulationLoop {
    *
    * 70 891 人實測，改動前這一整包是 68.5ms 落在單一個 tick 上（BUG-330）。
    */
+  /**
+   * 這一輪每一片要處理誰 —— 快樂度與健康各一份。
+   *
+   * 形狀與理由跟 `commuteBuckets` 完全相同（那裡有完整說明）:沒有這一層的話，
+   * 每個 tick 都要掃過全部市民才挑得出自己那一片，一輪的過濾成本是「人口 × 片數」。
+   * 4 萬 2 千人會分成 20 片、每片約 2 110 人 —— **每個 tick 掃 42 000 個人只為了
+   * 挑出 2 110 個**。實測 `citizenSliceOf` 佔快樂度那一支的 8.3%、健康那一支的
+   * 40.6%，再加上迴圈本身的走訪。
+   *
+   * 兩份分開放而不是共用一份:兩個輪子各自呼叫 `next()`，而快樂度在還沒有情境可用
+   * 時會先 return（那個 tick 不推進）—— 一旦錯開，共用的桶會在別人的輪中途被重建。
+   *
+   * 一輪之內的落後與通勤那邊一樣:中途遷出、死亡的人還留在桶裡，會被多算一次
+   * （寫進一個沒有人讀得到的物件）;中途搬進來的人這一輪還沒有桶可以待，下一輪
+   * 才輪得到。新市民本來就帶著預設的快樂度與健康，全城平均走的是活人名單。
+   */
+  private happinessBuckets: Citizen[][] = [];
+  private healthBuckets: Citizen[][] = [];
+
   private updateCitizenHappinessSlice(): void {
     const citizens = this.state.citizens.getCitizens();
     if (citizens.length === 0) {
@@ -1114,6 +1182,13 @@ export class SimulationLoop {
     const currentTick = this.state.clock.tick;
     const { slices, index: mySlice } =
       this.happinessCycle.next(() => citizenSliceCount(citizens.length));
+    // 開輪:重新分桶。`index === 0` 就是一輪的開頭，而 `SliceCycle` 保證片數只在
+    // 那個時候才會換 —— 所以桶的長度與 `slices` 一輪之內不會對不上。
+    if (mySlice === 0) {
+      this.happinessBuckets = Array.from({ length: slices }, () => []);
+      for (const c of citizens) this.happinessBuckets[citizenSliceOf(c.id, slices)]!.push(c);
+    }
+    const myCitizens = this.happinessBuckets[mySlice] ?? [];
     let updated = 0;
 
     // Reusable factors object — mutated per citizen, no allocation per iteration
@@ -1129,8 +1204,7 @@ export class SimulationLoop {
       pendingGarbageAtHome: 0,
     };
 
-    for (const citizen of citizens) {
-      if (citizenSliceOf(citizen.id, slices) !== mySlice) continue;
+    for (const citizen of myCitizens) {
       updated++;
 
       // Vary commute per citizen (+/- 3 random jitter)
@@ -1294,11 +1368,14 @@ export class SimulationLoop {
 
     const { slices, index: mySlice } =
       this.healthCycle.next(() => citizenSliceCount(citizens.length));
+    if (mySlice === 0) {
+      this.healthBuckets = Array.from({ length: slices }, () => []);
+      for (const c of citizens) this.healthBuckets[citizenSliceOf(c.id, slices)]!.push(c);
+    }
     const f = this.healthFactors;
     let updated = 0;
 
-    for (const c of citizens) {
-      if (citizenSliceOf(c.id, slices) !== mySlice) continue;
+    for (const c of this.healthBuckets[mySlice] ?? []) {
       updated++;
 
       f.hasHome = !!c.homeId;
@@ -1815,7 +1892,10 @@ export class SimulationLoop {
     }
 
     // Build reachability map: use cache if ready, otherwise sync Dijkstra fallback
-    const reachable = this.wpDistCache?.isReady
+    // `hasTable` 而不是 `isReady` —— 一份差一輪的表遠好過同步 Dijkstra。
+    // 4 萬人存檔實測:走快取 161ms，掉回同步 2,684ms，而快取「當前」的窗只有
+    // 6~8 秒、重新配置每 13 秒跑一次，落在哪裡純粹是運氣。
+    const reachable = this.wpDistCache?.hasTable
       ? this.buildWorkplaceReachabilityFromCache(workingAgeCitizens, workplaceCandidates)
       : this.buildWorkplaceReachability(workingAgeCitizens, workplaceCandidates);
     assignWorkWithPreference(workingAgeCitizens, workplaceCandidates, workOccupancy, reachable, this.commuteTimeBetween);
@@ -1928,12 +2008,15 @@ export class SimulationLoop {
     // All workplace positions as Dijkstra targets
     const targetSet = new Set<string>(workplaceCandidates.map(c => c.pos));
 
+    // 圖一定要傳。不傳的話 `roadDistanceToTargets` 會**每個家各建一張**，而建圖是
+    // O(路格數 × 4) —— 這個迴圈跑的是全城不重複的住址。
+    const cellGraph = this.getCellGraph() ?? undefined;
     for (const homeId of homeIds) {
       const homePos = parsePosKeyUnsafe(homeId);
       const distMap = roadDistanceToTargets(
         this.state.grid, homePos, targetSet,
         DEFAULT_JOB_RELOCATION_CONFIG.dijkstraMaxBudget,
-        this._roadLookup,
+        this._roadLookup, cellGraph,
       );
       reachable.set(homeId, new Set(distMap.keys()));
     }
@@ -1979,7 +2062,7 @@ export class SimulationLoop {
     // O(路格數 × 4)。圖以道路世代為鍵快取，整輪只建一次。
     const roadLookup = this._roadLookup;
     const cellGraph = this.getCellGraph() ?? undefined;
-    const distanceLookup = this.wpDistCache?.isReady
+    const distanceLookup = this.wpDistCache?.hasTable
       ? (_grid: any, homePos: { x: number; y: number }, targets: Set<string>, _budget: number) => {
           const homeKey = toPosKey(homePos.x, homePos.y);
           return this.wpDistCache!.getDistancesFromHome(homeKey, targets);
@@ -2276,7 +2359,6 @@ export class SimulationLoop {
       const stale = entry !== undefined && entry.generation !== generation;
       let morning = stale ? null : (entry?.morningPath ?? null);
       let evening = stale ? null : (entry?.eveningPath ?? null);
-      let searched = false;
 
       for (const [key, from, to, isMorning] of [
         [morningKey, home, work, true],
@@ -2291,6 +2373,9 @@ export class SimulationLoop {
           if (isMorning) morning = path; else evening = path;
           continue;
         }
+        // 這一代路網已經算過，答案是沒有路。再問一次還是同一個答案 ——
+        // `findLanePathVariants` 對同一份 lane graph 是決定性的。
+        if (this.commuteCache.isUnroutable(key)) continue;
         // worker 是加速，不是依賴。排過幾次還是拿不到路徑就自己算 —— 一直排下去
         // 的話，遇到交白卷的 worker 補完永遠不會結束。
         const tries = this.commuteFillAttempts.get(key) ?? 0;
@@ -2311,21 +2396,25 @@ export class SimulationLoop {
 
         if (searchBudget <= 0) continue;
         searchBudget--;
-        searched = true;
         this.commuteFillAttempts.set(key, tries + 1);
         const computed = findLanePathVariants(this.laneGraph, this._roadLookup, from, to);
         if (computed.length > 0) {
           this.commuteCache.setRouteVariants(key, computed);
           const path = computed[Math.floor(Math.random() * computed.length)]!;
           if (isMorning) morning = path; else evening = path;
+        } else {
+          this.commuteCache.markUnroutable(key);
         }
       }
 
       if (morning === null && evening === null) {
-        // 真的算過而且兩個方向都走不通，才標 failed —— 讓 JobRelocation 去處理，
-        // 而不是每個 tick 重算一次同一條算不出來的路。預算用完而沒算的不算數。
-        // worker 那條路不標：答案還在別的執行緒上。
-        if (searched) {
+        // 兩個方向都**確定**沒有路，才標 failed —— 讓 JobRelocation 去處理，而不是
+        // 每一輪重問一次同一個答案。預算用完而還沒問到答案的不算數:那是「還不
+        // 知道」，不是「沒有路」。
+        //
+        // 判斷改讀答案本身，不再讀「這一輪有沒有輪到我自己算」—— 後者讓 worker
+        // 交回來的「沒有路」永遠結不了案，那位市民每一輪都要被重看一次。
+        if (this.commuteCache.isUnroutable(morningKey) && this.commuteCache.isUnroutable(eveningKey)) {
           this.commuteCache.set(c.id, {
             citizenId: c.id, homeId: c.homeId, workplaceId: c.workplaceId,
             morningPath: null, eveningPath: null,
@@ -2418,6 +2507,7 @@ export class SimulationLoop {
     );
     // 可及性圖跟著路線一起重建 —— 評分與換工作判斷靠它把通勤時間壓成 O(1)。
     this.transitAccess = TransitAccessField.build(this.flatRoutes, SIMULATION.WALK_SPEED, this.stopReach);
+    this.stopIndex = StopProximityIndex.build(this.flatRoutes, this.stopReach);
     this.transferGraphDirty = false;
     this.lastTransitVersion = getTransitNetworkVersion(this.state);
 
@@ -2488,7 +2578,14 @@ export class SimulationLoop {
     // clearPending drops inflightBatches, so handleMessage ignores the reply;
     // it was simply being called one tick too late (BUG-107).
     this.pathBatcher?.clearPending();
-    this.wpDistCache?.invalidate();
+    // `skipUnreachableCheck` 講的正好是「有沒有路被拿掉」（見下面那段註解:
+    // 新蓋的路只會增加連通性）。而那也正是舊的距離表會**高報**可達性的唯一情況
+    // —— 只加路的話舊表只會少報，那是安全的方向。
+    //
+    // 所以只有可能拿掉路的那一種要丟表;蓋路、劃分區、拆建築都可以續用
+    // （見 `WorkplaceDistanceCache` 的說明）。
+    if (skipUnreachableCheck) this.wpDistCache?.invalidate();
+    else this.wpDistCache?.invalidateTopology();
     if (affectedCells) {
       if (!this.dirtyRoadCells) this.dirtyRoadCells = new Set();
       if (!this.dirtySidewalkCells) this.dirtySidewalkCells = new Set();
@@ -2531,6 +2628,8 @@ export class SimulationLoop {
     const grid = this.state.grid;
     const tick = this.state.clock.tick;
     const reachCache = new Map<string, boolean>();
+    // 同上:不傳圖的話每個受影響的通勤各建一張。
+    const cellGraph = this.getCellGraph() ?? undefined;
 
     for (const id of affectedIds) {
       const citizen = citizenById.get(id);
@@ -2544,7 +2643,7 @@ export class SimulationLoop {
         const distMap = roadDistanceToTargets(
           grid, home, new Set([citizen.workplaceId]),
           DEFAULT_JOB_RELOCATION_CONFIG.dijkstraMaxBudget,
-          this._roadLookup,
+          this._roadLookup, cellGraph,
         );
         reachable = distMap.has(citizen.workplaceId);
         reachCache.set(key, reachable);
@@ -2920,7 +3019,7 @@ export class SimulationLoop {
       const multiModalRoutes = findMultiModalRoutes(
         this.flatRoutes, fromPos, toPos, SIMULATION.WALK_SPEED,
         SIMULATION.AVERAGE_WAIT_FACTOR, this.transferGraph, SIMULATION.MAX_TRIP_LEGS,
-        this.stopReach,
+        this.stopIndex,
       );
       const { mode, multiLeg, boardStop, alightStop } = chooseModeMultiModal(
         fromPos, toPos, availableTransport, multiModalRoutes,
@@ -3125,7 +3224,7 @@ export class SimulationLoop {
     destination: { x: number; y: number },
   ): AvailableTransport[] {
     return findAvailableTransit(
-      this.getTransitSystemInfos(), origin, destination, this.stopReach,
+      this.flatRoutes, this.stopIndex, origin, destination,
       SIMULATION.WALK_SPEED, SIMULATION.AVERAGE_WAIT_FACTOR,
     );
   }

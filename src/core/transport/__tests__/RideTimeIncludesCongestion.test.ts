@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest';
+import { availableTransitFor } from './availableTransitFor';
 import { BusSystem } from '../BusSystem';
 import { MetroSystem } from '../MetroSystem';
 import { flattenSystems } from '../MultiModalRouter';
-import { findAvailableTransit } from '../TransitAvailability';
+import { computeRideDistance } from '../TransitAvailability';
+import { expectedWait } from '../RouteLoad';
 import { openFieldReach } from './openFieldReach';
 import type { TransitSystemInfo } from '../TransitAvailability';
 import { TransportType } from '../types';
@@ -95,7 +97,7 @@ describe('公車的乘車時間含壅塞', () => {
     // 同一趟通勤會因為走哪條程式碼而得到不同的答案。
     const { bus, routeId } = busWithRoute();
     const at = (o: { x: number; y: number }, d: { x: number; y: number }) =>
-      findAvailableTransit(infosOf(bus, TransportType.BUS), o, d, openFieldReach,
+      availableTransitFor(infosOf(bus, TransportType.BUS), o, d, openFieldReach,
         WALK_SPEED, WAIT_FACTOR)[0];
 
     const clear = at({ x: 0, y: 1 }, { x: 20, y: 1 });
@@ -106,5 +108,27 @@ describe('公車的乘車時間含壅塞', () => {
 
     expect(jammed!.estimatedTime, '單一運具那條路徑的估計時間沒有含壅塞')
       .toBeGreaterThan(clear!.estimatedTime);
+  });
+
+  it('should slow the ride itself down, not only the wait', () => {
+    // 上面那條只斷言「估計時間變大」，而壅塞讓班距變長之後 `expectedWait` 那一項
+    // 就已經變大了 —— 乘車那一項有沒有跟上，那個斷言照不出來。這裡把等車與走路
+    // 兩段扣掉，直接看剩下的乘車時間是照哪一個車速算的。
+    const { bus, routeId } = busWithRoute();
+    bus.setRouteCongestion(routeId, 1);
+
+    const infos = infosOf(bus, TransportType.BUS);
+    const flat = flattenSystems(infos)[0]!;
+    const option = availableTransitFor(
+      infos, { x: 0, y: 1 }, { x: 20, y: 1 }, openFieldReach, WALK_SPEED, WAIT_FACTOR,
+    )[0];
+    expect(option, 'fixture 裡搭不到公車 —— 這個測試沒驗到東西').toBeDefined();
+
+    const wait = expectedWait(flat.headway, WAIT_FACTOR, flat.loadFactor);
+    const ride = option!.estimatedTime - option!.walkTime - wait;
+    const rideDistance = computeRideDistance(flat.stops, 0, 1, flat.segDists);
+
+    expect(ride, '乘車時間用的是設定車速，不是塞住之後的車速')
+      .toBeCloseTo(rideDistance / flat.speed, 6);
   });
 });

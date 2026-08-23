@@ -1,9 +1,11 @@
 import { describe, it, expect } from 'vitest';
+import { StopProximityIndex } from '../StopProximityIndex';
 import {
   buildTransferGraph,
   buildStopRouteCache,
   findMultiModalRoutes,
   flattenSystems,
+  MAX_RESULTS,
   type FlatRoute,
 } from '../MultiModalRouter';
 import { openFieldReach } from './openFieldReach';
@@ -110,7 +112,7 @@ describe('findMultiModalRoutes', () => {
     const result = findMultiModalRoutes(
       [], { x: 0, y: 0 }, { x: 10, y: 0 },
       WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
-      openFieldReach,
+      StopProximityIndex.build([], openFieldReach),
     );
     expect(result).toEqual([]);
   });
@@ -123,7 +125,7 @@ describe('findMultiModalRoutes', () => {
     const result = findMultiModalRoutes(
       routes, { x: 0, y: 0 }, { x: 10, y: 0 },
       WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
-      openFieldReach,
+      StopProximityIndex.build(routes, openFieldReach),
     );
 
     expect(result.length).toBeGreaterThanOrEqual(1);
@@ -145,7 +147,7 @@ describe('findMultiModalRoutes', () => {
     const result = findMultiModalRoutes(
       routes, { x: 0, y: 0 }, { x: 20, y: 0 },
       WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
-      openFieldReach,
+      StopProximityIndex.build(routes, openFieldReach),
     );
 
     const fiveLegs = result.find(r => r.legs.length === 5);
@@ -172,7 +174,7 @@ describe('findMultiModalRoutes', () => {
     const result = findMultiModalRoutes(
       routes, { x: 0, y: 0 }, { x: 30, y: 0 },
       WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
-      openFieldReach,
+      StopProximityIndex.build(routes, openFieldReach),
     );
 
     const sevenLegs = result.find(r => r.legs.length === 7);
@@ -194,7 +196,7 @@ describe('findMultiModalRoutes', () => {
     const result = findMultiModalRoutes(
       routes, { x: 0, y: 0 }, { x: 20, y: 0 },
       WALK_SPEED, WAIT_FACTOR, graph, 3,
-      openFieldReach,
+      StopProximityIndex.build(routes, openFieldReach),
     );
     for (const route of result) {
       expect(route.legs.length).toBeLessThanOrEqual(3);
@@ -212,7 +214,7 @@ describe('findMultiModalRoutes', () => {
     const result = findMultiModalRoutes(
       routes, { x: 0, y: 0 }, { x: 20, y: 0 },
       WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
-      openFieldReach,
+      StopProximityIndex.build(routes, openFieldReach),
     );
 
     const transfer = result.find(r => r.legs.length === 5);
@@ -232,7 +234,7 @@ describe('findMultiModalRoutes', () => {
     const result = findMultiModalRoutes(
       routes, { x: 0, y: 0 }, { x: 10, y: 0 },
       WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
-      openFieldReach,
+      StopProximityIndex.build(routes, openFieldReach),
     );
     // Only single-ride routes possible (no transfer edges)
     for (const route of result) {
@@ -253,7 +255,7 @@ describe('findMultiModalRoutes', () => {
     const search = (routes: FlatRoute[]) => findMultiModalRoutes(
       routes, { x: 0, y: 0 }, { x: 10, y: 0 },
       WALK_SPEED, WAIT_FACTOR, buildGraphWithCache(routes, TRANSFER_RANGE), MAX_LEGS,
-      openFieldReach,
+      StopProximityIndex.build(routes, openFieldReach),
     );
 
     const jammed = search(packed)[0];
@@ -272,7 +274,7 @@ describe('findMultiModalRoutes', () => {
     const result = findMultiModalRoutes(
       routes, { x: 0, y: 0 }, { x: 10, y: 0 },
       WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
-      openFieldReach,
+      StopProximityIndex.build(routes, openFieldReach),
     );
 
     expect(result.length).toBeGreaterThan(0);
@@ -299,13 +301,32 @@ describe('findMultiModalRoutes', () => {
     const result = findMultiModalRoutes(
       routes, { x: 0, y: 0 }, { x: 10, y: 0 },
       WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
-      openFieldReach,
+      StopProximityIndex.build(routes, openFieldReach),
     );
 
     expect(result.length).toBeGreaterThanOrEqual(2);
     for (let i = 1; i < result.length; i++) {
       expect(result[i]!.totalTime).toBeGreaterThanOrEqual(result[i - 1]!.totalTime);
     }
+  });
+
+  it('stops reporting once it has MAX_RESULTS of them', () => {
+    // 站牌密集的市中心，起點與終點兩邊各站著好幾條路線 —— 組合數是「進站候選 ×
+    // 出站候選」，很快就多到沒有意義。沒有上限的話每問一位市民都要把那些全部
+    // 組出來（每一條都配一份 legs 陣列），而運具選擇只會挑最快的那一條。
+    const routes: FlatRoute[] = [];
+    for (let i = 0; i < 6; i++) {
+      routes.push(makeRoute(i + 1, TransportType.BUS, 2,
+        [makeStop(1, i, i * 2 + 1), makeStop(9, i, i * 2 + 2)], { segDists: [10, 10] }));
+    }
+    const graph = buildGraphWithCache(routes, TRANSFER_RANGE);
+    const result = findMultiModalRoutes(
+      routes, { x: 0, y: 0 }, { x: 10, y: 0 },
+      WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
+      StopProximityIndex.build(routes, openFieldReach),
+    );
+
+    expect(result.length, '回報數沒有被上限擋住').toBe(MAX_RESULTS);
   });
 
   it('skips full route in transfer chain', () => {
@@ -319,7 +340,7 @@ describe('findMultiModalRoutes', () => {
     const result = findMultiModalRoutes(
       routes, { x: 0, y: 0 }, { x: 20, y: 0 },
       WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
-      openFieldReach,
+      StopProximityIndex.build(routes, openFieldReach),
     );
     // 轉乘那一段的捷運擠爆了 —— 路線還在，但慢到不值得。
     const fiveLegs = result.find(r => r.legs.length === 5);

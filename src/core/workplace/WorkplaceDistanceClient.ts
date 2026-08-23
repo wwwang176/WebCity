@@ -1,4 +1,5 @@
-import type { WDWorkerRequest, WDWorkerResponse, WorkplaceDistanceEntry, WorkplacePosition } from './WorkplaceDistanceTypes';
+import type { WDWorkerRequest, WDWorkerResponse, WorkplacePosition } from './WorkplaceDistanceTypes';
+import type { WorkplaceDistanceBuffers } from './WorkplaceDistanceTable';
 
 /**
  * Promise-based client for the workplace distance web worker.
@@ -8,7 +9,7 @@ export class WorkplaceDistanceClient {
   private worker: Worker;
   private nextRequestId = 1;
   private pending = new Map<number, {
-    resolve: (entries: WorkplaceDistanceEntry[]) => void;
+    resolve: (table: WorkplaceDistanceBuffers) => void;
     reject: (err: Error) => void;
   }>();
 
@@ -20,7 +21,7 @@ export class WorkplaceDistanceClient {
       if (!p) return;
       this.pending.delete(data.requestId);
       if (data.type === 'RESULT') {
-        p.resolve(data.entries);
+        p.resolve(data.table);
       } else if (data.type === 'ERROR') {
         p.reject(new Error(data.message));
       }
@@ -38,7 +39,7 @@ export class WorkplaceDistanceClient {
     graphBuffer: ArrayBuffer,
     workplaces: WorkplacePosition[],
     maxBudget: number,
-  ): Promise<WorkplaceDistanceEntry[]> {
+  ): Promise<WorkplaceDistanceBuffers> {
     const requestId = this.nextRequestId++;
     return new Promise((resolve, reject) => {
       this.pending.set(requestId, { resolve, reject });

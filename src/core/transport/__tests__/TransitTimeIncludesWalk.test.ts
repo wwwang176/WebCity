@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { findAvailableTransit, type TransitSystemInfo } from '../TransitAvailability';
+import { availableTransitFor } from './availableTransitFor';
+import { type TransitSystemInfo } from '../TransitAvailability';
 import { openFieldReach } from './openFieldReach';
 import { TransportType, type TransportStop } from '../types';
 
@@ -43,7 +44,7 @@ function busLine(
 }
 
 function timeOf(sys: TransitSystemInfo, origin: { x: number; y: number }, dest: { x: number; y: number }): number {
-  const result = findAvailableTransit([sys], origin, dest, openFieldReach, WALK_SPEED, WAIT_FACTOR);
+  const result = availableTransitFor([sys], origin, dest, openFieldReach, WALK_SPEED, WAIT_FACTOR);
   expect(result, '這條路線搭不到，測試等於沒測').toHaveLength(1);
   return result[0]!.estimatedTime;
 }
@@ -86,7 +87,7 @@ describe('單一運具的估計時間', () => {
   it('should still report zero-ish when origin and destination share a stop', () => {
     // 同一站上下車等於沒搭到 —— 但走到站牌的那段路仍然要算。
     const sys = busLine({ x: 1, y: 0 }, { x: 19, y: 0 }, 4);
-    const result = findAvailableTransit([sys], { x: 0, y: 0 }, { x: 2, y: 0 }, openFieldReach, WALK_SPEED, WAIT_FACTOR);
+    const result = availableTransitFor([sys], { x: 0, y: 0 }, { x: 2, y: 0 }, openFieldReach, WALK_SPEED, WAIT_FACTOR);
     expect(result).toHaveLength(1);
     expect(result[0]!.estimatedTime, '同站上下車卻回報 0，走到站的路憑空消失').toBeGreaterThan(0);
   });

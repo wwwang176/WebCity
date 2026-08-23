@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { findAvailableTransit, type TransitSystemInfo } from '../TransitAvailability';
+import { StopProximityIndex } from '../StopProximityIndex';
+import { availableTransitFor } from './availableTransitFor';
+import { type TransitSystemInfo } from '../TransitAvailability';
 import { buildTransferGraph, buildStopRouteCache, findMultiModalRoutes, type FlatRoute } from '../MultiModalRouter';
 import { SidewalkStopReach } from '../../traffic/StopWalkReach';
 import { cityWithMainRoad } from '../../traffic/__tests__/gridCityFixture';
@@ -48,7 +50,7 @@ describe('挑站牌不跨越馬路', () => {
     const { graph } = cityWithMainRoad(8);
     const reach = new SidewalkStopReach(graph);
 
-    const result = findAvailableTransit(
+    const result = availableTransitFor(
       [busSystem()], { x: 13, y: 11 }, { x: 5, y: 11 }, reach, WALK_SPEED, WAIT_FACTOR);
     expect(result.length, '同一側兩端都在站旁邊卻搭不到，這條測試等於沒測')
       .toBeGreaterThan(0);
@@ -60,7 +62,7 @@ describe('挑站牌不跨越馬路', () => {
     const { graph } = cityWithMainRoad(8);
     const reach = new SidewalkStopReach(graph);
 
-    const result = findAvailableTransit(
+    const result = availableTransitFor(
       [busSystem()], { x: 12, y: 9 }, { x: 4, y: 9 }, reach, WALK_SPEED, WAIT_FACTOR);
     expect(
       result,
@@ -77,7 +79,7 @@ describe('挑站牌不跨越馬路', () => {
 
     const result = findMultiModalRoutes(
       routes, { x: 12, y: 9 }, { x: 4, y: 9 },
-      WALK_SPEED, WAIT_FACTOR, transferGraph, 7, reach,
+      WALK_SPEED, WAIT_FACTOR, transferGraph, 7, StopProximityIndex.build(routes, reach),
     );
 
     expect(result, '轉乘路線把住戶從馬路對面走到站牌').toEqual([]);
@@ -95,7 +97,7 @@ describe('挑站牌不跨越馬路', () => {
       id: 1, stops: [acrossRoad, sameSide, nearWork], vehicles: 4, operatingCost: 0,
     } as TransportRoute;
 
-    const [option] = findAvailableTransit(
+    const [option] = availableTransitFor(
       [{ type: TransportType.BUS, speed: 2, routes: [route] }],
       { x: 12, y: 9 }, { x: 5, y: 9 }, reach, WALK_SPEED, WAIT_FACTOR);
 
@@ -113,7 +115,7 @@ describe('挑站牌不跨越馬路', () => {
 
     const result = findMultiModalRoutes(
       routes, { x: 13, y: 11 }, { x: 5, y: 11 },
-      WALK_SPEED, WAIT_FACTOR, transferGraph, 7, reach,
+      WALK_SPEED, WAIT_FACTOR, transferGraph, 7, StopProximityIndex.build(routes, reach),
     );
 
     expect(result.length, '同一側也走不到，這條測試等於沒測').toBeGreaterThan(0);

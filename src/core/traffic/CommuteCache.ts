@@ -31,6 +31,20 @@ export class CommuteCache {
   // Shared route pool: routeKey -> LaneEdge[][] (lane path variants)
   private routeIndex = new Map<string, LaneEdge[][]>();
 
+  /**
+   * 這一代路網裡，算過而且**確定沒有路**的通勤路線。
+   *
+   * 「還沒算出來」與「算出來是沒有路」是兩個不同的答案，而舊版只記得住前者:
+   * worker 回空陣列時結果被丟掉，於是那條路線的重試計數一路長上去，超過額度
+   * 之後每一輪都在主執行緒重算一次同一條算不出來的路。41k 存檔實測 3 362 條
+   * 這樣的路線、白算 9 838 次同步 A*，其中成功 0 次（BUG-369）。
+   *
+   * 跟 `routeIndex` 同一個生命週期，所以放在同一個地方清:`findLanePathVariants`
+   * 對同一份 lane graph 是決定性的，路網不動就不會有新答案;路網一動
+   * `bumpGeneration()` 兩份一起作廢。
+   */
+  private unroutable = new Set<string>();
+
   // cellKey -> set of routeKeys that pass through that cell
   private routeCellIndex = new Map<string, Set<string>>();
 
@@ -60,6 +74,16 @@ export class CommuteCache {
     this.roadGeneration++;
     this.routeIndex.clear();
     this.routeCellIndex.clear();
+    this.unroutable.clear();
+  }
+
+  /** 這一代路網裡，這條路線算過而且沒有路。 */
+  markUnroutable(routeKey: string): void {
+    this.unroutable.add(routeKey);
+  }
+
+  isUnroutable(routeKey: string): boolean {
+    return this.unroutable.has(routeKey);
   }
 
   get(citizenId: number): CachedRoute | undefined {
@@ -155,6 +179,9 @@ export class CommuteCache {
 
     // Build routeCellIndex from ALL variants (different variants may use different cells)
     if (variants.length > 0) {
+      // 存進來一條真的路，就不會再有人說它走不通 —— 兩份記錄講相反的話是最難
+      // 查的一種壞法，所以只留一個寫入點決定答案。
+      this.unroutable.delete(routeKey);
       const cells = this.reusableCellSet;
       cells.clear();
       for (const variant of variants) {

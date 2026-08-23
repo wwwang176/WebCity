@@ -5,6 +5,7 @@ import { UnifiedRoadLookup } from '../../road/UnifiedRoadLookup';
 import { buildRoadCellGraph, transposeRoadCellGraph } from '../../road/RoadCellGraph';
 import { deserializeRoadCellGraph, serializeRoadCellGraph } from '../../road/RoadCellGraphBuffer';
 import type { WorkplacePosition } from '../WorkplaceDistanceTypes';
+import { WorkplaceDistanceTable } from '../WorkplaceDistanceTable';
 
 const BYTES_PER_CELL = 12;
 
@@ -67,12 +68,25 @@ function workerInputs(width: number, height: number, roads: Map<string, RoadType
   return { graphBuffer, isBuilding };
 }
 
+/**
+ * flood 一次，攤成 `{ "x,y": cost }`。
+ *
+ * `reverseFloodFromGraph` 收在密集陣列裡（見它的說明）；這裡攤回物件只是為了讓
+ * 下面的斷言講座標而不是講索引算術。
+ */
 function flood(
   width: number, height: number, roads: Map<string, RoadType>,
   wp: WorkplacePosition, maxBudget: number,
 ): Record<string, number> {
   const { graphBuffer, isBuilding } = workerInputs(width, height, roads);
-  return reverseFloodFromGraph(deserializeRoadCellGraph(graphBuffer), wp, maxBudget, isBuilding);
+  const dense = new Int32Array(width * height).fill(-1);
+  reverseFloodFromGraph(
+    deserializeRoadCellGraph(graphBuffer), wp, maxBudget, width, height, isBuilding, dense);
+  const out: Record<string, number> = {};
+  for (let i = 0; i < dense.length; i++) {
+    if (dense[i]! >= 0) out[`${i % width},${Math.floor(i / width)}`] = dense[i]!;
+  }
+  return out;
 }
 
 const BUDGET = 1080;   // 舊制 60 × 18
@@ -170,16 +184,14 @@ describe('one flood per workplace', () => {
     ]);
     const { graphBuffer, isBuilding } = workerInputs(5, 3, roads);
 
-    const entries = computeWorkplaceDistances(graphBuffer, [
+    const table = new WorkplaceDistanceTable(computeWorkplaceDistances(graphBuffer, [
       { pos: '1,1', x: 1, y: 1 },
       { pos: '3,1', x: 3, y: 1 },
-    ], BUDGET, isBuilding);
+    ], BUDGET, 5, 3, isBuilding));
 
-    expect(entries.length).toBe(2);
-    expect(entries[0]!.workplacePos).toBe('1,1');
-    expect(entries[1]!.workplacePos).toBe('3,1');
+    expect(table.workplaceCount).toBe(2);
     // 兩個工作地點沿同一條路互相到得了
-    expect(entries[0]!.distances['3,1']).toBeDefined();
-    expect(entries[1]!.distances['1,1']).toBeDefined();
+    expect(table.costAt(3, 1, '1,1')).toBeDefined();
+    expect(table.costAt(1, 1, '3,1')).toBeDefined();
   });
 });

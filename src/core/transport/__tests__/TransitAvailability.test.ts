@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { findAvailableTransit, getRouteDailyRiders, getRouteRiders, type TransitSystemInfo } from '../TransitAvailability';
+import { availableTransitFor } from './availableTransitFor';
+import { getRouteDailyRiders, getRouteRiders, type TransitSystemInfo } from '../TransitAvailability';
 import { openFieldReach } from './openFieldReach';
 import { computeCycleTime, computeDailyCapacity, computeHeadway, expectedWait } from '../RouteLoad';
 
@@ -27,7 +28,7 @@ function waitOf(sys: TransitSystemInfo): number {
 
 describe('findAvailableTransit', () => {
   it('returns empty array when no transit systems exist', () => {
-    const result = findAvailableTransit([], { x: 0, y: 0 }, { x: 10, y: 10 }, openFieldReach, WALK_SPEED, WAIT_FACTOR);
+    const result = availableTransitFor([], { x: 0, y: 0 }, { x: 10, y: 10 }, openFieldReach, WALK_SPEED, WAIT_FACTOR);
     expect(result).toEqual([]);
   });
 
@@ -40,7 +41,7 @@ describe('findAvailableTransit', () => {
         vehicles: 1, operatingCost: 100,
       }],
     }];
-    const result = findAvailableTransit(systems, { x: 0, y: 0 }, { x: 10, y: 10 }, openFieldReach, WALK_SPEED, WAIT_FACTOR);
+    const result = availableTransitFor(systems, { x: 0, y: 0 }, { x: 10, y: 10 }, openFieldReach, WALK_SPEED, WAIT_FACTOR);
     expect(result).toEqual([]);
   });
 
@@ -54,7 +55,7 @@ describe('findAvailableTransit', () => {
         vehicles: 1, operatingCost: 100,
       }],
     }];
-    const result = findAvailableTransit(systems, { x: 0, y: 0 }, { x: 10, y: 10 }, openFieldReach, WALK_SPEED, WAIT_FACTOR);
+    const result = availableTransitFor(systems, { x: 0, y: 0 }, { x: 10, y: 10 }, openFieldReach, WALK_SPEED, WAIT_FACTOR);
     expect(result).toHaveLength(1);
     expect(result[0]!.type).toBe(TransportType.BUS);
     expect(result[0]!.estimatedTime).toBeGreaterThan(0);
@@ -81,7 +82,7 @@ describe('findAvailableTransit', () => {
         }],
       },
     ];
-    const result = findAvailableTransit(systems, { x: 0, y: 0 }, { x: 10, y: 10 }, openFieldReach, WALK_SPEED, WAIT_FACTOR);
+    const result = availableTransitFor(systems, { x: 0, y: 0 }, { x: 10, y: 10 }, openFieldReach, WALK_SPEED, WAIT_FACTOR);
     expect(result).toHaveLength(2);
     const types = result.map(r => r.type);
     expect(types).toContain(TransportType.BUS);
@@ -103,7 +104,7 @@ describe('findAvailableTransit', () => {
         routes: [{ id: 2, type: TransportType.METRO, stops, vehicles: 1, operatingCost: 300 }],
       },
     ];
-    const result = findAvailableTransit(systems, { x: 0, y: 0 }, { x: 10, y: 10 }, openFieldReach, WALK_SPEED, WAIT_FACTOR);
+    const result = availableTransitFor(systems, { x: 0, y: 0 }, { x: 10, y: 10 }, openFieldReach, WALK_SPEED, WAIT_FACTOR);
     const bus = result.find(r => r.type === TransportType.BUS)!;
     const metro = result.find(r => r.type === TransportType.METRO)!;
     expect(metro.estimatedTime).toBeLessThan(bus.estimatedTime);
@@ -119,7 +120,7 @@ describe('findAvailableTransit', () => {
         vehicles: 1, operatingCost: 100,
       }],
     }];
-    const result = findAvailableTransit(systems, { x: 1, y: 1 }, { x: 5, y: 5 }, openFieldReach, WALK_SPEED, WAIT_FACTOR);
+    const result = availableTransitFor(systems, { x: 1, y: 1 }, { x: 5, y: 5 }, openFieldReach, WALK_SPEED, WAIT_FACTOR);
     expect(result).toHaveLength(0);
   });
 
@@ -135,7 +136,7 @@ describe('findAvailableTransit', () => {
       // Segment distances: stop0→stop1 = 20 (detour!), stop1→stop2 = 15, stop2→stop0 = 10
       getSegmentDistances: (routeId: number) => routeId === 1 ? [20, 15, 10] : null,
     }];
-    const result = findAvailableTransit(systems, { x: 0, y: 0 }, { x: 10, y: 0 }, openFieldReach, WALK_SPEED, WAIT_FACTOR);
+    const result = availableTransitFor(systems, { x: 0, y: 0 }, { x: 10, y: 0 }, openFieldReach, WALK_SPEED, WAIT_FACTOR);
     expect(result).toHaveLength(1);
     // Forward: stop0→stop1→stop2 = 20+15 = 35, backward: stop2→stop0 = 10
     // Picks shorter direction: 10 / speed=2 = 5
@@ -150,7 +151,7 @@ describe('findAvailableTransit', () => {
       speed: 3,
       routes: [{ id: 1, type: TransportType.METRO, stops, vehicles: 1, operatingCost: 300 }],
     }];
-    const result = findAvailableTransit(systems, { x: 0, y: 0 }, { x: 3, y: 4 }, openFieldReach, WALK_SPEED, WAIT_FACTOR);
+    const result = availableTransitFor(systems, { x: 0, y: 0 }, { x: 3, y: 4 }, openFieldReach, WALK_SPEED, WAIT_FACTOR);
     expect(result).toHaveLength(1);
     // Euclidean distance = 5, speed = 3 → time = 5/3
     expect(result[0]!.estimatedTime - waitOf(systems[0]!)).toBeCloseTo(5 / 3);
@@ -168,7 +169,7 @@ describe('findAvailableTransit', () => {
       getSegmentDistances: (routeId: number) => routeId === 1 ? [10, 8, 12] : null,
     }];
     // Origin near C (5,5), destination near A (0,0) → forward: C→A = seg2 = 12
-    const result = findAvailableTransit(systems, { x: 5, y: 5 }, { x: 0, y: 0 }, openFieldReach, WALK_SPEED, WAIT_FACTOR);
+    const result = availableTransitFor(systems, { x: 5, y: 5 }, { x: 0, y: 0 }, openFieldReach, WALK_SPEED, WAIT_FACTOR);
     expect(result).toHaveLength(1);
     // Forward from C(idx=2) to A(idx=0): seg2 = 12, time = 12/2 = 6
     expect(result[0]!.estimatedTime - waitOf(systems[0]!)).toBeCloseTo(6);
@@ -187,7 +188,7 @@ describe('findAvailableTransit', () => {
     // Origin near A(0,0), dest near B(10,0)
     // Forward A→B = seg0 = 10, backward A←C←B = seg2+seg1 = 20
     // Should pick forward = 10, time = 10/2 = 5
-    const result = findAvailableTransit(systems, { x: 0, y: 0 }, { x: 10, y: 0 }, openFieldReach, WALK_SPEED, WAIT_FACTOR);
+    const result = availableTransitFor(systems, { x: 0, y: 0 }, { x: 10, y: 0 }, openFieldReach, WALK_SPEED, WAIT_FACTOR);
     expect(result).toHaveLength(1);
     expect(result[0]!.estimatedTime - waitOf(systems[0]!)).toBeCloseTo(5);
   });
@@ -203,7 +204,7 @@ describe('findAvailableTransit', () => {
       getSegmentDistances: () => [10, 10],
     }];
     // Both origin and dest are closest to stop at (0,0)
-    const result = findAvailableTransit(systems, { x: 0, y: 0 }, { x: 0, y: 1 }, openFieldReach, WALK_SPEED, WAIT_FACTOR);
+    const result = availableTransitFor(systems, { x: 0, y: 0 }, { x: 0, y: 1 }, openFieldReach, WALK_SPEED, WAIT_FACTOR);
     expect(result).toHaveLength(1);
     expect(result[0]!.estimatedTime, '同站上下車卻免費').toBe(1);
   });
@@ -217,7 +218,7 @@ describe('findAvailableTransit', () => {
       // Water path distance = 15 (longer than euclidean ~11.3)
       getSegmentDistances: (routeId: number) => routeId === 1 ? [15, 15] : null,
     }];
-    const result = findAvailableTransit(systems, { x: 0, y: 0 }, { x: 8, y: 8 }, openFieldReach, WALK_SPEED, WAIT_FACTOR);
+    const result = availableTransitFor(systems, { x: 0, y: 0 }, { x: 8, y: 8 }, openFieldReach, WALK_SPEED, WAIT_FACTOR);
     expect(result).toHaveLength(1);
     expect(result[0]!.estimatedTime - waitOf(systems[0]!)).toBeCloseTo(15 / 0.375);
   });
@@ -243,7 +244,7 @@ describe('findAvailableTransit', () => {
   }
 
   function offeredFor(stops: TransportStop[], vehicles: number) {
-    return findAvailableTransit(
+    return availableTransitFor(
       [busSystemWith(stops, vehicles)], { x: 0, y: 0 }, { x: 10, y: 10 },
       openFieldReach, WALK_SPEED, WAIT_FACTOR);
   }
@@ -304,6 +305,24 @@ describe('findAvailableTransit', () => {
     expect(packed, '擠成這樣還是等一樣久').toBeGreaterThan(quiet);
   });
 
+  it('does not offer a route that is suspended', () => {
+    // 停駛 = 這條路線的道路被拆斷了，車子沒在跑（`BusSystem.onRoadChanged`）。
+    // 轉乘那條路徑早就跳過它（`flattenSystems` 的 `if (route.suspended) continue`），
+    // 單一運具這條沒有 —— 於是同一條停駛的公車，一條路徑說搭不到、另一條說搭得到，
+    // 而搭得到的那條還會把人記成它的乘客。
+    const systems: TransitSystemInfo[] = [{
+      type: TransportType.BUS,
+      speed: 2,
+      routes: [{
+        id: 1, type: TransportType.BUS,
+        stops: [makeStop(1, 1, 1), makeStop(9, 9, 2)],
+        vehicles: 1, operatingCost: 100, suspended: true,
+      }],
+    }];
+    const result = availableTransitFor(systems, { x: 0, y: 0 }, { x: 10, y: 10 }, openFieldReach, WALK_SPEED, WAIT_FACTOR);
+    expect(result).toEqual([]);
+  });
+
   it('prefers the route with room over the packed one in the same system', () => {
     const stopsA = busStops();
     stopsA[0]!.lastDayRiders = dailyCapacityOf(stopsA, 2) * 2;
@@ -320,7 +339,7 @@ describe('findAvailableTransit', () => {
         { id: 2, type: TransportType.BUS, stops: stopsB, vehicles: 2, operatingCost: 100 },
       ],
     }];
-    const result = findAvailableTransit(systems, { x: 0, y: 0 }, { x: 10, y: 10 }, openFieldReach, WALK_SPEED, WAIT_FACTOR);
+    const result = availableTransitFor(systems, { x: 0, y: 0 }, { x: 10, y: 10 }, openFieldReach, WALK_SPEED, WAIT_FACTOR);
     // 兩條都列得出來，但空的那條比較快 —— 運具選擇挑的是最快的那一個。
     expect(result).toHaveLength(2);
     const packed = result.find(r => r.boardStop?.id === stopsA[0]!.id)!;
