@@ -1091,7 +1091,30 @@ export class SimulationLoop {
    * 每個 tick 都重建 —— 佇列長度是「還沒收走的幾筆」，與人口無關。放進慢速槽的
    * 快照裡的話，一輪之內只有頭幾片看得到當時的事件。
    */
+  /**
+   * 還沒數過任何一次。
+   *
+   * 「第一次一定要數」不能靠版本號表達:版本號從 0 開始，而**讀檔建出來的服務
+   * 佇列裡本來就有東西**，版本也是 0 —— 拿 `-1` 當哨兵要兩個欄位同時是 -1 才成立，
+   * 那是同一件事用兩個地方講，壞掉的時候互相遮蔽。
+   */
+  private pendingCountsEverCounted = false;
+  /** 上次數的時候那兩條佇列是第幾版。 */
+  private pendingCountsDeathVersion = 0;
+  private pendingCountsGarbageVersion = 0;
+
   private refreshPendingCounts(): void {
+    // 兩條佇列都沒動就沿用上一張表。這一支每個 tick 都被呼叫，而佇列每 6 個 tick
+    // 才動一次 —— 見 `GlobalCoverageService.pendingVersion`。
+    const deathVersion = this.state.deathCare.pendingVersion;
+    const garbageVersion = this.state.garbage.pendingVersion;
+    if (this.pendingCountsEverCounted
+      && deathVersion === this.pendingCountsDeathVersion
+      && garbageVersion === this.pendingCountsGarbageVersion) return;
+    this.pendingCountsEverCounted = true;
+    this.pendingCountsDeathVersion = deathVersion;
+    this.pendingCountsGarbageVersion = garbageVersion;
+
     this.pendingDeathCounts.clear();
     for (const d of this.state.deathCare.getPendingDeathQueue()) {
       const key = toPosKey(d.x, d.y);
@@ -1113,6 +1136,25 @@ export class SimulationLoop {
    *
    * 70 891 人實測，改動前這一整包是 68.5ms 落在單一個 tick 上（BUG-330）。
    */
+  /**
+   * 這一輪每一片要處理誰 —— 快樂度與健康各一份。
+   *
+   * 形狀與理由跟 `commuteBuckets` 完全相同（那裡有完整說明）:沒有這一層的話，
+   * 每個 tick 都要掃過全部市民才挑得出自己那一片，一輪的過濾成本是「人口 × 片數」。
+   * 4 萬 2 千人會分成 20 片、每片約 2 110 人 —— **每個 tick 掃 42 000 個人只為了
+   * 挑出 2 110 個**。實測 `citizenSliceOf` 佔快樂度那一支的 8.3%、健康那一支的
+   * 40.6%，再加上迴圈本身的走訪。
+   *
+   * 兩份分開放而不是共用一份:兩個輪子各自呼叫 `next()`，而快樂度在還沒有情境可用
+   * 時會先 return（那個 tick 不推進）—— 一旦錯開，共用的桶會在別人的輪中途被重建。
+   *
+   * 一輪之內的落後與通勤那邊一樣:中途遷出、死亡的人還留在桶裡，會被多算一次
+   * （寫進一個沒有人讀得到的物件）;中途搬進來的人這一輪還沒有桶可以待，下一輪
+   * 才輪得到。新市民本來就帶著預設的快樂度與健康，全城平均走的是活人名單。
+   */
+  private happinessBuckets: Citizen[][] = [];
+  private healthBuckets: Citizen[][] = [];
+
   private updateCitizenHappinessSlice(): void {
     const citizens = this.state.citizens.getCitizens();
     if (citizens.length === 0) {
@@ -1136,6 +1178,13 @@ export class SimulationLoop {
     const currentTick = this.state.clock.tick;
     const { slices, index: mySlice } =
       this.happinessCycle.next(() => citizenSliceCount(citizens.length));
+    // 開輪:重新分桶。`index === 0` 就是一輪的開頭，而 `SliceCycle` 保證片數只在
+    // 那個時候才會換 —— 所以桶的長度與 `slices` 一輪之內不會對不上。
+    if (mySlice === 0) {
+      this.happinessBuckets = Array.from({ length: slices }, () => []);
+      for (const c of citizens) this.happinessBuckets[citizenSliceOf(c.id, slices)]!.push(c);
+    }
+    const myCitizens = this.happinessBuckets[mySlice] ?? [];
     let updated = 0;
 
     // Reusable factors object — mutated per citizen, no allocation per iteration
@@ -1151,8 +1200,7 @@ export class SimulationLoop {
       pendingGarbageAtHome: 0,
     };
 
-    for (const citizen of citizens) {
-      if (citizenSliceOf(citizen.id, slices) !== mySlice) continue;
+    for (const citizen of myCitizens) {
       updated++;
 
       // Vary commute per citizen (+/- 3 random jitter)
@@ -1316,11 +1364,14 @@ export class SimulationLoop {
 
     const { slices, index: mySlice } =
       this.healthCycle.next(() => citizenSliceCount(citizens.length));
+    if (mySlice === 0) {
+      this.healthBuckets = Array.from({ length: slices }, () => []);
+      for (const c of citizens) this.healthBuckets[citizenSliceOf(c.id, slices)]!.push(c);
+    }
     const f = this.healthFactors;
     let updated = 0;
 
-    for (const c of citizens) {
-      if (citizenSliceOf(c.id, slices) !== mySlice) continue;
+    for (const c of this.healthBuckets[mySlice] ?? []) {
       updated++;
 
       f.hasHome = !!c.homeId;

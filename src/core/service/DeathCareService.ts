@@ -90,11 +90,14 @@ export class DeathCareService extends GlobalCoverageService<Cemetery> {
   reportDeath(x: number, y: number): void {
     this.todayDeaths++;
     this.pendingDeathQueue.push({ x, y, waitTicks: 0 });
+    this.bumpPendingVersion();
   }
 
   // ── Tick logic ────────────────────────────────────────────────────
 
   tick(): void {
+    // 見 GarbageService.tick 的同一段:無條件記一次。
+    this.bumpPendingVersion();
     // Step 1: Increment wait counters; remove decomposed
     for (let i = this.pendingDeathQueue.length - 1; i >= 0; i--) {
       this.pendingDeathQueue[i]!.waitTicks++;
@@ -112,6 +115,7 @@ export class DeathCareService extends GlobalCoverageService<Cemetery> {
 
   /** Remove all pending deaths at a specific position (building demolished/cleared). */
   clearPendingAt(x: number, y: number): void {
+    this.bumpPendingVersion();
     for (let i = this.pendingDeathQueue.length - 1; i >= 0; i--) {
       const d = this.pendingDeathQueue[i]!;
       if (d.x === x && d.y === y) {

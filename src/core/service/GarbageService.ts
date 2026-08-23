@@ -160,6 +160,7 @@ export class GarbageService extends GlobalCoverageService<GarbageFacility> {
       for (let i = 0; i < bags; i++) {
         this.pendingBags.push({ x, y, waitTicks: 0 });
       }
+      this.bumpPendingVersion();
     } else {
       this.garbageAccumulators.set(key, acc);
     }
@@ -168,6 +169,9 @@ export class GarbageService extends GlobalCoverageService<GarbageFacility> {
   // ── Tick logic ────────────────────────────────────────────────────
 
   tick(): void {
+    // 腐化與收運都會讓佇列縮短，而 waitTicks 每個 entry 都會動 —— 分辨「這次到底
+    // 有沒有少東西」不比直接重數便宜，所以這裡無條件記一次。
+    this.bumpPendingVersion();
     // Step 1: Increment wait counters; remove decomposed
     for (let i = this.pendingBags.length - 1; i >= 0; i--) {
       this.pendingBags[i]!.waitTicks++;
@@ -184,6 +188,7 @@ export class GarbageService extends GlobalCoverageService<GarbageFacility> {
   }
 
   clearPendingAt(x: number, y: number): void {
+    this.bumpPendingVersion();
     for (let i = this.pendingBags.length - 1; i >= 0; i--) {
       if (this.pendingBags[i]!.x === x && this.pendingBags[i]!.y === y) {
         this.pendingBags.splice(i, 1);

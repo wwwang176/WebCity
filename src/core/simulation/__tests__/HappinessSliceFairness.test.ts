@@ -139,3 +139,38 @@ describe('分片的公平性', () => {
     }
   });
 });
+
+describe('分片的成本', () => {
+  it('should leave a citizen who arrived mid-cycle to the next cycle', () => {
+    // 這是**分桶**的反面測試。一輪開頭把人分好桶，之後每個 tick 只走自己那一桶
+    // —— 所以一輪中途才進城的人這一輪沒有桶可以待，下一輪才輪得到。
+    //
+    // 每個 tick 重掃全城的實作會在他該落的那一片當場處理他，這一條就會紅。而那個
+    // 掃描正是要拿掉的東西:4 萬 2 千人分成 20 片，**每個 tick 掃 42 000 個人只為了
+    // 挑出 2 110 個**（`citizenSliceOf` 佔快樂度那一支 8.3%、健康那一支 40.6%）。
+    //
+    // 落後一輪與通勤那邊的分桶完全相同，而新市民本來就帶著預設的快樂度。
+    const state = city(600);
+    const loop = new SimulationLoop(state);
+    loop.tick();   // 情境建起來，同時走完第 0 片
+    const n = loop.lastHappinessSlice.slices;
+    expect(n, '片數太少，構造不出「一輪中途」').toBeGreaterThan(2);
+    expect(loop.lastHappinessSlice.index, '前置條件:剛走完第 0 片').toBe(0);
+
+    const newcomer = state.citizens.restoreCitizen({ age: 100, homeId: '2,2', workplaceId: '6,2' });
+    // 快樂度與健康各有一份桶，各自在自己那一輪的開頭重建 —— 兩個都要看。
+    newcomer.happiness = NaN;
+    newcomer.health = NaN;
+
+    for (let t = 1; t < n; t++) loop.tick();
+    expect(state.citizens.getCitizens().some(c => c.id === newcomer.id),
+      '前置條件:那位市民中途被遷走了，這個測試沒有在驗東西').toBe(true);
+    expect(Number.isNaN(newcomer.happiness),
+      '一輪中途進來的人這一輪就被算到了 —— 代表每個 tick 都還在重掃全城').toBe(true);
+    expect(Number.isNaN(newcomer.health), '健康那一份桶每個 tick 都在重建').toBe(true);
+
+    for (let t = 0; t < n; t++) loop.tick();
+    expect(Number.isNaN(newcomer.happiness), '下一輪還是沒輪到他').toBe(false);
+    expect(Number.isNaN(newcomer.health), '下一輪還是沒輪到他（健康）').toBe(false);
+  });
+});
