@@ -45,7 +45,13 @@ export interface EdgeVehicleView {
 export const NO_ENTRY = -1;
 
 export class EdgeVehicleIndex {
-  /** edgeId → 槽號。跨幀重複使用 —— 路網不變的話字串鍵也不變。 */
+  /**
+   * edgeId → 槽號。跨幀重複使用。
+   *
+   * **沒有清空的方法，也不需要。** 邊的 id 是 `cellKey:dir:lane` 完全決定的
+   * （`LaneGraph`），重建路網會產生一模一樣的 id —— 所以這張表的上限只取決於
+   * 地圖裝得下幾條車道邊，不會隨編輯次數成長。
+   */
   private slotOfEdge = new Map<string, number>();
   private slotCount = 0;
 
@@ -125,18 +131,6 @@ export class EdgeVehicleIndex {
       });
     }
     return out;
-  }
-
-  /**
-   * 路網換掉時把槽號表丟掉。
-   *
-   * 不叫也不會算錯（查不到的 edgeId 回一段空的），但拆掉的邊會永遠佔著一個槽，
-   * 而每一幀的 `head.fill()` 都要走過它們。
-   */
-  resetEdges(): void {
-    this.slotOfEdge.clear();
-    this.slotCount = 0;
-    this.n = 0;
   }
 
   private slotFor(edgeId: string): number {

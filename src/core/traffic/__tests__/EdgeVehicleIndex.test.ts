@@ -95,14 +95,6 @@ describe('逐邊的車輛索引', () => {
       .toEqual([299]);
   });
 
-  it('should forget the edges when the road network is replaced', () => {
-    const ix = indexOf([['e1', 1, 0.5, 0.11, false]]);
-    ix.resetEdges();
-    ix.begin();
-
-    expect(ix.entriesOf('e1')).toEqual([]);
-  });
-
   it('should keep a slot for an edge across frames', () => {
     // 槽號表跨幀重用是刻意的 —— 路網不變的話字串鍵也不變，每幀重建等於白做工。
     const ix = new EdgeVehicleIndex();
