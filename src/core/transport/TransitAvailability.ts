@@ -93,6 +93,10 @@ export function findAvailableTransit(
     const walkRange = walkRangeFor(sys.type);
     for (const route of sys.routes) {
       const segDists = sys.getSegmentDistances?.(route.id) ?? null;
+      // 含壅塞的車速。班距與**乘車時間**都要吃它 —— 這裡曾經只餵給班距，
+      // 乘車那一段用 `sys.speed` 的設定值，於是塞死的公車路線在單一運具這條
+      // 路徑上看起來仍然跑得跟空街一樣快，而多模式那條路徑（`FlatRoute.speed`）
+      // 看到的是塞住的版本。同一趟通勤因為走哪條程式碼而得到不同答案（BUG-370）。
       const speed = sys.speedOn?.(route.id) ?? sys.speed;
       const { headway, loadFactor } = routeService(
         route, getRouteRiders(route), sys.vehicleCapacity ?? 0, speed, segDists,
@@ -140,7 +144,7 @@ export function findAvailableTransit(
         type: sys.type,
         estimatedTime: walkTime
           + expectedWait(headway, waitFactor, loadFactor)
-          + rideDistance / sys.speed,
+          + rideDistance / speed,
         walkTime,
         boardStop,
         alightStop,
