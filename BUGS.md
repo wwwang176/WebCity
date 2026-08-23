@@ -31,6 +31,41 @@
 
 ## 待修問題
 
+### BUG-370: 同一個函式裡用了兩個車速 —— 班距含壅塞，乘車時間不含
+- **位置**: `src/core/transport/TransitAvailability.ts` `findAvailableTransit()`
+- **問題**: 這一支先算出含壅塞的車速再拿去算班距，**估計時間卻用設定值**:
+
+  ```ts
+  const speed = sys.speedOn?.(route.id) ?? sys.speed;   // 含壅塞
+  const { headway, loadFactor } = routeService(route, ..., speed, segDists);
+  ...
+  estimatedTime: walkTime + expectedWait(headway, waitFactor, loadFactor)
+    + rideDistance / sys.speed,                         // 不含壅塞
+  ```
+
+- **後果**: 同一趟通勤會因為走哪一條程式碼而得到不同的答案 ——
+  - `findAvailableTransit()`（單一運具）: 乘車時間用**原始車速**
+  - `findMultiModalRoutes()` / `TransitAccessField`: 用 `FlatRoute.speed`，
+    那個是 `refreshRouteService()` 每個 tick 重讀的**含壅塞車速**
+
+  塞死的公車路線在單一運具那條路徑上看起來仍然跑得跟空街一樣快。捷運不受地面壅塞
+  影響（`getSpeedOn` 等於 `getSpeed`），所以只有公車會踩到。
+
+- **為什麼現有測試是綠的**: `RideTimeIncludesCongestion.test.ts` 最後一條
+  （「should reach the single-mode path as well」）只斷言 `estimatedTime` **變大**。
+  壅塞讓班距變長，`expectedWait` 那一項就已經變大了 —— 乘車那一項有沒有跟上，
+  這個斷言照不出來。要照出來得把班距那一路固定住（車輛數補到讓班距不變），
+  或直接斷言乘車那一段的秒數。
+
+- **這正是 BUG-343 的形狀再犯一次**: 兩條路徑各讀各的車速。`refreshRouteService()`
+  的註解本身就寫著「同一份判斷在 `findAvailableTransit()` 裡是每次現算的」。
+- **順帶**: `findAvailableTransit()` 每問一位市民就把每條路線的 `routeService()`
+  與 `getRouteRiders()` 重算一次，而 `refreshRouteService()` 已經在**同一個 tick 的
+  前幾行**用一模一樣的輸入算過了（`SimulationLoop.tick()` 第 695 行，在
+  `spawnVehicles()` 之前）。改成讀 `FlatRoute` 可以同時修掉這個 bug 與那份重算。
+- **嚴重性**: 中（估計偏差，不會當掉）
+- **狀態**: 待修
+
 ### BUG-368: `read()` 讀不到「兩格通不通」 ✅ 已修復
 
 - **症狀**（AI 用 agent API 實測）: 蓋完一座橋之後，程式沒有任何辦法問「A 格和 B 格
