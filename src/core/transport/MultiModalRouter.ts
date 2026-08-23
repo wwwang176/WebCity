@@ -350,7 +350,7 @@ export function buildStopRouteCache(
 
 // ── Multi-Modal Route Search (cache-backed) ─────────────────────
 
-const MAX_RESULTS = 20;
+export const MAX_RESULTS = 20;
 
 /**
  * 用預先算好的站對站快取找轉乘路線。
