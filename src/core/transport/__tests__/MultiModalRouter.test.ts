@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { StopProximityIndex } from '../StopProximityIndex';
 import {
   buildTransferGraph,
   buildStopRouteCache,
@@ -110,7 +111,7 @@ describe('findMultiModalRoutes', () => {
     const result = findMultiModalRoutes(
       [], { x: 0, y: 0 }, { x: 10, y: 0 },
       WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
-      openFieldReach,
+      StopProximityIndex.build([], openFieldReach),
     );
     expect(result).toEqual([]);
   });
@@ -123,7 +124,7 @@ describe('findMultiModalRoutes', () => {
     const result = findMultiModalRoutes(
       routes, { x: 0, y: 0 }, { x: 10, y: 0 },
       WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
-      openFieldReach,
+      StopProximityIndex.build(routes, openFieldReach),
     );
 
     expect(result.length).toBeGreaterThanOrEqual(1);
@@ -145,7 +146,7 @@ describe('findMultiModalRoutes', () => {
     const result = findMultiModalRoutes(
       routes, { x: 0, y: 0 }, { x: 20, y: 0 },
       WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
-      openFieldReach,
+      StopProximityIndex.build(routes, openFieldReach),
     );
 
     const fiveLegs = result.find(r => r.legs.length === 5);
@@ -172,7 +173,7 @@ describe('findMultiModalRoutes', () => {
     const result = findMultiModalRoutes(
       routes, { x: 0, y: 0 }, { x: 30, y: 0 },
       WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
-      openFieldReach,
+      StopProximityIndex.build(routes, openFieldReach),
     );
 
     const sevenLegs = result.find(r => r.legs.length === 7);
@@ -194,7 +195,7 @@ describe('findMultiModalRoutes', () => {
     const result = findMultiModalRoutes(
       routes, { x: 0, y: 0 }, { x: 20, y: 0 },
       WALK_SPEED, WAIT_FACTOR, graph, 3,
-      openFieldReach,
+      StopProximityIndex.build(routes, openFieldReach),
     );
     for (const route of result) {
       expect(route.legs.length).toBeLessThanOrEqual(3);
@@ -212,7 +213,7 @@ describe('findMultiModalRoutes', () => {
     const result = findMultiModalRoutes(
       routes, { x: 0, y: 0 }, { x: 20, y: 0 },
       WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
-      openFieldReach,
+      StopProximityIndex.build(routes, openFieldReach),
     );
 
     const transfer = result.find(r => r.legs.length === 5);
@@ -232,7 +233,7 @@ describe('findMultiModalRoutes', () => {
     const result = findMultiModalRoutes(
       routes, { x: 0, y: 0 }, { x: 10, y: 0 },
       WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
-      openFieldReach,
+      StopProximityIndex.build(routes, openFieldReach),
     );
     // Only single-ride routes possible (no transfer edges)
     for (const route of result) {
@@ -253,7 +254,7 @@ describe('findMultiModalRoutes', () => {
     const search = (routes: FlatRoute[]) => findMultiModalRoutes(
       routes, { x: 0, y: 0 }, { x: 10, y: 0 },
       WALK_SPEED, WAIT_FACTOR, buildGraphWithCache(routes, TRANSFER_RANGE), MAX_LEGS,
-      openFieldReach,
+      StopProximityIndex.build(routes, openFieldReach),
     );
 
     const jammed = search(packed)[0];
@@ -272,7 +273,7 @@ describe('findMultiModalRoutes', () => {
     const result = findMultiModalRoutes(
       routes, { x: 0, y: 0 }, { x: 10, y: 0 },
       WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
-      openFieldReach,
+      StopProximityIndex.build(routes, openFieldReach),
     );
 
     expect(result.length).toBeGreaterThan(0);
@@ -299,7 +300,7 @@ describe('findMultiModalRoutes', () => {
     const result = findMultiModalRoutes(
       routes, { x: 0, y: 0 }, { x: 10, y: 0 },
       WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
-      openFieldReach,
+      StopProximityIndex.build(routes, openFieldReach),
     );
 
     expect(result.length).toBeGreaterThanOrEqual(2);
@@ -319,7 +320,7 @@ describe('findMultiModalRoutes', () => {
     const result = findMultiModalRoutes(
       routes, { x: 0, y: 0 }, { x: 20, y: 0 },
       WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
-      openFieldReach,
+      StopProximityIndex.build(routes, openFieldReach),
     );
     // 轉乘那一段的捷運擠爆了 —— 路線還在，但慢到不值得。
     const fiveLegs = result.find(r => r.legs.length === 5);

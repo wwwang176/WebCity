@@ -3019,7 +3019,7 @@ export class SimulationLoop {
       const multiModalRoutes = findMultiModalRoutes(
         this.flatRoutes, fromPos, toPos, SIMULATION.WALK_SPEED,
         SIMULATION.AVERAGE_WAIT_FACTOR, this.transferGraph, SIMULATION.MAX_TRIP_LEGS,
-        this.stopReach,
+        this.stopIndex,
       );
       const { mode, multiLeg, boardStop, alightStop } = chooseModeMultiModal(
         fromPos, toPos, availableTransport, multiModalRoutes,
