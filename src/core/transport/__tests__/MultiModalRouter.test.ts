@@ -5,6 +5,7 @@ import {
   buildStopRouteCache,
   findMultiModalRoutes,
   flattenSystems,
+  MAX_RESULTS,
   type FlatRoute,
 } from '../MultiModalRouter';
 import { openFieldReach } from './openFieldReach';
@@ -307,6 +308,25 @@ describe('findMultiModalRoutes', () => {
     for (let i = 1; i < result.length; i++) {
       expect(result[i]!.totalTime).toBeGreaterThanOrEqual(result[i - 1]!.totalTime);
     }
+  });
+
+  it('stops reporting once it has MAX_RESULTS of them', () => {
+    // 站牌密集的市中心，起點與終點兩邊各站著好幾條路線 —— 組合數是「進站候選 ×
+    // 出站候選」，很快就多到沒有意義。沒有上限的話每問一位市民都要把那些全部
+    // 組出來（每一條都配一份 legs 陣列），而運具選擇只會挑最快的那一條。
+    const routes: FlatRoute[] = [];
+    for (let i = 0; i < 6; i++) {
+      routes.push(makeRoute(i + 1, TransportType.BUS, 2,
+        [makeStop(1, i, i * 2 + 1), makeStop(9, i, i * 2 + 2)], { segDists: [10, 10] }));
+    }
+    const graph = buildGraphWithCache(routes, TRANSFER_RANGE);
+    const result = findMultiModalRoutes(
+      routes, { x: 0, y: 0 }, { x: 10, y: 0 },
+      WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
+      StopProximityIndex.build(routes, openFieldReach),
+    );
+
+    expect(result.length, '回報數沒有被上限擋住').toBe(MAX_RESULTS);
   });
 
   it('skips full route in transfer chain', () => {
