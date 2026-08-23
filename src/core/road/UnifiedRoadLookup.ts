@@ -87,8 +87,15 @@ export class UnifiedRoadLookup {
       }
     }
 
-    // Check all elevated levels at neighbor
+    // Check all elevated levels at neighbor.
+    //
+    // 先問一次「這一格有哪幾層」的位元遮罩。沒有高架的位置就到此為止 ——
+    // 原本無條件問三層，每問一次配一個 `x,y,level` 字串再查一次 Map。4 萬人的
+    // 存檔實測 `ElevationManager.get` 佔主執行緒 5.8%，而那座城市總共 7 段高架。
+    const mask = this.em.levelsAt(nx, ny);
+    if (mask === 0) return result;
     for (let lv = MIN_ELEVATION_LEVEL; lv <= MAX_ELEVATION_LEVEL; lv++) {
+      if ((mask & (1 << lv)) === 0) continue;
       const seg = this.em.get(nx, ny, lv);
       if (seg && seg.roadType !== RoadType.NONE) {
         if (this.isCompatible(sourceLevel, sourceIsRamp, lv, seg.isRamp)
@@ -114,7 +121,9 @@ export class UnifiedRoadLookup {
     }
 
     // Check all elevated levels
+    const mask = this.em.levelsAt(x, y);
     for (let lv = MIN_ELEVATION_LEVEL; lv <= MAX_ELEVATION_LEVEL; lv++) {
+      if ((mask & (1 << lv)) === 0) continue;
       const seg = this.em.get(x, y, lv);
       if (seg && seg.roadType !== RoadType.NONE) {
         result.push(`${x},${y},${lv}`);
