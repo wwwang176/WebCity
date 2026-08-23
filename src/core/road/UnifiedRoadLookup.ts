@@ -57,6 +57,18 @@ export class UnifiedRoadLookup {
     return { roadType: seg.roadType, roadFlags: seg.roadFlags };
   }
 
+  /**
+   * 這個位置有沒有任何高架層。
+   *
+   * 給熱迴圈用的**快速否定**:`getCompatibleNeighborKeys` 每次呼叫都要解析來源
+   * 字串鍵、配一個陣列、再問一次格子;而水電覆蓋的 flood 每個鄰居都會呼叫它一次。
+   * 一座只有幾段高架的城市裡，那些工作幾乎全部白做 —— 這一支讓呼叫端能先問
+   * 「這裡到底有沒有高架」，沒有就走地面那條便宜的路。
+   */
+  hasElevatedAt(x: number, y: number): boolean {
+    return this.em.levelsAt(x, y) !== 0;
+  }
+
   /** Check if a cell key represents a ramp. */
   isRamp(key: string): boolean {
     const level = parseLevelFromKey(key);

@@ -18,14 +18,16 @@ interface SewageJSON {
 }
 
 import type { PollutionSource } from '../environment/Pollution';
-import { isFootprintAdjacentToRoad, toPosKey, type ReadableGrid } from '../grid/GridHelpers';
+import { isFootprintAdjacentToRoad, type ReadableGrid } from '../grid/GridHelpers';
 import { removeById } from '../utils/removeById';
 import { isFacilityOperational, type UtilityChecker } from './FacilityOperational';
 import { Grid } from '../grid/Grid';
 import { ZoneType } from '../grid/types';
 import { getBuildingType } from '../building/types';
 import { getInfraBuildingId } from '../building/InfraConfig';
-import { bfsRoadNetworkFlood, bfsBudgetDrainFlood, type CellCharge } from './NetworkCoverage';
+import { bfsRoadNetworkFlood, bfsBudgetDrainFlood } from './NetworkCoverage';
+import { CoverageBits } from './CoverageBits';
+import { UtilityFloodScratch } from './UtilityFloodScratch';
 import { calculateUtilityCellDemand, type UtilityCellDemandConfig } from './UtilityCellDemand';
 import { WATER_CONSUMPTION } from './WaterNetwork';
 
@@ -76,8 +78,13 @@ export class SewageService {
   private produced = 0;
   private nextId = 1;
   // BFS coverage fields (mirrors WaterNetwork pattern)
-  private supplied = new Set<string>();
-  private fullCoverage = new Set<string>();
+  private supplied = new CoverageBits();
+  private fullCoverage = new CoverageBits();
+  /**
+   * flood 的走訪狀態與這一輪共用的記錄。跨呼叫重複使用 —— 每 6 個 tick 重配
+   * 一組跟地圖一樣大的 typed array 是白花的。
+   */
+  private readonly floodScratch = new UtilityFloodScratch();
   private totalDemand = 0;
   private roadLookup: import('../road/UnifiedRoadLookup').UnifiedRoadLookup | null = null;
   // Per-cell sewage tracking for building-based pollution
@@ -112,7 +119,7 @@ export class SewageService {
     this.roadLookup = lookup;
   }
 
-  calculateCoverage(grid: Grid, infrastructurePositions?: Set<string>): Set<string> {
+  calculateCoverage(grid: Grid, infrastructurePositions?: Set<string>): CoverageBits {
     this.lastInfraPositions = infrastructurePositions;
     // Only plants that are both road-connected and powered can treat anything.
     // Both sets were already maintained, and getConnectedTreatmentCapacity
@@ -126,17 +133,16 @@ export class SewageService {
     );
 
     // Phase 1: full coverage (no budget limit)
-    this.fullCoverage.clear();
+    this.floodScratch.beginPass(grid, infrastructurePositions);
+    this.fullCoverage.reset(grid.width, grid.height);
     for (const p of active) {
-      bfsRoadNetworkFlood(grid, p.x, p.y, this.fullCoverage, infrastructurePositions, this.roadLookup);
+      bfsRoadNetworkFlood(grid, p.x, p.y, this.fullCoverage, this.floodScratch, this.roadLookup);
     }
     // Phase 2: budget-drain per plant (capacity as budget)
-    this.supplied.clear();
+    this.supplied.reset(grid.width, grid.height);
     const getDemand = (x: number, y: number) => this.getCellDemandAt(grid, x, y);
-    const paidGroups = new Set<string>();
-    const chargeCache = new Map<string, CellCharge>();
     for (const p of active) {
-      bfsBudgetDrainFlood(grid, { x: p.x, y: p.y, output: p.capacity }, this.supplied, getDemand, infrastructurePositions, this.roadLookup, paidGroups, chargeCache);
+      bfsBudgetDrainFlood(grid, { x: p.x, y: p.y, output: p.capacity }, this.supplied, getDemand, this.floodScratch, this.roadLookup);
     }
     return this.supplied;
   }
@@ -155,11 +161,11 @@ export class SewageService {
   }
 
   isSupplied(x: number, y: number): boolean {
-    return this.supplied.has(toPosKey(x, y));
+    return this.supplied.has(x, y);
   }
 
   isInCoverage(x: number, y: number): boolean {
-    return this.fullCoverage.has(toPosKey(x, y));
+    return this.fullCoverage.has(x, y);
   }
 
   getDemand(): number {
