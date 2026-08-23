@@ -18,6 +18,7 @@ import { RoadType } from '../../road/types';
 import { UnifiedRoadLookup } from '../../road/UnifiedRoadLookup';
 import { buildRoadCellGraph, transposeRoadCellGraph } from '../../road/RoadCellGraph';
 import type { WorkplacePosition } from '../WorkplaceDistanceTypes';
+import { WorkplaceDistanceTable } from '../WorkplaceDistanceTable';
 
 const BUDGET = 1080;
 const W = 12;
@@ -57,7 +58,7 @@ describe('computeWorkplaceDistances', () => {
     const spy = vi.mocked(deserializeRoadCellGraph);
 
     spy.mockClear();
-    computeWorkplaceDistances(graphBuffer, workplaces, BUDGET, isBuilding);
+    computeWorkplaceDistances(graphBuffer, workplaces, BUDGET, W, H, isBuilding);
 
     expect(spy.mock.calls.length,
       `${workplaces.length} 個工作地卻建了 ${spy.mock.calls.length} 次圖`).toBe(1);
@@ -66,28 +67,40 @@ describe('computeWorkplaceDistances', () => {
   it('should give the same answers as flooding each workplace separately', () => {
     const { graphBuffer, isBuilding, workplaces } = fixture();
 
-    const batch = computeWorkplaceDistances(graphBuffer, workplaces, BUDGET, isBuilding);
+    const batch = new WorkplaceDistanceTable(
+      computeWorkplaceDistances(graphBuffer, workplaces, BUDGET, W, H, isBuilding));
 
     const graph = deserializeRoadCellGraph(graphBuffer);
-    const expected = workplaces.map(wp => ({
-      workplacePos: wp.pos,
-      distances: reverseFloodFromGraph(graph, wp, BUDGET, isBuilding),
-    }));
-
-    expect(Object.keys(expected[0]!.distances).length,
-      'fixture 沒淹到任何建築 —— 這個測試什麼都沒比').toBeGreaterThan(0);
-    expect(batch).toEqual(expected);
+    let compared = 0;
+    for (const wp of workplaces) {
+      const dense = new Int32Array(W * H).fill(-1);
+      reverseFloodFromGraph(graph, wp, BUDGET, W, H, isBuilding, dense);
+      for (let i = 0; i < dense.length; i++) {
+        const x = i % W, y = Math.floor(i / W);
+        expect(batch.costAt(x, y, wp.pos),
+          `${wp.pos} → (${x},${y}) 批次與單獨算的不一樣`).toBe(dense[i]! < 0 ? undefined : dense[i]!);
+        if (dense[i]! >= 0) compared++;
+      }
+    }
+    expect(compared, 'fixture 沒淹到任何建築 —— 這個測試什麼都沒比').toBeGreaterThan(0);
   });
 
   it('should keep each workplace on its own entry', () => {
-    // 圖共用之後，每次 flood 都拿同一個 graph 物件。若 flood 寫回圖上的暫存
-    // 狀態而沒清乾淨，後面的工作地會讀到前面的殘留。
+    // 圖共用之後，每次 flood 都拿同一個 graph 物件，而且**密集暫存陣列也是共用的**。
+    // 沒有在每個工作地之前重填 -1 的話，後面的工作地會讀到前面的殘留。
     const { graphBuffer, isBuilding, workplaces } = fixture();
 
-    const together = computeWorkplaceDistances(graphBuffer, workplaces, BUDGET, isBuilding);
-    const alone = workplaces.map(wp =>
-      computeWorkplaceDistances(graphBuffer, [wp], BUDGET, isBuilding)[0]!);
+    const together = new WorkplaceDistanceTable(
+      computeWorkplaceDistances(graphBuffer, workplaces, BUDGET, W, H, isBuilding));
 
-    expect(together).toEqual(alone);
+    for (const wp of workplaces) {
+      const alone = new WorkplaceDistanceTable(
+        computeWorkplaceDistances(graphBuffer, [wp], BUDGET, W, H, isBuilding));
+      for (let i = 0; i < W * H; i++) {
+        const x = i % W, y = Math.floor(i / W);
+        expect(together.costAt(x, y, wp.pos),
+          `${wp.pos} → (${x},${y}) 沾到了別的工作地的殘留`).toBe(alone.costAt(x, y, wp.pos));
+      }
+    }
   });
 });

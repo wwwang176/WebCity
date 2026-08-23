@@ -75,15 +75,18 @@ describe('worker result equals the synchronous query', () => {
     let compared = 0;
     for (const wpKey of cells) {
       const [wx, wy] = wpKey.split(',').map(Number);
-      const fromWorker = reverseFloodFromGraph(
-        transposed, { pos: wpKey, x: wx!, y: wy! }, BUDGET, isBuilding,
+      const fromWorker = new Int32Array(grid.width * grid.height).fill(-1);
+      reverseFloodFromGraph(
+        transposed, { pos: wpKey, x: wx!, y: wy! }, BUDGET,
+        grid.width, grid.height, isBuilding, fromWorker,
       );
       for (const homeKey of cells) {
         const [hx, hy] = homeKey.split(',').map(Number);
         const sync = roadDistanceToTargets(
           grid, { x: hx!, y: hy! }, new Set([wpKey]), BUDGET, lookup, forward,
         );
-        const a = fromWorker[homeKey];
+        const aRaw = fromWorker[hy! * grid.width + hx!]!;
+        const a = aRaw < 0 ? undefined : aRaw;
         const b = sync.get(wpKey);
         if (b === undefined) {
           expect(a, `${homeKey} → ${wpKey}：同步說到不了，worker 說到得了`).toBeUndefined();
@@ -106,10 +109,12 @@ describe('worker result equals the synchronous query', () => {
       return c !== null && c.roadType === RoadType.NONE;
     };
     const wp = { pos: '0,0', x: 0, y: 0 };
-    const withTranspose = reverseFloodFromGraph(
-      transposeRoadCellGraph(g), wp, BUDGET, isBuilding);
-    const withForward = reverseFloodFromGraph(g, wp, BUDGET, isBuilding);
-    expect(withForward, '正向圖與轉置圖給出相同結果 —— fixture 的路型不夠混合')
-      .not.toEqual(withTranspose);
+    const withTranspose = new Int32Array(grid.width * grid.height).fill(-1);
+    reverseFloodFromGraph(transposeRoadCellGraph(g), wp, BUDGET,
+      grid.width, grid.height, isBuilding, withTranspose);
+    const withForward = new Int32Array(grid.width * grid.height).fill(-1);
+    reverseFloodFromGraph(g, wp, BUDGET, grid.width, grid.height, isBuilding, withForward);
+    expect([...withForward], '正向圖與轉置圖給出相同結果 —— fixture 的路型不夠混合')
+      .not.toEqual([...withTranspose]);
   });
 });

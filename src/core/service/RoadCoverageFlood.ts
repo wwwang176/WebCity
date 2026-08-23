@@ -9,7 +9,7 @@
  */
 
 import { RoadType } from '../road/types';
-import { FOUR_NEIGHBORS, toPosKey, parsePosKeyUnsafe } from '../grid/GridHelpers';
+import { FOUR_NEIGHBORS, toPosKey, parsePosKeyUnsafe, parsePosKey } from '../grid/GridHelpers';
 import type { ReadableGrid, SizedGrid } from '../grid/GridHelpers';
 import { ZONE_ROAD_REACH } from '../grid/constants';
 import { GridCoverageArray, decodeCostRatio } from './GridCoverageArray';
@@ -617,10 +617,29 @@ export function roadDistanceToTargets(
   const seeds = seedNodesFor(g, home.x, home.y, ZONE_ROAD_REACH);
   if (seeds.length === 0) return result;
 
+  // 目標一次換算成格子索引。舊版是在**每一次附掛探點**上做 `toPosKey(x, y)`
+  // 再查字串 Map —— 每個 settle 的節點 25 次。換算一次是 O(目標數)，而目標數
+  // 遠小於 settle 數 × 25。
+  const { width, height } = roadLookup;
+  const targetCells = new Set<number>();
+  for (const t of targets) {
+    const p = parsePosKey(t);
+    if (p) targetCells.add(p.y * width + p.x);
+  }
+
+  const found = new Int32Array(width * height).fill(-1);
+  let hits = 0;
   floodRoadCellGraph(g, seeds, maxBudget, (node, cost) => {
-    attachAtSettledNode(g, node, cost, ZONE_ROAD_REACH,
-      (x, y) => targets.has(toPosKey(x, y)), result);
-    return result.size >= targets.size;   // 找齊就停
+    hits += attachAtSettledNode(g, node, cost, ZONE_ROAD_REACH, width, height,
+      (x, y) => targetCells.has(y * width + x), found);
+    return hits >= targetCells.size;   // 找齊就停
   });
+
+  // 回傳仍然是字串鍵的 Map —— 呼叫端（`JobRelocation`）拿它跟工作地點的
+  // posKey 對照。轉換只跑在**找到的**格子上，最多就是目標數。
+  for (const idx of targetCells) {
+    const cost = found[idx]!;
+    if (cost >= 0) result.set(toPosKey(idx % width, Math.floor(idx / width)), cost);
+  }
   return result;
 }

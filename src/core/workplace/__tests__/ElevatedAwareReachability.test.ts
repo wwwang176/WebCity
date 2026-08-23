@@ -5,6 +5,7 @@ import { SimulationLoop } from '../../simulation/SimulationLoop';
 import { ElevationManager } from '../../elevation/ElevationManager';
 import { UnifiedRoadLookup } from '../../road/UnifiedRoadLookup';
 import { WorkplaceDistanceCache } from '../WorkplaceDistanceCache';
+import { WorkplaceDistanceTableBuilder } from '../WorkplaceDistanceTable';
 import { WorkplaceDistanceClient } from '../WorkplaceDistanceClient';
 import { RoadBuilder } from '../../road/RoadBuilder';
 import { RoadType } from '../../road/types';
@@ -67,9 +68,9 @@ class ComputingFakeWorker {
       if (x < 0 || y < 0 || x >= req.gridWidth || y >= req.gridHeight) return false;
       return view.getUint8((y * req.gridWidth + x) * 12 + 5) === 0;
     };
-    const entries = computeWorkplaceDistances(
-      req.graphBuffer, req.workplaces, req.maxBudget, isBuilding);
-    this.onmessage?.({ data: { type: 'RESULT', requestId: req.requestId, entries } });
+    const table = computeWorkplaceDistances(
+      req.graphBuffer, req.workplaces, req.maxBudget, req.gridWidth, req.gridHeight, isBuilding);
+    this.onmessage?.({ data: { type: 'RESULT', requestId: req.requestId, table } });
   }
   addEventListener(): void {}
   removeEventListener(): void {}
@@ -260,7 +261,9 @@ describe('workplace reachability is elevation-aware', () => {
     // A cache that LIES: it claims the shop is unreachable although the ground
     // road plainly connects it. If the loop consults the cache, the citizen
     // stays jobless; if it ignores the cache, they get the job.
-    cache.populateSync([{ workplacePos: WORK, distances: {} }]);
+    const liar = new WorkplaceDistanceTableBuilder(state.grid.width, state.grid.height);
+    liar.addWorkplace(WORK, new Int32Array(state.grid.width * state.grid.height).fill(-1));
+    cache.populateSync(liar.build());
     loop.setWorkplaceDistanceCache(cache);
 
     state.citizens.createCitizen({ age: 100 })!.homeId = HOME;

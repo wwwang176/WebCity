@@ -231,26 +231,46 @@ export function seedNodesFor(
  *
  * 注意這代表**一個路格拿到的不一定是它自己的成本** —— 它 reach 內若有更便宜
  * 的路格，就記那個。這是「附掛到最近的路」的正確語意，不是 bug。
+ *
+ * ## 為什麼收在密集陣列裡而不是 `Map<string, number>`
+ *
+ * 這支函式每個 settle 的節點各跑一次，每次掃 (2·reach+1)² = 25 格。舊版每一格
+ * 都配一個 `"x,y"` 字串當鍵。4 萬人存檔的 Chrome trace:一次同步查詢凍住主執行緒
+ * 2 686ms，其中 **47.9% 的自身時間就在這裡**。改成以 `y * width + x` 當索引之後
+ * 這一格的成本是一次整數寫入，沒有配置。
+ *
+ * @param out 長度 `width * height`，`-1` 代表這一格還沒被收。呼叫端負責填 -1。
+ * @returns 這一次新收了幾格 —— 呼叫端用它做「找齊目標就早退」的計數。
  */
 export function attachAtSettledNode(
   graph: RoadCellGraph,
   node: number,
   cost: number,
   reach: number,
+  width: number,
+  height: number,
   accept: (x: number, y: number) => boolean,
-  out: Map<string, number>,
-): void {
+  out: Int32Array,
+): number {
   const cx = graph.nodeX[node]!, cy = graph.nodeY[node]!;
+  let added = 0;
   for (let dy = -reach; dy <= reach; dy++) {
+    const ny = cy + dy;
+    if (ny < 0 || ny >= height) continue;
+    const rowBase = ny * width;
     for (let dx = -reach; dx <= reach; dx++) {
-      const nx = cx + dx, ny = cy + dy;
-      if (nx < 0 || ny < 0) continue;
-      const key = toPosKey(nx, ny);
-      if (out.has(key)) continue;
+      const nx = cx + dx;
+      // 上界的檢查是密集陣列要求的 —— 舊版靠 `accept` 擋掉界外，寫進陣列就不能
+      // 這樣賭了。行為不變:`accept` 本來就會拒絕它們。
+      if (nx < 0 || nx >= width) continue;
+      const idx = rowBase + nx;
+      if (out[idx]! >= 0) continue;
       if (!accept(nx, ny)) continue;
-      out.set(key, cost);
+      out[idx] = cost;
+      added++;
     }
   }
+  return added;
 }
 
 // ── 轉置 ────────────────────────────────────────────────────────────

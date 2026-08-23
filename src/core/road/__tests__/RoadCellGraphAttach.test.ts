@@ -69,17 +69,72 @@ describe('seedNodesFor', () => {
 });
 
 describe('attachAtSettledNode', () => {
-  /** 跑一次 flood，並在 settle 當下附掛。 */
+  /**
+   * 跑一次 flood，並在 settle 當下附掛。
+   *
+   * `attachAtSettledNode` 收在密集陣列裡（見它的說明），這裡攤回 `Map` 只是為了
+   * 讓下面的斷言講「(x,y) 收到多少」而不是講索引算術。**回傳的 `added` 總數獨立
+   * 於攤平**，所以「有沒有真的收到」不是靠這層轉換推出來的。
+   */
   function floodAndAttach(startKey: string, accept: (x: number, y: number) => boolean) {
     const { lookup } = testCity();
     const g = buildRoadCellGraph(lookup);
-    const out = new Map<string, number>();
+    const dense = new Int32Array(W * H).fill(-1);
+    let added = 0;
     const cost = floodRoadCellGraph(g, [g.indexOf.get(startKey)!], BIG, (node, c) => {
-      attachAtSettledNode(g, node, c, ZONE_ROAD_REACH, accept, out);
+      added += attachAtSettledNode(g, node, c, ZONE_ROAD_REACH, W, H, accept, dense);
       return false;
     });
-    return { g, out, cost };
+    const out = new Map<string, number>();
+    for (let i = 0; i < dense.length; i++) {
+      if (dense[i]! >= 0) out.set(`${i % W},${Math.floor(i / W)}`, dense[i]!);
+    }
+    return { g, out, cost, added };
   }
+
+  it('should report how many cells it newly collected', () => {
+    // 呼叫端拿這個數字做「找齊目標就早退」的計數。恆回 0 的話同步查詢會永遠
+    // 跑滿預算，而且沒有別的斷言看得出來。
+    const { out, added } = floodAndAttach('0,1', () => true);
+
+    expect(added).toBe(out.size);
+    expect(added).toBeGreaterThan(0);
+  });
+
+  it('should not count a cell twice when a cheaper road settles later', () => {
+    // 只記第一次 —— 重複計數會讓早退提前觸發，查詢在找齊之前就停。
+    const { g, added } = floodAndAttach('0,1', () => true);
+    let distinct = 0;
+    const seen = new Set<string>();
+    for (let x = -ZONE_ROAD_REACH; x < W + ZONE_ROAD_REACH; x++) {
+      for (let y = -ZONE_ROAD_REACH; y < H + ZONE_ROAD_REACH; y++) {
+        if (x < 0 || y < 0 || x >= W || y >= H) continue;
+        for (let i = 0; i < g.nodeKeys.length; i++) {
+          if (Math.max(Math.abs(g.nodeX[i]! - x), Math.abs(g.nodeY[i]! - y)) <= ZONE_ROAD_REACH
+            && !seen.has(`${x},${y}`)) { seen.add(`${x},${y}`); distinct++; }
+        }
+      }
+    }
+    expect(added, '同一格被算了不只一次').toBe(distinct);
+  });
+
+  it('should stay inside the grid', () => {
+    // 密集陣列要求上界也要擋。舊版只擋負數，靠 `accept` 拒絕界外 —— 寫進陣列
+    // 就不能這樣賭了，越界會安靜地寫壞別人的格子。
+    const { lookup } = testCity();
+    const g = buildRoadCellGraph(lookup);
+    const dense = new Int32Array(W * H).fill(-1);
+    const corner = g.indexOf.get(`${W - 1},1`)!;
+
+    expect(() => attachAtSettledNode(g, corner, 0, ZONE_ROAD_REACH, W, H, () => true, dense))
+      .not.toThrow();
+    for (let i = 0; i < dense.length; i++) {
+      const x = i % W, y = Math.floor(i / W);
+      if (dense[i]! < 0) continue;
+      expect(Math.max(Math.abs(x - (W - 1)), Math.abs(y - 1)),
+        `(${x},${y}) 不在 reach 內卻被寫到了`).toBeLessThanOrEqual(ZONE_ROAD_REACH);
+    }
+  });
 
   /**
    * 獨立參考：一個格子應該拿到的成本 = reach 內所有**到得了的**路格中最便宜的。

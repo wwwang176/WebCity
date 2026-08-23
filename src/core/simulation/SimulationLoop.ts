@@ -1815,7 +1815,10 @@ export class SimulationLoop {
     }
 
     // Build reachability map: use cache if ready, otherwise sync Dijkstra fallback
-    const reachable = this.wpDistCache?.isReady
+    // `hasTable` 而不是 `isReady` —— 一份差一輪的表遠好過同步 Dijkstra。
+    // 4 萬人存檔實測:走快取 161ms，掉回同步 2,684ms，而快取「當前」的窗只有
+    // 6~8 秒、重新配置每 13 秒跑一次，落在哪裡純粹是運氣。
+    const reachable = this.wpDistCache?.hasTable
       ? this.buildWorkplaceReachabilityFromCache(workingAgeCitizens, workplaceCandidates)
       : this.buildWorkplaceReachability(workingAgeCitizens, workplaceCandidates);
     assignWorkWithPreference(workingAgeCitizens, workplaceCandidates, workOccupancy, reachable, this.commuteTimeBetween);
@@ -1928,12 +1931,15 @@ export class SimulationLoop {
     // All workplace positions as Dijkstra targets
     const targetSet = new Set<string>(workplaceCandidates.map(c => c.pos));
 
+    // 圖一定要傳。不傳的話 `roadDistanceToTargets` 會**每個家各建一張**，而建圖是
+    // O(路格數 × 4) —— 這個迴圈跑的是全城不重複的住址。
+    const cellGraph = this.getCellGraph() ?? undefined;
     for (const homeId of homeIds) {
       const homePos = parsePosKeyUnsafe(homeId);
       const distMap = roadDistanceToTargets(
         this.state.grid, homePos, targetSet,
         DEFAULT_JOB_RELOCATION_CONFIG.dijkstraMaxBudget,
-        this._roadLookup,
+        this._roadLookup, cellGraph,
       );
       reachable.set(homeId, new Set(distMap.keys()));
     }
@@ -1979,7 +1985,7 @@ export class SimulationLoop {
     // O(路格數 × 4)。圖以道路世代為鍵快取，整輪只建一次。
     const roadLookup = this._roadLookup;
     const cellGraph = this.getCellGraph() ?? undefined;
-    const distanceLookup = this.wpDistCache?.isReady
+    const distanceLookup = this.wpDistCache?.hasTable
       ? (_grid: any, homePos: { x: number; y: number }, targets: Set<string>, _budget: number) => {
           const homeKey = toPosKey(homePos.x, homePos.y);
           return this.wpDistCache!.getDistancesFromHome(homeKey, targets);
@@ -2531,6 +2537,8 @@ export class SimulationLoop {
     const grid = this.state.grid;
     const tick = this.state.clock.tick;
     const reachCache = new Map<string, boolean>();
+    // 同上:不傳圖的話每個受影響的通勤各建一張。
+    const cellGraph = this.getCellGraph() ?? undefined;
 
     for (const id of affectedIds) {
       const citizen = citizenById.get(id);
@@ -2544,7 +2552,7 @@ export class SimulationLoop {
         const distMap = roadDistanceToTargets(
           grid, home, new Set([citizen.workplaceId]),
           DEFAULT_JOB_RELOCATION_CONFIG.dijkstraMaxBudget,
-          this._roadLookup,
+          this._roadLookup, cellGraph,
         );
         reachable = distMap.has(citizen.workplaceId);
         reachCache.set(key, reachable);

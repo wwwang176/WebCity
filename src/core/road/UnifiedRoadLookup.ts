@@ -31,6 +31,13 @@ export class UnifiedRoadLookup {
     private em: ElevationManager,
   ) {}
 
+  /**
+   * 地圖尺寸。走這一層而不是要呼叫端自己帶 —— 拿得到 lookup 就拿得到尺寸，
+   * 兩邊各記一份遲早會對不上。
+   */
+  get width(): number { return this.grid.width; }
+  get height(): number { return this.grid.height; }
+
   /** Create a lookup from a plain Grid (no elevation). */
   static fromGrid(grid: GridLike): UnifiedRoadLookup {
     return new UnifiedRoadLookup(grid, new ElevationManager());

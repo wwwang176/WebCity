@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { WorkplaceDistanceTableBuilder } from '../WorkplaceDistanceTable';
 import { WorkplaceDistanceCache } from '../WorkplaceDistanceCache';
 import { WorkplaceDistanceClient } from '../WorkplaceDistanceClient';
 import { Grid } from '../../grid/Grid';
@@ -25,19 +26,28 @@ function roadGraphBuffer(): ArrayBuffer {
   return serializeRoadCellGraph(buildRoadCellGraph(UnifiedRoadLookup.fromGrid(grid)));
 }
 
+/** 快取吃的是 CSR 緩衝。這裡把「工作地 → 哪幾格多少錢」寫成表再組起來。 */
+const TW = 12, TH = 12;
+function buffersFrom(rows: Array<[string, Record<string, number>]>) {
+  const b = new WorkplaceDistanceTableBuilder(TW, TH);
+  for (const [pos, dists] of rows) {
+    const dense = new Int32Array(TW * TH).fill(-1);
+    for (const [cell, cost] of Object.entries(dists)) {
+      const [x, y] = cell.split(',').map(Number);
+      dense[y! * TW + x!] = cost;
+    }
+    b.addWorkplace(pos, dense);
+  }
+  return b.build();
+}
+
 describe('WorkplaceDistanceCache', () => {
   function makeCache() {
     const cache = new WorkplaceDistanceCache();
-    cache.populateSync([
-      {
-        workplacePos: '5,5',
-        distances: { '3,3': 10, '4,4': 5, '6,6': 8 },
-      },
-      {
-        workplacePos: '10,10',
-        distances: { '3,3': 20, '8,8': 3 },
-      },
-    ]);
+    cache.populateSync(buffersFrom([
+      ['5,5', { '3,3': 10, '4,4': 5, '6,6': 8 }],
+      ['10,10', { '3,3': 20, '8,8': 3 }],
+    ]));
     return cache;
   }
 
@@ -130,5 +140,52 @@ describe('WorkplaceDistanceCache', () => {
     expect(empty.byteLength, '空圖的 buffer 應該有 header，不是 0 bytes')
       .toBeGreaterThan(0);
     expect(cache.requestUpdate(10, 10, new ArrayBuffer(10), empty, [], 1080)).toBe(false);
+  });
+});
+
+describe('重算期間繼續用上一份', () => {
+  /**
+   * 這一整組守的是 4 萬人存檔量到的東西:`runJobRelocation` 大約每 13 秒跑一次，
+   * 快取 READY 的窗只有 6~8 秒 —— 落在空檔就掉回同步 Dijkstra，**實測 2,684ms**，
+   * 而走快取只要 161ms。落在哪裡純粹是運氣。
+   *
+   * 一棟房子升級不會改變路網距離。上一份表隔一輪的誤差，遠小於凍住主執行緒 2.7 秒。
+   */
+  function ready() {
+    const cache = new WorkplaceDistanceCache();
+    cache.populateSync(buffersFrom([['5,5', { '3,3': 10 }]]));
+    return cache;
+  }
+
+  it('should keep answering after being invalidated', () => {
+    const cache = ready();
+    cache.invalidate();
+
+    expect(cache.isReady, '失效之後還說自己是當前的').toBe(false);
+    expect(cache.hasTable, '失效就把唯一一份可用的表丟了').toBe(true);
+    expect(cache.getDistance('3,3', '5,5')).toBe(10);
+  });
+
+  it('should have nothing to answer with before the first result', () => {
+    expect(new WorkplaceDistanceCache().hasTable).toBe(false);
+  });
+
+  it('should throw the table away on reset', () => {
+    // 換一座城市。舊城的距離表對新城毫無意義,留著比沒有更糟。
+    const cache = ready();
+    cache.reset();
+
+    expect(cache.hasTable).toBe(false);
+    expect(cache.getDistance('3,3', '5,5')).toBeUndefined();
+  });
+
+  it('should take a result that arrived after an invalidation', () => {
+    // 算到一半城市變了。這份結果不算「當前」，但它比手上那份新 ——
+    // 丟掉它等於抱著更舊的一份。
+    const cache = ready();
+    cache.invalidate();
+    cache.populateSync(buffersFrom([['5,5', { '3,3': 99 }]]));
+
+    expect(cache.getDistance('3,3', '5,5')).toBe(99);
   });
 });
