@@ -15,10 +15,18 @@ export enum CacheStatus {
  * Invalidated via observer pattern — call invalidate() when roads or buildings change.
  * Computation is done in a web worker; main thread only does O(1) lookups.
  *
- * ## 失效不等於丟掉
+ * ## 失效不等於丟掉，但要看是什麼變了
  *
  * `status` 講的是「這份表是不是**當前**的」，`table` 是「有沒有一份可以用的」。
- * 兩件不同的事。失效只動前者。
+ * 兩件不同的事。
+ *
+ * **建築變了**（長出來、升級、燒毀、廢棄）不會改變任何一條道路的距離 —— 它只改變
+ * 哪些格子算是工作地，而那件事由呼叫端當下的候選集合過濾。續用舊表只是稍舊。
+ *
+ * **路網變了**就不同了:拆一條路、改單行方向、升級路型之後，舊表會把已經到不了的
+ * 工作地說成到得了（市民被指派到一個開不過去的班），或反過來把新通的排除掉。
+ * 那不是稍舊，那是錯的 —— 所以 `invalidateTopology()` 會把表丟掉，也不收算到一半
+ * 那份（它是照舊路網算的）。
  *
  * 理由是量出來的。4 萬人的存檔:`runJobRelocation` 大約每 13 秒跑一次，而
  * `invalidate()` 的觸發者（房子長出來、升級、燒毀、廢棄、道路改變）在活城市裡
@@ -31,6 +39,8 @@ export class WorkplaceDistanceCache {
   private status: CacheStatus = CacheStatus.EMPTY;
   /** Set to true if invalidate() is called while status === CacheStatus.COMPUTING. */
   private invalidatedDuringBuild = false;
+  /** 路網在重算期間變了 —— 那份結果照的是舊路網，不能收。 */
+  private topologyChangedDuringBuild = false;
   /** 逐格的 CSR 表。`null` = 從來沒算成功過。 */
   private table: WorkplaceDistanceTable | null = null;
   private client: WorkplaceDistanceClient | null = null;
@@ -39,7 +49,9 @@ export class WorkplaceDistanceCache {
     this.client = client ?? null;
   }
 
-  /** Mark cache as invalid. If computing, the result will be discarded. */
+  /**
+   * 建築變了 —— 表不再是當前的，但仍然可以用（道路距離沒變）。
+   */
   invalidate(): void {
     if (this.status === CacheStatus.COMPUTING) {
       this.invalidatedDuringBuild = true;
@@ -48,11 +60,24 @@ export class WorkplaceDistanceCache {
     }
   }
 
+  /**
+   * **路網**變了 —— 表現在是錯的，丟掉。
+   *
+   * 也標記算到一半那份要作廢:它是照舊路網跑出來的，收下它等於把錯的可達性
+   * 當成新的。
+   */
+  invalidateTopology(): void {
+    this.table = null;
+    this.topologyChangedDuringBuild = this.status === CacheStatus.COMPUTING;
+    if (this.status !== CacheStatus.COMPUTING) this.status = CacheStatus.EMPTY;
+  }
+
   /** Force full reset (e.g. on game load). */
   reset(): void {
     this.status = CacheStatus.EMPTY;
     this.table = null;
     this.invalidatedDuringBuild = false;
+    this.topologyChangedDuringBuild = false;
   }
 
   /**
@@ -91,7 +116,14 @@ export class WorkplaceDistanceCache {
 
   /** Apply worker result — called internally from the promise callback. */
   private applyResult(buffers: WorkplaceDistanceBuffers): void {
-    // **一定收下。** 算到一半城市變了的話這份結果不算當前，但它仍然比手上那份新
+    if (this.topologyChangedDuringBuild) {
+      // 這份是照**舊路網**算的。收下它等於把錯的可達性當成新的。
+      this.topologyChangedDuringBuild = false;
+      this.invalidatedDuringBuild = false;
+      this.status = CacheStatus.EMPTY;
+      return;
+    }
+    // 建築變了那一種**一定收下**:這份結果不算當前，但它仍然比手上那份新
     // —— 丟掉它等於抱著更舊的一份繼續回答。
     this.table = new WorkplaceDistanceTable(buffers);
     if (this.invalidatedDuringBuild) {
@@ -107,6 +139,7 @@ export class WorkplaceDistanceCache {
     this.table = new WorkplaceDistanceTable(buffers);
     this.status = CacheStatus.READY;
     this.invalidatedDuringBuild = false;
+    this.topologyChangedDuringBuild = false;
   }
 
   /** O(1) lookup: road cost from home cell to workplace cell. */

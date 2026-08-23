@@ -2494,7 +2494,9 @@ export class SimulationLoop {
     // clearPending drops inflightBatches, so handleMessage ignores the reply;
     // it was simply being called one tick too late (BUG-107).
     this.pathBatcher?.clearPending();
-    this.wpDistCache?.invalidate();
+    // 路網變了 —— 距離表現在是錯的，不能像建築變動那樣續用（見
+    // `WorkplaceDistanceCache` 的說明）。
+    this.wpDistCache?.invalidateTopology();
     if (affectedCells) {
       if (!this.dirtyRoadCells) this.dirtyRoadCells = new Set();
       if (!this.dirtySidewalkCells) this.dirtySidewalkCells = new Set();

@@ -2,7 +2,7 @@ import { RoadType, ROAD_CONFIGS } from '../road/types';
 import type { LaneEdge } from './LaneGraph';
 import { interpolateEdgePosition, interpolateEdgeTangent, interpolateEdgePositionInto, interpolateEdgeTangentInto } from './EdgeInterpolation';
 import { findGapAhead, findRedLightDistance, findBlockedJunctionDistance } from './VehicleLookahead';
-import { EdgeVehicleIndex } from './EdgeVehicleIndex';
+import { EdgeVehicleIndex, NO_ENTRY } from './EdgeVehicleIndex';
 import { SpatialHash, type SpatialEntry } from './SpatialHash';
 import { findCrossEdgeGap } from './CrossEdgeCollision';
 import { pickWeighted } from '../utils/random';
@@ -642,6 +642,12 @@ export class TrafficSimulation {
     // 代價是這個本來就要跑的迴圈裡多一次比較。
     let maxHalfLen = 0;
     for (const v of edgeVehicles) {
+      // 先作廢上一幀的筆號:被跳過的車留著舊筆號的話，更新段會拿它去改別台車
+      // 這一幀的那一筆。**沒有測試守得住這一行** —— 今天走不到（三處換
+      // `edgePath` 的地方都同時把 `edgeIndex` 歸零），而且就算走到也會自癒
+      // （受害者自己處理到最後會把自己那一筆寫回去，而覆寫者一定排在它前面）。
+      // 留著是為了讓這個不變式是**這裡看得到的**，不是散在四個檔案裡的約定。
+      v.edgeEntry = NO_ENTRY;
       if (v.arrived) continue;
       const ep = v.edgePath;
       const edge = ep[v.edgeIndex];
