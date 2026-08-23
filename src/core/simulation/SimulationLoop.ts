@@ -2494,9 +2494,14 @@ export class SimulationLoop {
     // clearPending drops inflightBatches, so handleMessage ignores the reply;
     // it was simply being called one tick too late (BUG-107).
     this.pathBatcher?.clearPending();
-    // 路網變了 —— 距離表現在是錯的，不能像建築變動那樣續用（見
-    // `WorkplaceDistanceCache` 的說明）。
-    this.wpDistCache?.invalidateTopology();
+    // `skipUnreachableCheck` 講的正好是「有沒有路被拿掉」（見下面那段註解:
+    // 新蓋的路只會增加連通性）。而那也正是舊的距離表會**高報**可達性的唯一情況
+    // —— 只加路的話舊表只會少報，那是安全的方向。
+    //
+    // 所以只有可能拿掉路的那一種要丟表;蓋路、劃分區、拆建築都可以續用
+    // （見 `WorkplaceDistanceCache` 的說明）。
+    if (skipUnreachableCheck) this.wpDistCache?.invalidate();
+    else this.wpDistCache?.invalidateTopology();
     if (affectedCells) {
       if (!this.dirtyRoadCells) this.dirtyRoadCells = new Set();
       if (!this.dirtySidewalkCells) this.dirtySidewalkCells = new Set();

@@ -47,6 +47,18 @@ export class ElevationManager {
     return this.levelMask.get(ElevationManager.posKey(x, y)) ?? 0;
   }
 
+  /**
+   * 位置鍵摺得出來的範圍。超出去就會跟別的格子撞在同一個鍵上。
+   *
+   * 實務上碰不到:`SaveValidator.IMPORT_LIMITS.MAX_GRID_DIMENSION` 是 500，
+   * 而遊戲自己開的地圖更小。這裡擋的是「有人直接 `new Grid(2, 9000)`」那種。
+   */
+  private static validatePosition(x: number, y: number): void {
+    if (x < 0 || y < 0 || y >= POS_STRIDE) {
+      throw new RangeError(`高架座標超出位置索引範圍: (${x}, ${y})`);
+    }
+  }
+
   private static validateLevel(level: number): void {
     if (level < MIN_ELEVATION_LEVEL || level > MAX_ELEVATION_LEVEL) {
       throw new RangeError(`Elevation level must be ${MIN_ELEVATION_LEVEL}-${MAX_ELEVATION_LEVEL}, got ${level}`);
@@ -59,15 +71,19 @@ export class ElevationManager {
 
   set(x: number, y: number, level: number, data: ElevatedSegment): void {
     ElevationManager.validateLevel(level);
-    if (y >= POS_STRIDE || x < 0 || y < 0) {
-      throw new RangeError(`高架座標超出位置索引範圍: (${x}, ${y})`);
-    }
+    ElevationManager.validatePosition(x, y);
     this.layers.set(ElevationManager.key(x, y, level), { ...data });
     const pk = ElevationManager.posKey(x, y);
     this.levelMask.set(pk, (this.levelMask.get(pk) ?? 0) | (1 << level));
   }
 
   delete(x: number, y: number, level: number): void {
+    // 跟 `set` 同一組把關。少了它索引會跟 `layers` 分家:`1 << 33` 在 JS 等於
+    // `1 << 1`（位移取模 32），所以 `delete(x, y, 33)` 會清掉**真正 level 1**
+    // 的位元而 `layers` 裡那一段還在 —— 那一段從此對所有查詢都不存在。
+    // 座標同理:`(0, 8192)` 與 `(1, 0)` 摺出同一個鍵。
+    ElevationManager.validateLevel(level);
+    ElevationManager.validatePosition(x, y);
     this.layers.delete(ElevationManager.key(x, y, level));
     const pk = ElevationManager.posKey(x, y);
     const mask = (this.levelMask.get(pk) ?? 0) & ~(1 << level);

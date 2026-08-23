@@ -117,3 +117,37 @@ describe('這一格有哪幾層', () => {
     expect(em.getAllLevels(6, 6).map(l => l.level)).toEqual([1, 3]);
   });
 });
+
+describe('索引不會被無效的座標或層級弄壞', () => {
+  it('should refuse a level outside 1-3 on delete, like set does', () => {
+    // `1 << 33` 在 JS 等於 `1 << 1`（位移取模 32）。不驗證的話，`delete(x, y, 33)`
+    // 會清掉**真正 level 1** 的那個位元，而 `layers` 裡那一段還在 —— 索引與真相
+    // 從此分家，那一段高架對所有查詢都變成不存在。
+    const em = new ElevationManager();
+    em.set(1, 0, 1, seg());
+
+    expect(() => em.delete(1, 0, 33)).toThrow(RangeError);
+    expect(em.levelsAt(1, 0), '真正的 level 1 被位移取模清掉了').toBe(1 << 1);
+    expect(em.get(1, 0, 1)).not.toBeNull();
+  });
+
+  it('should refuse a position the key cannot represent, like set does', () => {
+    // 位置鍵是 `x * 8192 + y`。`(0, 8192)` 與 `(1, 0)` 摺出同一個數字。
+    // `set` 已經擋了，`delete` 不擋的話會清掉鄰居的遮罩。
+    const em = new ElevationManager();
+    em.set(1, 0, 1, seg());
+
+    expect(() => em.delete(0, 8192, 1)).toThrow(RangeError);
+    expect(em.levelsAt(1, 0), '被一個摺到同一個鍵的座標清掉了').toBe(1 << 1);
+  });
+
+  it('should still accept the levels it is supposed to', () => {
+    // 反面 —— 不然「全部都丟例外」也會讓上面兩條通過。
+    const em = new ElevationManager();
+    em.set(2, 2, 1, seg());
+    em.set(2, 2, 3, seg());
+
+    expect(() => em.delete(2, 2, 1)).not.toThrow();
+    expect(em.levelsAt(2, 2)).toBe(1 << 3);
+  });
+});

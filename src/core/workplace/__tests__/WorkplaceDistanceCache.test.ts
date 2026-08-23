@@ -251,3 +251,28 @@ describe('路網變了跟建築變了不是同一件事', () => {
     expect(cache.isStale, '沒有排下一次重算').toBe(true);
   });
 });
+
+describe('worker 失敗之後的狀態機', () => {
+  it('should not discard the next good result after a failed topology rebuild', () => {
+    // 路網變了 → 標記在途那份要作廢 → worker 這次卻失敗了。旗標沒清的話，
+    // **下一份照新路網算對的結果也會被丟掉**，要到第三次請求才會 READY。
+    const cache = new WorkplaceDistanceCache();
+    const inner = cache as unknown as {
+      status: string;
+      topologyChangedDuringBuild: boolean;
+      applyResult(b: ReturnType<typeof buffersFrom>): void;
+      onComputeFailed(): void;
+    };
+    inner.status = 'computing';
+    cache.invalidateTopology();
+    // worker 炸了 —— requestUpdate 的 catch 走的就是這一段。
+    inner.onComputeFailed();
+
+    expect(inner.topologyChangedDuringBuild, '失敗之後旗標還留著').toBe(false);
+
+    // 下一次成功的結果必須被收下。
+    inner.applyResult(buffersFrom([['5,5', { '3,3': 7 }]]));
+    expect(cache.hasTable).toBe(true);
+    expect(cache.getDistance('3,3', '5,5')).toBe(7);
+  });
+});

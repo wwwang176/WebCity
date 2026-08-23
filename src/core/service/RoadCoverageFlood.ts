@@ -624,7 +624,12 @@ export function roadDistanceToTargets(
   const targetCells = new Set<number>();
   for (const t of targets) {
     const p = parsePosKey(t);
-    if (p) targetCells.add(p.y * width + p.x);
+    // 界外的目標**丟掉，不要摺**。`y * width + x` 會讓界外的座標別名到另一格:
+    // 寬 10 的地圖問 `"10,0"` 得到索引 10，那是 `(0,1)`。不擋的話查詢會把
+    // 那一格當成目標，提早收工，還回報一個沒有人問的位置。
+    if (p && p.x >= 0 && p.y >= 0 && p.x < width && p.y < height) {
+      targetCells.add(p.y * width + p.x);
+    }
   }
 
   const found = new Int32Array(width * height).fill(-1);

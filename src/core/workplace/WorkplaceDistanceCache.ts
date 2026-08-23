@@ -106,12 +106,21 @@ export class WorkplaceDistanceCache {
 
     this.client.compute(gridWidth, gridHeight, gridBuffer, graphBuffer, workplaces, maxBudget)
       .then(entries => this.applyResult(entries))
-      .catch(() => {
-        // Worker error — reset to empty so next tick retries
-        this.status = CacheStatus.EMPTY;
-        this.invalidatedDuringBuild = false;
-      });
+      .catch(() => this.onComputeFailed());
     return true;
+  }
+
+  /**
+   * Worker error — reset to empty so next tick retries.
+   *
+   * **兩個旗標都要清。** 少清 `topologyChangedDuringBuild` 的話，下一份照**新**
+   * 路網算對的結果會被 `applyResult` 當成「照舊路網算的」丟掉，要到第三次請求
+   * 才會 READY。
+   */
+  private onComputeFailed(): void {
+    this.status = CacheStatus.EMPTY;
+    this.invalidatedDuringBuild = false;
+    this.topologyChangedDuringBuild = false;
   }
 
   /** Apply worker result — called internally from the promise callback. */
