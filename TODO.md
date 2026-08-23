@@ -1328,10 +1328,62 @@
   **撤掉了**:那會讓 `cellKey` 與座標變成同一件事的兩份記錄（這個 repo 一再出事的
   那一類），而且要動十幾個測試 fixture。要做得先讓 `cellKey` 變成**衍生**的，
   那是另一個尺寸的改動。收益約 1.6%。
-- [ ] **剖析圖是平的，再往上要動結構** — 修完之後主執行緒:`advanceEdgeVehicles`
-  21.7%、算繪 16.1%、`recalculateUtilityCoverage` 5.6%、生車 5.3%。沒有第二個
-  秒級的東西可以砍。速度 3 / 10 仍然只跑得出十幾 fps —— 那需要把車輛模擬搬去
-  worker，或讓車輛更新用比模擬更低的頻率（見下面「速度 10 只跑得出速度 4」）。
+- [x] **走不通的通勤每一輪都在主執行緒重算一次**（BUG-369，已修）—
+  `advanceCommuteFill` 佔主執行緒 9.9%，其中 95.3% 是同步的 lane A*。重試計數把
+  「worker 還沒答」跟「worker 答了:沒有路」當成同一件事，於是那些路線永遠在重算。
+  確定性的計數:**3 362 條永久失敗的路線、9 838 次同步 A*、用完額度之後成功 0 次**，
+  單一路線最高重算 200 次。修法是把「沒有路」記下來（`CommuteCache.unroutable`，
+  與 `routeIndex` 同生命週期），並且只信任證明過自己會找路的 worker。
+
+#### 量測推翻了「第 5 項」的前提（41 283 人、1 955 台車、速度 3，前景分頁）
+
+**分頁在背景時 rAF 會被節流到 1 Hz**，量出來的比例全部是錯的（每幀 dt 變成 1 秒，
+塞車與算繪的佔比都失真）。第一份 trace 就是這樣毀掉的 —— 重量之前先確認
+`document.visibilityState === 'visible'`。
+
+前景重量之後，主執行緒 27.4 秒**全滿**，照呼叫者歸戶:
+
+| | 佔主執行緒 |
+|---|---|
+| `simLoop.tick` | **62.4%** |
+| `advanceEdgeVehicles` | 17.8% |
+| 其餘車輛／運輸更新 | 6.7% |
+| Three.js 算繪 | 約 5% |
+
+`simLoop.tick` 裡面（換算成佔主執行緒的比例）:
+
+| | 佔 tick | 佔主執行緒 |
+|---|---|---|
+| `recalculateUtilityCoverage`（三個 `calculateCoverage`） | 16.0% | 10.0% |
+| `advanceCommuteFill` → 同步 lane A* | 16.0% | 9.9% |
+| `spawnVehicles` → `spawnCommuteVehicles` | 14.6% | 9.1% |
+| `updateCitizenHappinessSlice` → `refreshPendingCounts` | 9.8% | 6.1% |
+
+所以:
+
+- **「讓車輛更新用比模擬更低的頻率」是死的。** 現在只跑得出 15 fps，車輛更新本來
+  就是一幀一次 = 每秒 15 次;調更低只會讓積分步長變大，塞車行為跟著爛掉，換不到
+  時間。要有效得先讓 fps 高到超過那個目標頻率。
+- **「把車輛模擬搬去 worker」買到的上限是 17.8%**（15 → 約 18 fps），而那是這個
+  專案裡最大、風險最高的一次重寫（車輛的 `edgePath` 是 `LaneEdge` 物件圖，生車、
+  抵達、公車停靠、`isSpawnBlocked` 全都在主執行緒同步問它）。**不划算，先不做。**
+- 真正的目標是 `simLoop.tick` 的 62.4%。上面那四項各約 6~10%，形狀各自不同。
+
+- [ ] **`recalculateUtilityCoverage` 佔主執行緒 10.0%** — 電 50.6%、水 29.0%、
+  污水 19.3%，三個都是**純粹吃格子、吐覆蓋圖**的 flood fill，沒有市民狀態。
+  輸入輸出乾淨、慢個幾百毫秒看不出來 —— worker 的形狀跟 `WorkplaceDistanceCache`
+  一模一樣（同一個分支上已經跑過一遍的設計:可轉移的 buffer + 重算期間續用舊表 +
+  路網變動才丟表）。這是下一個最划算的一項。
+- [ ] **`spawnCommuteVehicles` 佔主執行緒 9.1%** — `findMultiModalRoutes` 24.2%、
+  `getAvailableTransit` 21.1%。跟 BUG-328 是同一件事，而那件事要先問過玩家:
+  唯一剩下的路會**改變面板上的搭乘數字**。
+- [ ] **`updateCitizenHappinessSlice` 佔主執行緒 6.1%** — 其中 58.0% 在
+  `refreshPendingCounts`。分片每個 tick 掃全體挑片，跟下面「快樂度與健康的分片」
+  是同一條。
+- [ ] **剖析圖是平的，再往上要動結構** — `advanceEdgeVehicles` 內部也是平的:自身
+  33.2%、`findRedLightDistance` 17.2%、`findGapAhead` 14.0%，沒有單點可砍。
+  真正要動結構的是「模擬 tick 跑在算繪迴圈裡」這件事本身（PLANNING.md 一開始就
+  寫著 Simulation worker，只是從來沒做）。
 - [ ] **載入這份存檔要 24~50 秒** — 還沒查。
 
 ### 玩家回報的三個卡點（Chrome trace 量過，人口 12,351，速度 1）

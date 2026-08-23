@@ -385,6 +385,14 @@ export class SimulationLoop {
   }
 
   /**
+   * 這個 worker 交出過至少一條路。
+   *
+   * 「它說沒有路」要不要算數，看的是這個 —— 一條都沒交出來過的 worker，空答案
+   * 代表的是它自己壞了。跨路網世代保留:worker 會不會找路跟路網長什麼樣無關。
+   */
+  private pathWorkerFoundAPath = false;
+
+  /**
    * Enable async off-main-thread pathfinding via a Web Worker.
    * When set, pathfinding requests are batched and sent to the worker each tick.
    * Results arrive 1-2 ticks later and are written into the CommuteCache routeIndex.
@@ -396,7 +404,20 @@ export class SimulationLoop {
 
     // Wire up result callback: convert edge indices → LaneEdge[] and store in routeIndex
     this.pathBatcher.onResult = (routeKey: string, variants: number[][]) => {
-      if (!this.graphMapping || variants.length === 0) return;
+      if (!this.graphMapping) return;
+      if (variants.length === 0) {
+        // worker 算完了，答案是「這一代路網裡沒有路」。這跟「還沒算完」是兩件
+        // 事，而舊版把空結果直接丟掉，兩者對 `advanceCommuteFill` 長得一模一樣
+        // —— 於是重試計數一路長到額度上限，之後每一輪都在主執行緒重算一次同一
+        // 個答案（BUG-369）。
+        //
+        // **只信任證明過自己會找路的 worker。** worker 不是只有「在」跟「不在」
+        // 兩種狀態:它可以活著、可以回應，而每一組起迄都交白卷（沒有 SAB、圖
+        // 沒同步過…），那時候空答案的意思是「這個 worker 壞了」而不是「沒有
+        // 路」。照單全收的話補完會永遠停在那裡 —— `WarmupCoverage` 釘著這件事。
+        if (this.pathWorkerFoundAPath) this.commuteCache.markUnroutable(routeKey);
+        return;
+      }
       const edgeOriginals = this.graphMapping.edgeOriginals;
       const laneEdgeVariants: LaneEdge[][] = [];
       for (const v of variants) {
@@ -408,6 +429,7 @@ export class SimulationLoop {
         if (edges.length > 0) laneEdgeVariants.push(edges);
       }
       if (laneEdgeVariants.length > 0) {
+        this.pathWorkerFoundAPath = true;
         this.commuteCache.setRouteVariants(routeKey, laneEdgeVariants);
       }
     };
@@ -2282,7 +2304,6 @@ export class SimulationLoop {
       const stale = entry !== undefined && entry.generation !== generation;
       let morning = stale ? null : (entry?.morningPath ?? null);
       let evening = stale ? null : (entry?.eveningPath ?? null);
-      let searched = false;
 
       for (const [key, from, to, isMorning] of [
         [morningKey, home, work, true],
@@ -2297,6 +2318,9 @@ export class SimulationLoop {
           if (isMorning) morning = path; else evening = path;
           continue;
         }
+        // 這一代路網已經算過，答案是沒有路。再問一次還是同一個答案 ——
+        // `findLanePathVariants` 對同一份 lane graph 是決定性的。
+        if (this.commuteCache.isUnroutable(key)) continue;
         // worker 是加速，不是依賴。排過幾次還是拿不到路徑就自己算 —— 一直排下去
         // 的話，遇到交白卷的 worker 補完永遠不會結束。
         const tries = this.commuteFillAttempts.get(key) ?? 0;
@@ -2317,21 +2341,25 @@ export class SimulationLoop {
 
         if (searchBudget <= 0) continue;
         searchBudget--;
-        searched = true;
         this.commuteFillAttempts.set(key, tries + 1);
         const computed = findLanePathVariants(this.laneGraph, this._roadLookup, from, to);
         if (computed.length > 0) {
           this.commuteCache.setRouteVariants(key, computed);
           const path = computed[Math.floor(Math.random() * computed.length)]!;
           if (isMorning) morning = path; else evening = path;
+        } else {
+          this.commuteCache.markUnroutable(key);
         }
       }
 
       if (morning === null && evening === null) {
-        // 真的算過而且兩個方向都走不通，才標 failed —— 讓 JobRelocation 去處理，
-        // 而不是每個 tick 重算一次同一條算不出來的路。預算用完而沒算的不算數。
-        // worker 那條路不標：答案還在別的執行緒上。
-        if (searched) {
+        // 兩個方向都**確定**沒有路，才標 failed —— 讓 JobRelocation 去處理，而不是
+        // 每一輪重問一次同一個答案。預算用完而還沒問到答案的不算數:那是「還不
+        // 知道」，不是「沒有路」。
+        //
+        // 判斷改讀答案本身，不再讀「這一輪有沒有輪到我自己算」—— 後者讓 worker
+        // 交回來的「沒有路」永遠結不了案，那位市民每一輪都要被重看一次。
+        if (this.commuteCache.isUnroutable(morningKey) && this.commuteCache.isUnroutable(eveningKey)) {
           this.commuteCache.set(c.id, {
             citizenId: c.id, homeId: c.homeId, workplaceId: c.workplaceId,
             morningPath: null, eveningPath: null,
