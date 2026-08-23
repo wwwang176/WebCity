@@ -1,6 +1,26 @@
 import { describe, it, expect } from 'vitest';
-import { findGapAhead, findRedLightDistance, type EdgeEntry, type LookaheadVehicle } from '../VehicleLookahead';
+import { findGapAhead, findRedLightDistance, type LookaheadVehicle } from '../VehicleLookahead';
 import type { LaneEdge, ConnectionPoint } from '../LaneGraph';
+import { EdgeVehicleIndex, type EdgeVehicleView } from '../EdgeVehicleIndex';
+
+/**
+ * fixture 用的殼:維持 `Map` 的寫法，底下建的是真的 `EdgeVehicleIndex`。
+ *
+ * 正式路徑走 `begin()` / `add()` / `finish()`（每幀重建，不配物件）。這裡包一層是
+ * 為了讓斷言講「這條邊上有誰」，而不是講 CSR 的索引算術。
+ */
+class TestIndex extends EdgeVehicleIndex {
+  private started = false;
+  constructor(init?: Array<[string, EdgeVehicleView[]]>) {
+    super();
+    if (init) for (const [k, v] of init) this.set(k, v);
+  }
+  set(edgeId: string, entries: EdgeVehicleView[]): void {
+    if (!this.started) { this.begin(); this.started = true; }
+    for (const e of entries) this.add(edgeId, e.vid, e.progress, e.halfLen, e.queueing);
+  }
+}
+
 
 // ── Helpers ──
 
@@ -28,7 +48,7 @@ describe('findGapAhead', () => {
   it('returns Infinity when no other vehicles on the path', () => {
     const edges = [makeEdge('e1', 'A', 'B', 2.0)];
     const v = makeVehicle({ id: 1 });
-    const idx = new Map<string, EdgeEntry[]>();
+    const idx = new TestIndex();
     idx.set('e1', [{ vid: 1, progress: 0, halfLen: 0.11, queueing: false }]);
 
     expect(findGapAhead(v, edges, idx)).toBe(Infinity);
@@ -37,7 +57,7 @@ describe('findGapAhead', () => {
   it('returns gap to vehicle ahead on same edge', () => {
     const edges = [makeEdge('e1', 'A', 'B', 2.0)];
     const v = makeVehicle({ id: 1, edgeProgress: 0 });
-    const idx = new Map<string, EdgeEntry[]>();
+    const idx = new TestIndex();
     idx.set('e1', [
       { vid: 1, progress: 0, halfLen: 0.11, queueing: false },
       { vid: 2, progress: 1.0, halfLen: 0.11, queueing: false },
@@ -53,7 +73,7 @@ describe('findGapAhead', () => {
       makeEdge('e2', 'B', 'C', 1.0),
     ];
     const v = makeVehicle({ id: 1, edgeIndex: 0, edgeProgress: 0.5 });
-    const idx = new Map<string, EdgeEntry[]>();
+    const idx = new TestIndex();
     idx.set('e1', [{ vid: 1, progress: 0.5, halfLen: 0.11, queueing: false }]);
     idx.set('e2', [{ vid: 2, progress: 0.3, halfLen: 0.11, queueing: false }]);
 
@@ -65,7 +85,7 @@ describe('findGapAhead', () => {
   it('picks the closest vehicle when multiple are ahead', () => {
     const edges = [makeEdge('e1', 'A', 'B', 3.0)];
     const v = makeVehicle({ id: 1, edgeProgress: 0 });
-    const idx = new Map<string, EdgeEntry[]>();
+    const idx = new TestIndex();
     idx.set('e1', [
       { vid: 1, progress: 0, halfLen: 0.11, queueing: false },
       { vid: 2, progress: 1.0, halfLen: 0.11, queueing: false },
@@ -79,7 +99,7 @@ describe('findGapAhead', () => {
   it('ignores vehicles behind (lower progress)', () => {
     const edges = [makeEdge('e1', 'A', 'B', 3.0)];
     const v = makeVehicle({ id: 2, edgeProgress: 1.5 });
-    const idx = new Map<string, EdgeEntry[]>();
+    const idx = new TestIndex();
     idx.set('e1', [
       { vid: 1, progress: 0.5, halfLen: 0.11, queueing: false },
       { vid: 2, progress: 1.5, halfLen: 0.11, queueing: false },
@@ -99,7 +119,7 @@ describe('findGapAhead 的提前收工', () => {
    */
   it('should still find a longer vehicle further along that leaves a smaller gap', () => {
     const edges = [makeEdge('e1', 'A', 'B', 1.0), makeEdge('e2', 'B', 'C', 1.0)];
-    const idx = new Map<string, EdgeEntry[]>([
+    const idx = new TestIndex([
       ['e1', [{ vid: 2, progress: 0.9, halfLen: 0.11, queueing: false }]],   // 小客車:空隙 0.68
       ['e2', [{ vid: 3, progress: 0.0, halfLen: 0.30, queueing: false }]],   // 公車:空隙 0.59
     ]);
@@ -115,7 +135,7 @@ describe('findGapAhead 的提前收工', () => {
       makeEdge('e1', 'A', 'B', 1.0), makeEdge('e2', 'B', 'C', 1.0),
       makeEdge('e3', 'C', 'D', 1.0), makeEdge('e4', 'D', 'E', 1.0),
     ];
-    const idx = new Map<string, EdgeEntry[]>([
+    const idx = new TestIndex([
       ['e2', [{ vid: 2, progress: 0.4, halfLen: 0.11, queueing: false }]],
       ['e3', [{ vid: 3, progress: 0.1, halfLen: 0.30, queueing: false }]],
     ]);
