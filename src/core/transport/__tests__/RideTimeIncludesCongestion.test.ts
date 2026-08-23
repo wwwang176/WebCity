@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest';
+import { availableTransitFor } from './availableTransitFor';
 import { BusSystem } from '../BusSystem';
 import { MetroSystem } from '../MetroSystem';
 import { flattenSystems } from '../MultiModalRouter';
-import { computeRideDistance, findAvailableTransit } from '../TransitAvailability';
+import { computeRideDistance } from '../TransitAvailability';
 import { expectedWait } from '../RouteLoad';
 import { openFieldReach } from './openFieldReach';
 import type { TransitSystemInfo } from '../TransitAvailability';
@@ -96,7 +97,7 @@ describe('公車的乘車時間含壅塞', () => {
     // 同一趟通勤會因為走哪條程式碼而得到不同的答案。
     const { bus, routeId } = busWithRoute();
     const at = (o: { x: number; y: number }, d: { x: number; y: number }) =>
-      findAvailableTransit(infosOf(bus, TransportType.BUS), o, d, openFieldReach,
+      availableTransitFor(infosOf(bus, TransportType.BUS), o, d, openFieldReach,
         WALK_SPEED, WAIT_FACTOR)[0];
 
     const clear = at({ x: 0, y: 1 }, { x: 20, y: 1 });
@@ -118,7 +119,7 @@ describe('公車的乘車時間含壅塞', () => {
 
     const infos = infosOf(bus, TransportType.BUS);
     const flat = flattenSystems(infos)[0]!;
-    const option = findAvailableTransit(
+    const option = availableTransitFor(
       infos, { x: 0, y: 1 }, { x: 20, y: 1 }, openFieldReach, WALK_SPEED, WAIT_FACTOR,
     )[0];
     expect(option, 'fixture 裡搭不到公車 —— 這個測試沒驗到東西').toBeDefined();

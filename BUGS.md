@@ -31,6 +31,20 @@
 
 ## 待修問題
 
+### BUG-371: 停駛的路線照樣被推薦給通勤者 ✅ 已修復
+- **位置**: `src/core/transport/TransitAvailability.ts` `findAvailableTransit()`
+- **問題**: 「停駛」是路線的道路被拆斷、車子沒在跑（`BusSystem.onRoadChanged` 設
+  `route.suspended = true`，`BaseTransportSystem` 連營運成本都不收了）。轉乘那條路徑
+  在扁平化時就跳過它（`flattenSystems` 的 `if (route.suspended) continue`），
+  **單一運具這條沒有** —— 它直接走 `sys.routes`。
+- **後果**: 同一條停駛的公車，一條路徑說搭不到、另一條說搭得到;而說搭得到的那條
+  還會把人記成它的乘客（`dailyRiders`）。玩家拆掉一段路之後，面板上那條線的搭乘數
+  會繼續漲。
+- **修法**: `findAvailableTransit` 改讀 `FlatRoute`（見 TODO 的逐格索引那一項），
+  停駛在扁平化那一步就被擋掉了，兩條路徑從此只有一份名單。
+- **嚴重性**: 中
+- **狀態**: ✅ 已修復
+
 ### BUG-370: 同一個函式裡用了兩個車速 —— 班距含壅塞，乘車時間不含 ✅ 已修復
 - **位置**: `src/core/transport/TransitAvailability.ts` `findAvailableTransit()`
 - **問題**: 這一支先算出含壅塞的車速再拿去算班距，**估計時間卻用設定值**:

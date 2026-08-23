@@ -1,7 +1,7 @@
 import { TransportType, type TransportRoute, type TransportStop } from './types';
-import { walkDistanceToStop, type StopReach } from '../traffic/StopWalkReach';
-import { routeService, expectedWait } from './RouteLoad';
-import { walkRangeFor, WALK_RANGE_BY_TYPE } from './WalkRange';
+import { expectedWait } from './RouteLoad';
+import type { FlatRoute } from './MultiModalRouter';
+import type { NearbyStop, StopProximityIndex } from './StopProximityIndex';
 import type { AvailableTransport } from './ModeChoice';
 
 export interface TransitSystemInfo {
@@ -65,9 +65,12 @@ export function getRouteRiders(route: { stops: readonly TransportStop[] }): numb
  * A transit route is "available" if it has stops within walkRange
  * of both origin and destination, AND has remaining capacity.
  *
- * 「走得到」由 `reach` 定義，也就是沿人行道量。這裡曾經用曼哈頓距離，而曼哈頓
- * 距離看不見馬路：對街的站牌只有兩格，於是住戶被算成搭得到，行人被派過去，到了
- * 現場才發現行人只在路口過馬路，得繞一大圈。
+ * 「走得到」由 `StopProximityIndex` 回答，而索引是沿人行道量出來的。這裡曾經自己
+ * 逐站量曼哈頓距離，而曼哈頓距離看不見馬路：對街的站牌只有兩格，於是住戶被算成
+ * 搭得到，行人被派過去，到了現場才發現行人只在路口過馬路，得繞一大圈。
+ *
+ * 逐站掃描的年代是「每問一位市民 × 全城每一個站牌 × 兩端」—— 3 條路線 19 個站牌
+ * 的城市實測 5.74µs/位，查兩次索引是 0.25µs。
  *
  * 估計時間是**整趟**：走到站 + 等車 + 乘車 + 走到目的地。
  *
@@ -78,81 +81,78 @@ export function getRouteRiders(route: { stops: readonly TransportStop[] }): numb
  * 擋住「走很遠去搭公車」的只剩下 `walkRange` 那個硬門檻。
  */
 export function findAvailableTransit(
-  systems: readonly TransitSystemInfo[],
+  routes: readonly FlatRoute[],
+  index: StopProximityIndex,
   origin: { x: number; y: number },
   destination: { x: number; y: number },
-  reach: StopReach,
   walkSpeed: number,
   waitFactor: number,
 ): AvailableTransport[] {
+  const fromNear = index.at(origin.x, origin.y);
+  if (fromNear.length === 0) return [];
+  const toNear = index.at(destination.x, destination.y);
+  if (toNear.length === 0) return [];
+
+  // 逐路線最近的那一站。平手時留先看到的 —— 索引是照路線、站牌的順序建的，
+  // 所以「先看到」就是站牌陣列裡比較前面的那一個，跟逐站掃描的年代一樣。
+  const nearestFrom = nearestPerRoute(fromNear);
+  const nearestTo = nearestPerRoute(toNear);
+
   const result: AvailableTransport[] = [];
+  for (const [routeIdx, a] of nearestFrom) {
+    const b = nearestTo.get(routeIdx);
+    if (b === undefined) continue;
+    const route = routes[routeIdx];
+    if (route === undefined) continue;
 
-  for (const sys of systems) {
-    // 願意為這種運具走多遠。涵蓋範圍一律用最寬的半徑算一次（快取的鍵含半徑），
-    // 再由這裡截斷 —— 各運具各算一份的話，同一個站牌會被重算好幾次。
-    const walkRange = walkRangeFor(sys.type);
-    for (const route of sys.routes) {
-      const segDists = sys.getSegmentDistances?.(route.id) ?? null;
-      // 含壅塞的車速。班距與**乘車時間**都要吃它 —— 這裡曾經只餵給班距，
-      // 乘車那一段用 `sys.speed` 的設定值，於是塞死的公車路線在單一運具這條
-      // 路徑上看起來仍然跑得跟空街一樣快，而多模式那條路徑（`FlatRoute.speed`）
-      // 看到的是塞住的版本。同一趟通勤因為走哪條程式碼而得到不同答案（BUG-370）。
-      const speed = sys.speedOn?.(route.id) ?? sys.speed;
-      const { headway, loadFactor } = routeService(
-        route, getRouteRiders(route), sys.vehicleCapacity ?? 0, speed, segDists,
-      );
-      // 沒有拒載門檻。擠爆的路線照樣列出來，只是等車時間長到自己輸掉 ——
-      // 「等到天荒地老」本來就等價於「不能搭」，而懸崖會自己造出極限環。
+    const walkTime = (a.walkDistance + b.walkDistance) / walkSpeed;
+    const boardStop = route.stops[a.stopIdx]!;
+    const alightStop = route.stops[b.stopIdx]!;
 
-      // Find nearest origin and destination stops within walk range
-      let bestOriginIdx = -1, bestOriginDist = Infinity;
-      let bestDestIdx = -1, bestDestDist = Infinity;
-
-      for (let i = 0; i < route.stops.length; i++) {
-        const stop = route.stops[i]!;
-        const scan = WALK_RANGE_BY_TYPE.WIDEST;
-        const dOrigin = walkDistanceToStop(reach, stop.x, stop.y, origin.x, origin.y, scan);
-        const dDest = walkDistanceToStop(reach, stop.x, stop.y, destination.x, destination.y, scan);
-        if (dOrigin <= walkRange && dOrigin < bestOriginDist) {
-          bestOriginIdx = i;
-          bestOriginDist = dOrigin;
-        }
-        if (dDest <= walkRange && dDest < bestDestDist) {
-          bestDestIdx = i;
-          bestDestDist = dDest;
-        }
-      }
-
-      if (bestOriginIdx < 0 || bestDestIdx < 0) continue;
-
-      const walkTime = (bestOriginDist + bestDestDist) / walkSpeed;
-      const boardStop = route.stops[bestOriginIdx]!;
-      const alightStop = route.stops[bestDestIdx]!;
-
-      // 同一站上下車 = 沒有真的搭到，但走到站牌的那段路仍然花掉了。
-      if (bestOriginIdx === bestDestIdx) {
-        result.push({ type: sys.type, estimatedTime: walkTime, walkTime, boardStop, alightStop });
-        continue;
-      }
-
-      const rideDistance = computeRideDistance(
-        route.stops, bestOriginIdx, bestDestIdx, segDists,
-      );
-      // 帶著這兩站一起回去。派車時重挑一次「最近的站」會挑到別條路線上，而時間
-      // 是照這兩站估的 —— 人會被記到他沒搭的那條路線頭上（BUG-283）。
-      result.push({
-        type: sys.type,
-        estimatedTime: walkTime
-          + expectedWait(headway, waitFactor, loadFactor)
-          + rideDistance / speed,
-        walkTime,
-        boardStop,
-        alightStop,
-      });
+    // 同一站上下車 = 沒有真的搭到，但走到站牌的那段路仍然花掉了。
+    if (a.stopIdx === b.stopIdx) {
+      result.push({ type: route.type, estimatedTime: walkTime, walkTime, boardStop, alightStop });
+      continue;
     }
+
+    // 班距與載重率讀扁平路線的欄位，不在這裡重算 —— `refreshRouteService()` 已經在
+    // 同一個 tick 的前幾行用一模一樣的輸入算過了（`tick()` 裡就在 `spawnVehicles()`
+    // 之前）。各算各的正是 BUG-343 的形狀:兩條路徑對同一條路線的看法會分岔，
+    // 而分岔的那一刻沒有任何測試會紅。
+    //
+    // 沒有拒載門檻。擠爆的路線照樣列出來，只是等車時間長到自己輸掉 ——
+    // 「等到天荒地老」本來就等價於「不能搭」，而懸崖會自己造出極限環。
+    const rideDistance = computeRideDistance(route.stops, a.stopIdx, b.stopIdx, route.segDists);
+    // 帶著這兩站一起回去。派車時重挑一次「最近的站」會挑到別條路線上，而時間
+    // 是照這兩站估的 —— 人會被記到他沒搭的那條路線頭上（BUG-283）。
+    result.push({
+      type: route.type,
+      estimatedTime: walkTime
+        + expectedWait(route.headway, waitFactor, route.loadFactor)
+        + rideDistance / route.speed,
+      walkTime,
+      boardStop,
+      alightStop,
+    });
   }
 
   return result;
+}
+
+/**
+ * 每條路線留最近的那一站。
+ *
+ * 路線數是個位數，所以用 `Map` 而不是照 `routes.length` 開一條共用的暫存陣列 ——
+ * 共用暫存要嘛每次清空（等於還是掃一遍），要嘛用世代戳記，兩者換來的都不值這裡的
+ * 幾個項目。
+ */
+function nearestPerRoute(near: readonly NearbyStop[]): Map<number, NearbyStop> {
+  const best = new Map<number, NearbyStop>();
+  for (const n of near) {
+    const seen = best.get(n.routeIdx);
+    if (seen === undefined || n.walkDistance < seen.walkDistance) best.set(n.routeIdx, n);
+  }
+  return best;
 }
 
 /**

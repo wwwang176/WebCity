@@ -76,6 +76,7 @@ import { billableDistricts } from '../district/DistrictManager';
 import { calculateElevatedMaintenance } from '../elevation/ElevationMaintenance';
 import { randomInt } from '../utils/random';
 import { findAvailableTransit } from '../transport/TransitAvailability';
+import { StopProximityIndex } from '../transport/StopProximityIndex';
 import { ServiceVehicleManager, type ServiceFacilityProvider, type ServiceVehicleType } from '../traffic/ServiceVehicleManager';
 import { SidewalkGraph } from '../traffic/SidewalkGraph';
 import { PedestrianManager, getMaxPedestrians, buildTripPool, sampleTrip, type AggregatedTrip, type WalkingTripPool } from '../traffic/PedestrianManager';
@@ -216,6 +217,8 @@ export class SimulationLoop {
   private stopReach!: SidewalkStopReach;
   /** 每一格走得到哪些路線。與 transferGraph 同時重建。 */
   private transitAccess!: TransitAccessField;
+  /** 每一格走得到哪些站。挑站牌那兩條路徑都靠它，跟著路線一起重建。 */
+  private stopIndex!: StopProximityIndex;
 
   /**
    * 這一趟通勤要花多久（tick）—— 住房評分、就業評分與換工作判斷共用同一把尺。
@@ -450,6 +453,7 @@ export class SimulationLoop {
     // 要在這裡建，不能寫成欄位初始值。
     this.stopReach = new SidewalkStopReach(state.sidewalkGraph);
     this.transitAccess = TransitAccessField.build([], SIMULATION.WALK_SPEED, this.stopReach);
+    this.stopIndex = StopProximityIndex.build([], this.stopReach);
     // The current day/month have already had their blocks run — either by the
     // session that produced this save, or (for a new game at tick 0) because no
     // time has elapsed yet. Both blocks belong to day/month *transitions*.
@@ -2503,6 +2507,7 @@ export class SimulationLoop {
     );
     // 可及性圖跟著路線一起重建 —— 評分與換工作判斷靠它把通勤時間壓成 O(1)。
     this.transitAccess = TransitAccessField.build(this.flatRoutes, SIMULATION.WALK_SPEED, this.stopReach);
+    this.stopIndex = StopProximityIndex.build(this.flatRoutes, this.stopReach);
     this.transferGraphDirty = false;
     this.lastTransitVersion = getTransitNetworkVersion(this.state);
 
@@ -3219,7 +3224,7 @@ export class SimulationLoop {
     destination: { x: number; y: number },
   ): AvailableTransport[] {
     return findAvailableTransit(
-      this.getTransitSystemInfos(), origin, destination, this.stopReach,
+      this.flatRoutes, this.stopIndex, origin, destination,
       SIMULATION.WALK_SPEED, SIMULATION.AVERAGE_WAIT_FACTOR,
     );
   }
