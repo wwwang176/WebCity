@@ -3,279 +3,300 @@ import type { CivicColor } from './colors';
 import type { PropSpec } from '../props';
 
 /**
- * 公共建築的宣告式描述。
+ * Declarative description of a civic building.
  *
- * 它與分區建築的差別只有三點，其餘一律沿用 `buildings/` 那一套：
+ * It differs from a zoned building in three ways only; everything else follows the
+ * `buildings/` conventions:
  *
- * 1. **多格。** 分區建築一格一棟，公共建築佔 2×2 到 9×6。所以護欄擋的是
- *    佔地邊界，不是格內的行人包絡線。
- * 2. **沒有變體。** 一座城市裡的三間小學長得一樣是可接受的 —— 公共建築的
- *    辨識度比多樣性重要。所以沒有 `variantIndex`、不吃 `seedByte`。
- * 3. **沒有等級。** 公共建築不會升級。
+ * 1. **Multi-cell.** A zoned building is one building per cell, while civic buildings occupy
+ *    2x2 up to 9x6. So the guards bound the plot, not the in-cell pedestrian envelope.
+ * 2. **No variants.** Three identical primary schools in one city is acceptable: for civic
+ *    buildings, recognisability matters more than variety. Hence no `variantIndex` and no
+ *    `seedByte`.
+ * 3. **No levels.** Civic buildings do not upgrade.
  *
- * 座標單位是**格**（1 格 = 12 m），原點是佔地的中心。2×2 的可用範圍是
- * x ∈ [−1, 1]、z ∈ [−1, 1]；2×3 是 x ∈ [−1, 1]、z ∈ [−1.5, 1.5]。
+ * Coordinates are in **cells** (1 cell = 12 m), with the origin at the plot's centre. A 2x2
+ * plot spans x in [-1, 1] and z in [-1, 1]; a 2x3 spans x in [-1, 1] and z in [-1.5, 1.5].
  */
 
-/** 佔地格數。必須與 `InfraConfig` 的 width / height 一致。 */
+/** Footprint in cells. Must match `InfraConfig`'s width / height. */
 export interface Footprint {
   w: number;
   h: number;
 }
 
 /**
- * 帶標籤的量體。
+ * A tagged mass.
  *
- * `tag` 完全不影響幾何 —— `shapeOf` 看都不看它。它存在的理由是**測試讀得懂
- * 這棟建築**：「瞭望塔要高過兩支翼」寫成 `find(v => v.tag === 'tower')` 是
- * 一句話，寫成「第三個量體」則是在測試裡複製一份量體表的順序，而順序一改
- * 測試就開始測錯東西。
+ * `tag` has no effect on geometry — `shapeOf` never looks at it. It exists so that **tests can
+ * read the building**: "the watchtower has to rise above both wings" is one line as
+ * `find(v => v.tag === 'tower')`, while "the third mass" copies the mass list's order into the
+ * test, and reordering the list makes the test measure something else.
  *
- * 沒有加進共用的 `Volume`：分區建築的量體是生成器產出的，沒有人手寫，
- * 也就沒有東西可以標。
+ * Not added to the shared `Volume`: zoned building masses come from generators, are never
+ * hand-written, and so have nothing to tag.
  */
 export type CivicVolume = Volume & {
   tag?: string;
   /**
-   * 只有這一塊量體的顏色，蓋過 `CivicPlan.color`。
+   * A colour for this mass alone, overriding `CivicPlan.color`.
    *
-   * 給重點用：醫院的紅十字、大學的金頂、車站的識別帶。整棟只有一個顏色的話，
-   * 這些東西只能跟牆同色 —— 而它們正是「一眼認出這是醫院」的那個東西。
+   * For accents: a hospital's red cross, a university's gold dome, a station's identity band.
+   * With one colour per building these could only match the walls, and they are exactly what
+   * makes a hospital recognisable at a glance.
    */
   color?: CivicColor;
   /**
-   * 鋪面明度 0..1（0 = 柏油，1 = 磚鋪），只在 `part` 是 `PART_GROUND` 時有用。
+   * Paving brightness 0..1 (0 = asphalt, 1 = brick), meaningful only when `part` is
+   * `PART_GROUND`.
    *
-   * `CivicDecal` 一律貼在地面（`GROUND_LAYERS` 是固定高度），所以醫院頂樓的
-   * 直升機坪、車站的月台面這種**有高度的鋪面**做不成貼片，只能是量體。
+   * `CivicDecal` always lies on the ground (`GROUND_LAYERS` sit at fixed heights), so **raised
+   * paving** — a hospital's rooftop helipad, a station's platform surface — cannot be a decal
+   * and has to be a mass.
    *
-   * 明度寫在頂點色的 B 通道，與貼片同一個通道、走 shader 同一個 `isGround`
-   * 分支 —— 各走一套的話，屋頂上的混凝土與地上的混凝土會是兩個顏色。
+   * The brightness is written into the vertex colour's B channel, the same channel decals use,
+   * through the shader's same `isGround` branch: on separate paths, concrete on a roof and
+   * concrete on the ground would be two different colours.
    */
   shade?: number;
 };
 
 /**
- * 一塊平鋪面。
+ * A flat paved patch.
  *
- * **不是 `Volume`。** `Volume` 產出的是稜台，有側面 —— 而側面是牆，牆會長出
- * 窗戶。`decals.ts` 的註解已經寫過這件事：「有厚度的話側面會長出牆，而牆會
- * 長出窗戶。所以一律用 `PlaneGeometry`」。
+ * **Not a `Volume`.** `Volume` produces a frustum, a frustum has sides, sides are walls, and
+ * walls grow windows. `decals.ts` states the same rule: anything with thickness grows walls,
+ * so these always use `PlaneGeometry`.
  */
 export interface CivicDecal {
   /**
-   * 這塊鋪面是什麼。**只給測試與讀者用**，不影響幾何。
+   * What this patch is. **For tests and readers only**; no effect on geometry.
    *
-   * 與 `CivicVolume.tag` 同一個理由：一塊貼片在資料上只是「一個矩形加一個
-   * 明度」，而「哪一塊是水面」拿明度猜是猜不出來的 —— 抽水廠的河面 shade
-   * 0.02，門口的柏油 0.0，比它還暗。
+   * The same reason as `CivicVolume.tag`: in the data a decal is only a rectangle plus a
+   * brightness, and "which one is the water" cannot be guessed from brightness — a water
+   * plant's river is shade 0.02 while the asphalt at its gate is 0.0, darker still.
    */
   tag?: string;
-  /** 中心。 */
+  /** Centre. */
   x: number;
   z: number;
-  /** 寬深。 */
+  /** Width and depth. */
   w: number;
   d: number;
   /**
-   * 明度，寫進頂點色的 B 通道。0 = 柏油，1 = 白漆。
+   * Brightness, written into the vertex colour's B channel. 0 = asphalt, 1 = white paint.
    *
-   * `lawn` 為真時這個值不影響顏色 —— 草地走 `PART_FOLIAGE` 的分支。
+   * With `lawn` set it does not affect the colour: grass takes the `PART_FOLIAGE` branch.
    */
   shade: number;
   /**
-   * 疊放層。`mark`（標線、入口踏板）疊在 `base`（鋪面）之上。
+   * Stacking layer. `mark` (line markings, entrance treads) sits above `base` (paving).
    *
-   * **底層彼此不得重疊** —— 兩塊同高同位的四邊形會 z-fighting，靜態截圖看不
-   * 出來，一移動鏡頭就整片閃爍。這條由 `assembleDecals` 守。
+   * **Base layers must not overlap each other**: two quads at the same height and position
+   * z-fight, which a static screenshot does not show and any camera movement turns into a
+   * flickering sheet. `assembleDecals` guards this.
    */
   layer?: 'base' | 'mark';
-  /** 草地。走 `PART_FOLIAGE` 拿到綠色，而不是 `PART_GROUND` 的灰階。 */
+  /** Grass. Takes `PART_FOLIAGE` for green rather than `PART_GROUND`'s greyscale. */
   lawn?: boolean;
   /**
-   * 水面。走 `PART_WATER` 拿到會動的藍，而不是「一塊很暗的鋪面」。
+   * Water. Takes `PART_WATER` for moving blue rather than reading as very dark paving.
    *
-   * `shade` 仍然有用：0 是深水（河），高一點是港池。
+   * `shade` still applies: 0 is deep water such as a river, higher is a harbour basin.
    */
   water?: boolean;
   /**
-   * 繞 y 軸轉多少（弧度）。**只有 `mark` 層准轉。**
+   * Rotation about the y axis, in radians. **Only the `mark` layer may rotate.**
    *
-   * 跑道是橢圓的、滑行道的停機線是斜的 —— 兩者都做不成軸對齊的矩形。轉向
-   * 讓一條曲線可以用一串短直線逼近，而那正是低多邊形本來的做法。
+   * Runways are elliptical and taxiway hold lines are skewed; neither can be an axis-aligned
+   * rectangle. Rotation lets a curve be approximated by a run of short straight pieces, which
+   * is how low-poly works anyway.
    *
-   * 底層不准轉是因為它的重疊檢查是**軸對齊矩形**的交集：轉過的底層會讓那個
-   * 檢查靜靜地算錯，兩塊其實重疊的鋪面被放行，然後在畫面上閃爍。要轉的底層
-   * 出現時，該做的是把重疊檢查換成 SAT，不是把護欄放寬。
+   * Base layers may not rotate because their overlap check intersects **axis-aligned**
+   * rectangles: a rotated base makes that check wrong in silence, two genuinely overlapping
+   * patches pass, and the result flickers on screen. When a rotated base layer is needed, the
+   * fix is to replace the overlap check with SAT, not to loosen the guard.
    */
   rotationY?: number;
 }
 
-/** 一棟公共建築的完整描述。四層與分區建築的附掛層逐項對應。 */
+/** The complete description of one civic building. Its four layers correspond one for one to a zoned building's attachment layers. */
 export interface CivicPlan {
   footprint: Footprint;
-  /** 立面類別。`parts.ts` 的 `FACADE_*` 之一，決定 shader 走哪條立面分支。 */
+  /** Facade class. One of `parts.ts`'s `FACADE_*`, selecting the shader's facade branch. */
   facade: number;
   /**
-   * 代表色 —— 牆的底色。
+   * The representative colour, used as the walls' base.
    *
-   * 等角視角下顏色比剪影更早被認出來，所以警局是藍的、消防局是紅的。
-   * 實體在 `colors.ts`，這裡只是引用；兩邊各寫一份的話，改了顏色表而某一棟
-   * 沒跟著改，只表現為「那一棟顏色怪怪的」。
+   * In an isometric view colour is recognised before silhouette, so police stations are blue
+   * and fire stations red. The values live in `colors.ts` and are only referenced here; a
+   * second copy lets a change to the colour table miss one building, showing up only as "that
+   * one looks slightly off".
    */
   color: CivicColor;
   /**
-   * 交給 shader 的 `aSeed`：樓層節奏、窗戶相位、材質微調。
+   * The `aSeed` handed to the shader: floor rhythm, window phase, material variation.
    *
-   * 分區建築由座標雜湊產生（同一種建築在城市各處長得不一樣）；公共建築相反
-   * —— 三間小學必須長得一樣，所以由 plan 直接給定值。
+   * Zoned buildings hash it from coordinates, so one building type looks different across the
+   * city. Civic buildings are the opposite — three primary schools have to look alike — so the
+   * plan states the value directly.
    */
   seed: readonly [number, number, number];
-  /** 量體。castShadow，遠景不關。 */
+  /** Masses. castShadow, kept at distant LOD. */
   massing: CivicVolume[];
-  /** 地面貼片。完全平，不投影，遠景**不關**（關掉會讓遠景整片地變空）。 */
+  /** Ground decals. Perfectly flat, no shadow, **kept** at distant LOD; dropping them empties the ground at range. */
   decals: CivicDecal[];
-  /** 矮物件：樹、路燈、旗桿、垃圾桶、車輛。castShadow，遠景整層關掉。 */
+  /** Low props: trees, lamps, flagpoles, bins, vehicles. castShadow, dropped wholesale at distant LOD. */
   props: CivicVolume[];
-  /** 懸挑：雨棚、招牌、月台頂。castShadow，遠景整層關掉。 */
+  /** Overhangs: canopies, signage, platform roofs. castShadow, dropped wholesale at distant LOD. */
   overhead: CivicVolume[];
   /**
-   * 共用的矮物件：樹、灌木、花圃、路燈、垃圾桶、單車架、旗桿、消防栓、
-   * 油桶、管架……（`geometry/props` 的 `PropSpec`）。
+   * Shared low props: trees, shrubs, flower beds, lamps, bins, bike racks, flagpoles,
+   * hydrants, drums, pipe racks and the rest (`geometry/props`'s `PropSpec`).
    *
-   * 與上面的 `props` 差在**誰畫的**：這裡是與住宅庭院共用的圖元，那裡是
-   * 這一棟自己的方塊量體（車輛、長椅這種一次性的東西）。優先用這裡的 ——
-   * 自己畫一顆樹的下場是同一座城市裡兩棵長得不一樣的樹。
+   * The difference from `props` above is **who draws them**: these are primitives shared with
+   * residential yards, while those are this building's own box masses — vehicles, benches and
+   * other one-offs. Prefer these; drawing a tree by hand ends with two differently shaped trees
+   * in one city.
    *
-   * 分成兩層是**必要的**，不是分類上的潔癖：這些圖元用 `THREE` 的圓錐、
-   * 球、環，帶著 uv 而且是索引幾何；`props` 走 `shapeOf`，產出的是非索引、
-   * 沒有 uv 的稜台。`mergeGeometries` 要求屬性集合一致，兩者合併不起來。
+   * The split into two layers is **necessary**, not taxonomic tidiness: these primitives use
+   * THREE's cones, spheres and toruses, carry uvs and are indexed geometry, while `props` goes
+   * through `shapeOf` and produces non-indexed frusta with no uvs. `mergeGeometries` requires a
+   * matching attribute set, so the two cannot be merged.
    *
-   * 三角形預算仍算在 `prop` 那一格 —— 它們就是矮物件。
+   * Their triangles still count against the `prop` budget — they are low props.
    */
   fixtures: PropSpec[];
   /**
-   * 停在基地上的車輛。
+   * Vehicles parked on the plot.
    *
-   * 用的是城市裡開著的那些車的**同一份幾何**（`geometry/policeCar` 等）——
-   * 停在警局停車場的警車與街上巡邏的警車長得不一樣，是最容易被看出來的
-   * 那種不一致。
+   * They use the **same geometry** as the vehicles driving around the city
+   * (`geometry/policeCar` and the rest): a patrol car in a station's car park that looks
+   * different from one on patrol is the most easily spotted inconsistency there is.
    *
-   * 它們自己一層而且用**別的材質**：車輛走
-   * `MeshLambertMaterial({ vertexColors })`，RGB 直接寫在 `color` 屬性上；
-   * 建築 shader 把 `color` 讀成（零件標籤, 分區, 地面明度）。混在一起的話，
-   * 一台白藍相間的警車會被當成 `partType = 0.102`，落進金屬細節的分支變成
-   * 一塊灰。
+   * They form their own layer with a **different material**: vehicles use
+   * `MeshLambertMaterial({ vertexColors })` with RGB written straight into the `color`
+   * attribute, while the building shader reads `color` as (part tag, zone, ground brightness).
+   * Mixed together, a white-and-blue patrol car reads as `partType = 0.102`, falls into the
+   * metal-detail branch, and turns into a grey block.
    *
-   * 三角形不算進任何一格建築預算 —— 它們是車，不是建築的一部分。
+   * Their triangles count against no building budget — they are vehicles, not part of the
+   * building.
    */
   vehicles: CivicVehicle[];
 }
 
-/** 停在基地上的一台車。 */
+/** One vehicle parked on the plot. */
 export interface CivicVehicle {
   kind: CivicVehicleKind;
   /**
-   * 這台車在這棟建築裡的角色。與 `CivicVolume.tag` 完全同一個道理：
-   * **測試要讀得懂這份 plan**。
+   * This vehicle's role in this building. Exactly the same reasoning as `CivicVolume.tag`:
+   * **tests have to be able to read the plan**.
    *
-   * 「機場的地勤車不准卡到空橋」寫成 `v.tag === 'groundCrew'` 是一句話；
-   * 靠「有沒有設 `tint`」來認的話，陸側那台也有 `tint`，於是測試會去檢查
-   * 一台停在航廈後方、與空橋八竿子打不著的貨車（實際踩到過）。
+   * "The airport's ground crew vehicle must not foul the jet bridge" is one line as
+   * `v.tag === 'groundCrew'`. Identified by whether a `tint` is set, the landside vehicle has
+   * one too, and the test ends up checking a truck parked behind the terminal with nothing to
+   * do with the jet bridge.
    */
   tag?: string;
-  /** 車輛中心。單位是格。 */
+  /** The vehicle's centre, in cells. */
   x: number;
   z: number;
-  /** 車頭朝向，弧度。0 = +x（幾何原本的朝向）。 */
+  /** Heading in radians. 0 is +x, the geometry's own orientation. */
   rotationY?: number;
   /**
-   * 車身顏色，蓋過 `civicVehicleTint(kind)` 的預設。
+   * Body colour, overriding `civicVehicleTint(kind)`'s default.
    *
-   * 預設值來自 `VEHICLE_CONFIG` —— 停著的車與開在路上的同型車必須同色。
-   * 這個欄位是給「同一種車在這裡有別的角色」用的：機場的地勤貨車是淺色的，
-   * 而街上跑的貨車是隨機色盤。
+   * The default comes from `VEHICLE_CONFIG`: a parked vehicle and a driving one of the same
+   * type have to share a colour. This field is for a type playing a different role here — an
+   * airport's ground crew truck is pale, while trucks on the street draw from a random palette.
    */
   tint?: number;
 }
 
-/** 有現成幾何的車種。 */
+/** Vehicle kinds with existing geometry. */
 export type CivicVehicleKind =
   | 'car' | 'policeCar' | 'ambulance' | 'firetruck'
   | 'bus' | 'garbageTruck' | 'van' | 'truck'
-  // 停在機場停機坪上的飛機。與天上飛的是同一份幾何（`geometry/airplane`）
-  // —— 11.7 × 10.8 m，在 60 m 的小型機場上剛好是一架區間客機的尺度。
+  // An aircraft on an airport apron. The same geometry as the ones in the air
+  // (`geometry/airplane`): 11.7 x 10.8 m, the scale of a regional airliner on a 60 m airfield.
   | 'airplane'
-  // 停在渡輪碼頭的渡輪。與航線上跑的是同一份幾何（`geometry/ferry`）——
-  // 9 × 2.6 m，在 12 m 的碼頭上是一艘正在靠泊的小型渡輪。
+  // A ferry at a terminal. The same geometry as the ones on routes (`geometry/ferry`):
+  // 9 x 2.6 m, a small ferry coming alongside a 12 m quay.
   | 'ferry';
 
 /**
- * 量體要從佔地邊界內縮多少（格）。0.02 格 = 24 cm。
+ * How far masses are inset from the plot boundary, in cells. 0.02 cells = 24 cm.
  *
- * 剛好貼齊邊界的話，兩棟相鄰的公共建築會共面 —— z-fighting 在靜態截圖上
- * 看不出來，一移動鏡頭就整片閃爍。
+ * Flush with the boundary, two adjacent civic buildings become coplanar; the z-fighting does
+ * not show in a static screenshot and turns into a flickering sheet as soon as the camera
+ * moves.
  *
- * **貼片不吃這個。** 它是平的鋪面，鋪到格子邊界是對的：人行道本來就一路
- * 鋪到路邊。
+ * **Decals do not take this.** They are flat paving, and paving to the cell boundary is
+ * correct: a sidewalk runs all the way to the kerb.
  */
 export const CIVIC_INSET = 0.02;
 
 /**
- * 逐**格**的三角形上限。
+ * Triangle limits per **cell**.
  *
- * 分區建築的預算是逐棟的（`HOUSE: 400` / `TOWER: 800`），因為它們一格一棟。
- * 公共建築佔 4 到 54 格，套同一條線沒有意義。
+ * Zoned buildings are budgeted per building (`HOUSE: 400`, `TOWER: 800`) because they occupy
+ * one cell each. Civic buildings occupy 4 to 54 cells, where the same line means nothing.
  *
- * **物件與綠化的額度刻意開得比分區建築寬。** 分區建築鋪滿整張地圖，一棟多
- * 十個三角形要乘上幾千棟；公共建築一座城市裡也就幾十棟，單棟多花的成本
- * 幾乎量不到。所以「這裡多種幾棵樹」是划算的，而在住宅區同樣的想法會直接
- * 打爆預算 —— 兩者的取捨本來就不同，用同一組數字才是錯的。
+ * **The prop and greenery allowances are deliberately more generous than a zoned building's.**
+ * Zoned buildings cover the whole map, so ten extra triangles each multiply by thousands;
+ * civic buildings number a few dozen per city, and the extra cost of one is barely measurable.
+ * So "plant a few more trees here" pays off, while the same instinct in a residential district
+ * blows the budget outright. The trade-offs differ, and one set of numbers for both would be
+ * the mistake.
  *
- * 對照：分區建築的矮物件上限是每棟 320（`TRIANGLE_BUDGET.PROP`）。
+ * For comparison, a zoned building's low-prop limit is 320 per building
+ * (`TRIANGLE_BUDGET.PROP`).
  *
- * **這些數字是量出來的，不是推的。** 十九種全部做完之後，取各層逐格的實測
- * 最大值再乘上約 1.5 倍的餘裕：
+ * **These numbers are measured, not reasoned.** With all nineteen types finished, each layer's
+ * measured per-cell maximum was taken and multiplied by roughly 1.5 for headroom:
  *
- * | 層 | 實測最大（逐格） | 出自 | 上限 |
+ * | Layer | Measured max (per cell) | From | Limit |
  * |---|---|---|---|
- * | 量體 | 128 | 公園（1 格，整塊地就是一座涼亭） | 200 |
- * | 貼片 | 14 | 公園／高中（跑道 40 段標線） | 30 |
- * | 懸挑 | 12 | 四座 1×1 車站（一片雨棚就是 12） | 20 |
- * | 矮物件 | 見下 | | 基礎 750 + 每格 140 |
+ * | Massing | 128 | Park (1 cell; the whole plot is one pavilion) | 200 |
+ * | Decals | 14 | Park / high school (a running track is 40 marking segments) | 30 |
+ * | Overhead | 12 | The four 1x1 stations (one canopy is 12) | 20 |
+ * | Props | see below | | base 750 + 140 per cell |
  *
- * 矮物件最緊的兩個點是**公園**（1 格用 800，額度 890）與**電廠**（4 格用
- * 1094，額度 1310）。公園刻意留得緊 —— 它是全遊戲最便宜的設施（200 元），
- * 會被大量重複擺放，而其他公共建築一座城市裡也就幾座。
+ * The two tightest points for props are the **park** (1 cell using 800 against an allowance of
+ * 890) and the **power plant** (4 cells using 1094 against 1310). The park is deliberately left
+ * tight: it is the cheapest facility in the game at 200 and gets placed in bulk, while other
+ * civic buildings appear a handful of times per city.
  *
- * 大型機場（54 格）只用了額度的 27%：矮物件的實際成長遠比面積慢，基礎 +
- * 斜率這個模型在大佔地上必然寬鬆。那是可接受的 —— 上限是天花板，不是目標。
+ * A large airport (54 cells) uses 27% of its allowance: prop counts grow far more slowly than
+ * area, so a base-plus-slope model is necessarily generous on large plots. That is acceptable
+ * — the limit is a ceiling, not a target.
  */
 export const CIVIC_TRIANGLE_BUDGET = {
   MASSING_PER_CELL: 200,
   DECAL_PER_CELL: 30,
   /**
-   * 矮物件的**基礎**額度，與佔地無關。樹、灌木、路燈、長椅、花台、
-   * 腳踏車架都算在這一格。
+   * The **base** prop allowance, independent of footprint. Trees, shrubs, lamps, benches,
+   * planters and bike racks all count against it.
    *
-   * 存在的理由是 1×1 的公園：它整塊基地**就是**矮物件（一座涼亭、四塊草地、
-   * 八棵樹），逐格的線在那裡不成立 —— 一格的公園量到 800，而同一條線給
-   * 2×2 的警局是 1600 而它只用了 664。
+   * It exists because of the 1x1 park: its whole plot **is** props — a pavilion, four patches
+   * of grass, eight trees — and a per-cell line does not hold there. A one-cell park measures
+   * 800, while the same line gives a 2x2 police station 1600 against the 664 it uses.
    *
-   * 純逐格的模型假設「矮物件的量正比於面積」，但每一塊基地都有一筆與大小
-   * 無關的固定開銷：入口的燈、垃圾桶、指示牌、門口那兩棵樹。基礎 + 斜率
-   * 才是它真正的形狀。
+   * A purely per-cell model assumes prop count is proportional to area, but every plot carries
+   * a fixed overhead independent of size: the entrance lamp, a bin, a sign, the two trees at
+   * the gate. Base plus slope is the shape it actually has.
    */
   PROP_BASE: 750,
-  /** 矮物件隨面積增加的部分。 */
+  /** The part of the prop allowance that grows with area. */
   PROP_PER_CELL: 140,
   /**
-   * 懸挑層（雨庇、雨遮、空橋）。
+   * The overhead layer: porches, canopies, jet bridges.
    *
-   * 20 只夠一片。火車站要兩片 —— 一條穿過去的軌道兩側都停得了車，所以
-   * 兩座月台各要一道雨遮，而那與佔地大小無關：同一件事發生在 1×1 上。
-   * 30 讓一格容得下兩片，而 2×2 以上本來就用不完（目前最多的是 2×2 的
-   * 學校，一片）。
+   * 20 covers exactly one. A train station needs two — a track running through can be boarded
+   * from both sides, so each of the two platforms needs a canopy, and that is independent of
+   * plot size: the same happens on 1x1. 30 lets one cell hold two, and 2x2 and larger never run
+   * it out (the largest currently is a 2x2 school, with one).
    */
   OVERHEAD_PER_CELL: 30,
 } as const;

@@ -6,27 +6,30 @@ import { civicColorOf } from '../colors';
 import type { CivicPlan, CivicVolume } from '../types';
 
 /**
- * 四座交通站點 —— 全部 1×1 格 = 12 × 12 m。
+ * The four transit stops, all 1x1 cells = 12 x 12 m.
  *
- * 一個檔案四棟，與其他批次一棟一檔不同：它們小到每一棟只有 30 行，各自一檔的
- * 話讀者要開四個檔案才看得出「這四個是一組」，而它們**必須**被一起看 ——
- * 共用 `FACADE_TRANSIT`、共用同一塊 12 m 的地、共用「發光識別柱」這個語彙。
+ * Four buildings in one file, unlike the one-per-file batches elsewhere: each is about 30
+ * lines, and split apart a reader would open four files to see that they are one set — and
+ * they **have** to be read together, sharing `FACADE_TRANSIT`, the same 12 m plot, and the
+ * glowing-totem vocabulary.
  *
- * 1×1 的可用範圍只有 ±5.76 m（扣掉 `CIVIC_INSET`），貼片是 ±6.0 m。這是全
- * 專案最緊的尺度，所以每一棟都只有一個量體加一根識別柱 —— 再多就塞不下。
+ * A 1x1 plot leaves only +/-5.76 m of usable range after `CIVIC_INSET`, with decals at
+ * +/-6.0 m. It is the tightest scale in the project, so each building is one mass plus one
+ * totem; anything more does not fit.
  *
- * 夜間語彙：**發光的識別柱**（`PART_LAMP`）。車站是城市夜景裡最亮的東西，
- * 而在 12 m 的基地上唯一放得下的「亮」就是那根柱子。
+ * Night vocabulary: the **glowing totem** (`PART_LAMP`). Stations are the brightest thing in
+ * the city at night, and on a 12 m plot the totem is the only "bright" that fits.
  */
 
-/** 識別柱的燈箱高度（公尺）。1.5 m 以下 —— 再高就變成「一根從地上亮到頂的柱子」。 */
+/** Height of the totem's light box in metres. Under 1.5 m; taller reads as a post glowing from the ground to the top. */
 const TOTEM_PANEL = 1.0;
 
 /**
- * 一根發光識別柱：柱身（金屬）+ 燈箱（發光）。
+ * One glowing totem: a metal post plus a light box.
  *
- * 整根標成發光的話，夜裡會看到一根從地上亮到頂的柱子（BUG-230 的教訓）。
- * 燈箱進 `massing`（遠景不關 —— 它是這一棟唯一的辨識物），柱身進 `props`。
+ * Marking the whole thing as glowing gives a post lit from the ground to the top at night
+ * (BUG-230). The light box goes into `massing`, which distant LOD never drops, because it is
+ * this building's only identifier; the post goes into `props`.
  */
 function totem(x: number, z: number, postTop: number, base = 0) {
   return {
@@ -36,23 +39,24 @@ function totem(x: number, z: number, postTop: number, base = 0) {
       y0: M(postTop), y1: M(postTop + TOTEM_PANEL),
     } satisfies CivicVolume,
     post: {
-      // `base` 是柱腳的高度（公尺）。火車站兩側都鋪成月台之後這一格沒有
-      // 地面了，柱子從 0 起算會有 0.9 m 埋在月台裡。
+      // `base` is the foot height in metres. With both sides of the train station paved as
+      // platform there is no ground left on the cell, so a post starting at 0 buries 0.9 m of
+      // itself in the platform.
       tag: 'totemPost', part: PART_DETAIL,
       x, z, w: M(0.16), d: M(0.16), y0: M(base), y1: M(postTop),
     } satisfies CivicVolume,
   };
 }
 
-// ===== 公車站 =====
+// ===== Bus stop =====
 
 const busTotem = totem(M(2.9), M(0.4), 2.0);
 
 /**
- * 公車站 —— 一座候車亭。
+ * Bus stop — a shelter.
  *
- * 背板是**牆**（走 `FACADE_TRANSIT` 的玻璃立面），不是金屬細節：候車亭的
- * 背板本來就是玻璃的，而那條分支畫的正是它。
+ * The back panel is a **wall** and takes `FACADE_TRANSIT`'s glass facade rather than a metal
+ * detail: a shelter's back panel is glass, which is exactly what that branch draws.
  */
 export const busStopPlan: CivicPlan = {
   footprint: { w: 1, h: 1 },
@@ -67,16 +71,16 @@ export const busStopPlan: CivicPlan = {
     busTotem.panel,
   ],
   decals: [
-    // 人行道：z [−6, 3]
+    // Sidewalk: z [-6, 3]
     { x: 0, z: M(-1.5), w: M(12.0), d: M(9.0), shade: 0.62 },
-    // 停靠彎：z [3, 6]
+    // Bus bay: z [3, 6]
     { x: 0, z: M(4.5), w: M(12.0), d: M(3.0), shade: 0.0 },
-    // 停靠格的黃線。
+    // The bay's yellow line.
     { x: 0, z: M(3.3), w: M(11.0), d: M(0.2), shade: 0.9, layer: 'mark' },
   ],
   props: [
     busTotem.post,
-    // 候車亭的兩根前柱。
+    // The shelter's two front posts.
     ...([-2.3, 2.3] as const).map((x): CivicVolume => ({
       tag: 'post', part: PART_DETAIL,
       x: M(x), z: M(-0.1), w: M(0.16), d: M(0.16), y0: 0, y1: M(2.6),
@@ -101,48 +105,46 @@ export const busStopPlan: CivicPlan = {
     { kind: 'bollard', x: M(-4.0), z: M(2.6), radius: M(0.11) },
     { kind: 'bollard', x: M(4.0), z: M(2.6), radius: M(0.11) },
   ],
-  // **不停公車。** 城市裡的公車是 `VehicleRenderer` 開著的真車，會照路線
-  // 停靠 —— 站牌前再擺一台靜態的，就變成一台永遠停在那裡不走的公車擋住
-  // 真的那台。
+  // **No parked bus.** The city's buses are real vehicles driven by `VehicleRenderer` and
+  // stop here on their routes; a static one at the stop would be a bus permanently parked in
+  // front of the real one.
   vehicles: [],
 };
 
-// ===== 捷運站 =====
+// ===== Metro station =====
 
 const metroTotem = totem(M(4.6), M(4.6), 2.2);
 
 /**
- * 捷運站 —— 一座**四面都能下樓**的地面通道建築。
+ * Metro station — a surface concourse with **stair mouths on all four sides**.
  *
- * 它要讀成一座四面都能下樓的通道建築。原本是「一座階梯出入口 + 一支電梯井」
- * 擠在基地的左半 —— 那是一個路邊的小盒子，讀起來與變電箱差不多，而且只有
- * 一個方向進得去。
- *
- * 現在是一座站在格子正中央的玻璃通道，四個方向各伸出一道階梯口通到人行道：
+ * It has to read as a concourse you can descend from any direction: a glass concourse standing
+ * at the centre of the cell, with a stair mouth reaching out to the sidewalk on each side.
  *
  * ```
- *            ▓ 階梯口
+ *            ▓ stair mouth
  *        ┌───────────┐
- *      ▓ │   通道     │ ▓
+ *      ▓ │ concourse │ ▓
  *        └───────────┘
- *            ▓          ● 識別柱（角落）
+ *            ▓          ● totem (corner)
  * ```
  *
- * 階梯口走 `PART_GROUND` + 極低的 `shade`：深色的洞是「這裡可以下去」的唯一
- * 訊號。四個都朝著格子的邊 —— 圍在中間的話「四面下樓」是假的，人走到通道
- * 旁邊會發現沒有入口。
+ * The mouths use `PART_GROUND` with a very low `shade`: a dark opening is the only signal that
+ * says "you can go down here". All four face the cell's edges — enclosed in the middle, "four
+ * ways down" would be a lie, and someone walking up beside the concourse would find no
+ * entrance.
  */
 
-/** 通道量體的半寬（公尺）。四道階梯口從這裡往外接。 */
+/** Half-width of the concourse mass in metres. The four stair mouths attach from here outward. */
 const CONCOURSE_HALF = 2.7;
-/** 階梯口的長度（公尺）。從通道的牆一路伸到人行道。 */
+/** Length of a stair mouth in metres, from the concourse wall out to the sidewalk. */
 const MOUTH_LEN = 2.4;
-/** 階梯口的寬度（公尺）。 */
+/** Width of a stair mouth in metres. */
 const MOUTH_W = 3.0;
-/** 階梯口中心離原點的距離。 */
+/** Distance from the origin to a stair mouth's centre. */
 const MOUTH_C = CONCOURSE_HALF + MOUTH_LEN / 2;
 
-/** 四個方向的單位向量。順序就是 N / S / E / W。 */
+/** Unit vectors for the four directions, in the order N / S / E / W. */
 const DIRS = [[0, -1], [0, 1], [1, 0], [-1, 0]] as const;
 
 const metroMouths: CivicVolume[] = DIRS.map(([dx, dz]): CivicVolume => ({
@@ -153,7 +155,7 @@ const metroMouths: CivicVolume[] = DIRS.map(([dx, dz]): CivicVolume => ({
   y0: 0, y1: M(0.1),
 }));
 
-/** 每道階梯口兩側的欄杆。少了它，那四塊深色只是地上的四塊污漬。 */
+/** Railings along both sides of each stair mouth. Without them the four dark patches are stains on the ground. */
 const metroRails: CivicVolume[] = DIRS.flatMap(([dx, dz]) =>
   ([-1, 1] as const).map((side): CivicVolume => ({
     tag: 'rail', part: PART_DETAIL,
@@ -171,8 +173,8 @@ export const metroStationPlan: CivicPlan = {
   seed: [0.36, 0.68, 0.5],
   massing: [
     {
-      // 玻璃通道。`FACADE_TRANSIT` 的立面就是整片玻璃 —— 夜裡它自己會亮，
-      // 而那正是「地下有東西」該有的樣子。
+      // The glass concourse. `FACADE_TRANSIT`'s facade is glass throughout, so it lights
+      // itself at night, which is how "something is down there" should look.
       tag: 'concourse',
       x: 0, z: 0, w: M(CONCOURSE_HALF * 2), d: M(CONCOURSE_HALF * 2),
       y0: 0, y1: M(3.4),
@@ -185,9 +187,10 @@ export const metroStationPlan: CivicPlan = {
     metroTotem.panel,
   ],
   decals: [
-    // 整格的人行道鋪面。四個方向都要走得到，所以不分前後。
+    // Sidewalk paving across the whole cell. All four sides have to be walkable, so there is
+    // no front or back.
     { x: 0, z: 0, w: M(12.0), d: M(12.0), shade: 0.62 },
-    // 四道階梯口外緣的導盲磚帶。
+    // Tactile paving at the outer edge of each stair mouth.
     ...DIRS.map(([dx, dz]) => ({
       x: M(dx * (MOUTH_C + MOUTH_LEN / 2 + 0.3)),
       z: M(dz * (MOUTH_C + MOUTH_LEN / 2 + 0.3)),
@@ -202,7 +205,8 @@ export const metroStationPlan: CivicPlan = {
   ],
   overhead: [],
   fixtures: [
-    // 全部站在**四個角**：四條軸線上是階梯口，站上去就擋住了。
+    // All four stand at the **corners**: the axes carry the stair mouths, and a lamp on one
+    // would block it.
     { kind: 'lamp', x: M(4.6), z: M(-4.6), heightM: 4.5 },
     { kind: 'lamp', x: M(-4.6), z: M(4.6), heightM: 4.5 },
     { kind: 'tree', x: M(-4.6), z: M(-4.6), heightM: 5.5, crownRadius: M(1.0) },
@@ -215,83 +219,83 @@ export const metroStationPlan: CivicPlan = {
   vehicles: [],
 };
 
-// ===== 火車站 =====
+// ===== Train station =====
 
 /**
- * 火車站 —— **軌道兩側各一座月台**，站房與候車室對角站在上面。
+ * Train station — **one platform on each side of the track**, with the station hall and the
+ * waiting room set diagonally on them.
  *
- * 查證過的事實（`canPlaceTransportStop` + `placeTransportStopOnGrid` +
- * `TrackRenderer`）：火車站不是蓋在鐵軌**旁邊**，是蓋在鐵軌**上** ——
- * 放置規則要求那一格 `railType ≠ 0`，而寫入時只改 buildingId／reserved／
- * zoneType，軌道原封不動留在格子裡。`TrackRenderer` 於是照樣在同一格畫出
- * 碴床、枕木與兩條鋼軌，貼著**格心**、寬 `TRACK_WIDTH`。
+ * Verified against `canPlaceTransportStop`, `placeTransportStopOnGrid` and `TrackRenderer`: a
+ * train station is built **on** the rail, not beside it. Placement requires `railType != 0` on
+ * the cell, and writing the building only changes buildingId / reserved / zoneType, leaving
+ * the track in the cell untouched. `TrackRenderer` therefore still draws ballast, sleepers and
+ * two rails on the same cell, hugging the **cell centre** at `TRACK_WIDTH`.
  *
- * 這一棟因此拆過三次：
+ * So this model draws no rails of its own, and the hall does not sit on the cell centre: the
+ * real rails would come up through its floor.
  *
- * 1. 它自己在 z = 4.4 / 5.2 畫了兩條鋼軌加一條道碴帶 —— 與真的那條各畫各的。
- *    這一格不必自己畫鐵軌。
- * 2. 站房蓋在格心上 —— 真的鋼軌會從站房的地板穿出來。改成「站房在軌道的
- *    一側、月台在另一側」，但那樣兩棟各站各的：一棟房子旁邊有一塊月台。
- * 3. 加一道跨站天橋把兩邊接起來。天橋確實是車站最好認的形象，但一塊 12 m
- *    的地要同時塞下天橋、樓梯塔與兩道欄杆，月台被切成兩截 —— 而月台本來
- *    就只有 2.6 m 深。
+ * A small real station does not cross the line. The hall stands on the platform, and the
+ * platform is the paving beside it plus a canopy; the hall's underside **is** the platform's
+ * top surface, so joining them needs no structure at all.
  *
- * 真實的小車站根本不跨線：站房就蓋在月台上，月台是它旁邊那一片鋪面加一道
- * 雨遮。站房的底面**就是**月台的頂面 —— 「連在一起」不需要任何構造物。
- *
- * 而一條穿過去的軌道**兩邊都停得了車**，所以另一側也是月台，不是站前廣場：
- * 那片廣場被軌道切在對岸，走不過去（天橋那一版試過了，12 m 的地塞不下）。
- * 兩棟房子對角擺 —— 鏡像的話兩邊讀起來是同一張圖貼兩次，而真實的雙側式
- * 月台本來就一大一小。
+ * A track running through can be boarded from **both sides**, so the far side is a platform
+ * too, not a forecourt: a forecourt would be cut off across the rails with no way to reach it,
+ * and a footbridge does not fit on 12 m alongside stair towers and railings — it would cut a
+ * platform that is only 2.6 m deep in two. The two buildings sit diagonally; mirrored, both
+ * sides would read as one drawing pasted twice, while real double-sided platforms are uneven
+ * anyway.
  *
  * ```
- *   z−  │ 候車室 │ ▔▔ 雨遮 ▔▔ │  ← 對側月台
- *       ├──────────────┤  ← 走廊，由 TrackRenderer 畫
- *       │ ← 真的軌道 →            │
+ *   z-  │ waiting │ ▔▔ canopy ▔▔ │  <- far platform
+ *       ├──────────────┤  <- corridor, drawn by TrackRenderer
+ *       │ <- the real track ->     │
  *       ├──────────────┤
- *   z+  │ ▔▔ 雨遮 ▔▔ │ 站房 │  ← 主月台（電車線的柱子在這一側）
+ *   z+  │ ▔▔ canopy ▔▔ │ hall │  <- main platform (catenary masts on this side)
  * ```
  *
- * 兩側都鋪成月台之後這一格就**沒有地面了**，所以 `fixtures` 是空的：地面
- * 物件站在 y = 0，擺進來會有一半埋在月台裡。月台上的東西（長椅、垃圾桶、
- * 時刻表、識別柱）全部走 `props`，起點壓在月台面上。
+ * With both sides paved as platform the cell has **no ground left**, so `fixtures` is empty:
+ * ground props stand at y = 0 and would be half-buried in the platform. Everything on the
+ * platform — benches, bins, timetable, totem — goes through `props`, starting at the platform
+ * surface.
  *
- * 走廊只讓一個方向 —— 12 m 的格子上讓出十字的話，四個角各剩 4 m，站房就
- * 蓋不起來了。玩家要把站轉到與軌道同向，這與其他有方向性的建築一樣。
+ * The corridor runs in one direction only: a cross on a 12 m cell leaves 4 m in each corner
+ * and the hall no longer fits. The player rotates the station to match the track, as with
+ * every other directional building.
  */
 
-/** 軌道走廊的半寬（公尺）。`TrackRenderer.TRACK_WIDTH` 是 0.15 格 = 1.8 m。 */
+/** Half-width of the track corridor in metres. `TrackRenderer.TRACK_WIDTH` is 0.15 cells = 1.8 m. */
 const CORRIDOR_HALF = 1.8;
-/** 識別柱：站在對側月台的東端，雨遮之外 —— 蓋在下面的話它會穿出棚頂。 */
+/** The totem, at the east end of the far platform and clear of the canopy; underneath it would pierce the roof. */
 const trainTotem = totem(M(5.2), M(-3.9), 3.1, 0.9);
-/** 月台的中心與深度（公尺）。走廊的南緣一路到佔地邊界。 */
+/** Platform centre and depth in metres, from the corridor's south edge to the plot boundary. */
 const PLATFORM_Z = 3.75;
 const PLATFORM_D = 3.9;
-/** 月台面。站房從這個高度起算。 */
+/** The platform surface. The hall starts from this height. */
 const PLATFORM_TOP = 0.9;
-/** 站房的簷高（絕對高度，含月台）。 */
+/** The hall's eave height, absolute and including the platform. */
 const HALL_EAVE = 4.5;
-/** 站房佔月台的東端，x [0.3, 5.4]。 */
+/** The hall takes the platform's east end, x [0.3, 5.4]. */
 const HALL_X = 2.85;
 const HALL_W = 5.1;
-/** 站房的中心與深度。整棟落在月台的範圍裡，不然它有一角是懸空的。 */
+/** The hall's centre and depth. The whole building stays within the platform, or one corner hangs in the air. */
 const HALL_Z = 3.9;
 const HALL_D = 2.6;
-/** 對側的候車室。比站房矮一截、擺在另一端 —— 對角才讀得出主次。 */
+/** The waiting room opposite: lower than the hall and at the other end, so the diagonal reads as primary and secondary. */
 const SHELTER_X = -2.8;
 const SHELTER_W = 4.8;
 const SHELTER_EAVE = 3.5;
-/** 電車線的柱子：站在主月台邊那一條，讓開走廊。 */
+/** Catenary masts, along the main platform's edge and clear of the corridor. */
 const MAST_X = [-4.4, -0.8, 2.8] as const;
 const MAST_Z = 2.0;
 /**
- * 接觸線的高度（公尺）。
+ * Contact wire height in metres.
  *
- * 取 `TRACK_CLEARANCE` —— 那個常數就是電氣化路線的建築限界（車廂約 4 m，
- * 加上受電弓與導線的空間）。低於它列車會撞到，而那是走廊那條驗收在守的。
+ * Taken from `TRACK_CLEARANCE`, the structure gauge for an electrified line: a carriage of
+ * about 4 m plus room for the pantograph and the wire. Below it a train would hit the wire,
+ * which is what the corridor acceptance test guards.
  */
 const WIRE_Y = 5.5;
-/** 接觸線的黑。走 `PART_SHELL` —— 那是唯一照著量體自己的顏色畫的分支。 */
+/** The contact wire's black. It uses `PART_SHELL`, the only branch that draws a mass in its own colour. */
 const WIRE = [0.05, 0.05, 0.06] as const;
 
 export const trainStationPlan: CivicPlan = {
@@ -300,52 +304,55 @@ export const trainStationPlan: CivicPlan = {
   color: civicColorOf('train_station'),
   seed: [0.44, 0.15, 0.66],
   massing: [
-    // 月台。走廊的南緣一路到佔地邊界，整條沿著軌道。
+    // The platform, running from the corridor's south edge to the plot boundary, along the
+    // track.
     {
-      // 明度要拉開站前那一片鋪面（0.5）。兩者一樣暗的話，月台在等角視角下
-      // 只是地上一塊顏色相同的方形 —— 「它高出來 0.9 m」完全看不出來。
+      // The brightness has to separate from the forecourt paving (0.5). Equally dark, the
+      // platform is just a same-coloured square on the ground in an isometric view and the
+      // 0.9 m rise is invisible.
       tag: 'platform', part: PART_GROUND, shade: 0.78,
       x: 0, z: M(PLATFORM_Z), w: M(11.2), d: M(PLATFORM_D),
       y0: 0, y1: M(PLATFORM_TOP),
     },
     {
-      // 站房。坐在月台面上 —— 起點寫 0 的話它的下半截會埋在月台裡。
-      // 高度：簷口 4.5 m、屋脊 5.9 m。一塊 12 m 的地上再高就讀成一座塔，
-      // 而它旁邊的公車站只有 2.9 m。
+      // The hall, sitting on the platform surface; starting at 0 would bury its lower half in
+      // the platform. Heights: eaves 4.5 m, ridge 5.9 m. Any taller on a 12 m plot reads as a
+      // tower, and the bus stop next door is only 2.9 m.
       tag: 'hall',
       x: M(HALL_X), z: M(HALL_Z), w: M(HALL_W), d: M(HALL_D),
       y0: M(PLATFORM_TOP), y1: M(HALL_EAVE),
     },
     {
-      // 山牆只在**兩端**出簷（w 5.6 > 5.1），z 向與站房齊平：往月台那一側
-      // 出簷的話屋簷會壓在雨遮上，往站前那一側出簷的話它會越過佔地邊界。
+      // The gable overhangs at the **two ends** only (w 5.6 > 5.1), flush with the hall in z:
+      // overhanging toward the platform would press the eaves onto the canopy, and toward the
+      // forecourt would cross the plot boundary.
       tag: 'hallRoof', part: PART_ROOF, shape: 'gable',
       x: M(HALL_X), z: M(HALL_Z), w: M(5.6), d: M(HALL_D),
       y0: M(HALL_EAVE), y1: M(5.9),
     },
-    // 站前的門廊。從站房背向月台那一面凸出來一截 —— 那一面朝著格子的邊，
-    // 也就是路會接上來的地方。
+    // The entrance porch, projecting from the hall face turned away from the platform. That
+    // side faces the cell's edge, which is where the road connects.
     {
       tag: 'portal',
       x: M(HALL_X), z: M(5.43), w: M(2.4), d: M(0.46),
       y0: M(PLATFORM_TOP), y1: M(HALL_EAVE),
     },
-    // 大鐘。掛在**朝月台**那一面：站房搬到月台上之後這一面才是它的正面，
-    // 等車的人與進站的列車看到的都是它。夜裡它會亮。
+    // The clock, on the face **toward the platform**: with the hall on the platform that is
+    // its front, seen both by people waiting and by an arriving train. It glows at night.
     {
       tag: 'clock', part: PART_LAMP,
       x: M(HALL_X), z: M(2.47), w: M(1.2), d: M(0.14), y0: M(2.9), y1: M(3.9),
     },
-    // 對側月台。與主月台同高同長 —— 一高一低的話讀起來是一塊台階。
-    // 對側月台。與主月台同高同長 —— 一高一低的話讀起來是一塊台階。
+    // The far platform, the same height and length as the main one; uneven, the pair reads as
+    // a step.
     {
       tag: 'sidePlatform', part: PART_GROUND, shade: 0.72,
       x: 0, z: M(-PLATFORM_Z), w: M(11.2), d: M(PLATFORM_D),
       y0: 0, y1: M(PLATFORM_TOP),
     },
     {
-      // 候車室。比站房矮 1 m、短 0.3 m，而且在另一端 —— 一樣大又對齊的話
-      // 兩邊是同一張圖貼兩次。
+      // The waiting room: 1 m lower, 0.3 m shorter, and at the other end. Equal in size and
+      // aligned, the two sides would be one drawing pasted twice.
       tag: 'shelter',
       x: M(SHELTER_X), z: M(-3.9), w: M(SHELTER_W), d: M(2.4),
       y0: M(PLATFORM_TOP), y1: M(SHELTER_EAVE),
@@ -358,19 +365,21 @@ export const trainStationPlan: CivicPlan = {
     trainTotem.panel,
   ],
   decals: [
-    // 對側月台下面那一片：z [−6, −1.8]
+    // The strip under the far platform: z [-6, -1.8]
     { x: 0, z: M(-3.9), w: M(12.0), d: M(4.2), shade: 0.62 },
-    // 軌道走廊：z [−1.8, 1.8]。碴色 —— 真的碴床只有 1.8 m 寬，兩側這一圈
-    // 是它的路權範圍。
+    // The track corridor: z [-1.8, 1.8], in ballast colour. The real ballast is only 1.8 m
+    // wide; the band on either side is its right of way.
     { tag: 'corridor', x: 0, z: 0, w: M(12.0), d: M(CORRIDOR_HALF * 2), shade: 0.24 },
-    // 月台側：z [1.8, 6]
+    // Platform side: z [1.8, 6]
     { x: 0, z: M(3.9), w: M(12.0), d: M(4.2), shade: 0.5 },
-    // 月台邊緣的黃線不能畫在這裡：標線層貼著**地面**，而月台高 0.9 m ——
-    // 畫出來會落在月台腳邊的碴床上。它改成月台面上的一道薄帶（見 props）。
+    // The platform's yellow edge line cannot go here: the marking layer hugs the **ground**
+    // while the platform is 0.9 m up, so it would land on the ballast at the platform's foot.
+    // It is a thin band on the platform surface instead (see props).
   ],
   props: [
     trainTotem.post,
-    // 月台邊緣的警示帶。壓在月台面上而不是走標線層 —— 標線層貼著地面。
+    // The platform's warning strip, laid on the platform surface rather than the marking
+    // layer, which hugs the ground.
     {
       tag: 'platformEdge', part: PART_GROUND, shade: 0.95,
       x: 0, z: M(2.3), w: M(11.2), d: M(0.35),
@@ -381,8 +390,8 @@ export const trainStationPlan: CivicPlan = {
       x: 0, z: M(-2.3), w: M(11.2), d: M(0.35),
       y0: M(PLATFORM_TOP), y1: M(PLATFORM_TOP + 0.02),
     },
-    // 兩座雨遮各四根柱，站在各自的月台上。**沒有鋼軌** —— 那是
-    // `TrackRenderer` 的事。
+    // Four posts per canopy, each standing on its own platform. **No rails** — those belong
+    // to `TrackRenderer`.
     ...([-5.0, -0.6] as const).flatMap((x): CivicVolume[] =>
       ([3.2, 4.9] as const).map((z): CivicVolume => ({
         tag: 'canopyPost', part: PART_DETAIL,
@@ -396,14 +405,16 @@ export const trainStationPlan: CivicPlan = {
         y0: M(PLATFORM_TOP), y1: M(3.0),
       }))),
 
-    // ── 電車線 ────────────────────────────────────────────────
-    // 站房與月台都退到軌道的一側之後，這一格裡就沒有東西在講「軌道從這裡
-    // 穿過去」了 —— 而真的鋼軌就在格心（`TrackRenderer` 畫的）。電車線補的
-    // 正是這件事：柱子站在月台邊，懸臂伸過軌道上方，接觸線沿著軌道走滿整格。
+    // ── Catenary ──────────────────────────────────────────────
+    // With the hall and both platforms set back to the sides of the track, nothing on the cell
+    // says "the track runs through here", and the real rails are at the cell centre, drawn by
+    // `TrackRenderer`. The catenary supplies that: masts along the platform edge, cantilevers
+    // reaching over the track, and a contact wire running the full cell along the rails.
     //
-    // 它也是走廊那條驗收裡唯一走 `above` 分支的東西。走廊是**淨空包絡線**
-    // 不是禁建區，而 `TRACK_CLEARANCE` 取的就是電氣化路線的建築限界 ——
-    // 接觸線壓在那個高度上，列車從底下過。
+    // It is also the only thing here that takes the `above` branch of the corridor acceptance
+    // test. The corridor is a **clearance envelope**, not a no-build zone, and
+    // `TRACK_CLEARANCE` is the structure gauge for an electrified line: the wire sits at that
+    // height and trains pass beneath it.
     ...MAST_X.flatMap((x): CivicVolume[] => [
       {
         tag: 'catenaryMast', part: PART_DETAIL,
@@ -411,7 +422,8 @@ export const trainStationPlan: CivicPlan = {
         y0: M(PLATFORM_TOP), y1: M(6.7),
       },
       {
-        // 懸臂。從柱子伸到軌道正上方 —— 短了的話接觸線是懸空掛著的。
+        // The cantilever, reaching from the mast to directly above the track; any shorter and
+        // the contact wire hangs from nothing.
         tag: 'cantilever', part: PART_DETAIL,
         x: M(x), z: M((MAST_Z - 0.2) / 2), w: M(0.18), d: M(MAST_Z + 0.2),
         y0: M(WIRE_Y), y1: M(WIRE_Y + 0.2),
@@ -422,12 +434,13 @@ export const trainStationPlan: CivicPlan = {
       x: 0, z: 0, w: M(11.2), d: M(0.09), y0: M(WIRE_Y), y1: M(WIRE_Y + 0.09),
     },
 
-    // ── 月台上的東西 ──────────────────────────────────────────
-    // 一塊空鋪面加一道雨遮讀起來是騎樓。長椅、垃圾桶與時刻表是「這裡有人在
-    // 等車」的訊號，而那正是月台與人行道的差別。
+    // ── Things on the platform ────────────────────────────────
+    // Bare paving under a canopy reads as an arcade. Benches, bins and a timetable are the
+    // signal that people wait here, and that is the difference between a platform and a
+    // sidewalk.
     //
-    // 全部走 `props` 而不是 `fixtures`：地面物件站在 y = 0，放在月台的位置
-    // 上會有一半埋在月台裡。
+    // All through `props` rather than `fixtures`: ground props stand at y = 0 and would be
+    // half-buried at platform height.
     ...([-3.8, -1.8] as const).map((x): CivicVolume => ({
       tag: 'bench', part: PART_DETAIL,
       x: M(x), z: M(4.7), w: M(1.6), d: M(0.5),
@@ -444,13 +457,13 @@ export const trainStationPlan: CivicPlan = {
       y0: M(PLATFORM_TOP), y1: M(1.6),
     },
     {
-      // 時刻表。貼在站房朝月台那一面 —— 大鐘的旁邊。
+      // The timetable, on the hall's platform-facing side, beside the clock.
       tag: 'timetable', part: PART_DETAIL,
       x: M(1.2), z: M(2.52), w: M(1.2), d: M(0.12), y0: M(1.9), y1: M(3.0),
     },
 
-    // 月台盡頭的號誌機。這是「這是鐵路」最短的一句話 ——
-    // 夜裡它是月台盡頭那一點紅。
+    // The signal at the end of the platform: the shortest way to say "this is a railway", and
+    // at night the point of red at the platform's far end.
     {
       tag: 'signalMast', part: PART_DETAIL,
       x: M(5.2), z: M(2.2), w: M(0.18), d: M(0.18),
@@ -463,66 +476,72 @@ export const trainStationPlan: CivicPlan = {
   ],
   overhead: [
     {
-      // 月台的雨遮。從月台的西端一路蓋到站房的牆邊 —— 這一片就是「月台」
-      // 在等角視角下的全部，只蓋一小段的話剩下的空鋪面讀起來是廣場。
+      // The platform canopy, from the platform's west end to the hall's wall. In an isometric
+      // view this is all "platform" amounts to; covering only a short stretch leaves bare
+      // paving that reads as a plaza.
       //
-      // z 向退到 2.8：月台邊那一條留給電車線的柱子，柱子穿過雨遮的話兩者
-      // 都讀不出來。真實月台的雨棚本來就不蓋到邊。
+      // Set back to 2.8 in z: the platform edge is left to the catenary masts, and a mast
+      // through the canopy leaves neither readable. Real platform canopies do not reach the
+      // edge either.
       tag: 'platformCanopy',
       x: M(-2.6), z: M(4.05), w: M(6.0), d: M(2.5), y0: M(3.0), y1: M(3.3),
     },
     {
-      // 對側的雨遮。從候車室的牆邊蓋到識別柱之前 —— 蓋過識別柱的話那根柱子
-      // 會從棚頂穿出來。
+      // The far canopy, from the waiting room's wall up to but not over the totem, which would
+      // otherwise pierce the roof.
       tag: 'sideCanopy',
       x: M(2.1), z: M(-4.05), w: M(5.0), d: M(2.5), y0: M(3.0), y1: M(3.3),
     },
   ],
-  // **一件地面物件都沒有。** 兩側都鋪成月台之後這一格沒有地面了 ——
-  // `fixtures` 站在 y = 0，擺進來會有一半埋在月台裡。月台上的東西
-  // （長椅、垃圾桶、時刻表、識別柱）全部在 `props`，起點壓在月台面上。
+  // **No ground props at all.** With both sides paved as platform there is no ground left on
+  // this cell, and `fixtures` stand at y = 0 and would be half-buried. Everything on the
+  // platform — benches, bins, timetable, totem — is in `props`, starting at the platform
+  // surface.
   fixtures: [],
   vehicles: [],
 };
 
-// ===== 渡輪碼頭 =====
+// ===== Ferry terminal =====
 
 const ferryTotem = totem(M(-4.9), M(-0.8), 2.2);
 
 /**
- * 渡輪碼頭 —— 候船室在後、一整片碼頭甲板在前，泊位**空著**。
+ * Ferry terminal — waiting hall at the back, a full quay deck in front, and the berth left
+ * **empty**.
  *
- * **這一格裡沒有水。**
- * 中間試過一版把港池畫進基地，渡船口同理（承接抽水廠那一條：蓋在陸地上的東西不要自己畫水）。查證過，這裡
- * 比抽水廠更明確：`Game.placeTransportStop` 用 `isShorePosition` 檢查，而
- * 那個函式的定義就是「**這一格是陸地**，而且四鄰有一格是水」。
+ * **There is no water on this cell.** Verified: `Game.placeTransportStop` checks
+ * `isShorePosition`, whose definition is "**this cell is land**, and one of its four
+ * neighbours is water". Drawing a basin into the plot would contradict that, the same rule the
+ * water plant follows: something built on land does not draw its own water.
  *
- * **而且泊位上不停船。**渡船口不停船，而且要重排。
- * 與公車站同一條理由：城市裡的渡輪是 `FerryAnimator` 開著的真船，會照航線靠泊 ——
- * 這裡再擺一艘不會動的，就變成一艘永遠佔著泊位的船擋住真的那艘。
- * 何況水在隔壁那一格，靜態的船只能停在佔地前緣的鋪面上，讀起來是擱淺的。
+ * **And no boat sits at the berth.** Same reason as the bus stop: the city's ferries are real
+ * vessels driven by `FerryAnimator` and berth here on their routes, so a static one would
+ * occupy the berth permanently in front of the real one. The water is on the neighbouring cell
+ * anyway, so a static boat could only sit on the paving at the plot's front edge and would
+ * read as run aground.
  *
- * 船拿掉之後這一格最大的一塊是空甲板，所以重排的重點就是**把甲板變成主角**：
- * 它現在佔了南半整片，上面架一道候船雨棚，前緣一排繫纜樁與一道跳板。
+ * The largest area on the cell is therefore the empty deck, and the layout makes **the deck
+ * the subject**: it takes the whole south half, with a waiting canopy over it and a row of
+ * bollards and a gangway along its front edge.
  *
  * ```
- *   z−  ┌──────────────┐
- *       │    候船室      │
+ *   z-  ┌──────────────┐
+ *       │ waiting hall  │
  *       ├──────────────┤
- *       │     前庭       │
+ *       │   forecourt   │
  *       │ ▁▁▁▁▁▁▁▁▁▁▁▁ │
- *       │ ▏  雨棚下的甲板 ▕│  ● 標誌燈
- *   z+  │ ▔▔ ⌷ ⌷ ⌷ ▔▔▔ │  ← 繫纜樁；佔地前緣＝岸線，隔壁那一格是水
- *       └───────┴跳板┴──┘
+ *       │ ▏ deck under canopy ▕│  ● navigation light
+ *   z+  │ ▔▔ ⌷ ⌷ ⌷ ▔▔▔ │  <- bollards; the plot's front edge is the
+ *       └──────┴gangway┴──┘     shoreline, and the next cell is water
  * ```
  */
 
-/** 碼頭甲板的面高（公尺）。雨棚柱、繫纜樁與跳板都接在這個高度。 */
+/** Quay deck surface height in metres. Canopy posts, bollards and the gangway all attach at this height. */
 const QUAY_TOP = 0.7;
-/** 甲板的中心與深度（公尺）。z [0.8, 5.2] —— 佔地前緣是 5.76。 */
+/** Deck centre and depth in metres. z [0.8, 5.2]; the plot's front edge is 5.76. */
 const QUAY_Z = 3.0;
 const QUAY_D = 4.4;
-/** 雨棚的下緣。柱子從甲板面頂到這裡。 */
+/** The canopy's underside. Posts run from the deck surface up to here. */
 const CANOPY_Y = 3.0;
 
 export const ferryDockPlan: CivicPlan = {
@@ -539,14 +558,15 @@ export const ferryDockPlan: CivicPlan = {
       tag: 'terminalRoof', part: PART_ROOF,
       x: 0, z: M(-3.9), w: M(9.2), d: M(3.3), y0: M(4.4), y1: M(4.8),
     },
-    // 碼頭甲板。架高的鋪面 —— 標成牆的話這 0.7 m 高的台子會長出窗戶。
-    // 船拿掉之後它是這一格的主角，所以從 1.8 m 深加寬到 4.4 m：一整片
-    // 站得下人的甲板，而不是甲板形狀的一條邊。
+    // The quay deck: raised paving. Marked as wall, a 0.7 m platform would grow windows. It is
+    // the subject of this cell, so it is 4.4 m deep rather than 1.8 m — a deck people can stand
+    // on, not a deck-shaped edge.
     {
       tag: 'quay', part: PART_GROUND, shade: 0.48,
       x: 0, z: M(QUAY_Z), w: M(11.2), d: M(QUAY_D), y0: 0, y1: M(QUAY_TOP),
     },
-    // 航道標誌燈。碼頭夜裡唯一的一點光，站在甲板的東端、雨棚之外。
+    // The navigation light: the quay's only point of light at night, at the deck's east end
+    // and clear of the canopy.
     {
       tag: 'navLight', part: PART_LAMP,
       x: M(5.0), z: M(4.4), w: M(0.5), d: M(0.5), y0: M(3.4), y1: M(3.9),
@@ -554,37 +574,41 @@ export const ferryDockPlan: CivicPlan = {
     ferryTotem.panel,
   ],
   decals: [
-    // 候船室那一帶：z [−6, −2.2]
+    // The waiting hall strip: z [-6, -2.2]
     { x: 0, z: M(-4.1), w: M(12.0), d: M(3.8), shade: 0.62 },
-    // 前庭與碼頭：z [−2.2, 6]。整片硬鋪面 —— 這一格全部是陸地。
+    // Forecourt and quay: z [-2.2, 6], hard paving throughout — the whole cell is land.
     { tag: 'apron', x: 0, z: M(1.9), w: M(12.0), d: M(8.2), shade: 0.5 },
-    // 甲板前緣的黃線。岸線在這裡。
+    // The yellow line at the deck's front edge. The shoreline is here.
     { x: 0, z: M(4.9), w: M(11.0), d: M(0.2), shade: 0.95, layer: 'mark' },
-    // 登船動線：從前庭指向跳板。空甲板上這條線就是「往這邊上船」。
+    // The boarding line, from the forecourt to the gangway. On an empty deck this line is all
+    // that says "board this way".
     { x: M(-2.4), z: M(2.6), w: M(0.2), d: M(3.4), shade: 0.9, layer: 'mark' },
   ],
   props: [
     ferryTotem.post,
-    // 標誌燈的桿。
+    // The navigation light's mast.
     {
       tag: 'mast', part: PART_DETAIL,
       x: M(5.0), z: M(4.4), w: M(0.2), d: M(0.2), y0: M(QUAY_TOP), y1: M(3.4),
     },
-    // 候船雨棚的四根柱。站在甲板上，頂到雨棚 —— 與火車站月台同一套做法。
+    // The waiting canopy's four posts, standing on the deck and reaching the canopy, the same
+    // approach as the train station's platform.
     ...([-4.0, 4.0] as const).flatMap((x): CivicVolume[] =>
       ([1.8, 4.4] as const).map((z): CivicVolume => ({
         tag: 'canopyPost', part: PART_DETAIL,
         x: M(x), z: M(z), w: M(0.18), d: M(0.18),
         y0: M(QUAY_TOP), y1: M(CANOPY_Y),
       }))),
-    // 跳板。從甲板的前緣往岸線外伸出去 —— 這一塊是「從這裡上船」的全部。
+    // The gangway, reaching past the shoreline from the deck's front edge. It is all that says
+    // "board here".
     {
       tag: 'gangway', part: PART_DETAIL,
       x: M(-2.4), z: M(5.1), w: M(1.8), d: M(1.2),
       y0: M(QUAY_TOP - 0.25), y1: M(QUAY_TOP - 0.05),
     },
-    // 繫纜樁。船不停在這裡了，它反而更重要 —— 空甲板上唯一在說
-    // 「這條邊會靠船」的東西，所以排成一列而不是兩根。
+    // Bollards. With no boat at the berth they carry more weight: on an empty deck they are
+    // the only thing saying a vessel comes alongside this edge, so they run as a row rather
+    // than a pair.
     ...([-3.6, -0.4, 2.8] as const).map((x): CivicVolume => ({
       tag: 'mooring', part: PART_DETAIL, shape: 'cylinder',
       x: M(x), z: M(4.7), w: M(0.44), d: M(0.44),
@@ -592,7 +616,7 @@ export const ferryDockPlan: CivicPlan = {
     })),
   ],
   overhead: [
-    // 泊位的候船雨棚。它撐起了船拿掉之後這一格最大的一塊空白。
+    // The berth's waiting canopy, holding up the largest empty area on the cell.
     {
       tag: 'berthCanopy',
       x: 0, z: M(3.1), w: M(9.0), d: M(3.4), y0: M(CANOPY_Y), y1: M(3.3),
