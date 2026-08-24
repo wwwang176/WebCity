@@ -5,19 +5,19 @@ import type { PropSpec } from '../../props';
 import type { CivicPlan, CivicVolume, CivicDecal, CivicVehicle } from '../types';
 
 /**
- * 高中 —— 2×3 格 = 24 × 36 m。
+ * High school — 2x3 cells = 24 x 36 m.
  *
- * 辨識特徵：三層教室樓、**橢圓跑道**、司令台。跑道是最強的那一個 ——
- * 城市裡沒有第二種建築的地上有一圈封閉的橢圓。
+ * Recognition features: a three-storey classroom block, a **running track**, and a review stand.
+ * The track is the strongest — no other building in the city has a closed loop on the ground.
  *
  * ```
  *   z-  ┌──────────────────────┐
- *       │    教室樓（三層）       │
+ *       │  classroom block (3 floors) │
  *       └──────────┬───────────┘
- *       │  禮堂    │  司令台      │  前庭（校車停這裡）
+ *       │  hall    │ review stand │  forecourt (school buses park here)
  *       ├──────────┴───────────┤
  *       │      ╭──────────╮     │
- *       │      │  運動場   │     │  草地 + 兩圈跑道
+ *       │      │  field   │     │  grass plus two track lanes
  *   z+  │      ╰──────────╯     │
  * ```
  */
@@ -26,28 +26,30 @@ const MAIN_TOP = M(13.6);
 const MAIN_ROOF = M(14.0);
 const ANNEX_TOP = M(9.0);
 const ANNEX_ROOF = M(9.4);
-/** 司令台頂棚的下緣。柱子頂到這裡。 */
+/** The review stand roof's underside. The posts reach it. */
 const PODIUM_EAVE = M(3.4);
 const PODIUM_DECK = M(1.2);
 
-/** 跑道的一段短直線。連起來就是橢圓。 */
+/** One short straight segment of the track. Chained together they form the loop. */
 export interface TrackSegment {
   x: number;
   z: number;
-  /** 段長。 */
+  /** Segment length. */
   w: number;
-  /** 這一段的方向。`assembleDecals` 直接吃它。 */
+  /** This segment's direction. `assembleDecals` reads it directly. */
   rotationY: number;
 }
 
 /**
- * 一圈**圓角矩形**的外框點。
+ * The outline points of one **rounded rectangle**.
  *
- * 不是橢圓：真實的操場是四段直道加四個轉彎，不是一條處處在彎的曲線。差別在畫面上很
- * 明顯：橢圓沒有任何一段是直的，跑起來像一個蛋。
+ * Not an ellipse: a real running track is four straights and four bends, not a curve that bends
+ * everywhere. The difference is obvious on screen — an ellipse has no straight section at all
+ * and reads as an egg.
  *
- * 直道各切成 `STRAIGHT_SEGS` 段，讓每一段的長度與轉角的弧段相近 —— 一整條
- * 直道畫成一段的話，它與轉角的線寬看起來會不一樣（同樣的 `d`，長度差十倍）。
+ * Each straight is cut into `STRAIGHT_SEGS` pieces so their lengths are close to the bends' arc
+ * segments. Drawn as one piece, a straight would look a different width from the bends: the same
+ * `d` over ten times the length.
  */
 function roundedRectOutline(
   cx: number, cz: number, a: number, b: number, r: number,
@@ -55,7 +57,7 @@ function roundedRectOutline(
   const pts: Array<{ x: number; z: number }> = [];
   const ax = a - r;
   const bz = b - r;
-  /** 四個轉角的圓心與起始角，順著走一圈。 */
+  /** The four bends' centres and start angles, in order around the loop. */
   const corners = [
     { x: ax, z: bz, from: 0 },
     { x: -ax, z: bz, from: Math.PI / 2 },
@@ -63,7 +65,7 @@ function roundedRectOutline(
     { x: ax, z: -bz, from: (Math.PI * 3) / 2 },
   ];
   for (const c of corners) {
-    // 進這個轉角之前的直道。起點是上一個轉角的出口。
+    // The straight before this bend. It starts at the previous bend's exit.
     for (let i = 0; i < STRAIGHT_SEGS; i++) {
       const t = i / STRAIGHT_SEGS;
       const prev = corners[(corners.indexOf(c) + 3) % 4]!;
@@ -80,7 +82,7 @@ function roundedRectOutline(
         z: cz + from.z + (to.z - from.z) * t,
       });
     }
-    // 轉角的四分之一圓弧。
+    // The bend's quarter circle.
     for (let i = 0; i < CORNER_SEGS; i++) {
       const t = c.from + (Math.PI / 2) * (i / CORNER_SEGS);
       pts.push({ x: cx + c.x + r * Math.cos(t), z: cz + c.z + r * Math.sin(t) });
@@ -90,14 +92,15 @@ function roundedRectOutline(
 }
 
 /**
- * 把一圈外框點接成短直線段。
+ * Chains a loop of outline points into short straight segments.
  *
- * 每一段的中心是**弦的中點**、長度是弦長、方向由弦決定 —— 所以相鄰兩段的
- * 端點會**剛好**重合（測試逐段檢查這件事）。用切線長度而不是弦長的話每一段
- * 都會多出一點，一整圈下來是一堆小交叉。
+ * Each segment's centre is the **chord's midpoint**, its length is the chord length, and its
+ * direction follows the chord, so adjacent segments' endpoints coincide **exactly** (a test
+ * checks this segment by segment). Using tangent length instead of chord length makes every
+ * segment slightly too long, and around the loop that is a series of small crossings.
  *
- * `rotationY = atan2(−dz, dx)`：`rotateY(θ)` 把局部 +x 轉到
- * (cos θ, 0, −sin θ)，要它對齊 (dx, dz) 就得取這個角。
+ * `rotationY = atan2(-dz, dx)`: `rotateY(theta)` sends local +x to (cos theta, 0, -sin theta),
+ * and aligning that with (dx, dz) takes this angle.
  */
 function chain(pts: Array<{ x: number; z: number }>): TrackSegment[] {
   return pts.map((p, i) => {
@@ -113,27 +116,28 @@ function chain(pts: Array<{ x: number; z: number }>): TrackSegment[] {
   });
 }
 
-/** 一條直道切成幾段。 */
+/** How many segments one straight is cut into. */
 const STRAIGHT_SEGS = 4;
-/** 一個轉角的四分之一圓弧切成幾段。 */
+/** How many segments one bend's quarter circle is cut into. */
 const CORNER_SEGS = 4;
 
 /**
- * 跑道。外圈與內圈兩條線 —— 一條線讀起來是「地上畫了一個橢圓」，
- * 兩條才讀得出「這中間是跑道」。
+ * The track: an outer and an inner line. One line reads as an oval painted on the ground; two
+ * read as a running track between them.
  *
- * `a` / `b` 是**外圈**的半軸，測試拿它判斷什麼東西站進圈裡了。
+ * `a` and `b` are the **outer** loop's semi-axes, which tests use to decide what has ended up
+ * inside the loop.
  */
 export const TRACK = {
   x: 0,
   z: M(8.0),
-  /** 外圈的半長（x）。 */
+  /** The outer loop's semi-length, along x. */
   a: M(10.0),
-  /** 外圈的半寬（z）。 */
+  /** The outer loop's semi-width, along z. */
   b: M(7.6),
-  /** 轉角半徑。小於半寬 —— 等於半寬的話四個角就連成一圈，那又變回橢圓了。 */
+  /** Bend radius. Smaller than the semi-width; equal to it, the four bends join into one curve and it is an ellipse again. */
   r: M(4.4),
-  /** 兩圈之間的距離。 */
+  /** The distance between the two lines. */
   lane: M(1.2),
   lanes: [
     chain(roundedRectOutline(0, M(8.0), M(10.0), M(7.6), M(4.4))),
@@ -142,7 +146,7 @@ export const TRACK = {
 };
 
 const massing: CivicVolume[] = [
-  // ── 教室樓（三層）。x [−11, 11]、z [−17, −8] ────────────────
+  // ── Classroom block, three storeys: x [-11, 11], z [-17, -8] ──
   {
     tag: 'main',
     x: 0, z: M(-12.5), w: M(22.0), d: M(9.0), y0: 0, y1: MAIN_TOP,
@@ -152,25 +156,26 @@ const massing: CivicVolume[] = [
     x: 0, z: M(-12.5), w: M(22.6), d: M(9.6), y0: MAIN_TOP, y1: MAIN_ROOF,
   },
 
-  // ── 禮堂／體育館。矮而寬，與教室樓有高低差。 ────────────────
+  // ── Hall / gymnasium: low and wide, differing in height from the classroom block. ──
   {
     tag: 'annex',
     x: M(-6.0), z: M(-5.5), w: M(10.0), d: M(5.0), y0: 0, y1: ANNEX_TOP,
   },
   {
-    // 後緣**不出簷** —— 教室樓的牆就在那條線上，伸出去就埋進牆裡。
-    // （屋簷只能往沒有東西的那幾面伸，消防局的宿舍樓踩過同一個坑。）
+    // **No overhang at the rear**: the classroom block's wall sits on that line and an overhang
+    // would bury into it. Eaves may only overhang the sides with nothing there, the same trap the
+    // fire station's dorm block hit.
     tag: 'annexRoof', part: PART_ROOF,
     x: M(-6.0), z: M(-5.35), w: M(10.6), d: M(5.3), y0: ANNEX_TOP, y1: ANNEX_ROOF,
   },
 
-  // ── 司令台。站上去講話的地方 —— 與地面齊平的話它只是一塊鋪面。 ──
+  // ── The review stand: something to stand on and speak from. Flush with the ground it is only paving. ──
   {
     tag: 'podium',
     x: M(6.0), z: M(-3.2), w: M(6.0), d: M(2.4), y0: 0, y1: PODIUM_DECK,
   },
 
-  // ── 屋頂設備 ──────────────────────────────────────────────
+  // ── Rooftop equipment ─────────────────────────────────────
   ...([-7, 0, 7] as const).map((x): CivicVolume => ({
     tag: 'ac', part: PART_DETAIL,
     x: M(x), z: M(-12.5), w: M(2.0), d: M(1.4), y0: MAIN_ROOF, y1: M(14.8),
@@ -178,13 +183,13 @@ const massing: CivicVolume[] = [
 ];
 
 const decals: CivicDecal[] = [
-  // 前庭：z [−8, −1]。校車與教職員的車停這裡。
+  // Forecourt: z [-8, -1]. School buses and staff cars park here.
   { x: 0, z: M(-4.5), w: M(24.0), d: M(7.0), shade: 0.6 },
-  // 運動場：z [−1, 17]
+  // Field: z [-1, 17]
   { x: 0, z: M(8.0), w: M(24.0), d: M(18.0), shade: 0.0, lawn: true },
 ];
 
-// 兩圈跑道。每一段是一條轉過向的短標線。
+// The two track lines. Each segment is a short rotated marking.
 for (const lane of TRACK.lanes) {
   for (const s of lane) {
     decals.push({
@@ -195,9 +200,10 @@ for (const lane of TRACK.lanes) {
 }
 
 /**
- * 司令台的四根柱。
+ * The review stand's four posts.
  *
- * 頂棚架在柱子上而不是四面牆 —— 四面牆的話那是一間房，不是司令台。
+ * The roof rests on posts rather than four walls; with four walls it is a room, not a review
+ * stand.
  */
 const props: CivicVolume[] = ([
   [3.4, -4.0], [8.6, -4.0], [3.4, -2.4], [8.6, -2.4],
@@ -211,7 +217,7 @@ const overhead: CivicVolume[] = [
     tag: 'podiumRoof',
     x: M(6.0), z: M(-3.2), w: M(6.4), d: M(2.8), y0: PODIUM_EAVE, y1: M(3.7),
   },
-  // 教室樓的大門雨棚。
+  // The classroom block's entrance canopy.
   {
     tag: 'canopy',
     x: M(-3.0), z: M(-7.2), w: M(6.0), d: M(2.2), y0: M(3.2), y1: M(3.6),
@@ -219,21 +225,22 @@ const overhead: CivicVolume[] = [
 ];
 
 /**
- * 共用矮物件。**一律站在跑道圈外** —— 種在跑道上的樹跟種在消防車道上的樹
- * 是同一個笑話。安全的地帶是前庭（z < −1）與運動場的左右兩邊（|x| > 10）。
+ * Shared low props. **All of them stand outside the track loop**: a tree planted on a running
+ * track is the same joke as a tree planted on a fire station's apron. The safe areas are the
+ * forecourt (z < -1) and the field's left and right margins (|x| > 10).
  */
 const fixtures: PropSpec[] = [
-  // ── 前庭的綠化 ──
+  // ── Forecourt greenery ──
   { kind: 'tree', x: M(-10.6), z: M(-2.4), heightM: 6.0, crownRadius: M(1.0) },
   { kind: 'tree', x: M(10.6), z: M(-6.6), heightM: 6.0, crownRadius: M(1.0) },
   { kind: 'tree', x: M(1.2), z: M(-2.2), heightM: 5.0, crownRadius: M(0.8) },
-  // 運動場兩側的行道樹。x = ±11 在外圈（a = 10 m）之外。
+  // Street trees flanking the field. x = +/-11 lies outside the outer loop at a = 10 m.
   { kind: 'tree', x: M(-11.0), z: M(4.0), heightM: 5.6, crownRadius: M(0.7) },
   { kind: 'tree', x: M(-11.0), z: M(12.0), heightM: 5.6, crownRadius: M(0.7) },
   { kind: 'tree', x: M(11.0), z: M(4.0), heightM: 5.6, crownRadius: M(0.7) },
   { kind: 'tree', x: M(11.0), z: M(12.0), heightM: 5.6, crownRadius: M(0.7) },
 
-  // 擋車柱**之後**（z = −0.6）—— 原本在 −1.6，也就是在停車格裡。
+  // **Behind** the bollards, at z = -0.6. At -1.6 it stands inside a parking bay.
   { kind: 'shrub', x: M(-1.4), z: M(-0.6), radius: M(0.6) },
   { kind: 'shrub', x: M(-3.4), z: M(-0.6), radius: M(0.6) },
   { kind: 'hedge', x: 0, z: M(16.9), axis: 'z', length: M(14.0), depth: M(0.6), heightM: 1.1 },
@@ -242,7 +249,7 @@ const fixtures: PropSpec[] = [
   { kind: 'flowerBed', x: M(0.6), z: M(-8.6), radius: M(0.6) },
   { kind: 'topiary', x: M(-3.0), z: M(-8.6), radius: M(0.6) },
 
-  // ── 街道家具 ──
+  // ── Street furniture ──
   { kind: 'lamp', x: M(-11.2), z: M(-3.0), heightM: 4.5 },
   { kind: 'lamp', x: M(11.2), z: M(-3.0), heightM: 4.5 },
   { kind: 'lamp', x: M(-11.2), z: M(8.0), heightM: 4.5 },
@@ -253,8 +260,8 @@ const fixtures: PropSpec[] = [
   { kind: 'flagpole', x: M(10.4), z: M(-1.8), axis: 'z' },
   { kind: 'signPost', x: M(-9.0), z: M(-1.6), axis: 'z' },
   { kind: 'bin', x: M(2.6), z: M(-1.6), radius: M(0.26) },
-  // 校舍**之外**（x > 1、z ∈ [−8, −3] 那塊空地）—— 原本擺在 (−8, −9.2)，
-  // 而那個位置在教室樓的牆裡面。
+  // **Outside** the school building, on the open strip at x > 1, z in [-8, -3]. At (-8, -9.2) it
+  // sits inside the classroom block's wall.
   { kind: 'bikeRack', x: M(10.4), z: M(-5.4), axis: 'z' },
   { kind: 'bikeRack', x: M(10.4), z: M(-6.1), axis: 'z' },
   { kind: 'mailbox', x: M(-10.2), z: M(-9.4) },
@@ -264,24 +271,25 @@ const fixtures: PropSpec[] = [
 ];
 
 /**
- * 校車沿著路邊停 —— 與小學同一個理由：7.2 m 的車橫著停會插進校舍。
+ * School buses park along the kerb, for the same reason as at the primary school: a 7.2 m bus
+ * parked across enters the building.
  *
- * 停在前庭右半（x > −1）：左半被禮堂佔住了。
+ * They use the forecourt's right half (x > -1); the left half is taken by the hall.
  */
 const vehicles: CivicVehicle[] = [
   { kind: 'bus', x: M(5.5), z: M(-6.5) },
-  // z = −2.25：車格夾在翼樓的前牆（z = −3.0）與擋車柱（z = −1.4）之間的
-  // 1.6 m 裡，而車身有 1.32 m —— 這條縫只放得下這一個 z。原本停在 −1.8，
-  // 整排車橫跨擋車柱與門口的灌木。
+  // z = -2.25: the bays fit in the 1.6 m between the wing's front wall at z = -3.0 and the
+  // bollards at z = -1.4, and a car body is 1.32 m, so this gap holds exactly this one z. At -1.8
+  // the whole row straddles the bollards and the shrubs by the entrance.
   { kind: 'car', x: M(-6.0), z: M(-2.25) },
   { kind: 'van', x: M(-2.0), z: M(-2.25) },
 ];
 
 /**
- * `aSeed`。
+ * `aSeed`.
  *
- * `.x` = 0.24 給出 0.2392 格 = 2.87 m 的樓高。13.6 m 的教室樓在 3.87 m 的
- * 門廳之上還有 3.4 層的窗格 —— 讀起來是三層樓加屋突。
+ * `.x` = 0.24 gives 0.2392 cells = 2.87 m per storey. A 13.6 m classroom block carries 3.4
+ * storeys of window panes above a 3.87 m lobby, reading as three floors plus a roof structure.
  */
 const SEED = [0.24, 0.47, 0.58] as const;
 
