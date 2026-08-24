@@ -6,10 +6,12 @@ import { ROOF_PITCH_FRAC } from './metrics';
 import type { Rng } from './rng';
 
 /**
- * 屋頂形式。與原型分開挑 —— 「L 形 + 山牆」與「L 形 + 平頂女兒牆」是兩個不同的
- * 變體，這是在不增加原型數的前提下多一倍面貌最便宜的做法。
+ * Roof forms, chosen separately from the prototype: "an L with a gable" and "an L with a flat
+ * parapet" are two different variants, and this is the cheapest way to double the number of faces
+ * without adding prototypes.
  *
- * 這裡只有形式，**沒有設備** —— 水塔、空調、煙囪是 2C-2 的詞彙。
+ * Forms only, **no equipment**: water tanks, air handling units and stacks belong to another
+ * vocabulary.
  */
 export type RoofForm =
   | 'flat' | 'parapet' | 'gable' | 'hip' | 'shed' | 'sawtooth' | 'crown';
@@ -36,11 +38,12 @@ export function roofFormsFor(zoneType: number, level: number): RoofForm[] {
 }
 
 /**
- * 這個變體的屋頂形式。
+ * This variant's roof form.
  *
- * 用**分層**（`floor(vi × 形式數 / 變體數)`）而不是餘數：原型用的是餘數，
- * 兩者都用餘數的話週期會對齊，「原型 A 永遠配屋頂 X」—— 兩個維度就只剩一個。
- * 快週期配慢週期才枚舉得到乘積。
+ * It **layers** (`floor(vi * form count / variant count)`) rather than taking a remainder. The
+ * prototype uses a remainder, and with both on remainders the periods align and prototype A always
+ * pairs with roof X, collapsing two dimensions into one. A fast period against a slow one
+ * enumerates the product.
  */
 export function roofFor(zoneType: number, level: number, variantIndex: number): RoofForm {
   const forms = roofFormsFor(zoneType, level);
@@ -51,10 +54,10 @@ export function roofFor(zoneType: number, level: number, variantIndex: number): 
 const roof = (v: Omit<Volume, 'part'>): Volume => ({ ...v, part: PART_ROOF });
 
 /**
- * 屋頂的量體。
+ * The roof's masses.
  *
- * 斜屋頂一律壓在**半層樓**以內：高過半層樓的話建築的總高度就不是「樓層數 ×
- * 樓高」了，等級階梯會跟著漂掉。
+ * A pitched roof is always kept within **half a storey**: any higher and a building's total height
+ * stops being floor count times storey height, and the level ladder drifts with it.
  */
 export function buildRoof(
   form: RoofForm, top: Volume, dims: Dimensions, rng: Rng,
@@ -67,17 +70,18 @@ export function buildRoof(
       return [];
 
     case 'parapet': {
-      // 圓塔上不能圍四塊方牆 —— 那是一個方框套著圓柱。改成一圈略微外挑的
-      // 簷板，也正是原本 makeComHighV2 的圓盤 cap。1.06 倍配上圓塔本身的
-      // 0.92 直徑係數，外緣仍落在基地短邊之內。
+      // Four rectangular walls cannot enclose a round tower: that is a rectangular frame around a
+      // cylinder. A slightly projecting eave replaces them, which is also the disc cap from the
+      // earlier makeComHighV2. At 1.06 against the round tower's own 0.92 diameter factor, the
+      // outer edge still falls within the footprint's shorter side.
       if (top.shape === 'cylinder') {
         return [roof({
           ...base, w: top.w * 1.06, d: top.d * 1.06,
           y1: top.y1 + dims.floorHeight * 0.12, shape: 'cylinder',
         })];
       }
-      // 女兒牆：沿著頂面四周一圈矮牆。用四塊而不是「大盒減小盒」——
-      // 中間那一塊會與樓層頂面重疊。
+      // A parapet: a low wall around the top surface. Four pieces rather than a large box minus a
+      // small one, since the middle piece would overlap the storey's top face.
       const t = Math.min(top.w, top.d) * 0.06;
       const h = dims.floorHeight * 0.22;
       const innerD = top.d - 2 * t;
@@ -90,8 +94,8 @@ export function buildRoof(
     }
 
     case 'crown':
-      // 頂部收分：再收一段細的。形狀跟著塔身走 —— 圓塔頂上放一塊方積木
-      // 就白費了整根圓柱。
+      // A crown: one more narrower section on top. Its shape follows the shaft, since a
+      // rectangular block on a round tower wastes the whole cylinder.
       return [roof({
         ...base, w: top.w * 0.62, d: top.d * 0.62,
         y1: top.y1 + dims.floorHeight * 0.5, shape: top.shape,

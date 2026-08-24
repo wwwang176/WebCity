@@ -6,10 +6,10 @@ import {
 } from './composers';
 
 /**
- * 一個量體原型 = 組合器 + 參數 + 最低等級。
+ * A massing prototype is a composer plus parameters plus a minimum level.
  *
- * `minLevel` 是等級外型差異的全部機制：L1 只拿得到簡單的，L3 全開。不必另外
- * 為每個等級寫一套形狀。
+ * `minLevel` is the whole mechanism behind level-to-level differences in appearance: L1 reaches
+ * only the simple ones and L3 reaches everything. No separate set of shapes per level is needed.
  */
 export interface Prototype {
   name: string;
@@ -20,23 +20,26 @@ export interface Prototype {
 const p = (name: string, minLevel: number, compose: Composer): Prototype =>
   ({ name, minLevel, compose });
 
-/** 塔身置中的裙樓塔（對稱）。 */
+/** A podium tower with the tower centred, and therefore symmetric. */
 const PODIUM = podiumTower(2, 0.66, 0);
 /**
- * 塔身推到裙樓邊緣（不對稱）。
+ * The tower pushed to the podium's edge, and therefore asymmetric.
  *
- * 高密度分區在 L1 只有裙樓塔與板樓可用，兩個都是對稱的 —— 旋轉那四倍的變化
- * 就全白給了。所以這一個必須在 L1 就開放，它是那一格唯一的不對稱來源。
+ * At L1 the high-density zones reach only the podium tower and the slab, both symmetric, and the
+ * four rotations give nothing. So this one has to be available at L1: it is that bucket's only
+ * source of asymmetry.
  */
 const OFFSET_TOWER = podiumTower(2, 0.6, 0.9);
 
 /**
- * 各分區的原型。**不對稱的排前面** —— 這不是風格，是算術：
+ * The prototypes per zone. **Asymmetric ones come first** — not a stylistic preference but
+ * arithmetic:
  *
- * `prototypeFor` 用 `variantIndex % 可用原型數` 輪流取，而變體數 8 通常不是
- * 原型數的倍數。繞回來的那幾個一定落在清單**開頭**，所以開頭放什麼決定了
- * 不對稱變體的實際比例。對稱的排前面時，住宅高 L2（六個原型）只湊得出 3/8，
- * 低於 4/8 的驗收線。
+ * `prototypeFor` cycles with `variantIndex % available prototype count`, and the variant count of
+ * 8 is usually not a multiple of the prototype count. The ones that wrap always land at the
+ * **start** of the list, so what sits there decides the actual share of asymmetric variants. With
+ * symmetric ones first, high-density residential L2 (six prototypes) reaches only 3/8, below the
+ * 4/8 acceptance line.
  */
 const TABLE: Record<number, Prototype[]> = {
   [ZoneType.RESIDENTIAL_LOW]: [
@@ -61,12 +64,13 @@ const TABLE: Record<number, Prototype[]> = {
     p('courtyard', 3, notch(0.34)),
   ],
   /**
-   * 圓塔排最後，而 `L-tower` 被提到 `podium` 前面 —— 兩件事是綁在一起的。
+   * The round tower comes last and `L-tower` sits ahead of `podium`; the two are tied together.
    *
-   * L3 原本五個原型（8 % 5 = 3，前三個各兩個變體），不對稱的 offsetTower 與
-   * L-tower 剛好各拿兩個 = 4/8，壓在驗收線上。加上圓塔變成六個（8 % 6 = 2，
-   * 只有前兩個拿兩個），照原順序 L-tower 會掉到一個，不對稱比例跌到 3/8。
-   * 把兩個不對稱的原型並排在最前面才守得住。
+   * With five prototypes at L3 (8 % 5 = 3, so the first three take two variants each), the
+   * asymmetric offsetTower and L-tower take two each for 4/8, exactly on the acceptance line.
+   * Adding the round tower makes six (8 % 6 = 2, so only the first two take two), and in the
+   * original order L-tower drops to one and the asymmetric share falls to 3/8. Only placing both
+   * asymmetric prototypes at the very front holds the line.
    */
   [ZoneType.COMMERCIAL_HIGH]: [
     p('offsetTower', 1, OFFSET_TOWER),
@@ -74,18 +78,19 @@ const TABLE: Record<number, Prototype[]> = {
     p('podium', 1, PODIUM),
     p('setback', 2, setback(3)),
     p('twin', 3, twin(0.22)),
-    // 完全旋轉對稱，所以放在末位：它拿到的是餘數分完之後剩下的一個變體。
-    // 圓塔是地標，八棟裡有一根就夠了。
+    // Fully rotationally symmetric, so it goes last and takes the one variant left after the
+    // remainder is distributed. A round tower is a landmark, and one in eight is enough.
     p('roundTower', 3, roundTower(0.92)),
   ],
   /**
-   * 工業的等級階梯不表現在高度上（現代廠房都是單層挑高、鋪滿基地，見
-   * `TARGET_HEIGHTS_M`），所以少了設備，工業就只是一個比較矮的商業盒子。
+   * Industry's level ladder does not show in height — modern plants are single-storey with high
+   * ceilings, covering the plot, see `TARGET_HEIGHTS_M` — so without equipment, industry is just a
+   * shorter commercial box.
    *
-   * 帶設備的三個排最前面 —— 理由與「不對稱排前面」相同，但這裡的門檻更緊：
-   * 驗收要 4/8 個變體看得見煙囪或筒倉，而 8 除以原型數的餘數一律落在
-   * 清單開頭。L3 有七個原型，只有第一個拿得到兩個變體，所以帶設備的
-   * 三個必須是前三個。
+   * The three with equipment come first, for the same reason asymmetric ones do, but the bar here
+   * is tighter: acceptance requires 4/8 variants to show a stack or a silo, and the remainder of 8
+   * over the prototype count always lands at the start of the list. L3 has seven prototypes and
+   * only the first takes two variants, so the three with equipment have to be the first three.
    */
   [ZoneType.INDUSTRIAL]: [
     p('stack', 1, shedWithStack(0.18, 0.62, 'cylinder')),
@@ -108,15 +113,15 @@ const TABLE: Record<number, Prototype[]> = {
 
 const FALLBACK: Prototype = p('single', 1, d => single(d));
 
-/** 這個 (分區, 等級) 可用的原型。 */
+/** The prototypes available for this (zone, level). */
 export function prototypesFor(zoneType: number, level: number): Prototype[] {
   const lv = Math.max(1, Math.min(3, level));
   return (TABLE[zoneType] ?? []).filter(x => x.minLevel <= lv);
 }
 
 /**
- * 這個變體用哪一個原型。依序輪流取，所以每個可用原型至少出現一次 ——
- * 隨機取會讓某些原型在某些桶裡從來不出現。
+ * Which prototype this variant uses. It cycles in order, so every available prototype appears at
+ * least once; picking at random leaves some prototypes never appearing in some buckets.
  */
 export function prototypeFor(
   zoneType: number, level: number, variantIndex: number,

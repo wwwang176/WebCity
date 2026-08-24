@@ -1,19 +1,21 @@
 import { PART_WALL } from '../parts';
 
 /**
- * 量體 —— 生成器的中間表示。
+ * A mass: the generators' intermediate representation.
  *
- * 生成器不直接產出 `BufferGeometry`，而是先產出一串盒子的座標。多這一層是為了
- * 讓「不對稱、重疊、越界」能用算術精確驗證：階段 2B 的 BUG-222 正是因為只能量
- * 合併後的包圍盒，而漏掉了「離格心最大距離」與「包圍盒寬度」的差別。
+ * The generators produce a run of box coordinates rather than a `BufferGeometry` directly. The
+ * extra layer exists so that asymmetry, overlap and overrun can be verified exactly by
+ * arithmetic: BUG-222 happened because only the merged bounding box could be measured, missing
+ * the difference between "maximum distance from the cell centre" and "bounding box width".
  *
- * 座標單位是格（1 格 = 12 m），y0 = 0 是地面，格心是 (0, 0)。
+ * Coordinates are in cells (1 cell = 12 m), y0 = 0 is the ground, and the cell centre is (0, 0).
  */
 
 /**
- * `cylinder` 是唯一不由 `frustum` 產生的形狀 —— 煙囪與筒倉是圓的，而八邊形
- * 在等角視角下就已經讀得出圓。它仍然填滿宣告的 w × d 盒子（八邊形有頂點落在
- * ±x 與 ±z 上），所以 `maxAbsOf`、`overlapOf`、`rasterise` 不必知道它是圓的。
+ * `cylinder` is the one shape not produced by `frustum`: stacks and silos are round, and an
+ * octagon already reads as round in an isometric view. It still fills the declared w x d box,
+ * since an octagon has vertices on +/-x and +/-z, so `maxAbsOf`, `overlapOf` and `rasterise` do
+ * not have to know it is round.
  */
 export type VolumeShape =
   'box' | 'gable' | 'hip' | 'shed' | 'sawtooth'
@@ -21,24 +23,24 @@ export type VolumeShape =
   | 'tub' | 'basin';
 
 export interface Volume {
-  /** 中心 */
+  /** Centre. */
   x: number;
   z: number;
-  /** 寬深 */
+  /** Width and depth. */
   w: number;
   d: number;
-  /** 底與頂 */
+  /** Bottom and top. */
   y0: number;
   y1: number;
-  /** 畫成什麼。預設是盒子。 */
+  /** What it is drawn as. A box by default. */
   shape?: VolumeShape;
-  /** 零件標籤，預設 `PART_WALL`。 */
+  /** The part tag, `PART_WALL` by default. */
   part?: number;
-  /** 斜面朝向：0 = +z、1 = +x、2 = −z、3 = −x。只有斜屋頂用得到。 */
+  /** Which way the slope faces: 0 = +z, 1 = +x, 2 = -z, 3 = -x. Only pitched roofs use it. */
   facing?: 0 | 1 | 2 | 3;
 }
 
-/** 輪廓光柵的邊長。16 夠細到分得出偏屋，又夠粗到不受浮點誤差影響。 */
+/** The silhouette raster's edge length. 16 is fine enough to separate a wing and coarse enough to be immune to floating-point error. */
 export const RASTER = 16;
 
 export const partOf = (v: Volume): number => v.part ?? PART_WALL;
@@ -49,10 +51,11 @@ const z0 = (v: Volume) => v.z - v.d / 2;
 const z1 = (v: Volume) => v.z + v.d / 2;
 
 /**
- * 離格心的最大距離。
+ * The maximum distance from the cell centre.
  *
- * 用它而不是包圍盒寬度：非置中的量體會單邊外凸，而寬度看不出來。行人的門節點
- * 在 `HALF_ENVELOPE` 外側，所以越過它就是行人穿牆（BUG-221/222）。
+ * Used instead of a bounding box width: an off-centre mass bulges on one side without its width
+ * showing it. Pedestrian door nodes sit outside `HALF_ENVELOPE`, so crossing it means pedestrians
+ * walk through walls (BUG-221/222).
  */
 export function maxAbsOf(vs: readonly Volume[]): number {
   let m = 0;
@@ -62,7 +65,7 @@ export function maxAbsOf(vs: readonly Volume[]): number {
   return m;
 }
 
-/** 最高點。 */
+/** The highest point. */
 export function topOf(vs: readonly Volume[]): number {
   let m = 0;
   for (const v of vs) m = Math.max(m, v.y1);
@@ -70,10 +73,10 @@ export function topOf(vs: readonly Volume[]): number {
 }
 
 /**
- * 兩個量體的交集體積。接觸（共面）回傳 0。
+ * Two masses' intersection volume. Touching, that is coplanar, returns 0.
  *
- * 重疊的量體會產生看不見的內部面 —— 白吃三角形，而且畫面上完全看不出來，
- * 所以只能用算術擋。
+ * Overlapping masses create invisible interior faces: triangles spent for nothing, showing up
+ * nowhere on screen, so arithmetic is the only thing that can catch them.
  */
 export function overlapOf(a: Volume, b: Volume): number {
   const ox = Math.min(x1(a), x1(b)) - Math.max(x0(a), x0(b));
@@ -83,11 +86,13 @@ export function overlapOf(a: Volume, b: Volume): number {
 }
 
 /**
- * 體積重心偏離包圍盒中心的距離，除以包圍盒的邊長。0 就是完全對稱。
+ * The volume centroid's distance from the bounding box's centre, divided by the box's edge length.
+ * 0 is perfectly symmetric.
  *
- * 這是「旋轉有沒有意義」的指標，而不是用光柵差異：一個 7.5 × 8.2 的盒子轉
- * 90° 之後光柵差異可以到 15%，但它看起來還是同一個盒子。重心看得出真正的
- * 不對稱（L 形、偏屋、偏置塔），看不出「只是寬深不同」。
+ * This is the measure of whether rotation means anything, used instead of a raster difference: a
+ * 7.5 x 8.2 box turned 90 degrees can show a 15% raster difference and still look like the same
+ * box. The centroid sees real asymmetry — an L, a wing, an offset tower — and does not see
+ * "merely a different width and depth".
  */
 export function centroidOffset(vs: readonly Volume[]): number {
   let mass = 0;
@@ -115,10 +120,10 @@ export function centroidOffset(vs: readonly Volume[]): number {
 }
 
 /**
- * 把量體光柵化成 `RASTER × RASTER` 的高度圖，涵蓋整個格子 [−0.5, 0.5]。
+ * Rasterises the masses into a `RASTER x RASTER` height map covering the whole cell, [-0.5, 0.5].
  *
- * 格值是該處的最高點，沒有量體的格是 0。這讓「兩個形狀像不像」變成一個算得
- * 出來的數字，而不是憑感覺。
+ * Each cell holds the highest point there, and cells with no mass hold 0. This turns "do these two
+ * shapes look alike" into a computable number rather than a judgement call.
  */
 export function rasterise(vs: readonly Volume[]): Float32Array {
   const g = new Float32Array(RASTER * RASTER);
@@ -136,7 +141,7 @@ export function rasterise(vs: readonly Volume[]): Float32Array {
   return g;
 }
 
-/** 高度圖轉四分之一圈。 */
+/** Rotates a height map by a quarter turn. */
 export function rotate90(grid: Float32Array): Float32Array {
   const out = new Float32Array(grid.length);
   for (let r = 0; r < RASTER; r++) {
@@ -148,13 +153,15 @@ export function rotate90(grid: Float32Array): Float32Array {
 }
 
 /**
- * 兩個高度圖的差異率：高度差超過 `tolerance` 的格子，佔**兩者聯集**的比例。
+ * Two height maps' difference ratio: the share of cells differing in height by more than
+ * `tolerance`, over **the union of the two**.
  *
- * 分母是聯集而不是整張圖 —— 用整張圖的話，形狀愈小愈容易被判定成相同：
- * L 形的缺口是建築本身的 20%，但建築只佔格子的一半，所以稀釋成 10%，
- * 剛好卡在門檻上。聯集當分母讓這個指標與尺度無關。
+ * The denominator is the union rather than the whole map. Over the whole map, the smaller a shape
+ * the more easily it is judged identical: an L's notch is 20% of the building itself, but the
+ * building covers only half the cell, so it dilutes to 10% and lands right on the threshold. The
+ * union as denominator makes the measure scale-independent.
  *
- * `tolerance` 通常取半層樓 —— 矮了十公分不算「不一樣的形狀」。
+ * `tolerance` is usually half a storey: ten centimetres lower is not a different shape.
  */
 export function differenceRatio(
   a: Float32Array, b: Float32Array, tolerance: number,

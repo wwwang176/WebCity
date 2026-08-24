@@ -11,10 +11,11 @@ import { topOf, type Volume } from './volume';
 export { VARIANT_COUNT };
 
 /**
- * 這個變體的量體（不含幾何）。
+ * This variant's masses, without geometry.
  *
- * `propBands` 與測試都吃這一個 —— 「建築牆面在哪」「輪廓對不對稱」是算術問題，
- * 不必先把八個變體的幾何都建出來。
+ * `propBands` and the tests both read this: "where is the building's wall" and "is the silhouette
+ * asymmetric" are arithmetic questions and do not require building all eight variants' geometry
+ * first.
  */
 export function volumesFor(
   zoneType: number, density: Density, level: number, variantIndex: number,
@@ -22,15 +23,16 @@ export function volumesFor(
   const dims = dimensionsFor(zoneType, density, level, variantIndex);
   if (!dims) return [];
 
-  // 量體與屋頂各用一條亂數流。屋頂**形式**是由 variantIndex 分層決定的，
-  // 不吃亂數，所以共用不會鎖死形式 —— 會鎖死的是屋脊朝向：裙樓塔的偏置方向
-  // 與山牆的朝向會完全相關。分開是便宜的保險，不是必要條件。
+  // Body and roof take separate random streams. The roof **form** is layered by variantIndex and
+  // draws no randomness, so sharing a stream would not lock the form; what it would lock is the
+  // ridge orientation, correlating a podium tower's offset direction with a gable's facing.
+  // Separating them is cheap insurance rather than a requirement.
   const bodyRng = variantRng(zoneType, density, level, variantIndex);
   const roofRng = variantRng(zoneType, density, level, variantIndex + VARIANT_COUNT);
 
   const body = prototypeFor(zoneType, level, variantIndex).compose(dims, bodyRng);
-  // 屋頂蓋在最高的**牆**上，不是最高的量體上 —— 工業的煙囪比廠房高，
-  // 而一頂鋸齒天窗蓋在煙囪上既荒謬又會把煙囪本身埋掉。
+  // The roof caps the tallest **wall**, not the tallest mass: an industrial stack is taller than
+  // its shed, and a sawtooth roof on a stack is both absurd and buries the stack itself.
   const walls = body.filter(v => (v.part ?? PART_WALL) === PART_WALL);
   const top = (walls.length > 0 ? walls : body).reduce((a, b) => (b.y1 > a.y1 ? b : a));
   const roof = buildRoof(roofFor(zoneType, level, variantIndex), top, dims, roofRng);
@@ -38,10 +40,12 @@ export function volumesFor(
 }
 
 /**
- * 這個 (分區, 密度, 等級) 的八個量體變體。沒有建築時回傳空陣列。
+ * The eight massing variants for this (zone, density, level). Returns an empty array when there
+ * are no buildings.
  *
- * 幾何直接產出**最終尺寸** —— 沒有高度縮放也沒有基地縮放。那正是取消實例縮放的
- * 前提：BUG-219（樹跟著房子長高）與 BUG-226（雨遮貼假想牆）都是縮放的產物。
+ * The geometry is produced at **final size**, with no height scaling and no footprint scaling.
+ * That is the precondition for removing instance scaling: BUG-219, where trees grew with their
+ * house, and BUG-226, where a canopy clung to an imagined wall, are both products of scaling.
  */
 export function getMassingVariants(
   zoneType: number, density: Density, level: number,
@@ -54,14 +58,14 @@ export function getMassingVariants(
   return out;
 }
 
-/** 這個變體的高度（格）。 */
+/** This variant's height, in cells. */
 export function heightOf(
   zoneType: number, density: Density, level: number, variantIndex: number,
 ): number {
   return topOf(volumesFor(zoneType, density, level, variantIndex));
 }
 
-/** 這個變體的樓高（格）。立面 shader 的窗戶橫列要對齊它。 */
+/** This variant's storey height, in cells. The facade shader's window rows align to it. */
 export function floorHeightOf(
   zoneType: number, density: Density, level: number, variantIndex: number,
 ): number {
@@ -70,13 +74,14 @@ export function floorHeightOf(
 }
 
 /**
- * 這個變體的**牆體本身**是圓的嗎。
+ * Whether this variant's **body itself** is round.
  *
- * 判斷的是零件標籤而不是「有沒有圓柱」—— 工業的煙囪與筒倉也是圓柱，但它們
- * 是 `PART_DETAIL`，廠房本體仍然是方的。少了這個區分，整個工業區都會被當成
- * 圓形建築。
+ * It tests part tags rather than "is there a cylinder": industrial stacks and silos are cylinders
+ * too, but they are `PART_DETAIL` while the shed itself is rectangular. Without the distinction,
+ * the whole industrial zone would count as round-bodied.
  *
- * 懸挑層吃這一個：雨遮與招牌都是平板，貼在圓弧牆上會穿出去或懸空。
+ * The overhead layer reads this: canopies and signage are flat panels, and against a curved wall
+ * they either pierce it or float.
  */
 export function isRoundBodied(
   zoneType: number, density: Density, level: number, variantIndex: number,
