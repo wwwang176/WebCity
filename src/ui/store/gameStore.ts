@@ -38,15 +38,16 @@ const [activeDistrictId, setActiveDistrictId] = createSignal<string | null>(null
 const [tick, setTick] = createSignal(0);
 let lastTickTime = 0;
 const TICK_INTERVAL_MS = 160; // ~6 updates/sec
-/** 同一天之內，最後那一筆最多多久更新一次。 */
+/** How often the last entry may be updated within one day. */
 let lastChartSampleTime = 0;
 
 // --- Chart history ---
 //
-// 一天一筆，不是一幀一筆。原本是每次 UI 更新就 append，於是六十個點一秒就跑完，
-// 而那個速度只反映了 FPS 跟遊戲速度，不是玩家看得懂的時間。
+// One entry per day rather than per frame. Appending on every UI update runs through sixty points in
+// a second, a rate reflecting the frame rate and the game speed rather than any time the player can
+// read.
 const [chartHistory, setChartHistory] = createSignal<ChartHistory>(emptyChartHistory());
-/** 上一次記錄的是哪一天。同一天之內只覆蓋最後一筆。 */
+/** Which day was recorded last. Within one day, only the last entry is overwritten. */
 let lastChartDay = -1;
 
 // --- Export read-only signals for components ---
@@ -73,10 +74,11 @@ export function getGame(): Game {
 export function initGameStore(game: Game): void {
   gameRef = game;
 
-  // 圖表歷史是模組層級的，而載入存檔與開新遊戲**不會重新載入頁面** —— `main.ts`
-  // 直接 `new Game` 再呼叫這裡。不清掉的話新城市會繼承上一座城市的人口與資金曲線，
-  // 而且 `lastChartDay` 停在舊的天數:新局從第 0 天開始，那一筆會接在第 47 天後面，
-  // 時間軸就不再是遞增的（提示會說最新的那一根是「Day 0」）。
+  // The chart history is module-level while loading a save and starting a new game **do not reload
+  // the page**: `main.ts` constructs a `new Game` and calls straight in here. Uncleared, the new city
+  // inherits the previous city's population and funds curves, and `lastChartDay` holds the old day
+  // number: a new game starts at day 0 and that entry follows day 47, so the time axis stops
+  // increasing and the hint labels the newest bar Day 0.
   setChartHistory(emptyChartHistory());
   lastChartDay = -1;
 
@@ -132,7 +134,8 @@ export function initGameStore(game: Game): void {
         });
       }
 
-      // 圖表:一天一筆。同一天之內只更新最後那一筆，所以進行中的那一天也是活的。
+      // Charts take one entry per day. Within a day only the last entry is updated, so the day in
+      // progress is live too.
       const day = clock.getDay();
       const sample = {
         pop,
@@ -145,7 +148,8 @@ export function initGameStore(game: Game): void {
         lastChartDay = day;
         setChartHistory(h => appendChartDay(h, day, sample));
       } else {
-        // 同一天內每秒最多改六次。每一幀都重建一次三百多天的陣列是白花的。
+        // At most six updates a second within one day. Rebuilding an array of three hundred-odd days
+        // every frame is wasted work.
         const now = performance.now();
         if (now - lastChartSampleTime >= TICK_INTERVAL_MS) {
           lastChartSampleTime = now;

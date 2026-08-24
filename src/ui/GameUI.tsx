@@ -59,8 +59,9 @@ function LeftPanelStack() {
 function GameUIRoot() {
   const [openModal, setOpenModal] = createSignal<string | null>(null);
 
-  // 設定畫面不走面板橋（它自己有一個模組層級的 signal），所以 `status()` 另外問它。
-  // 少了這一條，玩家開著設定而 agent 以為他在看地圖。
+  // The settings screen does not go through the panel bridge — it has a module-level signal of its
+  // own — so `status()` asks it separately. Without this, the player has settings open while the agent
+  // believes they are looking at the map.
   registerSettingsProbe(() => settingsOpen());
   onCleanup(() => registerSettingsProbe(null));
 
@@ -70,7 +71,8 @@ function GameUIRoot() {
 
   const closeModal = () => setOpenModal(null);
 
-  // 面板開關是 Solid 內部的一個 signal，外面（AgentApi）拿不到。反過來註冊出去。
+  // The panel's open state is a signal inside Solid that nothing outside, AgentApi included, can
+  // reach, so it is registered outward instead.
   registerPanelBridge({
     get: () => openModal() as PanelId | null,
     set: (id) => setOpenModal(id),
@@ -102,20 +104,20 @@ function GameUIRoot() {
 }
 
 /**
- * 上一局的 UI。
+ * The previous game's UI.
  *
- * `render()` 回傳的是**解除函式**，不是可有可無的東西 —— 丟掉它，那個 Solid root
- * 的訂閱與 effect 會一直活著。只把 DOM `remove()` 掉不夠。
+ * `render()` returns a **dispose function**, and it is not optional: discard it and that Solid root's
+ * subscriptions and effects stay alive. Calling `remove()` on the DOM is not enough.
  */
 let disposePrevious: (() => void) | null = null;
 let mountedRoot: HTMLElement | null = null;
 
 /**
- * 拆掉上一局的 UI。
+ * Tears down the previous game's UI.
  *
- * 換一局遊戲時，`createGameUI` 會做一個新的 `#game-ui`;沒有人拆舊的話，兩份會
- * **疊在一起** —— 上面那份是舊的，顯示著上一局的人口與市庫，而底下的畫布畫的是
- * 新的城市。玩家看到的數字跟地圖對不起來。
+ * Starting another game, `createGameUI` builds a fresh `#game-ui`; with nothing tearing the old one
+ * down, the two **stack**: the old one on top, showing the previous game's population and treasury,
+ * over a canvas drawing the new city. The numbers the player sees do not match the map.
  */
 export function removeGameUi(): void {
   disposePrevious?.();
@@ -125,8 +127,8 @@ export function removeGameUi(): void {
 }
 
 export function createGameUI(game: Game): HTMLElement {
-  // 自己收拾自己的前一份。放在這裡而不是呼叫端 —— 呼叫端每多一個，就多一次
-  // 「忘記拆」的機會，而忘記的徵兆是兩份 UI 疊著，不是錯誤訊息。
+  // It clears its own predecessor. Here rather than at the callers: each additional caller is another
+  // chance to forget, and the symptom of forgetting is two stacked UIs rather than an error.
   removeGameUi();
   initGameStore(game);
   const container = document.createElement('div');

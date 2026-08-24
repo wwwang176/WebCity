@@ -26,21 +26,23 @@ const TYPE_ICONS: Record<string, string> = {
   [TransportType.FERRY]: '\u26F4',
 };
 
-/** `transitRows` 的一列，加上這張表要用的名稱與顏色。 */
+/** One `transitRows` row plus the label and colour this table needs. */
 type SystemRow = TransitSystemRow & { label: string; color: string; icon: string };
 
-/** 載重的顏色。三段的分界不是隨手挑的，見 `routeLoadStatus`。 */
+/** The load factor's colours. The band boundaries are not arbitrary; see `routeLoadStatus`. */
 const USAGE_COLOR: Record<SystemStatus, string> = {
-  // 一條路線都沒有 —— 不是好也不是壞，用中性色。綠色會讓人以為這個系統運作良好。
+  // No routes at all: neither good nor bad, so a neutral colour. Green reads as the system working
+  // well.
   none: UI_COLORS.NEUTRAL,
   comfortable: UI_COLORS.STATUS_GOOD,
   crowded: UI_COLORS.STATUS_WARN,
   overloaded: UI_COLORS.STATUS_BAD,
-  // 沒指望跟超載同一個紅 —— 差別在文案，不在顏色。多一種紅只會讓人分不出來。
+  // Hopeless shares overloaded's red: the difference is in the wording, not the colour. A second red
+  // only becomes indistinguishable.
   hopeless: UI_COLORS.STATUS_BAD,
 };
 
-/** 滑過去才看得到的說明 —— 顏色告訴你有問題，這句告訴你發生了什麼事。 */
+/** The hint shown on hover. The colour says there is a problem; this says what happened. */
 const USAGE_HINT: Record<SystemStatus, string> = {
   none: 'No routes on this system yet.',
   comfortable: 'Everyone gets a seat on the next vehicle.',
@@ -74,8 +76,9 @@ export function TrafficPage(props: { onClose?: () => void }) {
   });
 
   /**
-   * 通勤統計。與地圖上的 Commute 圖層讀同一份 —— 兩邊各算一次的話，地圖紅通通
-   * 而面板說一切良好，玩家不知道該信哪一個。
+   * The commute statistics, read from the same source as the map's Commute overlay: computed
+   * separately, the map turns red while the panel reports everything fine and the player has no way to
+   * tell which to believe.
    */
   const commute = createMemo(() => {
     gameSignals.tick();
@@ -103,7 +106,8 @@ export function TrafficPage(props: { onClose?: () => void }) {
     const systems = getTransitSystems(state as any);
     let totalCost = 0;
 
-    // 數字全部交給 `transitRows` —— 面板自己算過一次，而且算錯了單位（BUG-342）。
+    // Every number comes from `transitRows`: computed again in the panel, the units came out wrong
+    // (BUG-342).
     const built = buildTransitRows(
       systems.map(({ type, system }) => ({
         type,

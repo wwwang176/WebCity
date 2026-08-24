@@ -4,19 +4,20 @@ import { TransportType, type TransportRoute, type TransportStop } from '../../..
 import { TRANSIT_SERVICE_TICKS_PER_DAY } from '../../../../core/transport/RouteLoad';
 
 /**
- * 面板上那一欄 Usage。
+ * The panel's Usage column.
  *
- * 玩家 12 500 人的存檔回報:同一條公車路線，同一個時刻，三個數字 —— 收合列 100%、
- * 展開列 5 246%、模擬自己的公式 30 853%。兩個錯:
+ * In a 12,500-person save, one bus route at one moment showed three numbers: 100% on the collapsed
+ * row, 5,246% on the expanded row and 30,853% from the simulation's own formula. Two faults:
  *
- * 1. 面板算的容量是 `車輛數 × 座位數`，那是**瞬間**的座位數，卻拿去比一整天的累計
- *    人次。`computeDailyCapacity()` 的說明裡寫的就是這個錯 —— 模擬那邊修好了。
- * 2. 收合列夾在 100%（`Math.min`），而 `formatRouteUsage()` 上面有一整段說明寫著
- *    不要夾:一條 105% 跟一條 400% 的路線要看得出差別，那是玩家決定該加幾台車的
- *    唯一依據。
+ * 1. The panel computed capacity as `vehicles x seats`, an **instantaneous** seat count, and compared
+ *    it against a whole day's accumulated trips. That is the mistake `computeDailyCapacity()`
+ *    documents, fixed in the simulation.
+ * 2. The collapsed row clamped at 100% through `Math.min`, while `formatRouteUsage()` carries a whole
+ *    paragraph saying not to clamp: a route at 105% and one at 400% have to look different, as that
+ *    is the player's only basis for deciding how many vehicles to add.
  */
 
-/** 運能自己那把尺 —— 不是日曆上的一天，見 `TRANSIT_SERVICE_TICKS_PER_DAY`。 */
+/** Capacity's own measure, which is not a calendar day; see `TRANSIT_SERVICE_TICKS_PER_DAY`. */
 const SERVICE_TICKS = TRANSIT_SERVICE_TICKS_PER_DAY;
 
 function stop(x: number, y: number, riders = 0): TransportStop {
@@ -30,7 +31,7 @@ function route(id: number, stops: TransportStop[], vehicles: number): TransportR
   return { id, type: TransportType.BUS, stops, vehicles, operatingCost: 100 };
 }
 
-/** 一條長 100 格的環狀路線:兩站相距 50 格，來回剛好 100。 */
+/** A loop 100 cells long: two stops 50 cells apart, exactly 100 there and back. */
 function loopOf100(riders: number): TransportStop[] {
   return [stop(0, 0, riders), stop(50, 0, riders)];
 }
@@ -51,8 +52,8 @@ function busSystem(routes: TransportRoute[], seats: number, speed: number): Tran
 
 describe('面板的路線載重', () => {
   it('should count how many loops a vehicle makes in a day', () => {
-    // 一台 50 座的車，路線 100 格、車速 2 → 一圈 50 tick。運能是座位數乘上
-    // 「一天跑幾圈」，不是座位數本身。
+    // One 50-seat vehicle on a 100-cell route at speed 2 is 50 ticks per round trip. Capacity is the
+    // seat count times the round trips per day, not the seat count itself.
     const rows = buildTransitRows(
       [busSystem([route(1, loopOf100(0), 1)], 50, 2)]);
 
@@ -61,8 +62,8 @@ describe('面板的路線載重', () => {
   });
 
   it('should not clamp the system row at 100%', () => {
-    // 運能的十倍要搭 —— 玩家要看到的是 1000%，那是「該加十台車」。
-    // 夾在 100% 的話它跟剛好滿載長得一模一樣。
+    // Ten times capacity wanting to ride: the player has to see 1000%, which reads as ten more
+    // vehicles. Clamped at 100% it looks identical to exactly full.
     const perStop = 50 * (SERVICE_TICKS / 50) * 10 / 2;
     const rows = buildTransitRows(
       [busSystem([route(1, loopOf100(perStop), 1)], 50, 2)]);
@@ -72,8 +73,8 @@ describe('面板的路線載重', () => {
   });
 
   it('should judge the system row on the same thresholds as its routes', () => {
-    // 收合列以前用另外寫死的 0.5 / 0.8，跟模擬的 0.8 / 0.9 / 1.5 不是同一組 ——
-    // 於是一條真的在拒載的路線，收合起來看只是「有點滿」。
+    // The collapsed row used its own 0.5 / 0.8 against the simulation's 0.8 / 0.9 / 1.5, so a route
+    // genuinely turning people away looked merely somewhat full when collapsed.
     const perStop = 50 * (SERVICE_TICKS / 50) * 10 / 2;
     const rows = buildTransitRows(
       [busSystem([route(1, loopOf100(perStop), 1)], 50, 2)]);
@@ -83,7 +84,7 @@ describe('面板的路線載重', () => {
   });
 
   it('should print a dash for a system with no capacity of its own', () => {
-    // 0% 會讓玩家以為它很空。
+    // 0% reads as the route being empty.
     const rows = buildTransitRows(
       [busSystem([route(1, loopOf100(10), 1)], 0, 2)]);
 
@@ -101,8 +102,9 @@ describe('面板的路線載重', () => {
   });
 
   it('should count riders the same way the simulation does', () => {
-    // 面板只讀 `smoothedDailyRiders`，模擬讀 `max(昨天的實數, 跨日平滑)` —— 同一個
-    // 數字兩個地方各記一份，就是 BUG-342 本身那個錯。
+    // The panel read `smoothedDailyRiders` alone while the simulation reads the greater of
+    // yesterday's actual figure and the smoothed one — one number recorded in two places, which is
+    // BUG-342 itself.
     const s = stop(0, 0, 0);
     s.smoothedDailyRiders = 10;
     s.lastDayRiders = 400;        // 昨天特別多人，平滑值還沒跟上
@@ -115,7 +117,7 @@ describe('面板的路線載重', () => {
   });
 
   it('should keep a suspended route visible and still count it', () => {
-    // 停駛的路線還在收玩家的錢，面板不能把它藏起來。
+    // A suspended route is still costing the player money and the panel may not hide it.
     const suspended = { ...route(1, loopOf100(0), 1), suspended: true };
     const rows = buildTransitRows([busSystem([suspended], 50, 2)]);
 
@@ -126,8 +128,9 @@ describe('面板的路線載重', () => {
 
 describe('沒有路線的系統', () => {
   it('should not be called hopeless when there is nothing to ride', () => {
-    // 玩家刪掉鐵路線之後，那四座車站還在，載重率是「有人要搭 ÷ 零運能」= Infinity，
-    // 於是狀態一路紅到底（BUG-349）。沒有路線不是「擠爆」，是「不存在」。
+    // With the rail routes deleted the four stations remain, and the load factor is riders over zero
+    // capacity, which is Infinity, leaving the status red throughout (BUG-349). No routes is absence,
+    // not overload.
     const stops = [stop(0, 0, 3000), stop(50, 0, 3000)];
     const sys: TransitSystemSource = {
       type: TransportType.RAIL, routes: [], stops,
@@ -142,8 +145,8 @@ describe('沒有路線的系統', () => {
   });
 
   it('should still call a route with riders and no capacity hopeless', () => {
-    // 這一條是反面:路線還在、車被抽光了，人真的等不到車 —— 那才是 hopeless，
-    // 修 BUG-349 不能把它一起吃掉。
+    // The other side: the route remains with its vehicles withdrawn and people genuinely cannot get
+    // aboard — that is hopeless, and fixing BUG-349 must not swallow it.
     const r = route(1, loopOf100(3000), 0);
     const row = buildTransitRows([busSystem([r], 50, 2)])[0]!;
 

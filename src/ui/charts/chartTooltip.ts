@@ -1,21 +1,23 @@
 /**
- * 圖表上的讀數。
+ * A chart's readout.
  *
- * 原本是把數值直接寫在左上角，而線條就從字上面穿過去 —— 「Happy: 50%」的字被線壓住，
- * 那是圖上唯一寫著數字的地方。
+ * Written straight into the top-left corner, the lines run across the text: "Happy: 50%" sits under a
+ * line, and it is the only place on the chart carrying a number.
  *
- * 改成畫在一塊深色底板上，永遠疊在最後 —— 線再怎麼走都蓋不到它。
+ * It is drawn instead on a dark plate, always last, so no line can cover it.
  *
- * 兩種狀態:
+ * Two states:
  *
- * - **滑上去**:底板跟著游標走，顯示那個時間點的日期與各序列的值，配一條直線標出讀的
- *   是哪一格。滑鼠離開就收掉 —— 停在畫面上的讀數對應不到任何游標位置，看起來像卡住。
- * - **沒滑**:只留一小塊圖例（顏色與名稱，沒有數字）。整個收掉的話圖上一個字都沒有，
- *   玩家沒辦法知道哪條線是哪一條 —— 而那正是原本左上角那三個名字在做的事。
+ * - **Hovering**: the plate follows the cursor, showing that point's date and each series' value, with
+ *   a vertical line marking which bucket is being read. It disappears when the pointer leaves: a
+ *   readout left on screen corresponds to no cursor position and looks stuck.
+ * - **Not hovering**: a small legend remains — colours and names, no numbers. Removed entirely the
+ *   chart carries no text at all and there is no telling which line is which, which is what the three
+ *   names in the corner were for.
  */
 
 export interface TooltipLine {
-  /** 色點的顏色。跟那條序列在圖上的顏色一致 —— 對不起來的話色點只是裝飾。 */
+  /** The swatch's colour, matching that series' colour on the chart; out of step, the swatch is decoration. */
   color: string;
   label: string;
   value: string;
@@ -25,11 +27,12 @@ const PAD = 6;
 const ROW_H = 13;
 const DOT = 5;
 const FONT = '10px sans-serif';
-/** 游標與底板的距離。貼著游標畫的話，底板會蓋住你正指著的那一格。 */
+/** The distance from the cursor to the plate. Drawn against the cursor, the plate covers the bucket being pointed at. */
 const CURSOR_GAP = 12;
 
 /**
- * @param at 游標位置（CSS 像素）。`null` 表示沒有滑到圖上 —— 只畫圖例，不畫數字。
+ * @param at The cursor position in CSS pixels. `null` means the chart is not hovered, and only the
+ *           legend is drawn, without numbers.
  */
 export function drawChartTooltip(
   ctx: CanvasRenderingContext2D,
@@ -55,7 +58,8 @@ export function drawChartTooltip(
   let x = PAD / 2;
   let y = PAD / 2;
   if (at) {
-    // 夾在畫布裡。游標靠右時翻到左邊，靠下時翻到上面 —— 不然底板有一半在畫布外。
+    // Clamped inside the canvas: the plate flips left near the right edge and up near the bottom, or
+    // half of it falls outside.
     x = at.x + CURSOR_GAP;
     if (x + boxW > w) x = at.x - CURSOR_GAP - boxW;
     y = at.y + CURSOR_GAP;
@@ -87,14 +91,14 @@ export function drawChartTooltip(
   });
 }
 
-/** 滑到的位置對應到第幾個點。沒有滑到或圖是空的就回 null。 */
+/** Which point the hovered position corresponds to. Returns null when nothing is hovered or the chart is empty. */
 export function hoveredIndex(x: number | null, w: number, count: number): number | null {
   if (x === null || count === 0) return null;
   const i = Math.floor((x / w) * count);
   return Math.max(0, Math.min(count - 1, i));
 }
 
-/** 滑到的位置畫一條直線，讓玩家看得出讀的是哪一格。 */
+/** Draws a vertical line at the hovered position, showing which bucket is being read. */
 export function drawChartCursor(ctx: CanvasRenderingContext2D, x: number, h: number): void {
   ctx.strokeStyle = 'rgba(200, 220, 245, 0.35)';
   ctx.lineWidth = 1;

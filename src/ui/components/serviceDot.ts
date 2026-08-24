@@ -2,28 +2,29 @@ import { serviceSeverity } from '../../core/service/ServiceSeverity';
 import type { ServiceCellStatus } from '../../core/service/ServiceStatusView';
 
 /**
- * 建築面板上那一排服務圓點。
+ * The row of service dots on the building panel.
  *
- * ## 為什麼是一個獨立的檔案
+ * ## Why this is its own file
  *
- * 這段本來寫在 `BuildingPanel.tsx` 裡。單元測試跑在 node 環境（沒有 DOM），
- * TSX 裡的東西一行都測不到 —— 於是「圓點改回只看距離」這種改動可以整套測試全綠地
- * 溜過去。抽出來是為了讓那個改動會被抓到。
+ * Held in `BuildingPanel.tsx`, none of it can be tested: the unit tests run in a node environment with
+ * no DOM, so a change reverting the dots to distance alone passes with the whole suite green.
+ * Extracted, that change is caught.
  *
- * ## 顏色說的是「有多糟」，提示說的是「為什麼」
+ * ## The colour says how bad it is; the hint says why
  *
- * 一個圓點只有一個維度，而玩家要處理的有兩種:**太遠**要蓋一座近的，**太滿**要蓋
- * 一座分流。所以顏色取兩者比較糟的那一個，滑過去的提示把兩個數字都攤開。
+ * A dot carries one dimension while the player has two problems to act on: **too far** calls for a
+ * nearer facility, **too full** calls for a second one. So the colour takes the worse of the two and
+ * the hover hint lays out both numbers.
  */
 
-/** 沒有覆蓋。灰色 —— 跟「覆蓋得很差」的紅色是兩件事。 */
+/** No coverage. Grey, which is a different matter from poor coverage's red. */
 const NO_COVERAGE_COLOR = '#616161';
 
 /**
- * 嚴重度 → 顏色。`-1` 灰、`0` 綠、`0.5` 黃、`1` 紅。
+ * Severity to colour: `-1` grey, `0` green, `0.5` yellow, `1` red.
  *
- * 綠→黃→紅兩段線性，中間那一點是黃的。跟圖層的 10 階色帶是同一個走向，
- * 只是這裡是連續的。
+ * Green to yellow to red in two linear segments, yellow at the midpoint. The same progression as the
+ * overlay's ten-step ramp, continuous here.
  */
 export function severityColor(severity: number): string {
   if (severity < 0) return NO_COVERAGE_COLOR;
@@ -36,16 +37,17 @@ export function severityColor(severity: number): string {
   return `rgb(255,${green},50)`;
 }
 
-/** 一個服務圓點的顏色。距離與負載取比較糟的那一個。 */
+/** One service dot's colour, taking the worse of distance and load. */
 export function serviceDotColor(st: ServiceCellStatus): string {
   return severityColor(serviceSeverity(st.cost, st.load));
 }
 
 /**
- * 滑過去的提示。
+ * The hover hint.
  *
- * 顏色只說「有多糟」——說不出是因為太遠還是因為太滿，而那決定玩家要蓋在哪裡。
- * 沒有負載概念的服務（水電）只印距離,不要憑空生一個 0%。
+ * The colour says only how bad it is, not whether the cause is distance or load, and that decides
+ * where the player builds. Services with no notion of load — power, water — print the distance alone
+ * rather than inventing a 0%.
  */
 export function serviceDotHint(label: string, st: ServiceCellStatus): string {
   if (st.cost < 0) return `${label}: no coverage`;
