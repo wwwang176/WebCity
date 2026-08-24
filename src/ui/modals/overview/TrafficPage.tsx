@@ -141,8 +141,9 @@ export function TrafficPage(props: { onClose?: () => void }) {
   return (
     <>
       <div class="summary-grid">
-        {/* 只數居民在開的車。過境車流、貨運、服務車輛跟運具選擇無關，加進來
-            的話政策把人趕上公車了，數字還是會被它們撐住。 */}
+        {/* Counts only the cars residents drive. Through traffic, freight and service vehicles have
+            nothing to do with mode choice, and counted in they hold the figure up even once a policy
+            has moved people onto buses. */}
         <div class="summary-card" title="Residents currently driving to or from work. Through traffic, freight and service vehicles are not counted.">
           <div class="sc-value stat-accent">{stats().commuteVehicleCount}</div>
           <div class="sc-label">Commuters Driving</div>
@@ -311,9 +312,10 @@ export function TrafficPage(props: { onClose?: () => void }) {
                       <td class="td-value" style="text-align:right">{row.totalStops}</td>
                       <td class="td-value" style="text-align:right">{row.totalVehicles}</td>
                       <td class="td-value" style="text-align:right">{Math.round(row.totalRiders * 7)}</td>
-                      {/* 收合列與展開列走同一組門檻、同樣不夾在 100% —— 以前這一格
-                          自己寫死了 0.5 / 0.8 兩段，還套了一層 `Math.min(100, …)`，
-                          於是一條真的在拒載的路線收合起來看只是「有點滿」。 */}
+                      {/* The collapsed and expanded rows share one set of thresholds and neither clamps
+                          at 100%. With its own 0.5 / 0.8 bands and a `Math.min(100, ...)` on top, a
+                          route genuinely turning people away looked merely somewhat full when
+                          collapsed. */}
                       <td
                         class="td-value"
                         style={`text-align:right;color:${USAGE_COLOR[row.status]}`}
@@ -332,10 +334,11 @@ export function TrafficPage(props: { onClose?: () => void }) {
                             <td class="td-value" style="text-align:right;font-size:11px">{route.stops}</td>
                             <td class="td-value" style="text-align:right;font-size:11px">{route.vehicles}</td>
                             <td class="td-value" style="text-align:right;font-size:11px">{Math.round(route.riders * 7)}</td>
-                            {/* 不夾在 100%:一條 105% 跟一條 400% 的路線要看得出差別，
-                                那是「該加幾台車」的唯一依據。顏色照模擬真正的三段分 ——
-                                黃燈是「等車開始變久」，紅燈是「真的擠不上去，這條路線
-                                已經從那些人的選項裡消失了」。 */}
+                            {/* Not clamped at 100%: a route at 105% and one at 400% have to look
+                                different, as that is the only basis for deciding how many vehicles to
+                                add. The colours follow the simulation's three bands — yellow is waits
+                                growing longer, red is people genuinely unable to board, the route
+                                having dropped out of their options. */}
                             <td
                               class="td-value"
                               style={`text-align:right;font-size:11px;color:${USAGE_COLOR[route.status]}`}

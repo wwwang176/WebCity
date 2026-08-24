@@ -7,22 +7,22 @@ import { type MapConfig } from '../core/config/MapConfig';
 import { setScreen } from '../agent/registry';
 
 /**
- * 主選單那幾層蓋在畫面上的東西。
+ * The main menu's overlay screens.
  *
- * 它們掛在 `document.body` 上（不是 `#app`）而且 z-index 是 100 —— 蓋在遊戲畫面
- * （`#game-ui`，z-index 10）上面。
+ * They are attached to `document.body` rather than `#app`, at z-index 100, over the game view
+ * (`#game-ui`, z-index 10).
  */
 const MENU_SCREEN_IDS = ['main-menu', 'new-game-config'] as const;
 
 /**
- * 把主選單與新遊戲設定畫面收掉。
+ * Removes the main menu and the new-game configuration screen.
  *
- * **開局的時候一定要叫這一支。** 原本移除選單這件事只寫在按鈕的事件處理器裡
- * （`#btn-new-game` 的 `menu.remove()`、點存檔那一條），所以任何不是從按鈕來的
- * 開局都會把選單留在畫面上 —— 遊戲正常跑、音樂正常放，但玩家看到的還是主選單。
- * agent 的 `session.newGame()` 就是這樣。
+ * **Every path that starts a game has to call this.** With the removal written only in the buttons'
+ * event handlers — `menu.remove()` on `#btn-new-game`, and the one on clicking a save — any start not
+ * coming from a button leaves the menu on screen: the game runs and the music plays while the player
+ * still sees the main menu, which is what agent's `session.newGame()` did.
  *
- * 清理屬於「換畫面」這件事本身，不屬於「剛好按了哪一顆按鈕」。
+ * The cleanup belongs to changing screens, not to which button happened to be pressed.
  */
 export function removeMenuScreens(): void {
   for (const id of MENU_SCREEN_IDS) document.getElementById(id)?.remove();

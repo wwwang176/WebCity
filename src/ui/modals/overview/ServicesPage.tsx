@@ -4,10 +4,10 @@ import { buildServicesStats, type FacilityStat } from '../../../core/stats/Servi
 import { gameSignals, getGame } from '../../store/gameStore';
 import { UI_COLORS } from '../../constants';
 
-/** 有顏色的一小段字。整行由好幾段接起來。 */
+/** A short coloured run of text. A line is several of them joined. */
 interface SummarySpan { text: string; color?: string }
 
-/** 學校類別 → 畫面上的字。 */
+/** School kinds mapped to their labels. */
 const SCHOOL_LABELS: Record<string, string> = {
   elementary: 'Elementary', highschool: 'High School', university: 'University',
 };
@@ -51,14 +51,15 @@ const OFFLINE = { label: 'Offline', color: UI_COLORS.STATUS_BAD };
 export function ServicesPage() {
   const data = createMemo(() => {
     gameSignals.tick();
-    // 數字全部來自 `buildServicesStats` —— agent API 讀的是同一支。這一段只把
-    // 它排成畫面上的分組、圖示與顏色（BUG-342:同一個數字兩個地方各記一份會分家）。
+    // Every number comes from `buildServicesStats`, which the agent API reads too. This only arranges
+    // it into the groups, icons and colours on screen (BUG-342: one number recorded in two places
+    // parts company).
     const s = buildServicesStats(getGame().getState());
     const by = (name: string) => s.services.find(x => x.service === name)!;
 
     const entries: { group: string; items: ServiceEntry[]; summary?: SummarySpan[] }[] = [];
 
-    /** 一列設施。`suffix` 是接在「載重 x / y」後面的補充。 */
+    /** One facility row. `suffix` follows the load figures. */
     const row = (
       icon: string, name: string, coverage: number, label: string,
       f: FacilityStat, suffix = '', status?: { label: string; color: string },
@@ -70,7 +71,7 @@ export function ServicesPage() {
       return { icon, name, coverage, detail: ld.detail, loadPct: ld.pct, status: st.label, statusColor: st.color };
     };
 
-    /** 沒有任何設施時那一列。 */
+    /** The row shown when there is no facility of this kind. */
     const none = (icon: string, name: string, coverage: number, text: string): ServiceEntry =>
       ({ icon, name, coverage, detail: text, loadPct: -1, status: 'None', statusColor: UI_COLORS.STATUS_BAD });
 
@@ -88,7 +89,7 @@ export function ServicesPage() {
            ...(s.powerDemand > s.powerSupply ? [{ text: ' · Shortage', color: UI_COLORS.STATUS_BAD }] : [])],
     });
 
-    // ── Water（含污水，畫面上是同一組） ──
+    // ── Water, sewage included: one group on screen ──
     const water = by('water');
     const sewage = by('sewage');
     const wtrItems = [
@@ -152,7 +153,8 @@ export function ServicesPage() {
     const eduItems = education.facilities.map(f => row(
       '🏫', SCHOOL_LABELS[f.subtype ?? ''] ?? f.subtype ?? 'School',
       education.coverage, 'Students', f, ` · Need ${f.demand ?? 0}`,
-      // 想讀的人比座位多就是招生不足,即使目前在學人數還沒滿。
+      // More people wanting to enrol than there are seats is under-provision, even where the current
+      // enrolment has not filled them.
       !f.operational ? OFFLINE
         : (f.demand ?? 0) > f.capacity ? { label: 'Over capacity', color: UI_COLORS.STATUS_WARN }
         : undefined,

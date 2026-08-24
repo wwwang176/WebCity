@@ -107,7 +107,7 @@ describe('面板的路線載重', () => {
     // BUG-342 itself.
     const s = stop(0, 0, 0);
     s.smoothedDailyRiders = 10;
-    s.lastDayRiders = 400;        // 昨天特別多人，平滑值還沒跟上
+    s.lastDayRiders = 400;        // a busy day yesterday, which the smoothed value has not caught up with
     const r = route(1, [s, stop(50, 0, 0)], 1);
 
     const rows = buildTransitRows([busSystem([r], 50, 2)]);

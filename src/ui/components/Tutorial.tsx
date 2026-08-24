@@ -7,12 +7,12 @@ export function TutorialOverlay() {
   const [stepIndex, setStepIndex] = createSignal(tutorial.getStepIndex());
   const [active, setActive] = createSignal(tutorial.isActive());
 
-  // 讓 `agent.status()` 看得到教程走到哪。這一份狀態只有這個元件有 ——
-  // 每次開局都 `new` 一個新的，不是全域單例。
+  // Exposes the tutorial's progress to `agent.status()`. This state lives in the component alone: each
+  // game constructs a new one rather than sharing a global singleton.
   onMount(() => {
     registerTutorialProbe(() => ({
       active: active(),
-      step: stepIndex() + 1,   // 對外從 1 算起，跟畫面上的「Step 3 of 9」一致
+      step: stepIndex() + 1,   // one-based outward, matching "Step 3 of 9" on screen
       total: tutorial.getTotalSteps(),
     }));
   });

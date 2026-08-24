@@ -34,8 +34,8 @@ const EDU_COLORS: Record<string, string> = {
 
 const EDU_ORDER = [EducationLevel.NONE, EducationLevel.ELEMENTARY, EducationLevel.HIGH_SCHOOL, EducationLevel.UNIVERSITY] as const;
 
-// 鍵跟著 `DemographicsStats` 走 —— 兩邊各定義一套的話，改了一邊就會有一欄變成
-// 原始鍵名出現在畫面上。
+// The keys follow `DemographicsStats`: defined separately on each side, changing one leaves a column
+// showing its raw key name.
 const ZONE_LABELS: Record<string, string> = {
   commercial: 'Commercial',
   industrial: 'Industrial',
@@ -122,8 +122,8 @@ export function DemographicsPage() {
   const stats = createMemo(() => {
     gameSignals.tick();
     const s = buildDemographicsStats(getGame().getState());
-    // 面板跟 agent API 讀同一支 `buildDemographicsStats`。這裡只負責把鍵換成
-    // 畫面上的字跟顏色 —— 數字本身一個都不重算（BUG-342）。
+    // The panel and the agent API read the same `buildDemographicsStats`. This only turns keys into
+    // labels and colours; not one number is recomputed (BUG-342).
     const label = (items: { key: string; count: number }[], labels: Record<string, string>, colors: Record<string, string>) =>
       items.map(b => ({ label: labels[b.key] ?? b.key, count: b.count, color: colors[b.key] ?? '#888' }));
 

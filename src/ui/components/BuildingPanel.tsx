@@ -209,9 +209,9 @@ function collectWarnings(sel: SelectedZoneBuilding): Warning[] {
     warnings.push({ level: 'yellow', text: 'Fire dept over capacity' });
   }
 
-  // Education overloaded — the one service that had no load warning at all.
-  // 那份存檔的 High School 收了 5,872 個學生而容量 500,面板上完全看不出來
-  //（BUG-364）。
+  // Education overloaded — the one service that had no load warning at all. In that save a high
+  // school held 5,872 students against a capacity of 500, with nothing on the panel showing it
+  // (BUG-364).
   if (sel.educationLoadRatio > 2) {
     warnings.push({ level: 'red', text: 'Schools overcrowded' });
   } else if (sel.educationLoadRatio > 1) {
@@ -260,7 +260,8 @@ function ZoneBuildingInfo(props: { sel: SelectedZoneBuilding }) {
     return '\u2605'.repeat(stars) + '\u2606'.repeat(5 - stars);
   };
   const zoneName = () => ZONE_NAMES[props.sel.zoneType] ?? 'Unknown';
-  // 名字從座標、分區與建築款式算 —— 存讀檔不會換，升級會（那是換了一棟）。
+  // The name is derived from the coordinates, the zone and the building style: it survives a save and
+  // reload, and changes on an upgrade, which is a different building.
   const name = () => buildingName(
     props.sel.x, props.sel.y, props.sel.zoneType,
     getGame().getState().citySeed, props.sel.buildingType.id);

@@ -18,7 +18,7 @@ const ZONE_LABELS: Record<number, string> = {
   [ZoneType.OFFICE]: 'Office',
 };
 
-/** `SummaryStats.drags` 的鍵 → 畫面上的字。 */
+/** `SummaryStats.drags`' keys mapped to their labels. */
 const DRAG_LABELS: Record<string, string> = {
   'low happiness': 'Low happiness',
   'high taxes': 'High taxes',
@@ -31,8 +31,8 @@ export function SummaryPage() {
   const data = createMemo(() => {
     gameSignals.tick();
     const s = buildSummaryStats(getGame().getState());
-    // 面板跟 agent API 讀同一支 `buildSummaryStats` —— 兩份各算一次就會分家
-    // （BUG-342）。這裡把它整理成 JSX 沿用的形狀。
+    // The panel and the agent API read the same `buildSummaryStats`; computed separately the two part
+    // company (BUG-342). This only reshapes it into what the JSX already uses.
     const zoneCounts: Record<number, { count: number; capacity: number }> = {};
     for (let i = 0; i < ZONE_ORDER.length; i++) {
       const z = s.zones[i]!;

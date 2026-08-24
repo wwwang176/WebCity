@@ -51,7 +51,7 @@ export function InfraPage() {
   const data = createMemo(() => {
     gameSignals.tick();
     const s = buildInfraStats(getGame().getState());
-    // 跟 agent API 同一支。舊名字留給下面的 JSX。
+    // The same function the agent API uses. The old names are kept for the JSX below.
     return {
       pwrSupply: s.power.supply, pwrDemand: s.power.demand,
       wtrSupply: s.water.supply, wtrDemand: s.water.demand,

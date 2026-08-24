@@ -2,13 +2,13 @@ import { describe, it, expect } from 'vitest';
 import { serviceDotColor, serviceDotHint, severityColor } from '../serviceDot';
 import { NO_COVERAGE } from '../../../core/service/ServiceStatusView';
 
-/** 距離 `cost`、負載 `load` 的一格。 */
+/** A cell at distance `cost` and load `load`. */
 const cell = (cost: number, load = NO_COVERAGE) => ({ cost, load });
 
 describe('服務圓點的顏色', () => {
   it('should stay grey where nothing reaches', () => {
-    // 灰色說的是「沒有人管得到我」，跟紅色的「管得很差」是兩件事 ——
-    // 前者要蓋新的，後者要蓋近的。
+    // Grey says nothing covers this cell while red says it is covered badly: the first calls for a new
+    // facility, the second for a nearer one.
     expect(serviceDotColor(cell(NO_COVERAGE))).toBe('#616161');
   });
 
@@ -17,8 +17,8 @@ describe('服務圓點的顏色', () => {
   });
 
   it('should go red next to a facility that is swamped', () => {
-    // 這是使用者問的那一件事:醫院就在隔壁（距離 0），但爆到兩倍。
-    // 只看距離的話這裡會是最綠的。
+    // The hospital is next door at distance 0 and running at twice its capacity. On distance alone this
+    // is the greenest cell there is.
     expect(serviceDotColor(cell(0, 2.0)), '爆量的設施旁邊還是綠的').toBe('rgb(255,0,50)');
   });
 
@@ -27,7 +27,7 @@ describe('服務圓點的顏色', () => {
   });
 
   it('should take the worse of distance and load', () => {
-    // 距離 0.2 很好、負載 1.5 一般 → 由負載決定（0.5，黃的）。
+    // A distance of 0.2 is good and a load of 1.5 is middling, so the load decides: 0.5, yellow.
     const byLoad = serviceDotColor(cell(0.2, 1.5));
     const byDistance = serviceDotColor(cell(0.5, 1.0));
 
@@ -35,7 +35,7 @@ describe('服務圓點的顏色', () => {
   });
 
   it('should not let an unknown load lighten a bad distance', () => {
-    // 公園之類沒有負載概念的服務，距離要照樣說話。
+    // For a service with no notion of load, such as parks, the distance still speaks.
     expect(serviceDotColor(cell(1, NO_COVERAGE))).toBe('rgb(255,0,50)');
   });
 
@@ -54,14 +54,15 @@ describe('圓點的提示', () => {
   });
 
   it('should break the colour down into the two things it hides', () => {
-    // 顏色說「有多糟」，說不出是太遠還是太滿 —— 而那決定要蓋在哪裡。
+    // The colour says how bad it is, not whether the cause is distance or load, and that decides where
+    // to build.
     expect(serviceDotHint('Health', cell(0.25, 1.8)))
       .toBe('Health: distance 25% · facility load 180%');
   });
 
   it('should not invent a load for a utility', () => {
-    // 電網沒有「這一格由哪一座電廠供電、那座多滿」的概念。印一個 0% 會讓玩家
-    // 以為已經檢查過了。
+    // The grid has no notion of which plant supplies a cell or how full that plant is. Printing 0%
+    // reads as the check having been made.
     expect(serviceDotHint('Power', cell(0))).toBe('Power: distance 0%');
   });
 });

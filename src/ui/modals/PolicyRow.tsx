@@ -5,12 +5,14 @@ import { policyCost, policyRevenue, type PolicyScale } from '../../core/district
 import type { PolicyType } from '../../core/district/types';
 
 /**
- * 一條條例在面板上的樣子。
+ * One policy's row in the panel.
  *
- * 分區與全城共用同一個元件 —— 兩邊回答的問題不同（在哪裡 vs 要不要），但玩家看到
- * 的東西是一樣的:名字、強度、這一級給你什麼要你付什麼、以及本期多少錢。
+ * Districts and the city share this component: the two answer different questions — where, and whether
+ * — but what the player sees is the same. The name, the intensity, what this level gives and asks for,
+ * and how much it costs this period.
  *
- * 效果與代價寫在名字底下同一列，不是 tooltip。取捨是玩法，藏起來就沒有取捨。
+ * The effect and the cost are on the same row under the name rather than in a tooltip. The trade-off
+ * is the gameplay, and hidden there is no trade-off.
  */
 
 
@@ -18,7 +20,7 @@ export interface PolicyRowProps {
   type: PolicyType;
   level: number;
   scale: PolicyScale;
-  /** 已下架:效果表已經沒有它了，只有舊存檔還帶著。只能移除。 */
+  /** Retired: the effects table no longer holds it and only old saves still carry it. It can only be removed. */
   retired?: boolean;
   onSetLevel: (level: number) => void;
   onRemove?: () => void;
@@ -30,10 +32,11 @@ export function PolicyRow(props: PolicyRowProps) {
   const cost = () => Math.round(policyCost(props.type, props.level, props.scale));
   const revenue = () => Math.round(policyRevenue(props.type, props.level, props.scale));
   /**
-   * 這一列顯示的是**淨額** —— 賺錢時綠色的 +，花錢時紫色的 $。
+   * The row shows the **net**: a green + when it earns, a purple $ when it costs.
    *
-   * 一條條例可以兩邊都有（壅塞費的門架費 vs 過路費）。這張卡片只有一行的位置，
-   * 所以給淨額;拆開的兩筆在預算面板的逐條明細裡。
+   * A policy can have both — the congestion charge's gantry costs against its tolls. This card has room
+   * for one line, so it carries the net; the two figures separately are in the budget panel's
+   * breakdown.
    */
   const net = () => revenue() - cost();
 
@@ -61,8 +64,8 @@ export function PolicyRow(props: PolicyRowProps) {
           }
         >
           <div style="display:flex;gap:4px" role="group" aria-label={`${name()} level`}>
-            {/* 離散的等級，不是滑桿 —— 滑桿會變成預算一緊就往下推一格，決策感
-                消失。離散逼玩家選一個立場。 */}
+            {/* Discrete levels rather than a slider: a slider becomes one notch down whenever the budget
+                tightens, and the sense of a decision disappears. Discrete levels force a position. */}
             <For each={[0, ...Array.from({ length: max() }, (_, i) => i + 1)]}>
               {(lv) => (
                 <button

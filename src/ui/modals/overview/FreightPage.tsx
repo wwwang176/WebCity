@@ -14,8 +14,8 @@ export function FreightPage() {
   const data = createMemo(() => {
     gameSignals.tick();
     const s = buildFreightStats(getGame().getState());
-    // 面板跟 agent API 讀同一支 `buildFreightStats` —— 兩份各算一次就會分家
-    // （BUG-342）。這裡只把幾個欄位換成 JSX 沿用的舊名字。
+    // The panel and the agent API read the same `buildFreightStats`; computed separately the two part
+    // company (BUG-342). This only renames a few fields to what the JSX already uses.
     return { ...s, extStations: s.externalStations, airportDetails: s.airports };
   }, undefined, {
     equals: (a, b) => JSON.stringify(a) === JSON.stringify(b),

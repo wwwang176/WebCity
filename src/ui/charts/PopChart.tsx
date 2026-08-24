@@ -12,7 +12,8 @@ export function PopChart(props: { history: ChartHistory; range: ChartRange }) {
 
   const draw = () => {
     if (!canvas) return;
-    // 點陣圖尺寸要對齊畫面上的實際大小，否則瀏覽器直接放大那張圖，文字就糊了。
+    // The bitmap's size has to match its size on screen, or the browser scales the image up and the
+    // text blurs.
     const fit = fitCanvas(canvas);
     if (!fit) return;
     const { ctx, w, h } = fit;
@@ -48,8 +49,8 @@ export function PopChart(props: { history: ChartHistory; range: ChartRange }) {
     }
     ctx.stroke();
 
-    // 讀數畫在最後，蓋在線上面。原本寫在左上角的字會被線壓住 —— 而那是圖上唯一
-    // 寫著數字的地方。
+    // The readout is drawn last, over the lines. Written in the top-left corner the text sits under a
+    // line, and it is the only place on the chart carrying a number.
     const at = hover();
     const i = hoveredIndex(at?.x ?? null, w, series.pop.length) ?? series.pop.length - 1;
     if (at) drawChartCursor(ctx, (i / span) * w, h);
@@ -61,13 +62,15 @@ export function PopChart(props: { history: ChartHistory; range: ChartRange }) {
 
   onMount(() => {
     draw();
-    // 視窗大小或螢幕的裝置像素比變了，點陣圖就對不上了 —— 而重畫只由資料、
-    // 範圍與游標觸發，遊戲暫停時三者都不會動，圖會一直糊著。
+    // A change of window size or device pixel ratio leaves the bitmap out of step, and a redraw is
+    // triggered only by data, range and cursor — none of which move while the game is paused, leaving
+    // the chart blurred.
     window.addEventListener('resize', draw);
     onCleanup(() => window.removeEventListener('resize', draw));
   });
   createEffect(() => {
-    // 追蹤:歷史整包換掉（每天一次）、範圍切換、游標移動都要重畫。
+    // Tracked: the history being replaced once a day, a change of range, and cursor movement all
+    // redraw.
     props.history;
     props.range;
     hover();
@@ -79,8 +82,9 @@ export function PopChart(props: { history: ChartHistory; range: ChartRange }) {
     setHover({ x: e.clientX - r.left, y: e.clientY - r.top });
   };
 
-  // 不給 width/height —— 尺寸由 CSS 決定，點陣圖由 `fitCanvas` 對齊。寫在這裡
-  // 只會多一個對不上的真相來源（原本寫 80，而 CSS 是 100）。
+  // No width or height attributes: the size comes from CSS and `fitCanvas` matches the bitmap to it.
+  // Written here they are a second source of truth free to disagree — the attribute said 80 where the
+  // CSS said 100.
   return (
     <canvas
       ref={canvas}

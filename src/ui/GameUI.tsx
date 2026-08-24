@@ -93,8 +93,8 @@ function GameUIRoot() {
       <OverviewModal open={openModal() === 'overview'} onClose={closeModal} />
       <LayersModal open={openModal() === 'layers'} onClose={closeModal} />
       <CitySpecModal open={openModal() === 'cityspec'} onClose={closeModal} />
-      {/* 全城與分區是同一個面板 —— 停在哪一層由面板自己挑:選取中的分區優先，
-          沒有選取就停在全城。所以工具列只有一顆按鈕。 */}
+      {/* City-wide and district share one panel, and the panel picks its own scope: the selected
+          district first, city-wide with no selection. So the toolbar has one button. */}
       <PolicyModal open={openModal() === 'district'} onClose={closeModal} />
       <TransitModal open={openModal() === 'transit'} onClose={closeModal} />
       <DebugModal open={openModal() === 'debug'} onClose={closeModal} />
