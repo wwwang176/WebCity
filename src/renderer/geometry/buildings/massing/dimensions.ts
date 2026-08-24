@@ -18,7 +18,7 @@ const MID_FLOOR = (FLOOR_HEIGHT_UNITS.MIN + FLOOR_HEIGHT_UNITS.MAX) / 2;
 
 export interface HeightOption {
   floors: number;
-  /** 格 */
+  /** In cells. */
   floorHeight: number;
   /** floors x floorHeight, in cells. */
   height: number;
@@ -74,7 +74,7 @@ export interface Dimensions {
   w: number;
   d: number;
   floors: number;
-  /** 格 */
+  /** In cells. */
   floorHeight: number;
   /** floors x floorHeight, in cells. */
   height: number;
