@@ -3,13 +3,15 @@ import { AgentRoutes, type ModeAdapter, type RouteHost } from '../AgentRoutes';
 import { TransportType, type TransportRoute, type TransportStop } from '../../core/transport/types';
 
 /**
- * 路線管理。
+ * Route management.
  *
- * 四種運具建路線的方式各不相同 —— 公車要沿著馬路找得到路，渡輪要走得到水路，
- * 地鐵跟鐵路只要站牌在。那些差異留在各自的 `ModeAdapter` 裡，這一層管的是
- * **共通的把關**:站牌存不存在、夠不夠兩站、順序有沒有保住、路線 ID 是真的嗎。
+ * The four transit modes create routes differently: a bus needs a road path, a ferry a water
+ * path, and metro and rail only need the stops to exist. Those differences stay in each mode's
+ * `ModeAdapter`, and this layer handles the **common validation**: the stops exist, there are at
+ * least two, their order is preserved, and the route id is real.
  *
- * 所以測的是把關，不是「路線建得對不對」（那是 `BaseTransportSystem` 的測試在管）。
+ * So what is tested is the validation, not whether the route is built correctly — that belongs
+ * to `BaseTransportSystem`'s tests.
  */
 
 function stop(id: number, x: number, y: number): TransportStop {
@@ -21,7 +23,7 @@ function stop(id: number, x: number, y: number): TransportStop {
 
 type FakeAdapter = ModeAdapter & { calls: string[] };
 
-/** 一個記帳的假運具:記得誰被呼叫過、拿到什麼。 */
+/** A recording stub mode: it remembers which methods were called and with what. */
 function fakeAdapter(over: Partial<ModeAdapter> = {}): FakeAdapter {
   const allStops = [stop(1, 5, 5), stop(2, 9, 9), stop(3, 12, 12)];
   const routes: TransportRoute[] = [];
@@ -53,7 +55,7 @@ function fakeAdapter(over: Partial<ModeAdapter> = {}): FakeAdapter {
     },
     removeVehicle(id) {
       calls.push(`remove ${id}`);
-      // 照著 BaseTransportSystem:剩一台就不再理。
+      // Mirrors BaseTransportSystem: at one vehicle it does nothing.
       const r = routes.find(x => x.id === id);
       if (r && r.vehicles > 1) r.vehicles--;
     },
@@ -99,7 +101,7 @@ describe('建路線', () => {
   });
 
   it('should keep the stop order it was given', () => {
-    // 路線是有順序的 —— 3→1→2 跟 1→2→3 是不同的路線。
+    // A route is ordered: 3-1-2 is a different route from 1-2-3.
     const { routes, bus } = fakeHost();
     routes.create('bus', [3, 1, 2]);
 
@@ -125,7 +127,7 @@ describe('建路線', () => {
   });
 
   it('should report the reason when the game itself refuses', () => {
-    // 公車找不到馬路、渡輪找不到水路的時候，遊戲回 null。
+    // The game returns null when a bus finds no road or a ferry no water route.
     const bus = fakeAdapter({ createRoute: () => null });
     const routes = new AgentRoutes({ bus } as unknown as RouteHost);
 
@@ -135,8 +137,9 @@ describe('建路線', () => {
   });
 
   it('should report what the route actually became, not what was asked for', () => {
-    // 遊戲不一定照單全收 —— 鐵路會把接不上的車站丟掉，車輛數也可能被夾。
-    // 回報「我要求的」而不是「實際建成的」會讓呼叫端以為要求都生效了。
+    // The game does not necessarily take everything: rail drops unreachable stations and the
+    // vehicle count can be clamped. Reporting what was asked for rather than what was built
+    // would let the caller believe every part of the request took effect.
     const bus = fakeAdapter({
       createRoute: (chosen) => ({
         id: 7, type: TransportType.BUS,
@@ -178,11 +181,12 @@ describe('動已經在跑的路線', () => {
   });
 
   it('should refuse to take away the last vehicle on a route', () => {
-    // 遊戲的 removeVehicleFromRoute 判的是 `vehicles <= 1` 就直接 return ——
-    // 下限是一台不是零。不擋的話會回一個 ok:true 但什麼都沒發生的結果。
+    // The game's removeVehicleFromRoute returns immediately at `vehicles <= 1`, so the floor is
+    // one vehicle, not zero. Without the check the result is `ok: true` for an action that did
+    // nothing.
     //
-    // 這一條是在瀏覽器上測出來的:單元測試的假運具照著我寫的下限（零）動，
-    // 兩邊一起錯就看不出來。
+    // Found in the browser: a stub mode written to a floor of zero agrees with an
+    // implementation written to the same wrong floor, and neither side shows it.
     const { routes, bus } = fakeHost();
     const id = routes.create('bus', [1, 2], 1).routeId!;
     bus.calls.length = 0;
@@ -225,8 +229,8 @@ describe('動已經在跑的路線', () => {
   });
 
   it('should not reach into another mode when asked for one', () => {
-    // 每一種運具的路線 ID 各自從小開始編，撞號是常態。拿公車的 ID 去動地鐵
-    // 不能「剛好也有一條」就動下去。
+    // Each mode numbers its routes from the bottom independently, so collisions are normal. A
+    // bus id must not act on the metro just because a metro route happens to share it.
     const { routes, bus, metro } = fakeHost();
     const id = routes.create('metro', [1, 2]).routeId!;
     metro.calls.length = 0;

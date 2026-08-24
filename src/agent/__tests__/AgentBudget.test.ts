@@ -3,10 +3,11 @@ import { AgentBudget, type BudgetHost } from '../AgentBudget';
 import { TAX_RATE_MAX, TAX_RATE_MIN, type TaxRates } from '../../core/economy/Tax';
 
 /**
- * 稅率與貸款。
+ * Tax rates and loans.
  *
- * 這兩件事改下去**馬上**影響市庫，而且沒有 undo。所以這一層的重點全在把關:
- * 稅率只收滑桿放得下的整數，借還款只收正整數。
+ * Both take effect on the treasury **immediately**, and there is no undo. So this layer is
+ * mostly validation: tax rates take only integers the slider could produce, and loans only
+ * positive integers.
  */
 
 function fakeHost(over: Partial<BudgetHost> = {}) {
@@ -46,8 +47,8 @@ describe('稅率', () => {
   });
 
   it('should move every business rate together', () => {
-    // 面板的「Business Tax」一根滑桿同時設四個欄位。只設 business 的話,
-    // 舊的逐區稅率會留在原地,而它們還在被計算。
+    // The panel's single "Business Tax" slider sets four fields. Setting only `business` leaves
+    // the older per-zone rates where they were, and they are still used in the calculation.
     const { budget, rates } = fakeHost();
     budget.setBusinessTax(4);
 
@@ -104,18 +105,19 @@ describe('貸款', () => {
   });
 
   it('should say so when there is nothing to repay', () => {
-    // 遊戲的 repayLoan 會靜靜地夾成 0 —— 那會回一個什麼都沒發生的 ok:true。
+    // The game's repayLoan silently clamps to 0, producing an ok: true for an action that did
+    // nothing.
     const { budget } = fakeHost();
     const r = budget.repayLoan(1_000);
 
     expect(r.ok).toBe(false);
-    // 這一句要講「沒有債」，不是「欠 $0 還不了 $1000」—— 後者在讀的人眼裡像是
-    // 金額算錯了。
+    // The wording says there is no debt rather than "owed $0, cannot repay $1000", which reads
+    // as an arithmetic error.
     expect(r.reason, '沒說是根本沒有債').toContain('no debt');
   });
 
   it('should refuse to repay more than is owed even with money to spare', () => {
-    // 錢很多、債很少。這一段只有「還得比欠的多」這一關擋得住。
+    // Plenty of cash, little debt: only the "more than is owed" check can stop this.
     const { budget } = fakeHost();
     budget.takeLoan(10_000);
 
@@ -126,7 +128,7 @@ describe('貸款', () => {
   });
 
   it('should refuse to repay more than is on hand', () => {
-    // 債很多、錢很少。這一段只有「手上沒那麼多錢」這一關擋得住。
+    // Lots of debt, little cash: only the "more than is on hand" check can stop this.
     const { budget } = fakeHost({ funds: () => 500, loans: () => 10_000 });
     const r = budget.repayLoan(4_000);
 

@@ -1,34 +1,36 @@
 /**
- * 把一行 `{"path":"read.city","args":[]}` 變成真的呼叫。
+ * Turns a line of `{"path":"read.city","args":[]}` into an actual call.
  *
- * 整座橋只有這裡有邏輯，其餘（HTTP middleware、WebSocket）都是管線 —— 所以測試
- * 全部集中在這一支。
+ * This is the only part of the bridge with logic; the rest — HTTP middleware, WebSocket — is
+ * plumbing, so the tests concentrate here.
  *
- * ## 三件非做不可的事
+ * ## Three requirements
  *
- * **路徑不能亂爬。** 那個字串從外面來。`read.constructor.constructor` 爬得到
- * `Function`，呼叫它就等於讓對方在頁面裡執行任意程式碼。所以只走**自有屬性**，
- * 而且明確擋掉原型鏈上那幾個名字。
+ * **The path must not walk anywhere.** That string comes from outside.
+ * `read.constructor.constructor` reaches `Function`, and calling it is arbitrary code execution
+ * in the page. So only **own properties** are walked, and the prototype-chain names are
+ * explicitly refused.
  *
- * **不丟例外。** 呼叫端在另一個 process，例外冒出去只會變成一個沒有訊息的 500。
- * 每一種失敗都要變成 `{ ok: false, error }`。
+ * **Nothing throws.** The caller is in another process, where an escaping exception is just a
+ * 500 with no message. Every failure becomes `{ ok: false, error }`.
  *
- * **回得出 JSON。** `commuteStats().byHome` 是 `Map`，`JSON.stringify` 把它變成 `{}`
- * —— 對方看到空物件，還以為是沒資料。
+ * **The result must survive JSON.** `commuteStats().byHome` is a `Map`, which
+ * `JSON.stringify` turns into `{}`, and the caller reads an empty object as no data.
  */
 
-/** 路徑最多幾段。`read.city` 是兩段，這個 API 沒有更深的東西。 */
+/** The maximum number of path segments. `read.city` is two, and nothing in this API is
+ *  deeper. */
 export const MAX_PATH_DEPTH = 2;
 
 /**
- * 永遠不走的屬性名。
+ * Property names that are never walked.
  *
- * 少了這一份，`read.constructor.constructor('return process')()` 這種東西就成立了。
+ * Without this, `read.constructor.constructor('return process')()` works.
  */
 const FORBIDDEN = new Set(['__proto__', 'constructor', 'prototype']);
 
 export interface AgentCall {
-  /** 例如 `read.city`、`act`、`routes.create`。 */
+  /** For example `read.city`, `act`, `routes.create`. */
   path: string;
   args?: unknown[];
 }
@@ -44,10 +46,10 @@ function fail(error: string): AgentResponse {
 }
 
 /**
- * 走路徑取出那個函式，連同它所在的物件（`this` 要綁回去）。
+ * Walks the path to the function, along with the object it lives on so `this` can be bound.
  *
- * 取出函式之後直接呼叫會讓 `this` 變成 `undefined` —— `AgentRead.city()` 裡的
- * `this.getState()` 就炸了。
+ * Calling an extracted function directly leaves `this` undefined, and `AgentRead.city()`'s
+ * `this.getState()` throws.
  */
 function resolve(root: unknown, path: string): { fn: unknown; owner: unknown } | string {
   const segments = path.split('.');
@@ -65,10 +67,12 @@ function resolve(root: unknown, path: string): { fn: unknown; owner: unknown } |
     if (current === null || typeof current !== 'object') {
       return `nothing at path ${path}`;
     }
-    // 只走自有屬性 —— 繼承來的東西都在原型鏈上，那正是不該去的地方。
+    // Own properties only: everything inherited lives on the prototype chain, which is exactly
+    // where this must not go.
     if (!Object.prototype.hasOwnProperty.call(current, segment)) {
-      // 類別的方法住在 prototype 上，不是實例的自有屬性。所以自有屬性找不到時
-      // 再問一次「這是不是它自己的類別方法」，但仍然不碰 Object.prototype。
+      // Class methods live on the prototype rather than as own properties of the instance, so a
+      // miss falls back to asking whether it is the object's own class method — still without
+      // touching Object.prototype.
       const proto = Object.getPrototypeOf(current) as object | null;
       if (!proto || proto === Object.prototype
         || !Object.prototype.hasOwnProperty.call(proto, segment)) {
@@ -82,10 +86,10 @@ function resolve(root: unknown, path: string): { fn: unknown; owner: unknown } |
 }
 
 /**
- * 換成 `JSON.stringify` 送得出去的形狀。
+ * Converts to a shape `JSON.stringify` can send.
  *
- * `Map` → 成對的陣列、`Set` → 陣列。循環參照換成 `'[circular]'`（否則 stringify
- * 直接丟例外，而那會變成一個沒有訊息的 500）。
+ * A `Map` becomes an array of pairs and a `Set` an array. Cycles become `'[circular]'`, since
+ * stringify would otherwise throw and turn into a 500 with no message.
  */
 export function jsonSafe(value: unknown, seen = new WeakSet<object>()): unknown {
   if (value === null || typeof value !== 'object') return value;
@@ -102,10 +106,10 @@ export function jsonSafe(value: unknown, seen = new WeakSet<object>()): unknown 
 }
 
 /**
- * 呼叫 `root` 上那條路徑。
+ * Calls that path on `root`.
  *
- * `root` 是頁面上的 `window.__agent`。開局前它只有 `session` 一塊，主選單前更是
- * 什麼都沒有 —— 兩種都回錯誤而不是爆掉。
+ * `root` is the page's `window.__agent`. Before a game starts it holds only `session`, and
+ * before the main menu it does not exist at all; both return an error rather than throwing.
  */
 export async function dispatch(root: unknown, call: AgentCall): Promise<AgentResponse> {
   if (root === null || root === undefined) {

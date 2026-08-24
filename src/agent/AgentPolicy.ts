@@ -4,22 +4,24 @@ import { POLICY_SCOPE, type PolicyScopeKind } from '../core/district/PolicyScope
 import { CitySpecType, CitySpecialization } from '../core/district/CitySpecialization';
 
 /**
- * 條例與城市特化。
+ * Policies and city specialization.
  *
- * ## 為什麼每一次設定都要讀回來確認
+ * ## Why every write is read back
  *
- * 核心的兩支寫入 —— `CityOrdinances.setLevel()` 與 `PolicyManager.setPolicyLevel()`
- * —— 遇到不合法的輸入**一律靜靜地 return**:範圍不對、分區不存在，什麼都不做，
- * 也不丟例外、不回值。那對 UI 是對的（按鈕本來就不會產生不合法的輸入），對程式
- * 呼叫就不是:回一個 `ok: true` 而條例根本沒開，之後只能從帳單上少的那一筆錢反推。
+ * The two core writers — `CityOrdinances.setLevel()` and `PolicyManager.setPolicyLevel()` —
+ * **return silently** on invalid input: an out-of-range level or an unknown district does
+ * nothing, throws nothing and returns nothing. That is right for the UI, whose buttons cannot
+ * produce invalid input, but not for programmatic calls: an `ok: true` for a policy that was
+ * never enabled can only be worked out later from a missing line on the bill.
  *
- * 所以這裡把核心靜靜擋掉的每一種情形都先問一次，設完再讀回來對一次。
+ * So every case the core would silently reject is checked first, and the value is read back
+ * after writing.
  *
- * ## 範圍不是選項
+ * ## Scope is not optional
  *
- * 每個條例只屬於分區或全城其中一邊（`POLICY_SCOPE`）。**兩邊都不能將就** ——
- * 同一條同時在分區與全城生效的話效果會加倍，而費用只收一次。所以全城條例帶了
- * 分區 ID 是錯誤，分區條例沒帶也是錯誤，兩種都擋。
+ * Each policy belongs either to a district or to the city (`POLICY_SCOPE`), never both:
+ * applying one at both levels doubles its effect while charging its fee once. A city ordinance
+ * given a district id is an error, and so is a district policy without one.
  */
 
 export interface PolicyHost {
@@ -38,7 +40,8 @@ export interface PolicyInfo {
   name: string;
   scope: PolicyScopeKind;
   maxLevel: number;
-  /** 現在的強度。分區條例在沒有指定分區時是 `null` —— 「還不知道」不是「關著」。 */
+  /** The current level. `null` for a district policy with no district named: "not known" rather
+   *  than "off". */
   level: number | null;
 }
 
@@ -57,7 +60,7 @@ export interface SpecOption {
   revenueMultiplier: number;
   happinessModifier: number;
   crimeModifier: number;
-  /** 人口夠了嗎。 */
+  /** Whether the population threshold is met. */
   available: boolean;
 }
 
@@ -84,12 +87,13 @@ function isSpecType(t: string): t is CitySpecType {
 export class AgentPolicy {
   constructor(private readonly host: PolicyHost) {}
 
-  // ── 條例 ────────────────────────────────────────────────────────
+  // ── Policies ────────────────────────────────────────────────────
 
   /**
-   * 全部的條例:範圍、上限、現在開到第幾級。
+   * Every policy: its scope, its maximum, and its current level.
    *
-   * 帶 `districtId` 才看得到分區條例的強度 —— 不帶的話那一欄是 `null`。
+   * District policies show a level only when `districtId` is given; otherwise that field is
+   * `null`.
    */
   list(districtId?: string): PolicyInfo[] {
     return (Object.values(PolicyType) as PolicyType[]).map(type => {
@@ -102,9 +106,9 @@ export class AgentPolicy {
   }
 
   /**
-   * 設定條例強度。`0` 是關閉。
+   * Sets a policy level. `0` turns it off.
    *
-   * 全城條例不要帶 `districtId`，分區條例一定要帶。
+   * City ordinances take no `districtId`; district policies require one.
    */
   setLevel(type: PolicyType | string, level: number, districtId?: string): PolicyResult {
     if (!isPolicyType(String(type))) {
@@ -119,7 +123,8 @@ export class AgentPolicy {
     }
     const max = maxLevel(t);
     if (level > max) {
-      // 核心會靜靜地夾。夾掉的話呼叫端會以為開到了它要的強度。
+      // The core clamps silently, which would let the caller believe it reached the level it
+      // asked for.
       return fail(`${t} only goes up to level ${max}, got ${level}`);
     }
 
@@ -147,9 +152,9 @@ export class AgentPolicy {
       : { ...fail(`the game refused to set ${t} to ${level} (still ${now})`), districtId };
   }
 
-  // ── 城市特化 ─────────────────────────────────────────────────────
+  // ── City specialization ─────────────────────────────────────────
 
-  /** 每一種特化的門檻與效果，以及現在選的是哪一個。 */
+  /** Each specialization's threshold and effects, and which one is currently chosen. */
   specializations(): SpecInfo {
     const population = this.host.population();
     return {
@@ -169,7 +174,7 @@ export class AgentPolicy {
     };
   }
 
-  /** 選一種特化。`NONE` 是取消。 */
+  /** Chooses a specialization. `NONE` clears it. */
   chooseSpecialization(type: CitySpecType | string): SpecResult {
     const current = this.host.specialization();
     if (!isSpecType(String(type))) {
@@ -180,8 +185,9 @@ export class AgentPolicy {
       return { ok: true, current: this.host.specialization() };
     }
 
-    // 人口門檻由 `CitySpecialization.canChoose()` 判。這裡不抄第二份 ——
-    // 兩份規則走散的那天，API 會說不行而遊戲說可以。被拒絕之後才回頭解釋原因。
+    // The population threshold is decided by `CitySpecialization.canChoose()`, not duplicated
+    // here: two copies of the rule would eventually disagree, with the API refusing what the
+    // game allows. The reason is worked out only after a refusal.
     const need = CitySpecialization.getBonusForType(t).requiredPopulation;
     const pop = this.host.population();
     const reason = pop < need

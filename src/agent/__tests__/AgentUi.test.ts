@@ -6,13 +6,15 @@ import type { ToolType } from '../../Game';
 import type { GameSpeed } from '../../core/simulation/GameClock';
 
 /**
- * 「玩家看得到、按得到」的那一層。
+ * What the player can see and press.
  *
- * 兩件事在這裡最容易出錯:
+ * Two things go wrong here most easily:
  *
- * 1. **面板住在 Solid 裡**，單元測試沒有 UI。橋沒註冊時要回 `false`，不能丟例外。
- * 2. **`Game` 只給切換式的 API**（`toggleViewMode`、`togglePause`、`changeSpeed(delta)`），
- *    而程式要的是「設成這個」。用切換去逼近設定值，逼不到就得停，不能轉成無窮迴圈。
+ * 1. **Panels live in Solid**, and unit tests have no UI. An unregistered bridge returns
+ *    `false` rather than throwing.
+ * 2. **`Game` only offers toggles** (`toggleViewMode`, `togglePause`, `changeSpeed(delta)`)
+ *    while a program wants "set to this". Approaching a target by toggling has to stop when it
+ *    cannot reach it rather than spinning forever.
  */
 
 
@@ -47,7 +49,7 @@ afterEach(() => registerPanelBridge(null));
 
 describe('面板', () => {
   it('should say no instead of throwing when the UI is not up', () => {
-    // 單元測試裡沒有 Solid。丟例外的話呼叫端每一處都得包 try。
+    // Unit tests have no Solid, and throwing would make every call site need a try block.
     const ui = new AgentUi(fakeHost());
     expect(ui.openPanel('overview')).toBe(false);
     expect(ui.closePanel()).toBe(false);
@@ -88,15 +90,17 @@ describe('聚焦視角是「設成」不是「切換」', () => {
   });
 
   it('should switch between two focus modes without landing on NORMAL', () => {
-    // Game 的 toggleViewMode(新模式) 從別的模式叫下去會直接跳過去，但先退回 NORMAL
-    // 才是它自己 UI 走的路。重點是結果要是目標模式，不是 NORMAL。
+    // Game's toggleViewMode(newMode) jumps straight across from another mode, but returning to
+    // NORMAL first is the path its own UI takes. What matters is ending in the target mode
+    // rather than NORMAL.
     const h = fakeHost({ viewMode: ViewMode.RAIL_FOCUS });
     expect(new AgentUi(h).setViewMode(ViewMode.BUS_FOCUS)).toBe(ViewMode.BUS_FOCUS);
   });
 
   it('should not touch the renderers when it is already there', () => {
-    // 少了早退，答案還是對的（關掉再開回來），但 applyViewMode 會把九個 renderer
-    // 各重設一次 —— 兩趟白工。所以驗的是「有沒有動」，不是「結果對不對」。
+    // Without the early return the answer is still right — off and back on — but applyViewMode
+    // resets nine renderers each way, two rounds of wasted work. So what is checked is whether
+    // anything moved, not whether the result is right.
     let toggles = 0;
     const h = fakeHost({ viewMode: ViewMode.BUS_FOCUS });
     const inner = h.toggleViewMode.bind(h);
@@ -138,14 +142,15 @@ describe('暫停與速度', () => {
   });
 
   it('should snap a target between gears to the nearest one', () => {
-    // 檔位只有 1 / 3 / 5 / 10。7 離 5 比離 10 近。
+    // The gears are 1 / 3 / 5 / 10, and 7 is nearer 5 than 10.
     const h = fakeHost();
     expect(new AgentUi(h).setSpeed(7)).toBe(5);
     expect(h.speedSet, '設了一個不存在的檔位').toEqual([5]);
   });
 
   it('should break a tie towards the slower gear', () => {
-    // 4 離 3 跟離 5 一樣近。慢的那一檔比較安全 —— 快轉會把玩家還沒看到的事情跑掉。
+    // 4 is equidistant from 3 and 5. The slower gear is safer: fast-forward runs past things the
+    // player has not seen.
     expect(new AgentUi(fakeHost()).setSpeed(4)).toBe(3);
   });
 
@@ -155,14 +160,14 @@ describe('暫停與速度', () => {
   });
 
   it('should treat zero as the slowest gear, not as a pause', () => {
-    // 0 在 `GameSpeed` 裡代表暫停，但 `Game.setSpeed(0)` 直接不理。
-    // 暫停有自己的入口，這裡不搶它的工作。
+    // `0` means paused in `GameSpeed`, but `Game.setSpeed(0)` ignores it. Pausing has its own
+    // entry point.
     expect(new AgentUi(fakeHost({ speed: 10 })).setSpeed(0)).toBe(1);
   });
 
   it('should resume the game the way the toolbar speed buttons do', () => {
-    // 選速度就是要它跑。這是遊戲自己的規矩（`Game.setSpeed` 會清掉 paused），
-    // 不在這一層改掉它。
+    // Choosing a speed means wanting it to run. That is the game's own rule — `Game.setSpeed`
+    // clears paused — and this layer does not override it.
     const h = fakeHost({ paused: true });
     new AgentUi(h).setSpeed(3);
 
@@ -186,8 +191,8 @@ describe('圖層與工具', () => {
 
 describe('取消選取', () => {
   it('should close the details panel', () => {
-    // 選取是點出來的（`act({ tool: 'select' })`），關掉它沒有對應的點擊 ——
-    // 面板上那顆 X 走的是這一支。
+    // Selecting is done by clicking (`act({ tool: 'select' })`), but closing has no
+    // corresponding click; the panel's X button calls this.
     const h = fakeHost();
     new AgentUi(h).deselect();
 
@@ -198,7 +203,7 @@ describe('取消選取', () => {
 
 describe('可以開哪些圖層與視角', () => {
   it('should list the overlays without listing "none" as one of them', () => {
-    // `none` 是「關掉」，不是一張圖層。列進去的話呼叫端會去問它的資料。
+    // `none` means "off", not an overlay. Listing it would send the caller asking for its data.
     const list = new AgentUi(fakeHost()).overlays();
 
     expect(list.some(o => o.type === 'none'), '把關閉當成一張圖層').toBe(false);
@@ -206,8 +211,9 @@ describe('可以開哪些圖層與視角', () => {
   });
 
   it('should say which overlays the player can actually reach', () => {
-    // crime 渲染器做得出來，但 Layers 面板上沒有那一格，鍵盤也沒有捷徑 ——
-    // API 開得起來，玩家開不起來。這個差別要講出來。
+    // The renderer can draw crime, but the Layers panel has no tile for it and there is no
+    // keyboard shortcut: the API can switch it on and the player cannot. That difference is
+    // stated rather than left implicit.
     const list = new AgentUi(fakeHost()).overlays();
     const crime = list.find(o => o.type === 'crime')!;
     const police = list.find(o => o.type === 'police')!;
@@ -218,7 +224,7 @@ describe('可以開哪些圖層與視角', () => {
   });
 
   it('should list the focus modes without listing NORMAL', () => {
-    // NORMAL 是「取消聚焦」，不是一種聚焦。
+    // NORMAL means "no focus", not a kind of focus.
     const list = new AgentUi(fakeHost()).viewModes();
 
     expect(list.some(m => m.mode === 'NORMAL')).toBe(false);
@@ -226,14 +232,14 @@ describe('可以開哪些圖層與視角', () => {
   });
 
   it('should say the transfer focus has no button of its own', () => {
-    // 它是點轉乘路線時自動切過去的。
+    // It is entered automatically by clicking a transfer route.
     const transfer = new AgentUi(fakeHost()).viewModes().find(m => m.mode === 'TRANSFER_FOCUS')!;
 
     expect(transfer.inLayersPanel).toBe(false);
   });
 
   it('should only name overlays that setOverlay would accept', () => {
-    // 清單跟能設的值分家的話，照著清單設會被打回票。
+    // If the list and the settable values drift apart, setting from the list is rejected.
     const ui = new AgentUi(fakeHost());
     for (const { type } of ui.overlays()) {
       expect(() => ui.setOverlay(type), `${type} 設不進去`).not.toThrow();

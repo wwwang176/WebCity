@@ -1,12 +1,13 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 
 /**
- * 存檔清單是唯一需要假造的東西。
+ * The save list is the only thing that needs stubbing.
  *
- * `load()` 會先確認那一格存在，而測試環境沒有 IndexedDB —— 不假造的話每一條
- * 載入測試都停在「no save in slot 1」，走不到後面真正要測的地方。
+ * `load()` first confirms the slot exists, and the test environment has no IndexedDB, so
+ * without a stub every load test stops at "no save in slot 1" before reaching what it tests.
  *
- * 只換 `listSaves`:`saveGame` 保持原樣，因為有幾條測試靠的就是它會失敗。
+ * Only `listSaves` is replaced; `saveGame` is left alone because several tests rely on it
+ * failing.
  */
 let fakeSaves: { id: number; name: string }[] = [];
 vi.mock('../../core/save/SaveManager', async (importOriginal) => ({
@@ -18,12 +19,13 @@ import { registerSessionBridge, setScreen, setStartFailure } from '../registry';
 import type { MapConfig } from '../../core/config/MapConfig';
 
 /**
- * 主選單那一層。
+ * The main menu layer.
  *
- * 兩條規矩，兩條都是因為**這個遊戲沒有復原功能**:
+ * Two rules, both because **the game has no undo**:
  *
- * 1. **沒有刪除。** 存檔是唯一的檢查點，程式抹掉它玩家就救不回來了。
- * 2. **不准寫 slot 0。** 那是自動存檔用的 —— 蓋掉它跟刪掉它一樣糟。
+ * 1. **No delete.** Saves are the only checkpoint, and a program erasing one leaves the player
+ *    nothing to recover from.
+ * 2. **Slot 0 is not written.** It is the autosave, and overwriting it is as bad as deleting it.
  */
 
 function session() {
@@ -38,7 +40,7 @@ afterEach(() => {
 });
 
 /**
- * 一個會「真的開起來」的假橋 —— 開完把畫面狀態設成 game，就像 `main.ts` 那樣。
+ * A stub bridge that really starts: it sets the screen to game afterwards, as `main.ts` does.
  */
 function workingBridge() {
   const got: { config?: unknown; slotId?: number; calls: number } = { calls: 0 };
@@ -49,7 +51,7 @@ function workingBridge() {
   return got;
 }
 
-/** 開到一半炸掉、退回主選單的那一種。`startGameGuarded` 就是這個行為。 */
+/** The kind that fails partway and returns to the main menu, as `startGameGuarded` does. */
 function bouncingBridge() {
   const got = { calls: 0 };
   registerSessionBridge({
@@ -61,7 +63,8 @@ function bouncingBridge() {
 
 describe('刪除存檔不在這一層', () => {
   it('should not expose anything that removes a save', () => {
-    // 這條測試是規格，不是實作細節:有人日後補上 delete 的話要在這裡絆倒。
+    // This test is the specification, not an implementation detail: anyone adding a delete
+    // trips here.
     const s = session() as unknown as Record<string, unknown>;
     for (const name of ['delete', 'deleteSave', 'remove', 'removeSave', 'clear', 'destroy']) {
       expect(s[name], `AgentSession 長出了 ${name}()`).toBeUndefined();
@@ -77,10 +80,11 @@ describe('存檔', () => {
   });
 
   it('should default to a slot that is not the autosave one', async () => {
-    // 預設值寫錯的話，一句 save() 就把玩家的檢查點蓋掉了。
+    // With the wrong default, a bare save() overwrites the player's checkpoint.
     let wrote: number | null = null;
     const s = new AgentSession(() => '{}', () => 0);
-    // save() 會打 IndexedDB，這裡只驗它沒有把 0 當預設 —— 打得到就不是 0。
+    // save() reaches IndexedDB; all this checks is that the default is not 0, which reaching it
+    // at all establishes.
     const r = await s.save(undefined, 'x').catch(() => ({ ok: false, reason: 'io' }));
     wrote = r.ok || r.reason !== undefined ? 1 : null;
     expect(wrote).not.toBeNull();
@@ -109,7 +113,8 @@ describe('載入與開新局要有橋才做得到', () => {
   });
 
   it('should fill in the rest of the config around what was asked for', async () => {
-    // 部分設定要能用 —— 逼呼叫端每次寫滿六個欄位只會讓它們用猜的。
+    // Partial configs have to work: requiring all six fields every time only makes callers
+    // guess.
     const got = workingBridge();
     const r = await session().newGame({ waterAmount: 'high' });
 
@@ -121,8 +126,8 @@ describe('載入與開新局要有橋才做得到', () => {
   });
 
   it('should refuse a field the game does not have', async () => {
-    // 這是玩家實際踩到的:AI 自己編了 `{size:128}`，遊戲開到一半在地形產生器
-    // 讀 `waterAmount` 時炸開，然後退回主選單 —— 而 API 回報 ok:true。
+    // An AI invented `{size:128}`, startup failed in the terrain generator reading
+    // `waterAmount`, the game returned to the main menu, and the API reported ok: true.
     const got = workingBridge();
     const r = await session().newGame({ size: 128 } as unknown as Partial<MapConfig>);
 
@@ -173,9 +178,10 @@ describe('載入與開新局要有橋才做得到', () => {
 
 describe('開起來了沒', () => {
   it('should not claim success when the game bounced back to the menu', async () => {
-    // `startGameGuarded` 會吞掉開局過程中的任何例外，然後退回主選單 —— 它**不會**
-    // 讓 Promise reject。所以「await 完了沒爆」不代表遊戲開起來了。
-    // 玩家看到的就是這個:載入畫面閃一下，跳回主選單，而 AI 說開好了。
+    // `startGameGuarded` swallows any exception during startup and returns to the main menu; it
+    // **never** rejects the promise. So an await that returned without throwing does not mean
+    // the game started. What the player sees is the loading screen flashing back to the menu
+    // while the AI says it is ready.
     const got = bouncingBridge();
     const r = await session().newGame();
 
@@ -185,8 +191,9 @@ describe('開起來了沒', () => {
   });
 
   it('should hand back the reason the game actually failed to start', async () => {
-    // 沒有這一條的話，呼叫端只知道「沒開起來」，真正的原因躺在瀏覽器主控台裡 ——
-    // 而呼叫端是另一個 process，它看不到那裡。玩家得自己開 devtools 貼給它。
+    // Without this the caller only learns that the game did not start, while the real reason
+    // sits in the browser console it cannot see, and the player has to open devtools and paste
+    // it over.
     registerSessionBridge({
       newGame: async () => {
         setStartFailure("Cannot read properties of undefined (reading 'riverHalfWidth')");
@@ -201,8 +208,8 @@ describe('開起來了沒', () => {
   });
 
   it('should not blame this failure on the last one', async () => {
-    // 上一次的失敗理由留著的話，下一次失敗會報出一個過期的原因 —— 那比沒有原因
-    // 更糟，因為它看起來像是查到了。
+    // A leftover reason makes the next failure report a stale one, which is worse than no
+    // reason because it looks like a diagnosis.
     setStartFailure('something from last time');
     registerSessionBridge({
       newGame: async () => { setScreen('menu', 'main'); },
@@ -215,7 +222,8 @@ describe('開起來了沒', () => {
   });
 
   it('should not blame a failed load on the last one either', async () => {
-    // 載入走的是另一支，兩支都要自己清 —— 只清一邊的話，另一邊會報出過期的原因。
+    // Loading goes through a different method, and both must clear it themselves; clearing only
+    // one leaves the other reporting a stale reason.
     fakeSaves = [{ id: 1, name: 'Save' }];
     setStartFailure('something from last time');
     registerSessionBridge({
@@ -229,9 +237,9 @@ describe('開起來了沒', () => {
   });
 
   it('should not claim success while the game is still stuck loading', async () => {
-    // 退回主選單不是唯一的失敗樣子。開局卡在載入中（例如錯誤處理自己也炸了）時，
-    // 畫面會停在 'loading' —— 那時候說「開好了」比說「退回選單」更糟，因為呼叫端
-    // 會立刻去讀一座還不存在的城市。
+    // Returning to the menu is not the only shape of failure. A startup stuck partway — the
+    // error handling itself failing, say — leaves the screen on 'loading', and claiming success
+    // there is worse still, because the caller immediately reads a city that does not exist.
     registerSessionBridge({
       newGame: async () => { setScreen('loading'); },
       load: async () => { setScreen('loading'); },
@@ -243,7 +251,7 @@ describe('開起來了沒', () => {
   });
 
   it('should not claim a load succeeded when it bounced back too', async () => {
-    // 載入失敗走的是同一條路（handleLoadGame → showMainMenu）。
+    // A failed load takes the same path: handleLoadGame to showMainMenu.
     fakeSaves = [{ id: 1, name: 'Save' }];
     const got = bouncingBridge();
     const r = await session().load(1);
@@ -255,7 +263,8 @@ describe('開起來了沒', () => {
 
 describe('匯入存檔檔案', () => {
   it('should refuse an empty file instead of asking the database', async () => {
-    // 空字串一路送下去只會在 JSON.parse 那裡炸開，訊息還跟「檔案是空的」無關。
+    // An empty string passed on would only blow up in JSON.parse, with a message unrelated to
+    // the file being empty.
     expect(await session().importSave('')).toMatchObject({ ok: false });
     expect((await session().importSave('   ')).reason, '沒說是檔案空的').toMatch(/empty/);
   });

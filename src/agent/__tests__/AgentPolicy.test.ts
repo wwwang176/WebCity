@@ -5,15 +5,17 @@ import { CitySpecType } from '../../core/district/CitySpecialization';
 import { maxLevel } from '../../core/district/PolicyManager';
 
 /**
- * 條例與城市特化。
+ * Policies and city specialization.
  *
- * ## 為什麼要讀回來確認
+ * ## Why every write is read back
  *
- * `CityOrdinances.setLevel()` 跟 `PolicyManager.setPolicyLevel()` 遇到不對的輸入
- * **一律靜靜地 return** —— 範圍不對、分區不存在，什麼都不會發生也不會有訊息。
- * 直接回 `ok: true` 的話，呼叫端會以為條例開了，然後在帳單上找不到它。
+ * `CityOrdinances.setLevel()` and `PolicyManager.setPolicyLevel()` **return silently** on
+ * invalid input: an out-of-range level or an unknown district does nothing and says nothing.
+ * Returning `ok: true` there would let the caller believe the policy was enabled and then fail
+ * to find it on the bill.
  *
- * 所以這一層設完一定讀回來對一次。測試裡有一個「假裝設好其實沒設」的 host 盯著這件事。
+ * So this layer reads back after every write, and a host that pretends to accept a write while
+ * discarding it keeps that honest.
  */
 
 function fakeHost(over: Partial<PolicyHost> = {}) {
@@ -47,13 +49,14 @@ function fakeHost(over: Partial<PolicyHost> = {}) {
   return { policy: new AgentPolicy(host), host };
 }
 
-/** 全城的與分區的各挑一條，寫死型別名字是為了在範圍表改動時就地爆掉。 */
+/** One city-wide and one per-district policy. The names are literal so a change to the scope
+ *  table fails here. */
 const CITY_WIDE = PolicyType.ENERGY_REGULATION;
 const PER_DISTRICT = PolicyType.CONGESTION_CHARGE;
 
 describe('有哪些條例', () => {
   it('should list every policy type with no gaps', () => {
-    // 少一條就是 agent 永遠找不到它。
+    // One missing entry means the agent can never find that policy.
     const listed = fakeHost().policy.list().map(p => p.type);
     expect(listed.sort()).toEqual(Object.values(PolicyType).sort());
   });
@@ -73,7 +76,8 @@ describe('有哪些條例', () => {
   });
 
   it('should leave district levels unknown until a district is named', () => {
-    // 分區條例沒有「全城的等級」可言。回 0 的話會被讀成「已經查過，是關的」。
+    // A district policy has no city-wide level. Returning 0 would read as "checked, and it is
+    // off".
     const { policy } = fakeHost();
     const byType = new Map(policy.list().map(p => [p.type, p]));
     expect(byType.get(PER_DISTRICT)!.level, '沒指定分區卻報了一個等級').toBeNull();
@@ -102,7 +106,7 @@ describe('開關條例', () => {
   });
 
   it('should refuse a district id on a city-wide ordinance', () => {
-    // 兩邊都設得進去的話效果會無聲地加倍，而費用只收一次。
+    // Settable at both levels, the effect doubles silently while the fee is charged once.
     const { policy, host } = fakeHost();
     const r = policy.setLevel(CITY_WIDE, 1, 'd1');
 
@@ -130,7 +134,8 @@ describe('開關條例', () => {
   });
 
   it('should refuse a level above what the policy accepts', () => {
-    // 核心會靜靜地夾。夾掉的話呼叫端會以為開到了它要的強度。
+    // The core clamps silently, which would let the caller believe it reached the level it
+    // asked for.
     const { policy, host } = fakeHost();
     const over = maxLevel(CITY_WIDE) + 1;
     const r = policy.setLevel(CITY_WIDE, over);
@@ -160,15 +165,16 @@ describe('開關條例', () => {
     const r = policy.setLevel('FREE_PIZZA' as PolicyType, 1);
 
     expect(r.ok).toBe(false);
-    // 沒認出它是個不存在的條例的話，它會被當成分區條例，然後回一句
-    // 「請指定分區」—— 那是在教呼叫端往錯的方向修。
+    // Unrecognised, it would be treated as a district policy and answered with "name a
+    // district", which sends the caller off in the wrong direction.
     expect(r.reason, '沒說這個條例根本不存在').toContain('unknown');
     expect(host.calls).toEqual([]);
   });
 
   it('should not claim success when the game quietly ignored it', () => {
-    // 這是這一層存在的理由。核心遇到不對的輸入不丟例外也不回值，只是 return。
-    const { policy } = fakeHost({ setCityLevel: () => { /* 吃掉 */ } });
+    // The reason this layer exists. The core neither throws nor returns a value on invalid
+    // input; it simply returns.
+    const { policy } = fakeHost({ setCityLevel: () => { /* discarded */ } });
     const r = policy.setLevel(CITY_WIDE, 1);
 
     expect(r.ok, '遊戲根本沒設，卻回報成功').toBe(false);

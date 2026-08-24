@@ -7,31 +7,32 @@ import { ViewMode as ViewModes } from '../core/ViewMode';
 import { getPanelBridge, isPanelId, PANEL_IDS, type PanelId } from './registry';
 
 /**
- * 「玩家看得到、按得到」的那一層。
+ * What the player can see and press.
  *
- * 分成三種東西:
+ * Three kinds of thing:
  *
- * | | 住在哪 | 怎麼碰 |
+ * | | Lives in | Reached through |
  * |---|---|---|
- * | 面板（Overview、Layers⋯） | Solid 的 `openModal` signal | 經過 `registry` 註冊的橋 |
- * | 圖層、聚焦視角、暫停、速度 | `Game` 上的公開方法 | 直接呼叫 |
- * | 鏡頭 | `SceneManager` | 直接呼叫 |
+ * | Panels (Overview, Layers, …) | Solid's `openModal` signal | a bridge registered in `registry` |
+ * | Overlays, focus view modes, pause, speed | public methods on `Game` | direct calls |
+ * | Camera | `SceneManager` | direct calls |
  *
- * 面板那一路在單元測試裡不存在（沒有 UI），所以橋沒註冊時回 `false` 而不是丟例外。
+ * The panel path does not exist in unit tests, which have no UI, so an unregistered bridge
+ * returns `false` rather than throwing.
  */
 
 export interface CameraTarget {
-  /** 看向地圖上的哪一格。 */
+  /** The map cell to look at. */
   x?: number;
   y?: number;
   /**
-   * 畫面高度換算成幾格。**這是正交相機的視錐高度，不是距離** —— 相機的
-   * `cameraDistance` 改了幾乎不影響縮放。
+   * The screen height expressed in cells. **This is the orthographic frustum height, not a
+   * distance**: changing the camera's `cameraDistance` barely affects zoom.
    */
   size?: number;
-  /** 方位角（弧度）。0 是軸向對齊，π/4 是預設的等角視角。 */
+  /** Azimuth in radians. 0 is axis-aligned and pi/4 is the default isometric view. */
   angle?: number;
-  /** 俯角（弧度）。遊戲自己的滾輪把它夾在 π/18 ~ 4π/9。 */
+  /** Elevation angle in radians. The game's own scroll wheel clamps it to pi/18 - 4pi/9. */
   elevation?: number;
 }
 
@@ -44,10 +45,11 @@ export interface CameraState {
 }
 
 /**
- * Layers 面板上真的有按鈕的那幾層。
+ * The overlays that actually have a button in the Layers panel.
  *
- * 跟 `OverlayType` 不是同一組 —— 那個列舉裡的 `crime` 渲染器實作了，面板上卻沒有
- * 入口。呼叫端問「玩家看得到什麼」跟「程式開得起來什麼」是兩個問題。
+ * Not the same set as `OverlayType`: the renderer implements that enum's `crime`, but the panel
+ * has no entry for it. "What can the player see" and "what can a program switch on" are two
+ * different questions.
  */
 const LAYERS_PANEL_OVERLAYS: ReadonlySet<string> = new Set([
   'power', 'water',
@@ -55,12 +57,12 @@ const LAYERS_PANEL_OVERLAYS: ReadonlySet<string> = new Set([
   'police', 'fire', 'health', 'education', 'park', 'garbage', 'district',
 ]);
 
-/** Layers 面板上真的有按鈕的視角模式。 */
+/** The view modes that actually have a button in the Layers panel. */
 const LAYERS_PANEL_MODES: ReadonlySet<string> = new Set([
   'UNDERGROUND', 'RAIL_FOCUS', 'FERRY_FOCUS', 'BUS_FOCUS',
 ]);
 
-/** AgentUi 碰得到的東西。用結構型別是為了能在沒有 Three.js 的情況下測。 */
+/** What AgentUi can reach. A structural type so it can be tested without Three.js. */
 export interface UiHost {
   currentTool: ToolType;
   viewMode: ViewMode;
@@ -74,35 +76,35 @@ export interface UiHost {
   togglePause(): void;
   setSpeed(speed: GameSpeed): void;
 
-  // ── 唯讀:畫面上看得到的工具與介面狀態 ──────────────────────────
+  // ── Read-only: the tool and interface state visible on screen ───
   //
-  // 要改這些請走 `act()`（旋轉、高架）或各自的面板 —— 這裡只負責讓呼叫端
-  // 知道玩家現在的設定是什麼。
+  // Changing any of these goes through `act()` (rotation, elevation) or the relevant panel.
+  // This only tells the caller what the player's current settings are.
 
-  /** 基礎設施的擺放角度。0 / 90 / 180 / 270 度。 */
+  /** Placement rotation for infrastructure: 0 / 90 / 180 / 270 degrees. */
   rotation(): number;
-  /** 蓋在地面還是高架。 */
+  /** Whether placement is on the ground or elevated. */
   placementMode(): string;
-  /** 道路工具現在選的路型。 */
+  /** The road type the road tool currently has selected. */
   roadType(): string;
-  /** 高架模式的目標層數 1–3。 */
+  /** Target level 1-3 in elevated placement mode. */
   elevationLevel(): number;
-  /** 游標下那一格要花多少錢。沒在預覽就是 `null`。 */
+  /** The cost of the cell under the cursor, or `null` when nothing is being previewed. */
   previewCost(): number | null;
-  /** 轉乘圖層上點開的那條路線。 */
+  /** The route opened on the transfer overlay. */
   selectedTransferRoute(): string | null;
-  /** 詳細面板上點開的那個市民。 */
+  /** The citizen opened in the detail panel. */
   selectedCitizenId(): number | null;
-  /** 三個靜音開關。 */
+  /** The three mute switches. */
   audio(): { muted: boolean; sfxMuted: boolean; musicMuted: boolean };
-  /** 這局是從哪個存檔載進來的。開新局是 `null`。 */
+  /** The save this session was loaded from. `null` for a new game. */
   loadedSave(): { slot: number | null; name: string | null };
   deselectBuilding(): void;
   camera(): CameraState;
   setCamera(target: CameraTarget): CameraState;
 }
 
-/** 對齊到最近的檔位。一樣近取慢的。 */
+/** Snaps to the nearest gear, taking the slower one on a tie. */
 function nearestGear(target: number): GameSpeed {
   let best = GameClock.SPEEDS[0]!;
   for (const gear of GameClock.SPEEDS) {
@@ -114,19 +116,19 @@ function nearestGear(target: number): GameSpeed {
 export class AgentUi {
   constructor(private readonly host: UiHost) {}
 
-  // ── 面板 ────────────────────────────────────────────────────────
+  // ── Panels ──────────────────────────────────────────────────────
 
-  /** 可以開哪些面板。 */
+  /** Which panels can be opened. */
   panels(): readonly PanelId[] {
     return PANEL_IDS;
   }
 
-  /** 現在開著哪一個。UI 還沒起來時回 `null`。 */
+  /** Which one is open, or `null` before the UI has started. */
   panel(): PanelId | null {
     return getPanelBridge()?.get() ?? null;
   }
 
-  /** 開一個面板。名字不對或 UI 還沒起來回 `false`。 */
+  /** Opens a panel. `false` for an unknown id or before the UI has started. */
   openPanel(id: string): boolean {
     if (!isPanelId(id)) return false;
     const bridge = getPanelBridge();
@@ -142,15 +144,17 @@ export class AgentUi {
     return true;
   }
 
-  // ── 圖層與視角 ──────────────────────────────────────────────────
+  // ── Overlays and view modes ─────────────────────────────────────
 
   /**
-   * 有哪些圖層可以開。
+   * Which overlays can be switched on.
    *
-   * `inLayersPanel` 說的是**玩家按得到嗎** —— `crime` 渲染器做得出來,但 Layers
-   * 面板上沒有那一格，鍵盤也沒有捷徑。API 開得起來,玩家開不起來。
+   * `inLayersPanel` says whether **the player can press it**: the renderer can draw `crime`,
+   * but the Layers panel has no tile for it and there is no keyboard shortcut. The API can
+   * switch it on; the player cannot.
    *
-   * 要知道那一層的數字怎麼讀（二元／連續／分類）請看 `read.overlay(type).kind`。
+   * For how to read an overlay's numbers (binary / continuous / categorical), see
+   * `read.overlay(type).kind`.
    */
   overlays(): { type: OverlayType; inLayersPanel: boolean }[] {
     return Object.values(OverlayTypes)
@@ -159,10 +163,10 @@ export class AgentUi {
   }
 
   /**
-   * 有哪些視角模式。
+   * Which view modes exist.
    *
-   * `inLayersPanel` 同樣是「玩家按得到嗎」:`TRANSFER_FOCUS` 是點轉乘路線時自動
-   * 切過去的，面板上沒有那個按鈕。
+   * `inLayersPanel` again means "can the player press it": `TRANSFER_FOCUS` is entered
+   * automatically by clicking a transfer route and has no button in the panel.
    */
   viewModes(): { mode: ViewMode; inLayersPanel: boolean }[] {
     return Object.values(ViewModes)
@@ -184,10 +188,11 @@ export class AgentUi {
   }
 
   /**
-   * 切到某個聚焦視角。
+   * Switches to a focus view mode.
    *
-   * `Game` 只給 `toggleViewMode()` —— 同一個模式再按一次會跳回 NORMAL。程式要的是
-   * 「設成這個」而不是「切換」，所以先退回 NORMAL 再切過去。已經在目標模式就不動。
+   * `Game` only offers `toggleViewMode()`, where pressing the same mode again returns to
+   * NORMAL. A program wants "set to this" rather than "toggle", so this returns to NORMAL first
+   * and then switches. Already being in the target mode is a no-op.
    */
   setViewMode(mode: ViewMode): ViewMode {
     const current = this.host.viewMode;
@@ -197,24 +202,24 @@ export class AgentUi {
     return this.host.viewMode;
   }
 
-  // ── 工具 ────────────────────────────────────────────────────────
+  // ── Tools ───────────────────────────────────────────────────────
 
   tool(): ToolType {
     return this.host.currentTool;
   }
 
   /**
-   * 只換工具，不動手。
+   * Switches tool without acting.
    *
-   * 要蓋東西走 `act()` —— 它會把 `placementMode` / `elevationLevel` / `currentRotation`
-   * 一起設滿，這裡不會。
+   * Building goes through `act()`, which also sets `placementMode`, `elevationLevel` and
+   * `currentRotation`; this does not.
    */
   setTool(tool: ToolType): ToolType {
     this.host.setTool(tool);
     return this.host.currentTool;
   }
 
-  // ── 時間 ────────────────────────────────────────────────────────
+  // ── Time ────────────────────────────────────────────────────────
 
   paused(): boolean {
     return this.host.paused;
@@ -230,35 +235,36 @@ export class AgentUi {
   }
 
   /**
-   * 設遊戲速度。
+   * Sets the game speed.
    *
-   * 速度是固定檔位（1 / 3 / 5 / 10），不是連續值。**不在檔位上的目標先對齊到最近的
-   * 一檔**，一樣近就取慢的那一檔 —— 快轉會把玩家還沒看到的事情跑掉，慢的比較安全。
-   * 超出範圍就夾在兩端。
+   * Speed comes in fixed gears (1 / 3 / 5 / 10), not as a continuous value. **A target off a
+   * gear snaps to the nearest one**, taking the slower on a tie, because fast-forward runs past
+   * things the player has not seen. Out-of-range targets clamp to the ends.
    *
-   * `0` 在 `GameSpeed` 裡代表暫停，但遊戲的 `setSpeed(0)` 直接不理它。暫停有自己的
-   * 入口（`setPaused`），這裡不搶它的工作，`0` 一律當成最慢的一檔。
+   * `0` means paused in `GameSpeed`, but the game's `setSpeed(0)` ignores it. Pausing has its
+   * own entry point (`setPaused`), so `0` here is treated as the slowest gear.
    *
-   * 選了速度就是要它跑:遊戲的 `setSpeed` 會順手解除暫停，跟工具列的速度鈕一樣。
+   * Choosing a speed means wanting it to run: the game's `setSpeed` also unpauses, exactly as
+   * the toolbar's speed buttons do.
    */
   setSpeed(target: number): number {
     this.host.setSpeed(nearestGear(target));
     return this.host.speed;
   }
 
-  // ── 選取 ────────────────────────────────────────────────────────
+  // ── Selection ───────────────────────────────────────────────────
 
   /**
-   * 關掉詳情面板。
+   * Closes the detail panel.
    *
-   * 選取本身是點出來的（`act({ tool: 'select', ... })`），取消沒有對應的點擊 ——
-   * 面板上那顆 X 走的就是這一支。
+   * Selecting is done by clicking (`act({ tool: 'select', ... })`), but deselecting has no
+   * corresponding click; the panel's X button calls this.
    */
   deselect(): void {
     this.host.deselectBuilding();
   }
 
-  // ── 鏡頭 ────────────────────────────────────────────────────────
+  // ── Camera ──────────────────────────────────────────────────────
 
   camera(): CameraState {
     return this.host.camera();
@@ -268,19 +274,18 @@ export class AgentUi {
     return this.host.setCamera(target);
   }
 
-  // ── 通知 ────────────────────────────────────────────────────────
+  // ── Tool state and notifications ────────────────────────────────
 
-  /** 遊戲現在顯示的那一則訊息。 */
-  /** 基礎設施的擺放角度,0 / 90 / 180 / 270 度。 */
+  /** Placement rotation for infrastructure: 0 / 90 / 180 / 270 degrees. */
   rotation(): number {
     return this.host.rotation();
   }
 
   /**
-   * 工具現在的設定 —— 畫面上那幾個小指示器。
+   * The tool's current settings, matching the small indicators on screen.
    *
-   * `previewCost` 只有在游標停在地圖上時才有值:它是 UI 在 hover 時算的,
-   * 不是遊戲狀態的一部分。透過 API 蓋東西不會經過它。
+   * `previewCost` has a value only while the cursor is over the map: the UI computes it on
+   * hover and it is not part of game state. Building through the API never goes near it.
    */
   toolState(): {
     tool: ToolType; rotation: number; placementMode: string;
@@ -296,26 +301,27 @@ export class AgentUi {
     };
   }
 
-  /** 三個靜音開關。 */
+  /** The three mute switches. */
   audio(): { muted: boolean; sfxMuted: boolean; musicMuted: boolean } {
     return this.host.audio();
   }
 
-  /** 這局是從哪個存檔載進來的。 */
+  /** The save this session was loaded from. */
   loadedSave(): { slot: number | null; name: string | null } {
     return this.host.loadedSave();
   }
 
-  /** 轉乘圖層上點開的那條路線。 */
+  /** The route opened on the transfer overlay. */
   selectedTransferRoute(): string | null {
     return this.host.selectedTransferRoute();
   }
 
-  /** 詳細面板上點開的那個市民。 */
+  /** The citizen opened in the detail panel. */
   selectedCitizenId(): number | null {
     return this.host.selectedCitizenId();
   }
 
+  /** The message the game is currently displaying. */
   notification(): string | null {
     return this.host.notification;
   }

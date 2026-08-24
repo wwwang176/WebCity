@@ -1,26 +1,27 @@
 import type { TransportRoute, TransportStop } from '../core/transport/types';
 
 /**
- * 路線管理 —— 建線、拆線、加減車。
+ * Route management: creating and deleting routes and changing vehicle counts.
  *
- * ## 為什麼中間要隔一層
+ * ## Why there is a layer in between
  *
- * 四種運具建路線的方式**沒有一個一樣**:
+ * **No two** transit modes create routes the same way:
  *
- * | | 怎麼建 | 會失敗嗎 |
+ * | | How | Can it fail |
  * |---|---|---|
- * | 公車 | `Game.createBusRoute()`，要沿著馬路做車道尋路 | 會 —— 站牌之間沒有路 |
- * | 地鐵 | `metro.createLine()` | 不會 |
- * | 鐵路 | `rail.createLine()`，還要指定客運或貨運 | 不會 |
- * | 渡輪 | 先驗水路連不連得通，再 `ferry.createRoute()` | 會 —— 走不到 |
+ * | Bus | `Game.createBusRoute()`, with lane pathfinding along the roads | Yes, when there is no road between stops |
+ * | Metro | `metro.createLine()` | No |
+ * | Rail | `rail.createLine()`, also choosing passenger or freight | No |
+ * | Ferry | validate water connectivity, then `ferry.createRoute()` | Yes, when a dock is unreachable |
  *
- * 那些差異包在各自的 `ModeAdapter` 裡（`index.ts` 組出來）。這個類別只做**四種運具
- * 共通的把關**:站牌在不在、夠不夠兩站、順序有沒有保住、路線 ID 是不是真的。
+ * Those differences are wrapped in each mode's `ModeAdapter`, assembled in `index.ts`. This
+ * class does only the **validation common to all four**: the stops exist, there are at least
+ * two, their order is preserved, and the route id is real.
  *
- * ## 每一支都回結果物件，不丟例外
+ * ## Every method returns a result object rather than throwing
  *
- * 跟 `AgentApi.act()` 同一個規矩。呼叫端是程式，`{ ok: false, reason }` 讀得懂;
- * 而且**擋下來的時候一定沒有碰到遊戲** —— 測試盯著這件事。
+ * The same rule as `AgentApi.act()`. Callers are programs and read `{ ok: false, reason }`, and
+ * **a refusal never touches the game** — the tests check that.
  */
 
 export type TransitMode = 'bus' | 'metro' | 'rail' | 'ferry';
@@ -28,18 +29,19 @@ export type TransitMode = 'bus' | 'metro' | 'rail' | 'ferry';
 export const TRANSIT_MODES: readonly TransitMode[] = ['bus', 'metro', 'rail', 'ferry'];
 
 /**
- * 一條在跑的路線至少要留幾台車。
+ * The fewest vehicles a running route may keep.
  *
- * `BaseTransportSystem.removeVehicleFromRoute()` 的判斷是 `vehicles <= 1` 就
- * **直接 return** —— 四種運具都繼承這一支。想讓路線停掉要拆線，不是把車減到零。
+ * `BaseTransportSystem.removeVehicleFromRoute()` **returns immediately** at `vehicles <= 1`,
+ * and all four modes inherit it. Stopping a route means deleting it, not reducing it to zero
+ * vehicles.
  */
 export const MIN_VEHICLES_ON_A_LIVE_ROUTE = 1;
 
-/** 一種運具對外要提供的六件事。 */
+/** The six things a transit mode must provide. */
 export interface ModeAdapter {
   stops(): readonly TransportStop[];
   listRoutes(): readonly TransportRoute[];
-  /** 建不起來回 `null`（公車沒路、渡輪沒水路）。 */
+  /** `null` when the route cannot be built: no road for a bus, no water route for a ferry. */
   createRoute(stops: readonly TransportStop[], vehicleCount: number): TransportRoute | null;
   deleteRoute(routeId: number): void;
   addVehicle(routeId: number): void;
@@ -58,7 +60,7 @@ export interface RouteInfo {
   routeId: number;
   stopIds: number[];
   vehicleCount: number;
-  /** 路線斷了（例如馬路被拆掉），暫停營運中。 */
+  /** The route is broken — its road was demolished, say — and service is suspended. */
   suspended: boolean;
 }
 
@@ -74,19 +76,19 @@ export interface RouteResult {
 export class AgentRoutes {
   constructor(private readonly host: Partial<RouteHost>) {}
 
-  /** 動得了哪幾種運具。 */
+  /** Which transit modes can be operated. */
   modes(): readonly TransitMode[] {
     return TRANSIT_MODES;
   }
 
-  /** 這種運具已經蓋好的站牌。建路線要的 ID 從這裡來。 */
+  /** The stops already built for this mode. Route creation takes its ids from here. */
   stops(mode: string): StopInfo[] {
     const a = this.adapter(mode);
     if (!a) return [];
     return a.stops().map(s => ({ id: s.id, x: s.x, y: s.y }));
   }
 
-  /** 這種運具現在跑著的路線。 */
+  /** The routes this mode is currently running. */
   list(mode: string): RouteInfo[] {
     const a = this.adapter(mode);
     if (!a) return [];
@@ -99,10 +101,10 @@ export class AgentRoutes {
   }
 
   /**
-   * 依序經過這幾個站牌建一條路線。
+   * Creates a route calling at these stops in order.
    *
-   * `stopIds` 的**順序就是行駛順序** —— 不排序也不去重，3→1→2 跟 1→2→3 是兩條
-   * 不同的路線。
+   * **The order of `stopIds` is the order of travel**: nothing is sorted or deduplicated, and
+   * 3-1-2 is a different route from 1-2-3.
    */
   create(mode: string, stopIds: readonly number[], vehicleCount = 1): RouteResult {
     const a = this.adapter(mode);
@@ -125,7 +127,8 @@ export class AgentRoutes {
 
     const route = a.createRoute(chosen, vehicleCount);
     if (!route) {
-      // 公車走不到、渡輪划不過去。遊戲那一層已經判過，這裡只是把話說出來。
+      // A bus with no road or a ferry with no water route. The game layer already decided; this
+      // only puts it into words.
       return { ok: false, mode, stopIds: [...stopIds], reason: `${mode} cannot reach every stop on this route` };
     }
     return {
@@ -152,8 +155,8 @@ export class AgentRoutes {
 
   removeVehicle(mode: string, routeId: number): RouteResult {
     return this.onRoute(mode, routeId, (a, r) => {
-      // 減到下限之後遊戲那邊會靜靜地什麼都不做，然後這裡回一個 `ok: true` 但實際上
-      // 沒發生任何事的結果 —— 那比直接說不行更難查。
+      // At the floor the game silently does nothing, which would produce an `ok: true` result
+      // for an action that had no effect — harder to diagnose than a plain refusal.
       if (r.vehicles <= MIN_VEHICLES_ON_A_LIVE_ROUTE) {
         return {
           ok: false, mode, routeId, vehicleCount: r.vehicles,
@@ -165,7 +168,7 @@ export class AgentRoutes {
     });
   }
 
-  // ── 內部 ────────────────────────────────────────────────────────
+  // ── Internal ────────────────────────────────────────────────────
 
   private adapter(mode: string): ModeAdapter | null {
     return (TRANSIT_MODES as readonly string[]).includes(mode)
@@ -174,9 +177,10 @@ export class AgentRoutes {
   }
 
   /**
-   * 共通的前置:運具存不存在、路線 ID 是不是**這種運具**的。
+   * The common preamble: the mode exists, and the route id belongs to **that mode**.
    *
-   * 每一種運具的路線 ID 各自從小開始編，撞號是常態 —— 所以只在自己這一份裡找。
+   * Each mode numbers its routes from the bottom independently, so collisions across modes are
+   * normal and the lookup stays within one mode's list.
    */
   private onRoute(
     mode: string,

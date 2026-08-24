@@ -9,13 +9,16 @@ import { UnifiedRoadLookup } from '../../core/road/UnifiedRoadLookup';
 import { buildRoadCellGraph } from '../../core/road/RoadCellGraph';
 
 /**
- * 讀城市。
+ * Reading the city.
  *
- * 這一層的規矩是**吐事實、不吐彙總** —— 面板把一百棟房子縮成一行是因為人只看得下
- * 一行，程式自己會加總。所以測的是「範圍、篩選、上限有沒有守住」，不是「總數對不對」。
+ * This layer's rule is **facts, not aggregates**: a panel compresses a hundred buildings into
+ * one line because a person can only read one line, and a program sums them itself. So what is
+ * tested is whether the rectangle, the filters and the limits hold, not whether the totals are
+ * right.
  */
 
-/** 只讀網格的測試碰不到 `Game`，給一個叫了就爆的空殼。 */
+/** Tests that only read the grid never touch `Game`, so they get a shell that throws when
+ *  asked. */
 function noStats(): StatsHost {
   return new Proxy({}, {
     get(_t, prop) {
@@ -24,7 +27,7 @@ function noStats(): StatsHost {
   }) as StatsHost;
 }
 
-/** 空殼加上這個測試真的要用的那幾支。 */
+/** The same shell plus the few methods this test actually uses. */
 function noStatsBut(overrides: Partial<StatsHost>): StatsHost {
   return new Proxy(overrides, {
     get(t, prop) {
@@ -37,17 +40,18 @@ function noStatsBut(overrides: Partial<StatsHost>): StatsHost {
 
 function city() {
   const state = createGameState(20, 20);
-  // 兩棟住宅、一棟商業，外加一棟燒毀的。
+  // Two houses, one shop, plus one burned-out building.
   state.grid.setCell(3, 3, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 });
   state.grid.setCell(4, 3, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 });
   state.grid.setCell(9, 9, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
-  // `BURNED`，不是寫死的 2。這個 fixture 原本寫 2，而程式碼裡也寫著 2 ——
-  // 兩邊用同一個我自己編的數字，於是測試通過而遊戲裡的焦黑房子全被當成好的（BUG-360）。
+  // `BURNED`, not a literal 2. With the fixture and the implementation both writing the same
+  // invented number, the test passed while every charred building in the game read as healthy
+  // (BUG-360).
   state.grid.setCell(5, 3, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1, reserved: BURNED });
   return new AgentRead(() => state, noStats());
 }
 
-/** 同一座城，但數得出 `getCell` 被問過幾次。 */
+/** The same city, but counting how often `getCell` is asked. */
 function countingCity() {
   const state = createGameState(20, 20);
   state.grid.setCell(3, 3, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 });
@@ -95,8 +99,9 @@ describe('建築', () => {
   });
 
   it('should not scan outside the map for an oversized rectangle', () => {
-    // getCell 界外回 null，所以不夾也不會壞 —— 只是把 550×550 掃完（三十萬格）而不是
-    // 20×20。這是效能守衛，看得到的只有呼叫次數。
+    // getCell returns null out of bounds, so an unclamped rectangle is not incorrect, merely a
+    // 550x550 scan of 300,000 cells instead of 20x20. A performance guard, visible only in the
+    // call count.
     const { read, counted } = countingCity();
     read.buildings({ rect: { x1: -50, y1: -50, x2: 500, y2: 500 } });
     expect(counted(), '掃到地圖外面去了').toBeLessThanOrEqual(20 * 20);
@@ -135,7 +140,7 @@ describe('居民', () => {
   });
 
   it('should look up only the people who live in that building', () => {
-    // 一戶人家看不出差別 —— 全部回傳跟查對了長得一樣。
+    // A single household shows nothing: returning everyone looks the same as looking it up.
     const state = createGameState(20, 20);
     state.grid.setCell(3, 3, { zoneType: ZoneType.RESIDENTIAL_HIGH, buildingId: 4 });
     state.grid.setCell(8, 8, { zoneType: ZoneType.RESIDENTIAL_HIGH, buildingId: 4 });
@@ -157,7 +162,7 @@ describe('服務與運輸', () => {
   });
 
   it('should report transit through the same helper the panel uses', () => {
-    // 面板與這裡各算一次的話，兩邊會靜靜地分家 —— BUG-342 就是這樣來的。
+    // Computed separately here and in the panel, the two drift apart silently (BUG-342).
     const rows = city().transit();
     expect(rows.length).toBeGreaterThan(0);
     expect(rows[0]).toHaveProperty('usage');
@@ -184,13 +189,13 @@ describe('逐格資料', () => {
 });
 
 /**
- * `Game` 自己已經算好的那幾份數字。
+ * The figures `Game` has already computed.
  *
- * 這裡測的不是「算得對不對」—— 那是 `EconomyBreakdown`、`CommuteStats`、`TrafficStats`
- * 各自的測試在管。這裡測的是**有沒有原封不動地交出去**:中間只要多一次 `{...}`，
- * 面板跟 agent 就各拿到一份，然後靜靜地分家（BUG-342 就是這樣來的）。
+ * What is tested is not whether they are right — `EconomyBreakdown`, `CommuteStats` and
+ * `TrafficStats` have their own tests — but whether they are **handed on untouched**: one
+ * `{...}` in between gives the panel and the agent separate copies that drift apart (BUG-342).
  *
- * 所以用同一性（`toBe`）釘住 —— 複製一份就紅。
+ * So identity (`toBe`) pins it, and any copy turns it red.
  */
 function stubStats() {
   const calls: string[] = [];
@@ -234,7 +239,7 @@ describe('Game 已經算好的那幾份', () => {
   });
 
   it('should ask the game exactly once per call', () => {
-    // 轉手就是轉手。問兩次代表中間自己又算了一輪。
+    // A pass-through is a pass-through. Asking twice means a round of computation in between.
     const { read, calls } = stubStats();
     read.economyBreakdown();
     read.trafficStats();
@@ -268,7 +273,7 @@ describe('點開的那一棟', () => {
 });
 
 describe('圖層那兩份', () => {
-  /** 帶得動圖層那幾支的假 host。 */
+  /** A stub host carrying the overlay methods. */
   function overlayStats(load = -1) {
     const asked: string[] = [];
     const host = {
@@ -290,7 +295,7 @@ describe('圖層那兩份', () => {
   }
 
   it('should answer coverage from the cost map, not from the render output', () => {
-    // 渲染那一份只有那張圖層開著時才存在，而且 cost 已經被丟掉了。
+    // The render output exists only while that overlay is on, and the cost has been discarded.
     const { read, asked } = overlayStats();
     const c = read.coverage('police') as { budget: number; cells: { ratio: number; color: string }[] };
 
@@ -301,7 +306,8 @@ describe('圖層那兩份', () => {
   });
 
   it('should redden a cell whose facility is swamped, however close it is', () => {
-    // 距離 270/540 = 0.5（第 5 階）。設施爆到兩倍時嚴重度是 1，該跳到第 9 階。
+    // Distance is 270/540 = 0.5, tier 5. At twice capacity the severity is 1 and it should jump
+    // to tier 9.
     const { read } = overlayStats(2.0);
     const c = read.coverage('police') as {
       cells: { ratio: number; load: number; severity: number; tier: number; facilityId: string | null }[];
@@ -315,7 +321,7 @@ describe('圖層那兩份', () => {
   });
 
   it('should refuse a service that has no road-cost gradient', () => {
-    // park 有地面覆蓋，但沒有走馬路的成本圖 —— 硬問會拿到一個空殼。
+    // Parks have ground coverage but no road-cost map, so asking anyway returns an empty shell.
     const { read, asked } = overlayStats();
     const r = read.coverage('park') as { reason: string };
 
@@ -332,7 +338,7 @@ describe('圖層那兩份', () => {
   });
 
   it('should ask the game for the colour of the overlay it was asked about', () => {
-    // 拿別張圖層的色階去上色，顏色會跟畫面對不起來。
+    // Colouring with another overlay's scale disagrees with the screen.
     const { read, asked } = overlayStats();
     read.overlay('commute');
 
@@ -342,7 +348,7 @@ describe('圖層那兩份', () => {
 
 
 describe('Overview 那八頁', () => {
-  /** 一座有東西可以數的城:住宅、商業、工業各一，外加一座警局。 */
+  /** A city with something to count: one house, one shop, one factory and a police station. */
   function overviewCity() {
     const state = createGameState(20, 20);
     state.grid.setCell(3, 3, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 });
@@ -353,8 +359,8 @@ describe('Overview 那八頁', () => {
   }
 
   it('should read every page straight off the game state', () => {
-    // 這七支都不碰 `Game` —— `noStats()` 一被問就爆。跑得完就代表沒有一支
-    // 偷偷繞到渲染層或面板的狀態去拿數字。
+    // None of these touch `Game`: `noStats()` throws the moment it is asked. Completing proves
+    // none of them detours through the renderer or panel state for its numbers.
     const { read } = overviewCity();
 
     expect(() => {
@@ -381,7 +387,7 @@ describe('Overview 那八頁', () => {
   });
 
   it('should name what is dragging the city down, not just the score', () => {
-    // 「吸引力 12 分」本身沒有可以動作的資訊。
+    // "Attractiveness 12" on its own carries nothing to act on.
     const { state, read } = overviewCity();
     state.taxRates.residential = 20;
 
@@ -404,7 +410,7 @@ describe('Overview 那八頁', () => {
   });
 
   it('should hand over the chart history the game panel draws', () => {
-    // 這一份**不在 GameState 裡** —— 是 UI 的 store 累積的，所以要靠 host 轉手。
+    // **Not part of GameState**: the UI store accumulates it, so it comes through the host.
     const history = { days: [1, 2], pop: [10, 20], happiness: [], funds: [], income: [], expenses: [] };
     const read = new AgentRead(() => createGameState(8, 8), {
       chartHistory: () => history,
@@ -414,8 +420,8 @@ describe('Overview 那八頁', () => {
   });
 
   it('should not recompute what the panel computes', () => {
-    // 面板跟這裡呼叫的是同一支 `build*Stats`。這條在測「同一個狀態問兩次結果一樣」——
-    // 一旦有人在 read 這層插進自己的算式，兩次之間就會出現差異。
+    // The panel and this layer call the same `build*Stats`. This checks that one state asked
+    // twice gives the same answer, which arithmetic inserted into the read layer would break.
     const { read } = overviewCity();
 
     expect(read.summary()).toEqual(read.summary());
@@ -438,7 +444,7 @@ describe('一個市民,照面板顯示的樣子', () => {
   }
 
   it('should carry the name the panel prints', () => {
-    // 畫面上寫的是名字,API 只給 id 的話兩邊講的是不同的東西。
+    // The screen shows a name, so an API giving only an id talks about something else.
     const { read, worker } = withCitizens();
     const c = read.citizen(worker.id)!;
 
@@ -447,8 +453,9 @@ describe('一個市民,照面板顯示的樣子', () => {
   });
 
   it('should not call a retiree or a child unemployed', () => {
-    // 面板分成 Unemployed / Retired / Student / Too young to work。
-    // 把後三種讀成失業，一座滿員的城市點開住宅會像失業率 100%（面板為此開過單）。
+    // The panel distinguishes Unemployed / Retired / Student / Too young to work. Reading the
+    // last three as unemployed makes a fully employed city's housing look like 100%
+    // unemployment.
     const { read, worker, retiree, child } = withCitizens();
 
     expect(read.citizen(worker.id)!.workLabel).toBe('9,9');
@@ -465,14 +472,14 @@ describe('一個市民,照面板顯示的樣子', () => {
   });
 
   it('should return null for an id that is not around any more', () => {
-    // 市民會死，而 id 不回收。丟例外的話呼叫端每問一次都得包 try。
+    // Citizens die and ids are not reused. Throwing would make every lookup need a try block.
     const { read } = withCitizens();
 
     expect(read.citizen(999999)).toBeNull();
   });
 
   it('should describe a citizen in a list exactly as it describes them alone', () => {
-    // 兩支各拼一份的話，清單跟詳情會慢慢分家。
+    // Assembled separately, the list and the detail view drift apart.
     const { read, worker } = withCitizens();
     const fromList = read.citizens().find(c => c.id === worker.id);
 
@@ -491,8 +498,8 @@ describe('廢墟的判定要用遊戲的常數', () => {
   }
 
   it('should flag a burned building as derelict', () => {
-    // 這裡原本寫死 `[1, 2]`，而 BURNED 其實是 3 —— 於是玩家螢幕上九棟焦黑的房子，
-    // API 全部回報「好得很」（BUG-360）。
+    // Hardcoding `[1, 2]` while BURNED is actually 3 made the API report nine charred buildings
+    // on the player's screen as healthy (BUG-360).
     const burned = burnedCity().buildings().find(b => b.x === 4 && b.y === 3)!;
 
     expect(burned.derelict, '燒毀的樓被當成正常的').toBe(true);
@@ -505,7 +512,7 @@ describe('廢墟的判定要用遊戲的常數', () => {
   });
 
   it('should leave a healthy building alone', () => {
-    // 反面也要成立 —— 不然「全部都是廢墟」也會讓上面兩條通過。
+    // The converse must hold too, or "everything is derelict" would satisfy both tests above.
     const healthy = burnedCity().buildings().find(b => b.x === 3 && b.y === 3)!;
 
     expect(healthy.derelict).toBe(false);
@@ -518,13 +525,13 @@ describe('廢墟的判定要用遊戲的常數', () => {
   });
 
   it('should take the values from the game rather than restating them', () => {
-    // 常數搬家或改值時，寫死的那一份不會跟著動。
+    // A hardcoded copy does not follow the constant when it moves or changes value.
     expect(BURNED).not.toBe(2);
   });
 });
 
 describe('高架結構', () => {
-  /** 一座橋、一段疊在它上面的第二層，以及一段別處的。 */
+  /** A bridge, a second level stacked on it, and a segment elsewhere. */
   function bridgeCity() {
     const state = createGameState(20, 20);
     const em = new ElevationManager();
@@ -532,7 +539,7 @@ describe('高架結構', () => {
       roadType: RoadType.HIGHWAY, roadFlags: 0, railType: 0, railFlags: 0,
       isRamp, rampAscendDirection: 0,
     });
-    // 刻意不照順序放 —— 照順序放的話「有沒有排序」就測不出來。
+    // Deliberately inserted out of order, or the sort could not be observed.
     em.set(15, 15, 1, seg());
     em.set(6, 5, 2, seg());
     em.set(5, 5, 1, seg(true));
@@ -542,7 +549,8 @@ describe('高架結構', () => {
   }
 
   it('should list every elevated segment when no rect is given', () => {
-    // 在這之前確認一座橋存在的唯一辦法，是故意重蓋一次讀錯誤訊息（BUG-367）。
+    // Without this, the only way to confirm a bridge exists was to rebuild it and read the
+    // error message (BUG-367).
     expect(bridgeCity().elevated()).toHaveLength(4);
   });
 
@@ -572,7 +580,7 @@ describe('高架結構', () => {
   });
 
   it('should come back in a stable order', () => {
-    // 每次順序不同的話，呼叫端沒辦法比對兩次讀取之間差了什麼。
+    // A varying order leaves the caller unable to diff two reads.
     const rows = bridgeCity().elevated();
 
     expect(rows.map(s => `${s.x},${s.y},${s.level}`))
@@ -619,7 +627,8 @@ describe('兩格通不通', () => {
   });
 
   it('should say not connected when there is no road graph yet', () => {
-    // 存檔剛載入、路網 lookup 還沒接上的那一瞬間。回 true 會比回 false 糟糕得多。
+    // The moment just after loading a save, before the road lookup is wired up. Returning true
+    // here would be far worse than returning false.
     const read = new AgentRead(
       () => createGameState(10, 10),
       noStatsBut({ roadCellGraph: () => null }),

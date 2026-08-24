@@ -1,75 +1,78 @@
 /**
- * 圖層資料 —— 玩家在畫面上看到的那兩層，變成程式讀得懂的形狀。
+ * Overlay data: the two layers the player sees on screen, in a shape a program can read.
  *
- * ## 打開一張圖層，其實有兩層東西
+ * ## Switching on an overlay actually shows two layers
  *
- * 以 Police 為例:
+ * For Police:
  *
- * | | 是什麼 | 值 |
+ * | | What it is | Values |
  * |---|---|---|
- * | **地面色塊** | 這一格有沒有警力 | 80 或 0，**二元** |
- * | **建築高亮** | 距離與設施負載中比較糟的那一個 | 綠→黃→紅 **10 階** |
+ * | **Ground tint** | whether this cell has police cover | 80 or 0, **binary** |
+ * | **Building highlight** | the worse of distance and facility load | green to red, **10 steps** |
  *
- * 玩家真正在讀的是**第二層** —— 它說的不是「有沒有」，是「這棟房子的警力有多勉強」。
- * 只給第一層的話，agent 會拿到一堆沒有資訊量的 80。
+ * What the player actually reads is the **second** layer: not "is there cover" but "how
+ * marginal is this building's cover". Emitting only the first hands the agent a field of
+ * uninformative 80s.
  *
- * ## 顏色不只是距離
+ * ## The colour is not only distance
  *
- * 那 10 階吃的是 `serviceSeverity(cost / budget, load)` —— 距離與**服務這一格的
- * 那座設施有多滿**取比較糟的一個。只回距離的話，緊鄰一間爆到兩倍的醫院會被說成
- * 最好的狀態（BUG-362）。
+ * Those 10 steps follow `serviceSeverity(cost / budget, load)`, the worse of distance and **how
+ * full the facility serving that cell is**. Returning distance alone reports a cell next to a
+ * hospital at twice its capacity as being in the best possible state (BUG-362).
  *
- * ## 不從渲染結果反推
+ * ## Not derived from the render output
  *
- * `Game.overlayHighlightCells` 存的是算完的 `{x, y, color}`，而且**只有那張圖層開著
- * 的時候才會被算出來**。從那裡讀的話，agent 想問「警力覆蓋怎麼樣」得先叫玩家把圖層
- * 打開 —— 而且 `cost` / `ratio` 都在挑完顏色之後就丟了。
+ * `Game.overlayHighlightCells` stores finished `{x, y, color}` records, and **only computes
+ * them while that overlay is switched on**. Reading from there would make asking "how is police
+ * coverage" require the player to open the overlay first, and `cost` / `ratio` are discarded
+ * once the colour is chosen.
  *
- * 所以這裡從**源頭**拿:`service.getCoveredCellsWithCost()` 加上那個服務自己的預算。
- * 顏色是它的衍生物（`tier = floor(ratio × 10)`），不是反過來。
+ * So this reads from the **source**: `service.getCoveredCellsWithCost()` plus that service's
+ * own budget. The colour is derived from it (`tier = floor(ratio * 10)`), not the reverse.
  */
 
 import { serviceSeverity } from '../core/service/ServiceSeverity';
 
-/** 走馬路成本、有 10 階漸層的那幾個服務。 */
+/** The services with a road-cost flood and a 10-step gradient. */
 export const COVERAGE_SERVICES = ['police', 'fire', 'health', 'education', 'garbage'] as const;
 
 export type CoverageService = typeof COVERAGE_SERVICES[number];
 
 export interface CoverageSource {
-  /** 這個服務的成本預算。五個各不相同 —— 用錯一個，整張圖的階數都會偏。 */
+  /** This service's cost budget. All five differ, and the wrong one skews every tier. */
   budget: number;
-  /** `"x,y"` → 從最近的設施沿馬路走過來的成本。 */
+  /** `"x,y"` to the road-following cost from the nearest facility. */
   costs: ReadonlyMap<string, number>;
-  /** 服務這一格的那座設施的負載 ÷ 容量。`-1` = 問不到。 */
+  /** Load over capacity for the facility serving this cell. `-1` means unavailable. */
   loadAt: (x: number, y: number) => number;
-  /** 服務這一格的那座設施的 id。 */
+  /** The id of the facility serving this cell. */
   servingFacilityAt: (x: number, y: number) => string | null;
-  /** 造成這些顏色的設施本身。畫面上是藍色的那些。 */
+  /** The facilities producing these colours, drawn blue on screen. */
   sources: readonly { x: number; y: number }[];
-  /** 10 階色帶，由 `Game` 給 —— 顏色不能兩邊各算一次。 */
+  /** The 10-step gradient, supplied by `Game`, so colours are not computed twice. */
   gradient: readonly number[];
 }
 
 export interface CoverageCell {
   x: number;
   y: number;
-  /** 沿馬路走過來的成本。 */
+  /** The road-following cost to get here. */
   cost: number;
-  /** `cost / budget`，夾在 1。越接近 1 代表這裡**離設施越遠**。 */
+  /** `cost / budget`, clamped to 1. Closer to 1 means **further from the facility**. */
   ratio: number;
   /**
-   * 服務這一格的那座設施現在多滿。1.0 是剛好滿，2.0 是需求兩倍於容量。
-   * `-1` = 問不到（那個服務沒有負載的概念）。**不夾在 1** —— 超過 1 是資訊。
+   * How full the facility serving this cell is. 1.0 is exactly full, 2.0 is demand at twice
+   * capacity. `-1` means unavailable, for services with no notion of load. **Not clamped to 1**:
+   * exceeding 1 is information.
    */
   load: number;
-  /** 服務這一格的那座設施。一片紅色要去動哪一棟，看這個。 */
+  /** The facility serving this cell, which says which building to act on when an area is red. */
   facilityId: string | null;
   /**
-   * 距離與負載取比較糟的那一個，0–1。**畫面上的顏色是照這個挑的。**
+   * The worse of distance and load, 0-1. **The on-screen colour follows this.**
    */
   severity: number;
-  /** 0–9，跟畫面上的色階同一個。 */
+  /** 0-9, the same steps as on screen. */
   tier: number;
   color: string;
 }
@@ -77,29 +80,30 @@ export interface CoverageCell {
 export interface CoverageInfo {
   service: string;
   budget: number;
-  /** 有幾格被涵蓋。 */
+  /** How many cells are covered. */
   covered: number;
   cells: CoverageCell[];
   sources: readonly { x: number; y: number }[];
 }
 
-/** 這一層的數字該怎麼讀。 */
+/** How to read this layer's numbers. */
 export type OverlayKind = 'binary' | 'continuous' | 'categorical' | 'unknown';
 
 /**
- * 每一張地面圖層的數字是什麼意思。
+ * What each ground overlay's numbers mean.
  *
- * 不講的話呼叫端只能猜:拿到一整片 80 會以為自己漏抓了什麼，拿到分區的 37
- * 會以為那是強度而去跟 62 比大小。
+ * Left unsaid, a caller can only guess: a uniform field of 80 reads as a sampling failure, and
+ * a district's 37 reads as an intensity to be compared against 62.
  */
 const OVERLAY_KINDS: Record<string, OverlayKind> = {
-  // 有沒有覆蓋，沒有中間值。
+  // Covered or not, with nothing in between.
   police: 'binary', fire: 'binary', health: 'binary',
   education: 'binary', park: 'binary', garbage: 'binary',
-  // 真的是漸層，數字可以比大小。
+  // Genuine gradients whose numbers can be compared.
   traffic: 'continuous', pollution: 'continuous', landValue: 'continuous',
   crime: 'continuous', commute: 'continuous',
-  // 數字是**標籤**不是數量:分區的值是身分，power/water 是三階的狀態。
+  // The numbers are **labels**, not quantities: a district's value is an identity, and
+  // power/water are three-state.
   power: 'categorical', water: 'categorical',
   zone: 'categorical', district: 'categorical',
 };
@@ -112,17 +116,18 @@ function hex(color: number): string {
   return `#${color.toString(16).padStart(6, '0')}`;
 }
 
-/** `"12,8"` → `[12, 8]`。 */
+/** `"12,8"` to `[12, 8]`. */
 function parseKey(key: string): [number, number] {
   const i = key.indexOf(',');
   return [Number(key.slice(0, i)), Number(key.slice(i + 1))];
 }
 
 /**
- * 建築那一層 —— 服務有多勉強。
+ * The building layer: how marginal the service is.
  *
- * `tier` 用的是跟 `Game` 挑顏色一模一樣的式子。差一階的話，agent 說「那一區是黃的」
- * 就跟玩家螢幕上看到的對不起來 —— 而那種錯最難發現，因為兩邊都「看起來很合理」。
+ * `tier` uses exactly the formula `Game` uses to pick colours. One step out and an agent
+ * reporting "that area is yellow" disagrees with the player's screen — the hardest kind of
+ * error to spot, because both sides look reasonable.
  */
 export function buildCoverage(service: string, src: CoverageSource): CoverageInfo {
   const cells: CoverageCell[] = [];
@@ -132,7 +137,7 @@ export function buildCoverage(service: string, src: CoverageSource): CoverageInf
     const [x, y] = parseKey(key);
     const ratio = Math.min(1, cost / src.budget);
     const load = src.loadAt(x, y);
-    // 階數走 `serviceSeverity`，跟 `Game` 挑顏色用的是同一支。
+    // The tier goes through `serviceSeverity`, the same function `Game` uses to pick colours.
     const severity = Math.max(0, serviceSeverity(cost / src.budget, load));
     const tier = Math.min(top, Math.floor(severity * 10));
     cells.push({
@@ -161,10 +166,10 @@ export interface OverlayCellInfo {
 }
 
 /**
- * 地面那一層。
+ * The ground layer.
  *
- * `colorOf` 是 `OverlayRenderer.colorFor` —— **問它**而不是自己換算。那支函式的
- * 註解就寫著「顏色不能兩邊各算一次:改了一邊另一邊就不一樣」。
+ * `colorOf` is `OverlayRenderer.colorFor`: **asked**, never reimplemented. Colours computed in
+ * two places diverge as soon as one side changes.
  */
 export function buildOverlayCells(
   data: ReadonlyMap<string, number> | undefined,

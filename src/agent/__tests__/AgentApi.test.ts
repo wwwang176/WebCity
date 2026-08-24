@@ -4,11 +4,12 @@ import type { ToolType } from '../../Game';
 import { EMPTY_DEMOLISH_TALLY } from '../../core/building/DemolishTally';
 
 /**
- * 程式動手蓋東西的那一層。
+ * The layer a program builds through.
  *
- * 這裡守的主要是一件事:`Game.handleToolAction()` 讀的是**留在 Game 上的狀態**，而
- * `setTool()` 只對非拖曳工具重設 `placementMode` —— 道路與鐵軌會留著上一次的值。
- * 玩家剛蓋完高架、程式接著蓋路，蓋出來的會是高架橋，而且沒有任何錯誤訊息。
+ * Mostly one thing is guarded here: `Game.handleToolAction()` reads **state left on Game**, and
+ * `setTool()` resets `placementMode` only for non-drag tools, so roads and rails keep the
+ * previous value. After the player builds an elevated section, a program that then builds a
+ * road gets a bridge, with no error message.
  */
 
 interface Recorded {
@@ -24,7 +25,8 @@ interface FakeHost extends ToolHost {
   funds: number;
 }
 
-/** 照著真的 `Game.setTool()` / `handleToolAction()` 的行為做，包括那個不重設的分支。 */
+/** Mirrors the real `Game.setTool()` / `handleToolAction()` behaviour, including the branch that
+ *  does not reset. */
 function fakeHost(opts: { funds?: number; onAction?: (h: FakeHost) => void } = {}): FakeHost {
   const budget = { funds: opts.funds ?? 100_000 };
   const h: FakeHost = {
@@ -42,7 +44,7 @@ function fakeHost(opts: { funds?: number; onAction?: (h: FakeHost) => void } = {
     setTool(tool: ToolType) {
       h.currentTool = tool;
       h.currentRotation = 0;
-      // 真的 setTool 只在「不是拖曳建造工具」時才重設這兩個。
+      // The real setTool resets these two only for tools that are not drag-build tools.
       const isDragBuild = tool.startsWith('road') || tool === 'rail_track';
       if (!isDragBuild) { h.placementMode = 'ground'; h.elevationLevel = 1; }
     },
@@ -62,7 +64,7 @@ function fakeHost(opts: { funds?: number; onAction?: (h: FakeHost) => void } = {
 
 describe('每個動作自己把工具狀態設滿', () => {
   it('should not inherit an elevated placement mode from whatever happened before', () => {
-    // 玩家剛蓋完一段高架就把控制權交出來。
+    // The player hands over control right after building an elevated section.
     const h = fakeHost();
     h.placementMode = 'elevated';
     h.elevationLevel = 2;
@@ -82,7 +84,7 @@ describe('每個動作自己把工具狀態設滿', () => {
   });
 
   it('should set rotation after setTool has reset it, not before', () => {
-    // setTool 自己會把 rotation 歸零。在它之前設就等於沒設。
+    // setTool zeroes rotation itself, so setting it beforehand is the same as not setting it.
     const h = fakeHost();
     new AgentApi(h).act({ tool: 'police', x1: 3, y1: 4, rotation: 90 });
 
@@ -124,7 +126,7 @@ describe('動作要說得出結果', () => {
   });
 
   it('should not blame this action for the previous notification', () => {
-    // 通知是留在 Game 上的一格字串，不會自己消失。
+    // The notification is a single string left on Game and does not clear itself.
     const h = fakeHost();
     h.notification = 'Cannot build road: blocked';
 
@@ -164,7 +166,8 @@ describe('沒有復原功能，所以爆炸半徑要有上限', () => {
   });
 
   it('should not cap anything other than demolish', () => {
-    // 劃一整片住宅區是正常操作，而且劃錯不會毀掉既有的東西。
+    // Zoning a whole block of housing is ordinary, and getting it wrong destroys nothing that
+    // was already there.
     const h = fakeHost();
     const r = new AgentApi(h).act({ tool: 'zone_r', x1: 0, y1: 0, x2: 30, y2: 30 });
 
@@ -174,8 +177,9 @@ describe('沒有復原功能，所以爆炸半徑要有上限', () => {
 });
 
 describe('拆除要說出自己拆了什麼', () => {
-  // 拆除不動錢包也不出聲,所以 `cost` 恆 0、`ok` 恆 true —— 拆 42 格和拆 0 格
-  // 的回應本來一字不差（BUG-366）。
+  // Demolition neither touches the wallet nor speaks, so `cost` is always 0 and `ok` always
+  // true, and demolishing 42 cells and demolishing 0 produced word-for-word identical responses
+  // (BUG-366).
   it('should say plainly that it did nothing', () => {
     const h = fakeHost({ onAction: (host) => { host.lastDemolishTally = { ...EMPTY_DEMOLISH_TALLY }; } });
     const r = new AgentApi(h).act({ tool: 'demolish', x1: 0, y1: 0, x2: 5, y2: 5 });
@@ -194,8 +198,8 @@ describe('拆除要說出自己拆了什麼', () => {
   });
 
   it('should report zeros when the cap refused the action', () => {
-    // 擋下來的時候連 handleToolAction 都沒呼叫,所以遊戲那邊不會寫 tally。
-    // 欄位仍然要在 —— 呼叫端不該為了拒絕路徑多寫一個 undefined 判斷。
+    // A refusal never calls handleToolAction, so the game writes no tally. The field is present
+    // anyway, so callers need no extra undefined check for the refusal path.
     const h = fakeHost();
     const side = Math.ceil(Math.sqrt(AGENT_LIMITS.DEMOLISH_CELLS)) + 1;
     const r = new AgentApi(h).act({ tool: 'demolish', x1: 0, y1: 0, x2: side - 1, y2: side - 1 });
@@ -212,7 +216,7 @@ describe('拆除要說出自己拆了什麼', () => {
   });
 
   it('should not inherit the tally from an earlier demolish', () => {
-    // `lastDemolishTally` 跟 `notification` 一樣是留在 Game 上的狀態。
+    // `lastDemolishTally` is state left on Game, like `notification`.
     const h = fakeHost({ onAction: () => {} });
     const api = new AgentApi(h);
     h.lastDemolishTally = { ...EMPTY_DEMOLISH_TALLY, cells: 42 };
@@ -261,7 +265,8 @@ describe('動作記錄', () => {
 type AgentActionResultArray = { length: number };
 
 describe('分區筆刷的成敗不能看通知', () => {
-  /** 筆刷畫完會出一句「Downtown +15 cells」—— 那是成功的樣子，不是失敗。 */
+  /** A finished stroke says "Downtown +15 cells", which is what success looks like, not
+   *  failure. */
   function districtHost(gesture: 'select' | 'deselect' | 'paint' | null, note: string) {
     return fakeHost({
       onAction: (h) => { h.notification = note; h.lastDistrictGesture = gesture; },
@@ -269,7 +274,8 @@ describe('分區筆刷的成敗不能看通知', () => {
   }
 
   it('should count a stroke that painted cells as a success', () => {
-    // 每一筆都要說話是這支筆刷刻意的設計:選取的分區在畫面外時，那一句是唯一的痕跡。
+    // Speaking on every stroke is deliberate: when the selected district is off screen, that
+    // line is the only trace.
     const h = districtHost('paint', 'Downtown +15 cells');
     const r = new AgentApi(h).act({ tool: 'district', x1: 10, y1: 12, x2: 14, y2: 14 });
 
@@ -284,7 +290,7 @@ describe('分區筆刷的成敗不能看通知', () => {
   });
 
   it('should still report a stroke the game refused', () => {
-    // 扣除模式手上沒有分區時筆刷什麼都不做,只留下一句話。
+    // In subtract mode with no district in hand the brush does nothing and only leaves a line.
     const h = districtHost(null, 'Pick a district first — click one on the map, or press New.');
     const r = new AgentApi(h).act({ tool: 'district', x1: 3, y1: 3 });
 
@@ -297,7 +303,7 @@ describe('分區筆刷的成敗不能看通知', () => {
     const api = new AgentApi(h);
     api.act({ tool: 'district', x1: 10, y1: 12, x2: 14, y2: 14 });
 
-    // 這一筆被擋下來 —— handleToolAction 完全沒動到那個欄位。
+    // This stroke is refused, so handleToolAction never touches that field.
     h.notification = null;
     const blocked = fakeHost({ onAction: (x) => { x.notification = 'Pick a district first'; } });
     blocked.lastDistrictGesture = 'paint';

@@ -1,22 +1,23 @@
 import { getDefaultMapConfig, type MapConfig } from '../core/config/MapConfig';
 
 /**
- * 驗開新局的地圖設定。
+ * Validates the map config for a new game.
  *
- * ## 為什麼一定要驗
+ * ## Why validation is required
  *
- * 地形產生器**不驗**。它直接拿 `config.waterAmount` 去查表，值不對就是
- * `Cannot read properties of undefined (reading 'riverHalfWidth')` —— 開局炸在
- * 一半，`startGameGuarded` 吞掉例外退回主選單，玩家看到載入畫面閃一下就沒了。
+ * The terrain generator **does not validate**. It looks `config.waterAmount` up in a table
+ * directly, and a wrong value is `Cannot read properties of undefined (reading
+ * 'riverHalfWidth')`: startup fails partway, `startGameGuarded` swallows the exception and
+ * returns to the main menu, and the player sees the loading screen flash past.
  *
- * UI 那一邊早就知道這件事（`NewGameConfig.pick()` 的註解寫著「一個
- * `waterAmount: undefined` 的設定會直接進到地形產生器而不是被拒絕」）並在自己那條路
- * 上擋掉了。agent 是**新開的第二條路**，那道防護沒有跟過來。
+ * The UI already guards this on its own path (`NewGameConfig.pick()`). The agent is a **second
+ * path**, and that guard did not come with it.
  *
- * ## 收部分設定，其餘補預設
+ * ## Partial configs are accepted and defaulted
  *
- * 逼呼叫端每次寫滿六個欄位，只會讓它們用猜的。而錯誤訊息要**列出可以用的東西** ——
- * 呼叫端是程式，它只能從訊息裡學會下一次該怎麼寫。
+ * Requiring all six fields every time would only make callers guess. And the error messages
+ * **list the valid values**: the caller is a program, and the message is the only place it can
+ * learn what to write next time.
  */
 
 const ALLOWED = {
@@ -26,7 +27,7 @@ const ALLOWED = {
   disasterFrequency: ['low', 'medium', 'high'],
 } as const;
 
-/** `seed` 的範圍跟新遊戲設定畫面上那個輸入框一樣。 */
+/** The `seed` range matches the input box on the new game screen. */
 const SEED_MIN = 1;
 const SEED_MAX = 2147483646;
 
@@ -40,8 +41,8 @@ export type MapConfigCheck =
   | { ok: false; reason: string };
 
 /**
- * 檢查並補齊。給 `undefined` 就回 `undefined` —— 讓遊戲用它自己的預設，
- * 而不是在這裡另外編一份。
+ * Validates and fills in defaults. `undefined` in returns `undefined` out, leaving the game to
+ * use its own defaults rather than assembling a second copy of them here.
  */
 export function checkMapConfig(input?: Partial<MapConfig>): MapConfigCheck | { ok: true; config: undefined } {
   if (input === undefined || input === null) return { ok: true, config: undefined };

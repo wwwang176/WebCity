@@ -3,13 +3,14 @@ import { AgentDistrict, type DistrictHost } from '../AgentDistrict';
 import { DISTRICT_SWATCHES } from '../../core/district/DistrictPalette';
 
 /**
- * 行政區。
+ * Districts.
  *
- * 格子怎麼畫不歸這裡管 —— 那是 `act({ tool: 'district', ... })` 走筆刷做的。
- * 這一層管的是**筆刷要畫在誰身上、用什麼模式**，以及分區本身的增刪改名換色。
+ * How cells are painted is not this layer's concern; that is `act({ tool: 'district', ... })`
+ * driving the brush. This layer handles **which district the brush paints and in which mode**,
+ * plus creating, deleting, renaming and recolouring districts themselves.
  *
- * `DistrictManager` 的每一支寫入遇到不存在的 id 都是靜靜地 return（`merge` 例外，
- * 它丟例外）。所以這裡一律先驗 id。
+ * Every `DistrictManager` write returns silently on an unknown id, except `merge`, which
+ * throws. So every id is validated first.
  */
 
 function fakeHost(over: Partial<DistrictHost> = {}) {
@@ -96,7 +97,8 @@ describe('筆刷指向誰', () => {
   });
 
   it('should let go of the brush', () => {
-    // 放掉之後下一筆拖曳會開一個新的分區 —— 那是工具列 New 的意思。
+    // Once released, the next drag creates a new district, which is what the toolbar's New
+    // means.
     const { d, host } = fakeHost();
     d.setActive('d1');
 
@@ -145,8 +147,8 @@ describe('增刪改', () => {
   });
 
   it('should refuse a name that is already taken', () => {
-    // 分區靠 id 分辨，但人是靠名字講話的。兩個 Downtown 會讓「把 Downtown 的
-    // 壅塞費關掉」變成一句沒有答案的話。
+    // Districts are identified by id, but people talk about them by name. Two Downtowns make
+    // "turn off Downtown's congestion charge" unanswerable.
     const { d, host } = fakeHost();
     const r = d.create('Downtown');
 
@@ -174,7 +176,7 @@ describe('增刪改', () => {
   });
 
   it('should let a district keep its own name', () => {
-    // 改色不改名的呼叫端會把原名一起送回來。那不該被當成撞名。
+    // A caller changing only the colour sends the existing name back, which is not a collision.
     expect(fakeHost().d.rename('d1', 'Downtown').ok).toBe(true);
   });
 
@@ -185,7 +187,8 @@ describe('增刪改', () => {
   });
 
   it('should refuse a colour that is not on the palette', () => {
-    // 核心會把超出範圍的靜靜換成 undefined（＝退回預設色），那看起來就像沒反應。
+    // The core silently turns an out-of-range index into undefined, reverting to the default
+    // colour, which looks like no response at all.
     const { d, host } = fakeHost();
     const r = d.setColor('d1', DISTRICT_SWATCHES.length);
 
@@ -201,8 +204,8 @@ describe('增刪改', () => {
   });
 
   it('should let go of the brush when the district under it is deleted', () => {
-    // 筆刷還指著一個不存在的分區的話，下一筆拖曳會拿到「Pick a district first」，
-    // 而工具列看起來一切正常。
+    // A brush still pointing at a district that no longer exists makes the next drag answer
+    // "Pick a district first" while the toolbar looks normal.
     const { d, host } = fakeHost();
     d.setActive('d2');
     d.delete('d2');
@@ -246,7 +249,8 @@ describe('增刪改', () => {
       expect(r.ok).toBe(false);
       expect(r.reason).toContain('nowhere');
     }
-    // `mergeDistricts` 對不存在的 id 是丟例外的 —— 沒擋住就不只是回錯值而已。
+    // `mergeDistricts` throws on an unknown id, so letting one through is worse than a wrong
+    // return value.
     expect(host.calls, '不存在的 id 也照樣送進遊戲').toEqual([]);
   });
 });

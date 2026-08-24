@@ -2,25 +2,27 @@ import type { DistrictPaintMode } from '../core/district/DistrictPaint';
 import { DISTRICT_SWATCHES } from '../core/district/DistrictPalette';
 
 /**
- * 行政區。
+ * Districts.
  *
- * ## 格子不在這裡畫
+ * ## Cells are not painted here
  *
- * 分區的格子是**拖出來的** —— `act({ tool: 'district', x1, y1, x2, y2 })` 走的就是
- * 玩家手上那支筆刷。這一層決定的是筆刷**指向誰**、用**哪一種模式**（併入／取代／
- * 扣除），以及分區本身的增刪改名換色。
+ * A district's cells are **dragged out**: `act({ tool: 'district', x1, y1, x2, y2 })` uses the
+ * same brush the player holds. This layer decides **which district** the brush points at and
+ * **which mode** it uses (replace / add / subtract), plus creating, deleting, renaming and
+ * recolouring districts themselves.
  *
- * ## 一律先驗 id
+ * ## Every id is validated first
  *
- * `DistrictManager` 的寫入遇到不存在的 id 幾乎都是靜靜地 return，唯獨
- * `mergeDistricts` 是**丟例外**。兩種都不能讓它發生:前者會回一個什麼都沒做的
- * `ok: true`，後者會把例外丟到呼叫端手上。所以每一支進遊戲之前都先查過。
+ * `DistrictManager`'s writes almost all return silently on an unknown id, except
+ * `mergeDistricts`, which **throws**. Neither is acceptable: the first produces an `ok: true`
+ * for an action that did nothing, and the second lands an exception in the caller's hands. So
+ * every method checks before entering the game.
  *
- * ## 名字不給撞
+ * ## Names must be unique
  *
- * 分區靠 id 分辨，但人是靠名字講話的。清單上兩個 Downtown 會讓「把 Downtown 的
- * 壅塞費關掉」變成一句沒有答案的話。遊戲自己不擋（自動命名會避開，手動取名不會），
- * 這一層擋。
+ * Districts are identified by id, but people talk about them by name. Two Downtowns in the list
+ * makes "turn off Downtown's congestion charge" unanswerable. The game does not enforce this —
+ * auto-naming avoids collisions, manual naming does not — so this layer does.
  */
 
 export interface DistrictRecord {
@@ -49,9 +51,9 @@ export interface DistrictInfo {
   id: string;
   name: string;
   cellCount: number;
-  /** 色票索引。沒指定過就是 `null`（＝用預設配色）。 */
+  /** Swatch index, or `null` when never set, meaning the default palette colour. */
   colorIndex: number | null;
-  /** 筆刷現在指著它。 */
+  /** The brush currently points at it. */
   active: boolean;
 }
 
@@ -73,7 +75,7 @@ export interface DistrictResult {
 export class AgentDistrict {
   constructor(private readonly host: DistrictHost) {}
 
-  // ── 看 ──────────────────────────────────────────────────────────
+  // ── Reading ─────────────────────────────────────────────────────
 
   list(): DistrictInfo[] {
     const active = this.host.activeId();
@@ -86,19 +88,19 @@ export class AgentDistrict {
     }));
   }
 
-  /** 筆刷指著誰。 */
+  /** Which district the brush points at. */
   active(): string | null {
     return this.host.activeId();
   }
 
-  /** 筆刷的狀態:指著誰、什麼模式、有哪些模式。 */
+  /** The brush state: its target, its mode, and the available modes. */
   brush(): BrushInfo {
     return { active: this.host.activeId(), mode: this.host.paintMode(), modes: PAINT_MODES };
   }
 
-  // ── 筆刷 ────────────────────────────────────────────────────────
+  // ── Brush ───────────────────────────────────────────────────────
 
-  /** 把筆刷指到某一區。`null` 是放掉 —— 下一筆拖曳會開一個新的分區。 */
+  /** Points the brush at a district. `null` releases it, so the next drag creates a new one. */
   setActive(districtId: string | null): DistrictResult {
     if (districtId !== null && !this.exists(districtId)) {
       return { ok: false, districtId, reason: `no district with id ${districtId}` };
@@ -115,9 +117,9 @@ export class AgentDistrict {
     return { ok: true, mode: mode as DistrictPaintMode };
   }
 
-  // ── 增刪改 ──────────────────────────────────────────────────────
+  // ── Create, edit, delete ────────────────────────────────────────
 
-  /** 開一個新分區，並且把筆刷指過去。不給名字的話遊戲自己編號。 */
+  /** Creates a district and points the brush at it. Without a name the game numbers it. */
   create(name?: string): DistrictResult {
     if (name !== undefined) {
       const bad = this.badName(name, null);
@@ -139,12 +141,13 @@ export class AgentDistrict {
     return { ok: true, districtId, name: name.trim() };
   }
 
-  /** 換色票。索引是 `DISTRICT_SWATCHES` 的位置。 */
+  /** Changes the swatch. The index is a position in `DISTRICT_SWATCHES`. */
   setColor(districtId: string, colorIndex: number): DistrictResult {
     if (!this.exists(districtId)) {
       return { ok: false, districtId, reason: `no district with id ${districtId}` };
     }
-    // 核心會把超出範圍的靜靜換成 undefined（退回預設色）—— 那看起來就像沒反應。
+    // The core silently turns an out-of-range index into undefined, reverting to the default
+    // colour, which looks like no response at all.
     if (!Number.isInteger(colorIndex) || colorIndex < 0 || colorIndex >= DISTRICT_SWATCHES.length) {
       return {
         ok: false, districtId,
@@ -156,10 +159,10 @@ export class AgentDistrict {
   }
 
   /**
-   * 整個分區刪掉，連同它身上的條例。格子回到「不屬於任何分區」。
+   * Deletes a district along with its policies. Its cells return to belonging to none.
    *
-   * 筆刷正指著它的話要一起放掉 —— 指著一個不存在的分區時，下一筆拖曳只會拿到
-   * 「Pick a district first」，而工具列看起來一切正常。
+   * The brush is released if it pointed at that district: pointing at one that no longer exists
+   * makes the next drag answer "Pick a district first" while the toolbar looks normal.
    */
   delete(districtId: string): DistrictResult {
     if (!this.exists(districtId)) {
@@ -171,7 +174,7 @@ export class AgentDistrict {
     return { ok: true, districtId };
   }
 
-  /** 把 `mergedId` 併進 `keepId`。格子跟過去，`mergedId` 消失。 */
+  /** Merges `mergedId` into `keepId`. The cells move across and `mergedId` disappears. */
   merge(keepId: string, mergedId: string): DistrictResult {
     for (const id of [keepId, mergedId]) {
       if (!this.exists(id)) return { ok: false, districtId: id, reason: `no district with id ${id}` };
@@ -185,13 +188,14 @@ export class AgentDistrict {
     return { ok: true, districtId: kept };
   }
 
-  // ── 內部 ────────────────────────────────────────────────────────
+  // ── Internal ────────────────────────────────────────────────────
 
   private exists(id: string): boolean {
     return this.host.all().some(d => d.id === id);
   }
 
-  /** `exceptId` 是「這個名字本來就是我的」—— 改色不改名的呼叫端會把原名送回來。 */
+  /** `exceptId` means "this name is already mine": a caller changing only the colour sends the
+   *  existing name back. */
   private badName(name: string, exceptId: string | null): string | null {
     const trimmed = name.trim();
     if (trimmed === '') return 'district name cannot be blank';

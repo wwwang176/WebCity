@@ -8,75 +8,77 @@ import {
 } from './registry';
 
 /**
- * 玩家現在在看什麼。
+ * What the player is looking at.
  *
- * ## 為什麼要有這一支
+ * ## Why this exists
  *
- * AI 在旁邊陪玩的話，開場第一句就要答得出玩家在哪個畫面。在這之前它只能間接猜:
- * 主選單上 `read.city` 會回 `nothing at path read.city` —— 那句話讀起來像是它自己
- * 打錯字，不像「你還沒開始遊戲」。
+ * An AI playing alongside the player has to answer which screen they are on in its first
+ * sentence. Without this it can only infer it: on the main menu `read.city` answers `nothing at
+ * path read.city`, which reads like its own typo rather than "you have not started a game".
  *
- * ## 沒有遊戲的時候不要編
+ * ## Nothing is invented when there is no game
  *
- * 主選單與載入中都沒有 `Game`，所以工具、速度、暫停那些欄位**整個不存在**，
- * 而不是 `0` / `'select'` / `false`。回一個假的預設值，AI 會以為遊戲正在跑。
+ * The main menu and the loading screen have no `Game`, so the tool, speed and pause fields are
+ * **absent entirely** rather than `0` / `'select'` / `false`. A plausible default would let the
+ * AI believe a game is running.
  */
 
 export interface AgentStatus {
-  /** 主選單、載入中、遊戲中。 */
+  /** Main menu, loading, or in game. */
   screen: Screen;
-  /** 主選單停在哪一頁。不在主選單時是 `null`。 */
+  /** Which page the main menu is on, `null` when not in the menu. */
   menuPage: MenuPage | null;
-  /** 開著哪個面板。UI 還沒起來或沒開就是 `null`。 */
+  /** Which panel is open. `null` before the UI starts or when none is open. */
   panel: PanelId | null;
-  /** 設定畫面開著嗎。它不走面板橋，所以 `panel` 看不到它。 */
+  /** Whether the settings screen is open. It does not go through the panel bridge, so `panel`
+   *  cannot see it. */
   settingsOpen: boolean;
-  /** 新手教程走到哪。沒在跑就是 `null`。 */
+  /** How far the tutorial has got, `null` when it is not running. */
   tutorial: TutorialStatus | null;
 
-  // ── 以下只有 `screen === 'game'` 時才有 ──────────────────────────
+  // ── Present only while `screen === 'game'` ──────────────────────
   tool?: ToolType;
   paused?: boolean;
   speed?: number;
   viewMode?: ViewMode;
   overlay?: OverlayType;
-  /** 畫面上那則訊息。 */
+  /** The message on screen. */
   notification?: string | null;
 
   /**
-   * 基礎設施的擺放角度,0 / 90 / 180 / 270 度。
+   * Placement rotation for infrastructure: 0 / 90 / 180 / 270 degrees.
    *
-   * 畫面右下角那個 `R: 90°` 就是它。用 `act()` 蓋東西時可以逐次指定,
-   * 這裡回的是玩家目前按 R 轉到哪。
+   * The `R: 90°` indicator in the bottom-right corner. `act()` can specify it per call; this is
+   * where the player's R key has left it.
    */
   rotation?: number;
-  /** 蓋在地面還是高架。 */
+  /** Whether placement is on the ground or elevated. */
   placementMode?: string;
-  /** 道路工具現在選的路型。 */
+  /** The road type the road tool currently has selected. */
   roadType?: string;
-  /** 高架模式的目標層數 1–3。 */
+  /** Target level 1-3 in elevated placement mode. */
   elevationLevel?: number;
   /**
-   * 游標下那一格要花多少錢 —— 工具列上工具名稱旁邊那個數字。
+   * The cost of the cell under the cursor, the number beside the tool name in the toolbar.
    *
-   * 這是 UI 在 hover 時算的,不是遊戲狀態。沒在預覽（包含所有用 API 操作的情況）
-   * 就是 `null`。
+   * The UI computes it on hover; it is not game state. `null` whenever nothing is being
+   * previewed, which includes every action taken through the API.
    */
   previewCost?: number | null;
-  /** 轉乘圖層上點開的那條路線。 */
+  /** The route opened on the transfer overlay. */
   selectedTransferRoute?: string | null;
-  /** 詳細面板上點開的那個市民。 */
+  /** The citizen opened in the detail panel. */
   selectedCitizenId?: number | null;
-  /** 三個靜音開關。 */
+  /** The three mute switches. */
   audio?: { muted: boolean; sfxMuted: boolean; musicMuted: boolean };
-  /** 這局是從哪個存檔載進來的。開新局而且還沒存過就是 `null`。 */
+  /** The save this session was loaded from. `null` for a new game not yet saved. */
   loadedSave?: { slot: number | null; name: string | null };
 }
 
 /**
- * 拼出現在的狀態。
+ * Assembles the current status.
  *
- * `ui` 是 `null` 代表還沒有 `Game`（主選單、載入中）。
+ * A `null` `ui` means there is no `Game` yet: the main menu or the loading screen.
  */
 export function buildStatus(ui: AgentUi | null): AgentStatus {
   const screen = getScreen();
@@ -85,8 +87,8 @@ export function buildStatus(ui: AgentUi | null): AgentStatus {
     screen,
     menuPage: screen === 'menu' ? getMenuPage() : null,
     panel: getPanelBridge()?.get() ?? null,
-    // UI 還沒起來（單元測試就沒有）就當作沒開、沒在跑教程,不丟例外 ——
-    // 否則 status() 會變成一支在測試裡不能用的東西。
+    // Before the UI starts, as in unit tests, these read as closed and not running rather than
+    // throwing; otherwise status() would be unusable in tests.
     settingsOpen: isSettingsOpen(),
     tutorial: getTutorialStatus(),
   };

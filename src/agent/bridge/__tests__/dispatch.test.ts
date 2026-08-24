@@ -2,15 +2,18 @@ import { describe, it, expect } from 'vitest';
 import { dispatch, jsonSafe, MAX_PATH_DEPTH } from '../dispatch';
 
 /**
- * 把一行 `{"path":"read.city","args":[]}` 變成真的呼叫。
+ * Turning a line of `{"path":"read.city","args":[]}` into an actual call.
  *
- * 這是整座橋唯一有邏輯的地方，其餘（HTTP、WebSocket）都是管線。所以這裡守三件事:
+ * The only part of the bridge with logic; the rest — HTTP, WebSocket — is plumbing. Three
+ * things are guarded here:
  *
- * 1. **路徑不能亂爬。** 收進來的字串來自外面，`read.constructor.constructor` 這種
- *    東西爬得到 `Function`，那就等於讓對方在頁面裡執行任意程式碼。
- * 2. **不丟例外。** 呼叫端在另一個 process，例外冒出去只會變成一個沒有訊息的 500。
- * 3. **回得出 JSON。** `commuteStats().byHome` 是 `Map`，`JSON.stringify` 會把它變成
- *    `{}` —— 對方看到一個空物件，還以為是沒資料。
+ * 1. **The path must not walk anywhere.** The incoming string comes from outside, and
+ *    `read.constructor.constructor` reaches `Function`, which is arbitrary code execution in
+ *    the page.
+ * 2. **Nothing throws.** The caller is in another process, where an escaping exception is a 500
+ *    with no message.
+ * 3. **The result survives JSON.** `commuteStats().byHome` is a `Map`, which `JSON.stringify`
+ *    turns into `{}`, and the caller reads an empty object as no data.
  */
 
 function fakeAgent() {
@@ -56,14 +59,14 @@ describe('照著路徑呼叫', () => {
   });
 
   it('should wait for a promise instead of returning it', async () => {
-    // session 那一整塊都是 async。回一個 Promise 出去，序列化之後對方拿到 `{}`。
+    // The whole session block is async. Returning a promise serialises to `{}` for the caller.
     const r = await dispatch(fakeAgent(), { path: 'session.list' });
     expect(r.result).toEqual([{ slotId: 1, name: 'Save' }]);
   });
 
   it('should keep `this` bound to the object the method lives on', async () => {
-    // 這一層取出函式再呼叫。不綁 `this` 的話，`AgentRead.city()` 裡的
-    // `this.getState()` 會炸開 —— 而假的 agent 用箭頭函式看不出來。
+    // This layer extracts a function and then calls it. Without binding `this`,
+    // `AgentRead.city()`'s `this.getState()` throws — invisible with an arrow-function stub.
     class Real {
       private secret = 7;
       value() { return this.secret; }
@@ -77,8 +80,8 @@ describe('照著路徑呼叫', () => {
 
 describe('路徑不能亂爬', () => {
   it('should refuse to walk into the prototype chain', async () => {
-    // `read.constructor.constructor` 爬得到 `Function`，呼叫它就等於在頁面裡執行
-    // 任意程式碼。這一條擋的是那個。
+    // `read.constructor.constructor` reaches `Function`, and calling it is arbitrary code
+    // execution in the page.
     for (const path of [
       'read.constructor',
       'read.__proto__',
@@ -92,12 +95,12 @@ describe('路徑不能亂爬', () => {
   });
 
   it('should refuse the constructor of a class instance', async () => {
-    // 真的 `__agent.read` 是 `AgentRead` 的**實例**,不是物件字面值 —— 而類別的
-    // prototype 上帶著一個**自有的** `constructor`。所以「只走自有屬性」那一道
-    // 對它是放行的,擋住它的只有禁用名單。
+    // The real `__agent.read` is an **instance** of `AgentRead`, not an object literal, and a
+    // class prototype carries its **own** `constructor`. So the own-property rule lets it
+    // through and only the forbidden list stops it.
     //
-    // 這一條是補回來的:第一版的假 agent 用物件字面值，它的 proto 是
-    // `Object.prototype`，被別道守衛擋掉了 —— 名單拿掉測試照樣綠。
+    // A stub built from an object literal has `Object.prototype` as its proto and is stopped by
+    // a different guard, leaving the test green with the list removed.
     class Read {
       city() { return { population: 1 }; }
     }
@@ -105,23 +108,24 @@ describe('路徑不能亂爬', () => {
 
     expect((await dispatch(root, { path: 'read.city' })).ok, '正常的呼叫被擋了').toBe(true);
 
-    // **要在走過去之前就拒絕**，不是走過去拿到類別、呼叫它、然後靠
-    // 「class 不能不用 new 呼叫」丟例外。那個巧合擋得住今天這個形狀,擋不住
-    // 明天換成別的:一個純函式的 `.constructor` 就是 `Function`。
-    // 所以這裡釘的是訊息 —— 有沒有走到那一步，只有訊息看得出來。
+    // **Refused before walking there**, not by walking there, getting the class, calling it and
+    // relying on "a class cannot be called without new" to throw. That coincidence holds for
+    // this shape and not the next: a plain function's `.constructor` is `Function`. The message
+    // is what is pinned, because it is the only evidence of whether the walk happened.
     const r = await dispatch(root, { path: 'read.constructor' });
     expect(r.ok, '拿到 AgentRead 這個類別本身了').toBe(false);
     expect(r.error, '是走過去之後才失敗的，不是一開始就拒絕').toContain('refusing to walk into');
   });
 
   it('should refuse to reach Function through a two-segment path', async () => {
-    // 這是這一份名單真正在擋的東西，而且**深度限制擋不住** —— `act` 是頂層函式，
-    // `act.constructor` 只有兩段。拿到 `Function` 就等於在頁面裡執行任意程式碼:
+    // What the forbidden list actually stops, and **the depth limit cannot**: `act` is a
+    // top-level function, so `act.constructor` is only two segments. Reaching `Function` is
+    // arbitrary code execution in the page:
     //
     //     act.constructor('return globalThis')()
     //
-    // 而它偏偏是自有屬性檢查放行的:`constructor` 在 `Function.prototype` 上，
-    // 不在 `Object.prototype` 上。
+    // And the own-property check lets it through: `constructor` lives on `Function.prototype`,
+    // not `Object.prototype`.
     const r = await dispatch(fakeAgent(), { path: 'act.constructor' });
 
     expect(r.ok, '爬到 Function 了').toBe(false);
@@ -129,8 +133,8 @@ describe('路徑不能亂爬', () => {
   });
 
   it('should refuse the things every object inherits', async () => {
-    // `toString` / `valueOf` 不在禁用名單上 —— 擋住它們的是「只走自有屬性」。
-    // 少了那一道，agent 的介面上會憑空多出一堆 Object.prototype 的方法。
+    // `toString` / `valueOf` are not on the forbidden list; the own-property rule stops them.
+    // Without it, the agent's surface would sprout every Object.prototype method.
     for (const path of ['read.toString', 'read.valueOf', 'read.hasOwnProperty']) {
       expect((await dispatch(fakeAgent(), { path })).ok, `${path} 被當成 API 了`).toBe(false);
     }
@@ -151,8 +155,9 @@ describe('路徑不能亂爬', () => {
   });
 
   it('should name the actual problem instead of saying nothing is there', async () => {
-    // 呼叫端在另一個 process，看不到堆疊 —— 錯誤訊息就是它唯一的線索。
-    // 「路徑寫壞了」跟「那裡沒有東西」是兩個要往不同方向修的問題。
+    // The caller is in another process and cannot see the stack, so the error message is its
+    // only clue. "The path is malformed" and "nothing lives there" are fixed in different
+    // directions.
     expect((await dispatch(fakeAgent(), { path: 'read.' })).error,
       '路徑寫壞了卻說那裡沒東西').toContain('malformed');
     expect((await dispatch(fakeAgent(), { path: '' })).error,
@@ -176,7 +181,8 @@ describe('路徑不能亂爬', () => {
   });
 
   it('should refuse to reach a method that does not exist on purpose', async () => {
-    // 刪除存檔是刻意沒有的。這條測試是規格:哪天有人加了，這裡要先絆倒。
+    // Deleting saves is deliberately absent. This test is the specification: anyone adding it
+    // trips here first.
     const r = await dispatch(fakeAgent(), { path: 'session.delete' });
     expect(r.ok).toBe(false);
   });
@@ -184,7 +190,7 @@ describe('路徑不能亂爬', () => {
 
 describe('不把例外丟出去', () => {
   it('should turn a throwing method into a failed result', async () => {
-    // 呼叫端在另一個 process。例外冒出去只會變成一個沒有訊息的 500。
+    // The caller is in another process, where an escaping exception is a 500 with no message.
     const r = await dispatch(fakeAgent(), { path: 'read.blowUp' });
 
     expect(r.ok).toBe(false);
@@ -199,7 +205,8 @@ describe('不把例外丟出去', () => {
   });
 
   it('should say so when there is no game running yet', async () => {
-    // 主選單上 `window.__agent` 只有 session 一塊，開局前根本還沒有 agent。
+    // On the main menu `window.__agent` holds only session, and before that there is no agent
+    // at all.
     const r = await dispatch(null, { path: 'read.city' });
 
     expect(r.ok).toBe(false);
@@ -209,8 +216,8 @@ describe('不把例外丟出去', () => {
 
 describe('回得出 JSON', () => {
   it('should turn a Map into something that survives stringify', () => {
-    // `commuteStats().byHome` 是 Map。JSON.stringify 會把它變成 `{}` ——
-    // 對方看到空物件，還以為是沒資料。
+    // `commuteStats().byHome` is a Map, which JSON.stringify turns into `{}`, and the caller
+    // reads an empty object as no data.
     const out = jsonSafe(new Map([['3,3', 12], ['4,4', 30]]));
     expect(out).toEqual([['3,3', 12], ['4,4', 30]]);
   });
@@ -231,7 +238,7 @@ describe('回得出 JSON', () => {
   });
 
   it('should not choke on a result that points back at itself', () => {
-    // 循環參照會讓 JSON.stringify 直接丟例外 —— 那會變成一個沒有訊息的 500。
+    // A cycle makes JSON.stringify throw, which becomes a 500 with no message.
     const loop: Record<string, unknown> = { name: 'a' };
     loop.self = loop;
 

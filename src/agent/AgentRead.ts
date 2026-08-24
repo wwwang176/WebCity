@@ -28,32 +28,34 @@ import {
 } from './overlays';
 
 /**
- * 讀城市。
+ * Reading the city.
  *
- * ## 這一層吐事實，不吐面板的彙總
+ * ## This layer emits facts, not the panels' aggregates
  *
- * Overview 那八頁把數字算在各自的 `createMemo` 裡（共兩千多行 TSX）。把它們抄一份
- * 過來就是這個 repo 一再警告的那個錯 —— 同一個數字兩個地方各記一份，然後靜靜地分家
- * （BUG-342 就是這樣來的）。
+ * The eight Overview pages compute their numbers in their own `createMemo`s, across two
+ * thousand-odd lines of TSX. Copying those computations here would put the same number in two
+ * places and let them drift apart silently (BUG-342 came from exactly that).
  *
- * 所以規則是:
+ * So the rules are:
  *
- * - **已經抽成純模組的直接重用** —— 大眾運輸走 `transitRows.ts`，那是面板自己也在用的
- *   同一支函式。
- * - **其餘吐原始事實**，彙總留給呼叫端。面板要把一百棟房子縮成一行是因為人只看得下
- *   一行;程式自己會加總。
- * - **`Game` 已經算好的直接轉手** —— 帳本明細、通勤、交通、轉乘、收費分區、遺棄壓力
- *   都是面板正在讀的那一份，原封不動交出去（見 `StatsHost`）。
+ * - **Reuse anything already extracted into a pure module.** Transit goes through
+ *   `transitRows.ts`, the same function the panel itself uses.
+ * - **Emit raw facts otherwise**, leaving aggregation to the caller. A panel compresses a
+ *   hundred buildings into one line because a person can only read one line; a program sums
+ *   them itself.
+ * - **Pass through whatever `Game` already computed** — ledger breakdown, commute, traffic,
+ *   transfers, billable districts and abandonment stress are the same values the panels read,
+ *   handed on untouched (see `StatsHost`).
  */
 
 /**
- * `Game` 上那幾支「面板正在讀」的統計。
+ * The statistics on `Game` that the panels read.
  *
- * 用結構型別而不是 `Game` 本身，是為了能在沒有 Three.js 的情況下測 —— `Game.ts`
- * 直接 import Three.js，單元測試載不動它。
+ * A structural type rather than `Game` itself, so this can be tested without Three.js:
+ * `Game.ts` imports Three.js directly and unit tests cannot load it.
  *
- * **回傳值原封不動往外送**，不重算也不複製。同一個數字兩個地方各記一份就會分家，
- * 這個 repo 已經因為那件事開過單（BUG-342）。
+ * **Return values are forwarded untouched**, never recomputed or copied. The same number kept
+ * in two places drifts apart (BUG-342).
  */
 export interface StatsHost {
   getEconomyBreakdown(): EconomyBreakdownResult;
@@ -63,46 +65,47 @@ export interface StatsHost {
   getTransferStats(): TransferStats;
   getAbandonmentStress(x: number, y: number): number;
   getSelectedBuilding(): unknown;
-  /** 某一張圖層每一格的值。不需要那張圖層開著。 */
+  /** Per-cell values of one overlay. The overlay need not be switched on. */
   getOverlayData(type: string): ReadonlyMap<string, number> | undefined;
-  /** 某個數值在那張圖層上的顏色。 */
+  /** The colour a value takes on that overlay. */
   getOverlayColor(type: string, value: number): number;
-  /** 走馬路成本圖、那個服務的預算，以及逐格的設施負載與服務設施。 */
+  /** The road-cost map, that service's budget, and per-cell facility load and serving facility. */
   getCoverageCosts(service: string): {
     costs: ReadonlyMap<string, number>;
     budget: number;
     loadAt: (x: number, y: number) => number;
     servingFacilityAt: (x: number, y: number) => string | null;
   } | null;
-  /** 造成那些顏色的設施。 */
+  /** The facilities producing those colours. */
   getOverlaySourceCells(type: string): { x: number; y: number }[];
-  /** 建築高亮的 10 階色帶。 */
+  /** The 10-step gradient used to highlight buildings. */
   coverageGradient(): readonly number[];
   /**
-   * 全城的高架段。
+   * Every elevated segment in the city.
    *
-   * **這一份不在 `GameState` 裡** —— `ElevationManager` 是 `Game` 的欄位，所以
-   * `read` 只能從這裡拿。少了它，程式確認一座橋存在的唯一辦法是故意重蓋一次、
-   * 讀 `Elevation level already occupied` 那句錯誤訊息（BUG-367）。
+   * **Not part of `GameState`**: `ElevationManager` is a field of `Game`, so `read` can only
+   * get it here. Without it, the only way a program can confirm a bridge exists is to
+   * deliberately rebuild it and read the `Elevation level already occupied` error (BUG-367).
    */
   elevatedSegments(): Array<{ x: number; y: number; level: number; data: ElevatedSegment }>;
   /**
-   * 路網的格子層圖，含高架與匝道。`null` = 路網 lookup 還沒接上。
+   * The cell-level road graph including elevated roads and ramps. `null` means the road lookup
+   * is not wired up yet.
    *
-   * 這是 `SimulationLoop` 以 `commuteCache.roadGeneration` 為鍵快取的那一份 ——
-   * 服務覆蓋與通勤可達性走的都是它。**不要在這裡重建**，那是 O(路格數)。
+   * The copy `SimulationLoop` caches by `commuteCache.roadGeneration`, used by service coverage
+   * and commute reachability alike. **Do not rebuild it here**; that is O(road cells).
    */
   roadCellGraph(): RoadCellGraph | null;
   /**
-   * 逐日的圖表歷史。
+   * Per-day chart history.
    *
-   * 這一份**不在 `GameState` 裡** —— 它是 UI 的 store 一天記一筆累積起來的，
-   * 不進存檔。所以載入存檔之後是空的，開著遊戲跑才會長出來。
+   * **Not part of `GameState`**: the UI store accumulates one entry per day and it is not
+   * saved, so it is empty after loading a save and only grows while the game runs.
    */
   chartHistory(): ChartHistory;
 }
 
-/** 一個收費分區的道路量與付費駕駛數。 */
+/** One billable district's road extent and paying-driver count. */
 export interface BillableDistrict {
   id: string;
   roadCells: number;
@@ -115,7 +118,7 @@ export interface CityInfo {
   day: number;
   hourOfDay: number;
   funds: number;
-  /** 每 tick 的淨收支。 */
+  /** Net balance per tick. */
   balance: number;
   population: number;
   employed: number;
@@ -125,7 +128,7 @@ export interface CityInfo {
   water: { supply: number; demand: number };
 }
 
-/** 一段高架路段/鐵軌。`level` 1–3，`x`/`y` 是它站的那一格。 */
+/** One elevated road or rail segment. `level` is 1-3 and `x`/`y` is the cell it stands on. */
 export interface ElevatedInfo extends ElevatedSegment {
   x: number;
   y: number;
@@ -139,27 +142,27 @@ export interface BuildingInfo {
   name: string;
   zone: string;
   level: number;
-  /** 這一格容納得下幾個人（住宅是住戶，其餘是工作機會）。 */
+  /** How many people this cell holds: residents for housing, jobs otherwise. */
   capacity: number;
   residents: number;
   workers: number;
   landValue: number;
   pollution: number;
-  /** 已經被遺棄或燒毀。 */
+  /** Abandoned or burned out. */
   derelict: boolean;
 }
 
 export interface CitizenInfo {
   id: number;
   /**
-   * 面板上印的名字。
+   * The name shown in the panel.
    *
-   * 從 id 與城市種子算出來的，不存進存檔 —— 所以**同一個 id 在不同城市叫不同名字**。
-   * 要指涉某個人請用 `id`,名字只是給人看的。
+   * Derived from the id and the city seed, not saved, so **the same id has a different name in
+   * a different city**. Refer to a citizen by `id`; the name is for people to read.
    */
   name: string;
   age: number;
-  /** BABY / CHILD / TEEN / ADULT / SENIOR。 */
+  /** BABY / CHILD / TEEN / ADULT / SENIOR. */
   lifeStage: string;
   education: string;
   happiness: number;
@@ -167,16 +170,17 @@ export interface CitizenInfo {
   homeId: string | null;
   workplaceId: string | null;
   /**
-   * 面板上「Work」那一列的字。
+   * The text of the panel's "Work" row.
    *
-   * 不是 `workplaceId` 的同義詞 —— 沒工作的人分成 `Unemployed`（工作年齡）、
-   * `Retired`（超齡）、`Student` 與 `Too young to work`。把後三種讀成失業，
-   * 一座滿員的城市點開住宅會看起來像失業率 100%。
+   * Not a synonym for `workplaceId`: citizens without a job split into `Unemployed` (of working
+   * age), `Retired` (past it), `Student` and `Too young to work`. Reading the last three as
+   * unemployed makes a fully employed city's housing look like 100% unemployment.
    */
   workLabel: string;
-  /** 從哪個 tick 開始沒工作。`null` 代表還沒開始找。 */
+  /** The tick from which this citizen has had no job. `null` means they have not started
+   *  looking. */
   unemployedSince: number | null;
-  /** 從哪個 tick 開始沒地方住。 */
+  /** The tick from which this citizen has had nowhere to live. */
   homelessSince: number | null;
 }
 
@@ -186,23 +190,23 @@ export interface ServiceInfo {
 }
 
 export interface BuildingQuery {
-  /** 只要這幾種分區。省略就全部。 */
+  /** Restrict to these zone types. Omit for all of them. */
   zone?: readonly string[];
-  /** 只要這個範圍內的。 */
+  /** Restrict to this rectangle. */
   rect?: { x1: number; y1: number; x2: number; y2: number };
-  /** 最多回幾筆。預設 500 —— 一整座城市可能上千棟，整包丟出來讀不完。 */
+  /** Maximum rows. Defaults to 500: a whole city can run to thousands, too many to read. */
   limit?: number;
-  /** 只要被遺棄或燒毀的。 */
+  /** Restrict to abandoned or burned-out buildings. */
   derelictOnly?: boolean;
 }
 
 export interface CitizenQuery {
   limit?: number;
-  /** 只要住在這個建築的。鍵是 `"x,y"`。 */
+  /** Restrict to residents of this building, keyed `"x,y"`. */
   homeId?: string;
-  /** 只要在這個建築上班的。 */
+  /** Restrict to people working at this building. */
   workplaceId?: string;
-  /** 只要沒有工作的。 */
+  /** Restrict to people without a job. */
   unemployedOnly?: boolean;
 }
 
@@ -220,17 +224,19 @@ const DEFAULT_BUILDING_LIMIT = 500;
 const DEFAULT_CITIZEN_LIMIT = 200;
 
 /**
- * `reserved` 欄位裡代表「這棟樓沒在運作」的值。
+ * The `reserved` values meaning "this building is not operating".
  *
- * 兩個都畫成深灰、都不發光、都會被建商清掉,對讀的人來說是同一件事。
+ * Both render dark grey, neither lights up, and developers clear both, so to a reader they are
+ * one thing.
  *
- * **從 `InfraPlacement` 引用，不要自己寫數字。** 這裡原本寫死 `[1, 2]`，而
- * `BURNED` 其實是 3（2 沒有被使用）—— 於是每一棟燒毀的樓都回報 `derelict: false`，
- * `derelictOnly` 一棟也篩不出來，玩家螢幕上明明看得到九棟焦黑的房子（BUG-360）。
+ * **Imported from `InfraPlacement` rather than written as literals.** Hardcoding `[1, 2]` while
+ * `BURNED` is actually 3 (2 is unused) reported `derelict: false` for every burned-out
+ * building, so `derelictOnly` matched nothing while nine charred houses were on screen
+ * (BUG-360).
  */
 const DERELICT_RESERVED: readonly number[] = [ABANDONED, BURNED];
 
-/** `CitizenManager` 吐出來的原始市民。 */
+/** A raw citizen as `CitizenManager` emits it. */
 interface RawCitizen {
   id: number;
   age: number;
@@ -246,10 +252,10 @@ interface RawCitizen {
 }
 
 /**
- * 一個市民，照面板顯示的樣子。
+ * One citizen, as the panel presents them.
  *
- * 名字與「Work」那一列都問 core 的那兩支 —— 面板讀的就是它們，這裡自己拼一份的話
- * 會出現「API 說 Unemployed、畫面說 Retired」。
+ * The name and the "Work" row both come from the core functions the panel reads. Assembling
+ * either here would produce an API saying `Unemployed` while the screen says `Retired`.
  */
 function describeCitizen(c: RawCitizen, citySeed: number): CitizenInfo {
   return {
@@ -361,9 +367,9 @@ export class AgentRead {
   }
 
   /**
-   * 一個人。跟市民詳細面板顯示的是同一份。
+   * One citizen, the same record the citizen detail panel shows.
    *
-   * 找不到就回 `null` —— 市民會死,而 id 不會被回收。
+   * `null` when not found: citizens die and ids are not reused.
    */
   citizen(id: number): CitizenInfo | null {
     const s = this.getState();
@@ -385,7 +391,7 @@ export class AgentRead {
     };
   }
 
-  /** 大眾運輸。跟 Overview 的 Traffic 頁走同一支 `buildTransitRows()`。 */
+  /** Transit, through the same `buildTransitRows()` the Overview Traffic page uses. */
   transit(): TransitSystemRow[] {
     const s = this.getState();
     return buildTransitRows(
@@ -402,127 +408,135 @@ export class AgentRead {
     );
   }
 
-  // ── Game 已經算好的 ──────────────────────────────────────────────
+  // ── Already computed by Game ────────────────────────────────────
   //
-  // 這一段全是轉手。**沒有加工的餘地** —— 面板讀的就是這幾支，中間多一層轉換就是
-  // 多一份會分家的副本。
+  // Pass-through only. **There is no room to process anything here**: the panels read these
+  // same functions, and a transformation in between is a second copy that will drift.
   //
-  // 有兩個欄位是 `Map` / `Set`（`commuteStats().byHome`、分區的 `cells`），
-  // `JSON.stringify` 會把它們變成 `{}`。要跨進程送的話呼叫端自己 `[...map]`。
+  // Two fields are a `Map` / `Set` (`commuteStats().byHome` and a district's `cells`), which
+  // `JSON.stringify` turns into `{}`. A caller sending them across a process boundary spreads
+  // them itself with `[...map]`.
 
-  /** 帳本明細。收入支出逐項，跟 Economy 面板同一份。 */
+  /** The ledger breakdown, income and spending line by line, as the Economy panel shows it. */
   economyBreakdown(): EconomyBreakdownResult {
     return this.stats.getEconomyBreakdown();
   }
 
-  /** 收費分區的道路格數與付費駕駛數。 */
+  /** Road cell counts and paying-driver counts per billable district. */
   billableDistricts(): readonly BillableDistrict[] {
     return this.stats.getBillableDistricts();
   }
 
-  /** 通勤時間分佈。`byHome` 是 `Map`。 */
+  /** The commute time distribution. `byHome` is a `Map`. */
   commuteStats(): CommuteStats {
     return this.stats.getCommuteStats();
   }
 
-  /** 車流量、最塞的路段、平均路徑長度。 */
+  /** Traffic volume, the most congested segments, and average path length. */
   trafficStats(): TrafficStatsResult {
     return this.stats.getTrafficStats();
   }
 
-  /** 轉乘率與轉乘熱點。 */
+  /** Transfer rate and transfer hotspots. */
   transferStats(): TransferStats {
     return this.stats.getTransferStats();
   }
 
-  /** 某一格的遺棄壓力。滿了就會變成廢墟 —— 用來在出事前先看出來。 */
+  /** Abandonment stress on one cell, for spotting a building about to go derelict. */
   abandonmentStress(x: number, y: number): number {
     return this.stats.getAbandonmentStress(x, y);
   }
 
   /**
-   * 現在點開的那一棟，跟詳情面板顯示的是同一份。
+   * The currently selected building, the same record the detail panel shows.
    *
-   * 選取是**點出來的** —— `act({ tool: 'select', x1, y1 })`。這裡只負責讀。
-   * 形狀依建築種類而異（`zone` / `infra` / `transport`⋯），所以不在這裡窄化型別。
+   * Selection is made by clicking — `act({ tool: 'select', x1, y1 })`. This only reads it. The
+   * shape varies by building kind (`zone` / `infra` / `transport` and so on), so the type is
+   * not narrowed here.
    */
   selected(): unknown {
     return this.stats.getSelectedBuilding();
   }
 
-  // ── Overview 那八頁 ─────────────────────────────────────────────
+  // ── The eight Overview pages ────────────────────────────────────
   //
-  // 一頁一支，跟畫面上的分頁一一對應。**面板讀的是同一支函式** —— 這一層沒有
-  // 自己的算式，所以不會有「API 說 75%、螢幕說 68%」那種分家（BUG-342）。
+  // One method per page, matching the tabs on screen. **The panels read the same functions**,
+  // so this layer has no arithmetic of its own and cannot drift into an API saying 75% while
+  // the screen says 68% (BUG-342).
   //
-  // 剩下兩頁已經在上面:Economy 是 `economyBreakdown()`，
-  // Traffic 是 `trafficStats()` + `transit()` + `transferStats()`。
+  // The other two pages are above: Economy is `economyBreakdown()`, and Traffic is
+  // `trafficStats()` + `transit()` + `transferStats()`.
 
-  /** 總覽:人口、房子與工作、吸引力，以及**扣分最多的那一項**。 */
+  /** Summary: population, housing and jobs, attractiveness, and **the largest penalty**. */
   summary(): SummaryStats {
     return buildSummaryStats(this.getState());
   }
 
-  /** 人口組成:年齡與教育分佈，加上教育 × 職業、教育 × 住宅等級兩張交叉表。 */
+  /** Demographics: age and education distributions plus education x occupation and
+   *  education x housing level cross-tabs. */
   demographics(): DemographicsStats {
     return buildDemographicsStats(this.getState());
   }
 
-  /** 環境:地面污染、噪音、水污染、火災與廢墟。 */
+  /** Environment: ground pollution, noise, water pollution, fires and ruins. */
   environment(): EnvironmentStats {
     return buildEnvironmentStats(this.getState());
   }
 
   /**
-   * 貨運供應鏈:產量、消費、進出口，以及三種對外管道的吞吐。
+   * The freight supply chain: output, consumption, imports and exports, and the throughput of
+   * the three external connections.
    *
-   * 商店真正拿得到的貨是 `effectiveProduction`（產量 − 出口 + 進口），
-   * 不是 `production`。
+   * What shops actually receive is `effectiveProduction` (output - exports + imports), not
+   * `production`.
    */
   freight(): FreightStats {
     return buildFreightStats(this.getState());
   }
 
-  /** 基礎設施:水電供需、掩埋場、污水處理、墓園的存量與流量。 */
+  /** Infrastructure: power and water supply and demand, landfill, sewage and cemetery stocks
+   *  and flows. */
   infra(): InfraStats {
     return buildInfraStats(this.getState());
   }
 
   /**
-   * 服務:九項的覆蓋率、每一座設施的載重與容量。
+   * Services: coverage for all nine, plus load and capacity per facility.
    *
-   * `capacity` 只加總**還在運作**的設施 —— 停電的警局不巡邏。壞掉的那幾座照樣
-   * 列在 `facilities` 裡（`operational: false`），這樣才看得出覆蓋率為什麼掉。
+   * `capacity` sums only **operating** facilities — a police station without power does not
+   * patrol. The broken ones are still listed in `facilities` with `operational: false`, which
+   * is what makes a coverage drop explicable.
    *
-   * 這跟 `services()` 不一樣:那一支給的是每月維護費。
+   * Distinct from `services()`, which gives monthly maintenance costs.
    */
   serviceStats(): ServicesStats {
     return buildServicesStats(this.getState());
   }
 
   /**
-   * 經濟與人口的逐日歷史 —— Economy 頁那兩張圖的資料。
+   * Per-day economy and population history, the data behind the Economy page's two charts.
    *
-   * **不進存檔**:這是 UI 一天記一筆累積起來的，載入存檔之後是空的。
+   * **Not saved**: the UI accumulates one entry per day, so this is empty after loading a save.
    */
   chartHistory(): ChartHistory {
     return this.stats.chartHistory();
   }
 
-  // ── 圖層 ────────────────────────────────────────────────────────
+  // ── Overlays ────────────────────────────────────────────────────
 
   /**
-   * 服務覆蓋 —— **玩家在畫面上看到的建築顏色**。
+   * Service coverage — **the building colours the player sees on screen**.
    *
-   * 綠 → 黃 → 紅，10 階。顏色吃的是 `severity` —— **距離與設施負載取比較糟的那一個**。
-   * `ratio` 是距離那一半（1 = 剛好在邊界），`load` 是負載那一半（1 = 剛好滿，
-   * 2 = 需求兩倍於容量）。`facilityId` 是服務那一格的那座設施:一片紅色要去動
-   * 哪一棟，看它。
+   * Green to yellow to red in 10 steps. The colour follows `severity`, **the worse of distance
+   * and facility load**. `ratio` is the distance half (1 is exactly at the boundary) and `load`
+   * the load half (1 is exactly full, 2 is demand at twice capacity). `facilityId` is the
+   * facility serving that cell: it says which building to act on when an area turns red.
    *
-   * **有出現在 `cells` 裡就代表有覆蓋** —— 所以這一份同時回答了「有沒有」跟
-   * 「有多勉強」兩個問題。
+   * **Presence in `cells` is coverage**, so this one answer covers both whether a cell is
+   * covered and how marginally.
    *
-   * 不需要那張圖層開著:這是從狀態算的，跟畫面上正在顯示什麼無關。
+   * The overlay need not be switched on: this is computed from state, independently of what is
+   * displayed.
    */
   coverage(service: string): CoverageInfo | { service: string; reason: string } {
     if (!(COVERAGE_SERVICES as readonly string[]).includes(service)) {
@@ -542,11 +556,11 @@ export class AgentRead {
   }
 
   /**
-   * 地面色塊那一層。
+   * The ground-tint overlay layer.
    *
-   * `kind` 說這些數字該怎麼讀 —— 覆蓋類的地面層是**二元**的（每格 80 或 0），
-   * 那一片一模一樣的 80 不是漏抓，是它本來就只有兩個值。要「有多勉強」請看
-   * `coverage()`。
+   * `kind` says how to read the numbers: coverage-type ground layers are **binary**, 80 or 0
+   * per cell, so a uniform field of 80 is not a sampling failure but the only two values there
+   * are. For how marginal coverage is, see `coverage()`.
    */
   overlay(type: string): { type: string; kind: OverlayKind; cells: OverlayCellInfo[] } {
     return {
@@ -560,9 +574,10 @@ export class AgentRead {
   }
 
   /**
-   * 一塊範圍內每一格的原始欄位。
+   * The raw fields of every cell in a rectangle.
    *
-   * 這是最貴的讀法 —— 60×60 全開是 3600 筆。用來看一小塊地能不能蓋，不是用來看全城。
+   * The most expensive read here: a full 60x60 is 3,600 rows. For checking whether a small plot
+   * is buildable, not for surveying the whole city.
    */
   cells(rect: { x1: number; y1: number; x2: number; y2: number }) {
     const grid = this.getState().grid;
@@ -581,12 +596,14 @@ export class AgentRead {
   }
 
   /**
-   * 高架路段與鐵軌 —— 一段一列，同一格疊了兩層就是兩列。
+   * Elevated road and rail segments, one row per segment, so two levels on one cell are two
+   * rows.
    *
-   * `cells()` 回的 `roadType` / `railType` **全部是地面層**（它吐的是 `Grid`，
-   * 而高架住在 `ElevationManager`）。橋、匝道、疊層只有這裡看得到。
+   * The `roadType` / `railType` that `cells()` returns are **all ground level** — it emits
+   * `Grid`, while elevated segments live in `ElevationManager`. Bridges, ramps and stacked
+   * levels are visible only here.
    *
-   * 順序固定為 y、x、level —— 兩次讀取之間比得出差異。
+   * Ordered by y, then x, then level, so two reads can be diffed.
    */
   elevated(rect?: { x1: number; y1: number; x2: number; y2: number }): ElevatedInfo[] {
     const bounds = rect ? {
@@ -604,19 +621,22 @@ export class AgentRead {
   }
 
   /**
-   * 兩格之間走不走得到。
+   * Whether two cells are reachable from each other.
    *
-   * `coverage()` 答不了這件事 —— 它是**有預算上限**的 flood，「0 覆蓋」分不出
-   * 「不連通」與「連通但太遠」（BUG-368）。這一支沒有上限。
+   * `coverage()` cannot answer this: it is a flood **bounded by a budget**, so zero coverage
+   * cannot distinguish "not connected" from "connected but too far" (BUG-368). This has no
+   * bound.
    *
-   * `cost` 與 `coverage()` 是同一把尺，所以拿它跟 `ROAD_COVERAGE` 的預算比得出
-   * 「一座警局蓋在這裡罩不罩得到那裡」。走不到是 `-1`。
+   * `cost` uses the same scale as `coverage()`, so comparing it against a `ROAD_COVERAGE`
+   * budget answers whether a police station here would reach there. Unreachable is `-1`.
    *
-   * 兩端都不必是道路格 —— 跟分區、公共設施一樣附掛到 2 格內的路上。
+   * Neither end need be a road cell: like zones and civic buildings, each attaches to a road
+   * within 2 cells.
    */
   connected(from: { x: number; y: number }, to: { x: number; y: number }): ConnectivityResult {
     const graph = this.stats.roadCellGraph();
-    // 路網還沒接上時說「通」會比說「不通」糟糕得多 —— 前者會讓呼叫端把橋當成蓋好了。
+    // Reporting "connected" while the road lookup is unwired is far worse than reporting the
+    // opposite: it would let a caller believe a bridge is finished.
     if (!graph) return { connected: false, cost: -1 };
     return roadConnectivity(graph, from, to);
   }

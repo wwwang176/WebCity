@@ -1,21 +1,24 @@
 import { TAX_RATE_MAX, TAX_RATE_MIN, type TaxRates } from '../core/economy/Tax';
 
 /**
- * 稅率與貸款。
+ * Tax rates and loans.
  *
- * ## 為什麼稅率只有兩根旋鈕
+ * ## Why there are only two tax dials
  *
- * `TaxRates` 有五個欄位，但面板只有兩根滑桿:所得稅（`residential`）跟營業稅
- * （`business` 加上三個逐區的舊欄位）。舊欄位還在被計算，所以**營業稅一定要四個
- * 一起動** —— 只設 `business` 的話，商業區還是照著舊的稅率繳，而面板上看不出來。
+ * `TaxRates` has five fields but the panel has two sliders: income tax (`residential`) and
+ * business tax (`business` plus three older per-zone fields). The older fields are still used
+ * in the calculation, so **business tax must move all four together**: setting only `business`
+ * leaves commercial zones paying the old rate with nothing visible in the panel.
  *
- * 逐欄位開放會讓程式做得出面板做不到的狀態（商業 5% 工業 12%），那時候滑桿顯示的
- * 就是謊話。所以這裡照著面板的形狀開。
+ * Exposing the fields individually would let a program reach states the panel cannot represent
+ * (commercial 5%, industrial 12%), at which point the sliders would be lying. So this exposes
+ * the panel's shape.
  *
- * ## 借還款不設上限
+ * ## Loans have no ceiling
  *
- * 借款是**可逆的**（還得掉），跟拆房子不一樣。憑空定一個「最多借多少」需要的是
- * 這個經濟模型的知識，猜一個數字比不設更糟。擋的是型別:非正整數。
+ * Borrowing is **reversible** — it can be repaid — unlike demolishing a building. Inventing a
+ * maximum would take knowledge of this economy model, and a guessed number is worse than none.
+ * What is rejected is the type: anything that is not a positive integer.
  */
 
 export interface BudgetHost {
@@ -52,7 +55,7 @@ export interface DebtResult extends DebtInfo {
   reason?: string;
 }
 
-/** 滑桿放得下的稅率:`TAX_RATE_MIN` ~ `TAX_RATE_MAX` 的整數。 */
+/** Rates the slider can represent: integers from `TAX_RATE_MIN` to `TAX_RATE_MAX`. */
 function badRate(rate: number): string | null {
   if (!Number.isInteger(rate)) return `tax rate must be a whole percent: ${rate}`;
   if (rate < TAX_RATE_MIN || rate > TAX_RATE_MAX) {
@@ -71,7 +74,7 @@ function badAmount(amount: number): string | null {
 export class AgentBudget {
   constructor(private readonly host: BudgetHost) {}
 
-  /** 兩根旋鈕現在的位置，以及收得下的範圍。 */
+  /** Where the two dials currently sit, and the range they accept. */
   taxes(): TaxInfo {
     const r = this.host.taxRates();
     return {
@@ -82,7 +85,7 @@ export class AgentBudget {
     };
   }
 
-  /** 所得稅（住宅）。 */
+  /** Income tax, on residential zones. */
   setIncomeTax(rate: number): TaxResult {
     const bad = badRate(rate);
     if (bad) return { ok: false, ...this.rates(), reason: bad };
@@ -90,7 +93,8 @@ export class AgentBudget {
     return { ok: true, ...this.rates() };
   }
 
-  /** 營業稅。商業、工業、辦公室四個欄位一起動 —— 舊欄位還在被計算。 */
+  /** Business tax. Moves all four fields together, since the older per-zone ones are still
+   *  used in the calculation. */
   setBusinessTax(rate: number): TaxResult {
     const bad = badRate(rate);
     if (bad) return { ok: false, ...this.rates(), reason: bad };
@@ -98,7 +102,7 @@ export class AgentBudget {
     return { ok: true, ...this.rates() };
   }
 
-  /** 手上的錢與欠的錢。 */
+  /** Cash on hand and debt outstanding. */
   debt(): DebtInfo {
     return { funds: Math.floor(this.host.funds()), loans: Math.round(this.host.loans()) };
   }
@@ -111,10 +115,11 @@ export class AgentBudget {
   }
 
   /**
-   * 還款。
+   * Repays part of the debt.
    *
-   * 遊戲的 `repayLoan` 會**靜靜地**把金額夾到「欠的」跟「有的」之間 —— 沒欠錢時還款
-   * 什麼都不會發生，也不會有任何訊息。那種 `ok: true` 比錯誤更難查，所以先問清楚。
+   * The game's `repayLoan` **silently** clamps the amount to what is owed and what is on hand,
+   * so repaying with no debt does nothing and says nothing. That kind of `ok: true` is harder
+   * to diagnose than an error, so the conditions are checked first.
    */
   repayLoan(amount: number): DebtResult {
     const bad = badAmount(amount);

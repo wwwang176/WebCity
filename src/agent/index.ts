@@ -26,24 +26,22 @@ export { buildStatus, type AgentStatus } from './status';
 export * from './registry';
 
 /**
- * `window.__agent` —— 遊戲裡看得到、按得到的東西，全部給程式一份。
+ * `window.__agent` — everything visible and pressable in the game, given to a program.
  *
- * 分四塊:
- *
- * | | 做什麼 |
+ * | | What it does |
  * |---|---|
- * | `act()` | 蓋、拆、劃分區。走 `Game.handleToolAction()`，把工具狀態設滿 |
- * | `routes` | 公車／地鐵／鐵路／渡輪的建線、拆線、加減車 |
- * | `budget` | 稅率、借款、還款 |
- * | `policy` | 分區條例、全城條例、城市特化 |
- * | `districts` | 分區的增刪改名換色，以及筆刷指向誰、用什麼模式 |
- * | `ui` | 開關面板、圖層、聚焦視角、工具、暫停與速度、鏡頭 |
- * | `read` | 城市數字、建築、居民、服務、大眾運輸、逐格資料、高架、連通 |
- * | `session` | 存檔清單、存檔、匯出、載入、開新局（**沒有刪除**） |
- * | `status()` | 玩家現在在看什麼:主選單／載入中／遊戲中、哪個面板、教程走到哪 |
+ * | `act()` | Build, demolish, paint districts. Goes through `Game.handleToolAction()` with the tool state fully set |
+ * | `routes` | Create and delete bus / metro / rail / ferry routes and change their vehicle counts |
+ * | `budget` | Tax rates, loans, repayments |
+ * | `policy` | District policies, city ordinances, city specialization |
+ * | `districts` | Create, delete, rename and recolour districts, and the brush's target and mode |
+ * | `ui` | Panels, overlays, focus view modes, tools, pause and speed, camera |
+ * | `read` | City figures, buildings, citizens, services, transit, per-cell data, elevated segments, connectivity |
+ * | `session` | List, save, export, load, and start a new game (**no delete**) |
+ * | `status()` | What the player is looking at: menu / loading / in game, which panel, tutorial progress |
  */
 export interface AgentRoot {
-  /** 玩家現在在看什麼。主選單上也答得出來。 */
+  /** What the player is looking at. Answerable on the main menu too. */
   status: () => AgentStatus;
   act: AgentApi['act'];
   history: AgentApi['history'];
@@ -56,7 +54,7 @@ export interface AgentRoot {
   session: AgentSession;
 }
 
-/** `Game` 的形狀轉成 `AgentUi` 要的樣子。 */
+/** Adapts `Game`'s shape to what `AgentUi` needs. */
 function uiHost(game: Game): UiHost {
   const g2 = game as unknown as {
     currentRotation: number;
@@ -95,7 +93,7 @@ function uiHost(game: Game): UiHost {
     placementMode: () => g2.placementMode,
     roadType: () => RoadType[g2.currentRoadType] ?? String(g2.currentRoadType),
     elevationLevel: () => g2.elevationLevel,
-    // 這三個是 UI 的訊號,不在 `Game` 上。
+    // These three are UI signals, not fields on `Game`.
     previewCost: () => gameSignals.previewCost(),
     selectedTransferRoute: () => gameSignals.selectedTransferRoute(),
     selectedCitizenId: () => gameSignals.selectedCitizenId(),
@@ -113,10 +111,10 @@ function uiHost(game: Game): UiHost {
 }
 
 /**
- * 四種運具接成同一個形狀。
+ * Adapts the four transit modes to one shape.
  *
- * 公車走 `Game`（要車道尋路，那份資料只有 `Game` 拿得到），其餘三種直接走各自的
- * 系統 —— 面板也是這樣呼叫的。
+ * Buses go through `Game`, which needs lane pathfinding data only `Game` holds; the other three
+ * go straight to their own systems, exactly as the panels call them.
  */
 function routeHost(game: Game): RouteHost {
   const s = () => game.getState();
@@ -142,7 +140,7 @@ function routeHost(game: Game): RouteHost {
   const rail: ModeAdapter = {
     stops: () => s().rail.getStations(),
     listRoutes: () => s().rail.getRoutes(),
-    // 客運。貨運班次不是玩家開的，是產業自己叫的車。
+    // Passenger service. Freight runs are called by industry, not opened by the player.
     createRoute: (stops, n) => s().rail.createLine([...stops], RailServiceType.PASSENGER, n),
     deleteRoute: (id) => s().rail.deleteLine(id),
     addVehicle: (id) => s().rail.addVehicleToRoute(id),
@@ -153,8 +151,8 @@ function routeHost(game: Game): RouteHost {
     stops: () => s().ferry.getDocks(),
     listRoutes: () => s().ferry.getRoutes(),
     createRoute: (stops, n) => {
-      // 渡輪自己的 createRoute 不驗連通性，會建出一條划不過去的線。面板先驗再建，
-      // 這裡照做。
+      // The ferry system's own createRoute does not check connectivity and will create a route
+      // no boat can sail. The panel validates first, and so does this.
       const docks = [...stops];
       if (!s().ferry.validateRouteConnectivity(docks)) return null;
       return s().ferry.createRoute(docks, n);
@@ -168,10 +166,11 @@ function routeHost(game: Game): RouteHost {
 }
 
 /**
- * 稅率的兩根旋鈕。
+ * The two tax dials.
  *
- * 營業稅四個欄位一起動 —— 三個逐區的舊欄位還在被計算，只設 `business` 的話商業區
- * 會照著舊稅率繳，而面板上看不出來。面板的滑桿也是這樣寫的。
+ * Business tax moves four fields at once: the three older per-zone fields are still used in the
+ * calculation, so setting only `business` leaves commercial zones paying the old rate with
+ * nothing visible in the panel. The panel's slider does the same.
  */
 function budgetHost(game: Game): BudgetHost {
   const b = () => game.getState().budget;
@@ -193,7 +192,7 @@ function budgetHost(game: Game): BudgetHost {
   };
 }
 
-/** 條例分兩邊放:全城的在 `ordinances`，分區的在 `policies`。 */
+/** Policies live in two places: city-wide in `ordinances`, per-district in `policies`. */
 function policyHost(game: Game): PolicyHost {
   const s = () => game.getState();
   return {
@@ -209,10 +208,11 @@ function policyHost(game: Game): PolicyHost {
 }
 
 /**
- * 分區。
+ * Districts.
  *
- * 建立走 `Game.createNewDistrict()` 而不是 `DistrictManager.createDistrict()` ——
- * 前者會挑一個沒撞名的號碼，而且順手把筆刷指過去。
+ * Creation goes through `Game.createNewDistrict()` rather than
+ * `DistrictManager.createDistrict()`: it picks a non-colliding number and points the brush at
+ * the new district.
  */
 function districtHost(game: Game): DistrictHost {
   const dm = () => game.getState().districts;
@@ -235,14 +235,15 @@ function districtHost(game: Game): DistrictHost {
 }
 
 /**
- * `Game` 的統計 + 一支它沒有的。
+ * `Game`'s statistics plus one it does not have.
  *
- * 圖表歷史存在 UI 的 store 裡（一天記一筆，不進存檔），`Game` 上沒有這個欄位。
- * 其餘全部是 `Game` 自己的方法，原封不動轉手。
+ * Chart history lives in the UI store, one entry per day and not saved, so `Game` has no such
+ * field. Everything else is one of `Game`'s own methods, forwarded untouched.
  */
 function statsHost(game: Game): StatsHost {
-  // 一支一支寫出來,不用 `Object.create(game)` 那種繼承 —— 那會讓 `this` 指到包裝物
-  // 而不是遊戲本身,任何一支改成會寫欄位的方法都會靜靜地寫到別的地方去。
+  // Written out method by method rather than inheriting via `Object.create(game)`, which would
+  // bind `this` to the wrapper instead of the game and silently misdirect any method later
+  // changed to write a field.
   return {
     getEconomyBreakdown: () => game.getEconomyBreakdown(),
     getBillableDistricts: () => game.getBillableDistricts(),
@@ -251,8 +252,9 @@ function statsHost(game: Game): StatsHost {
     getTransferStats: () => game.getTransferStats(),
     getAbandonmentStress: (x, y) => game.getAbandonmentStress(x, y),
     getSelectedBuilding: () => game.getSelectedBuilding(),
-    // `StatsHost` 收的是任意字串（呼叫端可能亂問），到這裡才收窄成遊戲的列舉;
-    // 認不得的型別由下游各自回空,不在這裡擋。
+    // `StatsHost` takes an arbitrary string, since callers may ask for anything, and it narrows
+    // to the game's enum here. Unrecognised types return empty downstream rather than being
+    // rejected here.
     getOverlayData: (type) => game.getOverlayData(type as never),
     getOverlayColor: (type, value) => game.getOverlayColor(type as never, value),
     getCoverageCosts: (service) => game.getCoverageCosts(service as never),
