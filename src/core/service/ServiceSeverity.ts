@@ -1,41 +1,46 @@
 /**
- * 一格的服務有多糟 —— 距離與負載合成一個數字。
+ * How badly served a cell is: distance and load combined into one number.
  *
- * ## 為什麼要合成
+ * ## Why combine them
  *
- * 圓點與圖層一直以來只畫距離:「沿馬路從最近一座設施走過來的成本 ÷ 預算」。
- * 那答的是「有沒有人管得到我」，不是「我被管得好不好」。緊鄰一間爆到 200% 的醫院，
- * 距離比值是 0，圓點是最綠的 —— 而那間醫院對死亡率的抑制已經歸零（BUG-362）。
+ * The dots and the overlay drew distance alone — the road-following cost from the nearest
+ * facility over the budget. That answers whether anyone can reach the cell, not how well it is
+ * served. Next to a hospital at 200% the distance ratio is 0 and the dot is the greenest there
+ * is, while that hospital's effect on the death rate has fallen to nothing (BUG-362).
  *
- * ## 取比較糟的那一個，不是平均
+ * ## The worse of the two, not the average
  *
- * 平均會讓兩種都「有點糟」看起來比一種「非常糟」還嚴重。而玩家要處理的是那個
- * 最糟的:設施太遠就多蓋一座近的，設施太滿就多蓋一座分流 —— 動作不同，
- * 但都由最糟的那一項決定。
+ * An average makes two mildly bad figures look worse than one very bad one, while what the
+ * player has to act on is the worst: a facility too far away calls for a nearer one and a
+ * facility too full calls for another to share the load. Different actions, both decided by the
+ * worst term.
  *
- * ## 負載怎麼換算成 0–1
+ * ## How load maps onto 0-1
  *
- * 剛好滿（1.0）算 0，兩倍（2.0）算 1。這條線不是隨便挑的:遊戲自己就是這樣量
- * 「超載有多糟」的 —— `loadRatioToDeathMultiplier()` 在負載 1.0 時給死亡率 ×0.3
- * （設施全效），2.0 以上給 ×1.0（**等於完全沒有設施**），中間線性。
+ * Exactly full (1.0) is 0 and twice capacity (2.0) is 1. That line is not arbitrary: it is how
+ * the game already measures how bad overload is. `loadRatioToDeathMultiplier()` gives the death
+ * rate x0.3 at load 1.0 (the facility at full effect) and x1.0 at 2.0 and above (**the same as
+ * having no facility**), linear in between.
  */
 
-/** 負載換算成嚴重度的兩個端點。 */
+/** The two endpoints mapping load onto severity. */
 export const LOAD_SEVERITY = {
-  /** 到這裡為止都算沒事。 */
+  /** Everything up to here counts as fine. */
   FULL: 1.0,
-  /** 到這裡就等於完全沒有這個服務。 */
+  /** At this point the service is worth nothing at all. */
   USELESS: 2.0,
 } as const;
 
-/** 沒有覆蓋。跟「覆蓋得很差」是兩件事 —— 前者要蓋新的，後者要蓋近的。 */
+/** No coverage. Distinct from poor coverage: the first calls for a new facility, the second for
+ *  a nearer one. */
 export const NO_COVERAGE = -1;
 
 /**
- * 負載比值 → 0–1 的嚴重度。
+ * Load ratio to a 0-1 severity.
  *
- * 負數代表「不適用」（沒有覆蓋、或這個服務沒有負載的概念），回 0 而不是 -1 ——
- * 這支的回傳值是要拿去跟距離比大小的，混進一個 -1 會讓它永遠輸。
+ * A negative ratio means not applicable — uncovered, or a service with no notion of load — and
+ * returns 0 rather than -1: this value is compared against distance, and a -1 mixed in would
+ * always lose.
  */
 export function loadSeverity(loadRatio: number): number {
   if (!(loadRatio > LOAD_SEVERITY.FULL)) return 0;
@@ -44,10 +49,10 @@ export function loadSeverity(loadRatio: number): number {
 }
 
 /**
- * 這一格的服務有多糟。0 = 最好，1 = 最差，`-1` = 沒有覆蓋。
+ * How badly served this cell is. 0 is best, 1 is worst, `-1` is uncovered.
  *
- * `costRatio` 是 `getCostRatio()` 的回傳值（-1 代表沒覆蓋）。
- * `loadRatio` 是服務這一格的那座設施的負載 ÷ 容量（-1 代表問不到）。
+ * `costRatio` is `getCostRatio()`'s return value, where -1 means uncovered. `loadRatio` is the
+ * load over capacity of the facility serving this cell, where -1 means unavailable.
  */
 export function serviceSeverity(costRatio: number, loadRatio: number): number {
   if (costRatio < 0) return NO_COVERAGE;

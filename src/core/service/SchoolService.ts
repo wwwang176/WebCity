@@ -110,31 +110,33 @@ export class SchoolService extends RoadCoverageService<SchoolFacility> {
   /**
    * Assign enrollment and demand counts to nearest school (Euclidean).
    *
-   * `count` 是這一格代表幾個學生（預設 1）。同一棟樓、同一種學制的學生算出來的
-   * 座標與最近的學校完全一樣，呼叫端先數起來再送進來。
+   * `count` is how many students this cell stands for, defaulting to 1. Students in one building
+   * at one school stage produce identical coordinates and pick the same nearest school, so the
+   * caller counts them up before passing them in.
    */
   updateLoads(
     enrolled: ReadonlyArray<{ x: number; y: number; count?: number }>,
     eligible: ReadonlyArray<{ x: number; y: number; count?: number }>,
   ): void {
-    // 近的學校優先，滿了就換下一間 —— 跟靈車同一個規矩（BUG-365）。只認最近那間
-    // 的話，所有學生都擠在同一間、第二間永遠空著。
+    // Nearest school first, spilling to the next when full — the hearse rule (BUG-365).
+    // Recognising only the nearest crowds every student into one school and leaves the second
+    // empty.
     //
-    // 收得了學生的才算:`getActiveFacilities()` 要求有電、有水而且接得到路，
-    // 跟 `getTotalCapacity()` 是同一組。
+    // Only schools that can take students count: `getActiveFacilities()` requires power, water
+    // and a road connection, the same set `getTotalCapacity()` uses.
     const active = this.getActiveFacilities();
     const covering = (x: number, y: number) => this.getCoveringFacilityIds(x, y);
     const toDemand = (c: { x: number; y: number; count?: number }) =>
       ({ x: c.x, y: c.y, weight: c.count ?? 1 });
 
-    // 兩邊一定要餵同一組學校，否則同一間會出現「在學 200、想讀 30」這種不可能的
-    // 組合。
+    // Both calls must be fed the same set of schools, or one school ends up with an impossible
+    // combination such as 200 enrolled and 30 eligible.
     //
-    // 老實說:把上面那個 `active` 換成 `getFacilities()`（全部學校）現在測不出差別 ——
-    // `covering` 只會提到**涵蓋得到那一格**的學校，而覆蓋只從運作中的設施淹出去，
-    // 沒電的學校根本不會出現在名單裡;而第一次呼叫的回傳值又沒有人用。
-    // 所以那是等價的改動，不是漏測。真正在守這件事的是這一行:兩次呼叫共用
-    // 同一個 `active`。
+    // Replacing `active` above with `getFacilities()` is currently unobservable: `covering` only
+    // names schools **that cover that cell**, coverage floods only out of operational
+    // facilities, so an unpowered school never appears in the list, and the first call's return
+    // value goes unused. That change is equivalent rather than untested. What actually enforces
+    // this is the single `active` shared by both calls.
     distributeWithSpillover(active, enrolled.map(toDemand), this.enrollment, covering);
     distributeWithSpillover(
       active, [...enrolled, ...eligible].map(toDemand), this.demand, covering,
@@ -146,10 +148,10 @@ export class SchoolService extends RoadCoverageService<SchoolFacility> {
   }
 
   /**
-   * 負載看的是**想讀的人數**，不是在學人數。
+   * Load follows **how many want a place**, not how many are enrolled.
    *
-   * 在學人數頂多等於容量 —— 拿它當負載，比值永遠 ≤1，一間超收十倍的學校
-   * 看起來會剛剛好。
+   * Enrolment can never exceed capacity, so using it as the load keeps the ratio at or below 1
+   * and a school with ten times the demand it can take looks exactly right.
    */
   protected override facilityLoadOf(id: string): { load: number; capacity: number } | null {
     const s = this.facilities.find(f => f.id === id);

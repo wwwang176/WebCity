@@ -6,11 +6,12 @@
  *   0       = uncovered
  *   1~255   = quantized cost (1 = nearest/cost=0, 255 = farthest/cost=budget)
  *
- * ## 除了「多遠」，還記「是誰」
+ * ## As well as how far, it records who
  *
- * 光有成本，圓點與圖層就只答得出距離 —— 而玩家真正要知道的是「服務我的那間現在
- * 多滿」。所以每一格另外記下**用最低成本涵蓋它的那一座設施**的索引:成本改寫時
- * 擁有者跟著改寫，兩者永遠指同一座（BUG-362）。
+ * Cost alone lets the dots and the overlay answer only distance, while what the player needs is
+ * how full the facility serving them is. So each cell also records the index of **the facility
+ * covering it most cheaply**, rewritten whenever the cost is, so the two always name the same
+ * facility (BUG-362).
  */
 
 import { parsePosKeyUnsafe } from '../grid/GridHelpers';
@@ -27,17 +28,17 @@ export function decodeCostRatio(value: number): number {
 }
 
 /**
- * 擁有者存的是**索引 + 1**，因為 0 要留給「沒有人涵蓋」。
+ * The owner is stored as **index + 1**, because 0 is reserved for uncovered.
  *
- * 所以能表示的最大索引是 65534。超過就丟例外 —— 靜靜地環回去會讓某一格指向錯的
- * 設施，那比不知道更糟。
+ * So the largest representable index is 65534. Anything above throws: wrapping silently would
+ * point a cell at the wrong facility, which is worse than not knowing.
  */
 const MAX_OWNER_INDEX = 65534;
 
 export class GridCoverageArray {
   private data: Uint8Array;
   private counts: Uint8Array;
-  /** 用最低成本涵蓋這一格的設施索引 + 1。0 = 沒有人。 */
+  /** The index, plus 1, of the facility covering this cell most cheaply. 0 means none. */
   private owners: Uint16Array;
   readonly width: number;
   readonly height: number;
@@ -54,8 +55,8 @@ export class GridCoverageArray {
   /**
    * Write a Dijkstra flood result. Keeps min cost per cell. Increments coverage count.
    *
-   * `ownerIndex` 是這一趟洪水的來源設施。成本被改寫的那幾格，擁有者跟著改寫 ——
-   * 兩者一起動，才不會出現「成本是 A 的、擁有者是 B」。
+   * `ownerIndex` is the facility this flood came from. Cells whose cost is rewritten have their
+   * owner rewritten with it, so no cell ends up with A's cost and B's owner.
    */
   applyFlood(coverageMap: Map<string, number>, budget: number, ownerIndex = 0): void {
     assertOwnerIndex(ownerIndex);
@@ -125,14 +126,15 @@ export class GridCoverageArray {
   }
 
   /**
-   * 用最低成本涵蓋這一格的那一座設施的索引。`-1` = 沒有人涵蓋。
+   * The index of the facility covering this cell most cheaply. `-1` means uncovered.
    *
-   * 索引是**重算當下那一份設施清單**的索引，不是設施 id —— 呼叫端要自己拿著
-   * 同一份清單去換。`RoadCoverageService` 就是這樣做的。
+   * The index is into **the facility list as it stood at the recompute**, not a facility id, so
+   * the caller has to hold that same list to resolve it. `RoadCoverageService` does.
    */
   getOwner(x: number, y: number): number {
     if (x < 0 || y < 0 || x >= this.width || y >= this.height) return -1;
-    // 存的是索引 + 1，所以「沒有人」的 0 減回去正好就是 -1。不必再判一次。
+    // Stored as index + 1, so the 0 meaning "none" subtracts back to exactly -1 with no extra
+    // check.
     return this.owners[y * this.width + x]! - 1;
   }
 
@@ -161,7 +163,7 @@ export class GridCoverageArray {
   }
 }
 
-/** 擁有者索引存得下嗎。存不下要吵，不要環回去指到別的設施。 */
+/** Whether the owner index fits. It complains rather than wrapping onto another facility. */
 function assertOwnerIndex(ownerIndex: number): void {
   if (ownerIndex < 0 || ownerIndex > MAX_OWNER_INDEX) {
     throw new RangeError(`owner index ${ownerIndex} out of range (0-${MAX_OWNER_INDEX})`);

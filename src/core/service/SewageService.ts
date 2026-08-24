@@ -81,8 +81,8 @@ export class SewageService {
   private supplied = new CoverageBits();
   private fullCoverage = new CoverageBits();
   /**
-   * flood 的走訪狀態與這一輪共用的記錄。跨呼叫重複使用 —— 每 6 個 tick 重配
-   * 一組跟地圖一樣大的 typed array 是白花的。
+   * The flood's traversal state and this pass's shared records, reused across calls:
+   * reallocating map-sized typed arrays every 6 ticks is wasted.
    */
   private readonly floodScratch = new UtilityFloodScratch();
   private totalDemand = 0;

@@ -6,18 +6,19 @@ import { buildServiceStatus } from '../ServiceStatusView';
 import { serviceLoadRatiosAt, garbageLoadRatioAt } from '../ServiceLoadAt';
 
 /**
- * 逐格的「服務我的那一座設施現在多滿」。
+ * The per-cell "how full is the facility serving me".
  *
- * ## 為什麼要走真的 GameState
+ * ## Why these go through a real GameState
  *
- * 這條鏈很長:洪水記下擁有者 → 服務層把索引換回 id → 那座設施的負載 ÷ 容量 →
- * 跟距離合成嚴重度。中間任何一段用假物件測，測到的都是我自己編的規則 ——
- * 這個 repo 已經因為那件事吃過好幾次虧（BUG-360 的 fixture 就跟程式碼一起錯）。
+ * The chain is long: the flood records an owner, the service layer turns the index back into an
+ * id, that facility's load over capacity is taken, and it is combined with distance into a
+ * severity. A stub anywhere along it tests an invented rule instead — BUG-360's fixture was
+ * wrong in exactly the same way the implementation was.
  *
- * 所以這裡蓋真的路、真的醫院，讓真的洪水跑過去。
+ * So these build real roads and real hospitals and let the real flood run.
  */
 
-/** 一條橫貫的路，路邊兩座醫院，中間隔得夠遠。 */
+/** One road across the map with two hospitals beside it, far enough apart. */
 function cityWithTwoHospitals(): { state: GameState; near: string; far: string } {
   const state = createGameState(40, 8);
   for (let x = 0; x < 40; x++) {
@@ -46,8 +47,8 @@ describe('哪一座設施在服務這一格', () => {
   });
 
   it('should forget a hospital that has been demolished', () => {
-    // 擁有者索引是上一次重算的快照。設施拆掉之後那個索引還在,直接拿去查會指到
-    // 另一間醫院 —— 那比回 null 更糟。
+    // The owner index is a snapshot of the last recompute. It survives the facility's demolition,
+    // and resolving it directly points at a different hospital, which is worse than null.
     const { state, near } = cityWithTwoHospitals();
     state.health.removeHospital(near);
 
@@ -57,11 +58,12 @@ describe('哪一座設施在服務這一格', () => {
 
 describe('那一座設施現在多滿', () => {
   it('should report the load of the hospital that actually serves the cell', () => {
-    // 左邊塞爆、右邊很空。逐格的負載必須跟著格子走，不是給全城一個平均。
+    // Overloaded on the left and empty on the right. A per-cell load has to follow the cell, not
+    // give the whole city one average.
     const { state, near, far } = cityWithTwoHospitals();
     const nearCap = state.health.getHospitals().find(h => h.id === near)!.capacity;
 
-    // 左邊那間旁邊住滿了人（污染 0，所以每人 BASE_DEMAND 0.3）。
+    // The block beside the left hospital is packed; pollution 0 means BASE_DEMAND 0.3 per person.
     state.health.updateLoads([{ x: 3, y: 4, pollution: 0, count: Math.ceil(nearCap * 2 / 0.3) }]);
 
     const left = state.health.getLoadRatioAt(3, 4);
@@ -72,7 +74,7 @@ describe('那一座設施現在多滿', () => {
   });
 
   it('should say -1 where no hospital reaches', () => {
-    // 0 會被讀成「很空」。「問不到」跟「很空」是兩件事。
+    // 0 reads as "plenty of room". Unavailable and empty are two different things.
     const state = createGameState(40, 8);
     state.health.recalculateCoverage(state.grid);
 
@@ -95,7 +97,7 @@ describe('那一座設施現在多滿', () => {
 
 describe('圓點的顏色', () => {
   it('should turn a cell next door to a swamped hospital bad', () => {
-    // 這就是使用者問的那一件事:醫院在隔壁，圓點卻永遠是綠的。
+    // The reported symptom: the hospital is next door and the dot stays green forever.
     const { state, near } = cityWithTwoHospitals();
     const cap = state.health.getHospitals().find(h => h.id === near)!.capacity;
     state.health.updateLoads([{ x: 3, y: 4, pollution: 0, count: Math.ceil(cap * 2 / 0.3) }]);
@@ -108,7 +110,7 @@ describe('圓點的顏色', () => {
   });
 
   it('should leave a cell next to an idle hospital green', () => {
-    // 反面也要成立 —— 不然「永遠是紅的」也會讓上面那條通過。
+    // The converse must hold too, or "always red" would satisfy the test above.
     const { state } = cityWithTwoHospitals();
     state.health.updateLoads([]);
 
@@ -118,7 +120,7 @@ describe('圓點的顏色', () => {
   });
 
   it('should not let a utility pretend it has a healthy load', () => {
-    // 電網沒有逐格負載的概念。硬給 0 的話，圓點會把它讀成「查過了，很好」。
+    // The power grid has no per-cell notion of load. A 0 would be read as "checked, and fine".
     const { state } = cityWithTwoHospitals();
 
     expect(buildServiceStatus(state, 3, 4).power.load).toBe(-1);
@@ -127,7 +129,7 @@ describe('圓點的顏色', () => {
 
 
 describe('學校的負載看的是想讀的人，不是坐得下的人', () => {
-  /** 一條路，路邊一間小學、一間高中，容量都很小。 */
+  /** One road with a small primary school and a small high school beside it. */
   function schoolTown() {
     const state = createGameState(20, 8);
     for (let x = 0; x < 20; x++) {
@@ -140,10 +142,10 @@ describe('學校的負載看的是想讀的人，不是坐得下的人', () => {
   }
 
   it('should count the students who want in, not the ones who got a seat', () => {
-    // 在學人數頂多等於容量。拿它當負載，一間超收十一倍的學校看起來剛剛好 ——
-    // 而那正是玩家存檔裡的高中（5,872 / 500）。
+    // Enrolment can never exceed capacity, so using it as the load makes a school at eleven times
+    // demand look exactly right — the high school on a player's save read 5,872 / 500.
     const { state } = schoolTown();
-    // 十個坐得下、九十個排隊。
+    // Ten with a seat, ninety queueing.
     state.education.updateSchoolLoads(
       [{ x: 3, y: 4, count: 10, schoolKey: 'elementary' }],
       [{ x: 3, y: 4, count: 90, schoolKey: 'elementary' }],
@@ -153,7 +155,8 @@ describe('學校的負載看的是想讀的人，不是坐得下的人', () => {
   });
 
   it('should report the fullest school type, not the emptiest', () => {
-    // 小學很空、高中爆滿。取最空的會讓高中的問題被小學蓋掉。
+    // The primary school is empty and the high school full. Taking the emptiest lets the primary
+    // school hide the high school's problem.
     const { state, high } = schoolTown();
     state.education.updateSchoolLoads(
       [],
@@ -170,8 +173,9 @@ describe('學校的負載看的是想讀的人，不是坐得下的人', () => {
 
 describe('遠處的學校爆滿，不該讓旁邊這一棟跳警告', () => {
   /**
-   * 使用者回報的情境:住宅旁邊就是國小、那間沒爆量，但面板寫著教育爆量 ——
-   * 因為爆的是城市另一頭那間，而警告吃的是全城平均。
+   * The reported situation: a primary school right beside the housing and not overloaded, while
+   * the panel says education is overloaded — because the overloaded school is across town and the
+   * warning was fed the city-wide average.
    */
   function twoSchoolTown() {
     const state = createGameState(60, 8);
@@ -181,7 +185,7 @@ describe('遠處的學校爆滿，不該讓旁邊這一棟跳警告', () => {
     const near = state.education.addSchool(2, 3, 'elementary', undefined, 400);
     const far = state.education.addSchool(50, 3, 'elementary', undefined, 400);
     state.education.recalculateCoverage(state.grid);
-    // 遠處那間旁邊擠了 4000 個學生，近的這間旁邊只有 10 個。
+    // 4,000 students beside the far school and only 10 beside the near one.
     state.education.updateSchoolLoads([], [
       { x: 51, y: 4, count: 4000, schoolKey: 'elementary' },
       { x: 3, y: 4, count: 10, schoolKey: 'elementary' },
@@ -197,7 +201,8 @@ describe('遠處的學校爆滿，不該讓旁邊這一棟跳警告', () => {
   });
 
   it('should leave the block next to the empty school alone', () => {
-    // 這一格的答案是「你旁邊那間很空」——不是「全城平均爆了」。
+    // This cell's answer is "the school beside you is empty", not "the city average is
+    // overloaded".
     const { state } = twoSchoolTown();
 
     expect(state.education.getLoadRatioAt(3, 4), '旁邊那間很空卻報爆量')
@@ -205,15 +210,15 @@ describe('遠處的學校爆滿，不該讓旁邊這一棟跳警告', () => {
   });
 
   it('should still shout at the block next to the swamped one', () => {
-    // 反面:遠處那一區確實爆了，警告要照亮。
+    // The converse: the far block really is overloaded and the warning has to fire there.
     const { state } = twoSchoolTown();
 
     expect(state.education.getLoadRatioAt(51, 4)).toBeCloseTo(10, 6);
   });
 
   it('should not be the city-wide average any more', () => {
-    // 全城比值是 5.01 —— 舊的警告吃這個，於是整座城市每一棟都跳「Schools
-    // overcrowded」，包括旁邊那間空到不行的。
+    // The city-wide ratio is 5.01. Fed to the old warning, every building in the city said
+    // "Schools overcrowded", including the ones beside a school standing empty.
     const { state } = twoSchoolTown();
 
     expect(state.education.getLoadRatio(), '全城比值本身沒變（Services 頁還在用）')
@@ -225,7 +230,8 @@ describe('遠處的學校爆滿，不該讓旁邊這一棟跳警告', () => {
 
 
 describe('面板那幾條警告吃的數字', () => {
-  /** 兩間學校:一間在主路上，一間在斷開的路上（直線比較近）。 */
+  /** Two schools: one on the main road and one on a disconnected road that is nearer in a
+   *  straight line. */
   function splitTown() {
     const state = createGameState(40, 14);
     for (let x = 0; x < 30; x++) {
@@ -238,16 +244,16 @@ describe('面板那幾條警告吃的數字', () => {
   }
 
   it('should send students to the school they can actually get to', () => {
-    // 學校 B 在直線上只有五格遠，但那條路跟主路不相連 —— 走不到。
-    // 舊的歐氏規則會把學生全記在 B 頭上（而且連沒電的學校都算），
-    // 於是 B 顯示爆滿卻沒服務到人（BUG-363）。
+    // School B is five cells away in a straight line, but its road does not connect to the main
+    // one and it cannot be reached. Straight-line distance attributed every student to B, and
+    // counted unpowered schools too, so B read overloaded while serving nobody (BUG-363).
     const state = splitTown();
     const onRoad = state.education.addSchool(14, 3, 'elementary', undefined, 400);
     const acrossTheGap = state.education.addSchool(20, 9, 'elementary', undefined, 400);
     state.education.recalculateCoverage(state.grid);
 
-    // 學生在 (20,4)。B 在直線上只有五格遠、A 有六格多 —— 歐氏規則會挑 B。
-    // 但 B 那條路跟主路不相連，走不到。
+    // The students are at (20,4). B is five cells away in a straight line and A a little over
+    // six, so straight-line distance picks B — which is unreachable.
     expect(state.education.getCoverage(20, 4, 'elementary'), '這一格不在覆蓋內，測不到東西').toBe(true);
     state.education.updateSchoolLoads([], [
       { x: 20, y: 4, count: 300, schoolKey: 'elementary' },
@@ -258,8 +264,8 @@ describe('面板那幾條警告吃的數字', () => {
   });
 
   it('should count the rubbish nobody has picked up yet', () => {
-    // 掩埋場只有半滿，而街上堆滿沒人收的垃圾 —— 只看 currentLoad 會說一切正常，
-    // 但玩家看到的問題就是那些垃圾。
+    // The landfill is half full while refuse piles up uncollected in the streets. `currentLoad`
+    // alone reports everything as fine, and that refuse is the problem the player sees.
     const state = createGameState(20, 8);
     for (let x = 0; x < 20; x++) {
       state.grid.setCell(x, 4, { roadType: RoadType.TWO_LANE, roadFlags: 0b1111 });
@@ -278,7 +284,8 @@ describe('面板那幾條警告吃的數字', () => {
   });
 
   it('should hand the panel a per-cell number for every service', () => {
-    // 五個一起，因為它們是同一組警告。少接一個就是那一條警告停在全城平均。
+    // All five together, because they are one set of warnings. One left unwired leaves that
+    // warning on the city-wide average.
     const { state, near } = cityWithTwoHospitals();
     const cap = state.health.getHospitals().find(h => h.id === near)!.capacity;
     state.health.updateLoads([{ x: 3, y: 4, pollution: 0, count: Math.ceil(cap * 2 / 0.3) }]);
@@ -291,8 +298,8 @@ describe('面板那幾條警告吃的數字', () => {
   });
 
   it('should say -1 where the service does not reach, so no warning fires', () => {
-    // 面板的判斷是 `> 1`。沒有覆蓋要回 -1 —— 回 0 也不會觸發警告,
-    // 但那是「很輕鬆」的意思，跟「沒有人管得到你」是兩件事。
+    // The panel tests `> 1`. Uncovered returns -1: a 0 would also not fire the warning, but it
+    // means "comfortable", which is not the same as "nobody reaches you".
     const state = createGameState(20, 8);
 
     const r = serviceLoadRatiosAt(state, 10, 4);
@@ -307,7 +314,7 @@ describe('面板那幾條警告吃的數字', () => {
 
 
 describe('近的滿了，就換下一座', () => {
-  /** 一條路，兩間醫院都在路上，容量都很小。 */
+  /** One road with two small-capacity hospitals on it. */
   function twoSmallHospitals() {
     const state = createGameState(24, 8);
     for (let x = 0; x < 24; x++) {
@@ -330,7 +337,7 @@ describe('近的滿了，就換下一座', () => {
 
   it('should leave the second hospital empty while the first has room', () => {
     const { state, near, far } = twoSmallHospitals();
-    // 需求 30（每人 0.3 → 100 個人），近的那間容量 100，裝得下。
+    // Demand 30 (0.3 per person, 100 people); the near hospital's capacity of 100 covers it.
     state.health.updateLoads([{ x: 3, y: 4, pollution: 0, count: 100 }]);
 
     expect(state.health.getHospitalLoad(near)).toBe(30);
@@ -338,9 +345,9 @@ describe('近的滿了，就換下一座', () => {
   });
 
   it('should spill into the second hospital once the first is full', () => {
-    // 使用者回報的:上一版全部擠到最近那間，第二間永遠是空的。
+    // As reported: everything crowded into the nearest hospital and the second stayed empty.
     const { state, near, far } = twoSmallHospitals();
-    // 需求 150 —— 近的那間只吃得下 100。
+    // Demand 150; the near hospital can take only 100.
     state.health.updateLoads([{ x: 3, y: 4, pollution: 0, count: 500 }]);
 
     expect(state.health.getHospitalLoad(near), '最近那間該收滿').toBe(100);
@@ -348,7 +355,8 @@ describe('近的滿了，就換下一座', () => {
   });
 
   it('should call the block well served while the second hospital still has room', () => {
-    // 最近那間滿了，但第二間很空 —— 這一區其實被照顧到了，圓點不該是紅的。
+    // The nearest is full but the second is empty, so this block really is served and the dot
+    // should not be red.
     const { state } = twoSmallHospitals();
     state.health.updateLoads([{ x: 3, y: 4, pollution: 0, count: 500 }]);
 
@@ -360,7 +368,7 @@ describe('近的滿了，就換下一座', () => {
 
   it('should only go over capacity once every hospital in range is full', () => {
     const { state, near } = twoSmallHospitals();
-    // 兩間加起來 200，需求 300。
+    // 200 between them against demand of 300.
     state.health.updateLoads([{ x: 3, y: 4, pollution: 0, count: 1000 }]);
 
     expect(state.health.getLoadRatioAt(3, 4), '全滿了還說沒事').toBeGreaterThan(1);
@@ -368,7 +376,8 @@ describe('近的滿了，就換下一座', () => {
   });
 
   it('should still send nobody to a hospital that cannot reach the block', () => {
-    // 河對岸那一間:直線很近，但覆蓋到不了。溢出也不該溢給它。
+    // The hospital across the river: close in a straight line but out of coverage. Spillover must
+    // not reach it either.
     const state = createGameState(30, 14);
     for (let x = 0; x < 20; x++) {
       state.grid.setCell(x, 4, { roadType: RoadType.TWO_LANE, roadFlags: 0b1111 });
@@ -390,14 +399,14 @@ describe('近的滿了，就換下一座', () => {
 
 describe('分母只算收得了人的設施', () => {
   it('should leave a road-less hospital out of the city capacity', () => {
-    // 一間有電、但沒接到路的醫院。它涵蓋不到任何人 —— 把它的床位算進分母，
-    // 全城負載會被稀釋，而死亡率吃的正是那個比值（BUG-100）。
+    // A hospital with power but no road connection. It covers nobody, and counting its beds in
+    // the denominator dilutes the city-wide load that the death rate is computed from (BUG-100).
     const state = createGameState(24, 12);
     for (let x = 0; x < 24; x++) {
       state.grid.setCell(x, 4, { roadType: RoadType.TWO_LANE, roadFlags: 0b1111 });
     }
     const onRoad = state.health.addHospital(2, 3, 12, 100);
-    // 荒地上的醫院:附近一格路都沒有。
+    // A hospital in open country, with no road cell anywhere near it.
     state.health.addHospital(15, 10, 12, 900);
     state.health.updateOperationalStatus(() => true);
     state.health.recalculateCoverage(state.grid);
@@ -405,13 +414,14 @@ describe('分母只算收得了人的設施', () => {
     state.health.updateLoads([{ x: 3, y: 4, pollution: 0, count: 500 }]);
 
     expect(state.health.getHospitalLoad(onRoad), '需求沒有全壓在走得到的那間').toBe(150);
-    // 分母只算 100（走得到的那間），所以 150/100 = 1.5。摻進 900 的話是 0.15。
+    // The denominator is only the reachable hospital's 100, so 150/100 = 1.5. Including the 900
+    // gives 0.15.
     expect(state.health.getLoadRatio(), '用不到的床位被算進分母了').toBeCloseTo(1.5, 6);
   });
 
   it('should never enrol more students in a school than want to go there', () => {
-    // 在學人數與想讀人數必須攤給同一組學校。用不同的規則的話,同一間學校會出現
-    // 「在學 200、想讀 30」這種不可能的組合。
+    // Enrolment and eligibility must be allocated across the same set of schools. Different rules
+    // give one school the impossible combination of 200 enrolled and 30 eligible.
     const state = createGameState(24, 8);
     for (let x = 0; x < 24; x++) {
       state.grid.setCell(x, 4, { roadType: RoadType.TWO_LANE, roadFlags: 0b1111 });

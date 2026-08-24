@@ -4,7 +4,7 @@ import { RoadType } from '../../road/types';
 import { HealthService, HEALTH, HOSPITAL_LOAD, citizenHospitalDemand, loadRatioToDeathMultiplier, uncoveredPollutionMultiplier } from '../HealthService';
 import type { SizedGrid } from '../../grid/GridHelpers';
 
-/** 一條橫貫的路。負載跟著覆蓋走，所以測試也要有路可走。 */
+/** One road across the map. Load follows coverage, so the tests need a road to follow. */
 function roadTown(width: number) {
   const state = createGameState(width, 12);
   for (let x = 0; x < width; x++) {
@@ -285,8 +285,9 @@ describe('HealthService hospital load', () => {
   });
 
   it('getHospitalLoad returns per-hospital demand', () => {
-    // 負載跟著**覆蓋**走，所以要有路、也要先算過覆蓋 —— 沒有覆蓋就沒有人在服務
-    // 那一格，需求不該落到任何一間醫院頭上（BUG-363）。
+    // Load follows **coverage**, so there has to be a road and coverage has to have been
+    // computed: with no coverage nobody serves that cell and the demand should land on no
+    // hospital (BUG-363).
     const { state } = roadTown(40);
     const id1 = state.health.addHospital(1, 3, 12, 100);
     const id2 = state.health.addHospital(30, 3, 12, 100);
@@ -300,14 +301,15 @@ describe('HealthService hospital load', () => {
   });
 
   it('should follow the road, not the straight line', () => {
-    // 這是 BUG-363 的核心。醫院 B 在直線上比較近，但它蓋在一條**斷開的**路上,
-    // 開車到不了;醫院 A 在同一條路上，遠一點但真的服務得到。
-    // 舊的歐氏規則會把病人記在 B 頭上 —— B 顯示爆量卻服務不到人，A 顯示很空。
+    // The core of BUG-363. Hospital B is nearer in a straight line but stands on a
+    // **disconnected** road and cannot be driven to; hospital A is on the same road, further
+    // away and genuinely able to serve. Straight-line distance attributed the patients to B, so
+    // B read overloaded while serving nobody and A read empty.
     const state = createGameState(40, 12);
     for (let x = 0; x < 30; x++) {
       state.grid.setCell(x, 4, { roadType: RoadType.TWO_LANE, roadFlags: 0b1111 });
     }
-    // 斷開的另一條路，離病人只有兩格，但跟主路不相連。
+    // A second, disconnected road two cells from the patients and not joined to the main one.
     for (let y = 8; y < 11; y++) {
       state.grid.setCell(20, y, { roadType: RoadType.TWO_LANE, roadFlags: 0b1111 });
     }
@@ -323,8 +325,8 @@ describe('HealthService hospital load', () => {
   });
 
   it('should split demand between two hospitals on the same road', () => {
-    // 反面:兩間都在路上時，各自收自己那一段的需求。不然「全部記給第一間」
-    // 也會讓上面那條通過。
+    // The converse: with both on the road, each takes the demand along its own stretch. Without
+    // it, attributing everything to the first hospital would also satisfy the test above.
     const { state } = roadTown(40);
     const west = state.health.addHospital(1, 3, 12, 100);
     const east = state.health.addHospital(35, 3, 12, 100);

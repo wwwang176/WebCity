@@ -15,22 +15,24 @@ export const SERVICE_STATUS_KEYS = [
 export type ServiceStatusKey = (typeof SERVICE_STATUS_KEYS)[number];
 
 /**
- * 一格對一個服務的處境。
+ * One cell's situation with respect to one service.
  *
- * 兩個維度，因為玩家要做的事不一樣:**太遠**要蓋一座近的，**太滿**要蓋一座分流。
- * 只給距離的話，緊鄰一間爆到兩倍的醫院會顯示成最好的狀態（BUG-362）。
+ * Two dimensions, because they call for different actions: **too far** calls for a nearer
+ * facility and **too full** for another to share the load. Distance alone reports a cell next to
+ * a hospital at twice capacity as being in the best possible state (BUG-362).
  */
 export interface ServiceCellStatus {
   /**
-   * 沿馬路走過來的成本 ÷ 預算。0 最好、1 最差，`NO_COVERAGE` = 不在範圍內。
-   * 水電是二元的:0 接上了、`NO_COVERAGE` 沒接上。
+   * The road-following cost over the budget. 0 is best, 1 is worst, `NO_COVERAGE` is out of
+   * range. The utilities are binary: 0 is connected, `NO_COVERAGE` is not.
    */
   cost: number;
   /**
-   * **服務這一格的那一座設施**現在多滿。1.0 是剛好滿，2.0 是需求兩倍於容量。
-   * `NO_COVERAGE` = 問不到（沒有覆蓋，或這個服務沒有負載的概念）。
+   * How full **the facility serving this cell** is. 1.0 is exactly full and 2.0 is demand at
+   * twice capacity. `NO_COVERAGE` means unavailable: uncovered, or a service with no notion of
+   * load.
    *
-   * 不夾在 1 —— 超過 1 是有意義的資訊。
+   * Not clamped to 1; exceeding 1 is meaningful.
    */
   load: number;
 }
@@ -44,7 +46,7 @@ interface UtilityCheck { isPowered(x: number, y: number): boolean }
 interface SupplyCheck { isSupplied(x: number, y: number): boolean }
 interface CoverageCost {
   getCostRatio(x: number, y: number): number;
-  /** 服務這一格的那座設施的負載 ÷ 容量。 */
+  /** Load over capacity for the facility serving this cell. */
   getLoadRatioAt(x: number, y: number): number;
 }
 
@@ -60,7 +62,7 @@ export interface ServiceStatusSources {
   deathCare: CoverageCost;
 }
 
-/** 水電那三個沒有逐格的負載概念 —— 接上了就是接上了。 */
+/** The three utilities have no per-cell notion of load: connected is connected. */
 function utility(connected: boolean): ServiceCellStatus {
   return { cost: connected ? 0 : NO_COVERAGE, load: NO_COVERAGE };
 }

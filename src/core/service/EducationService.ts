@@ -30,7 +30,7 @@ export interface EnrolledCitizen {
   x: number;
   y: number;
   schoolKey: 'elementary' | 'highSchool' | 'university';
-  /** 這一格代表幾個學生。省略等於 1。 */
+  /** How many students this cell stands for. Omitted means 1. */
   count?: number;
 }
 
@@ -114,13 +114,16 @@ export class EducationService {
   }
 
   /**
-   * 服務這一格的學校裡，**最滿的那一間有多滿**。`-1` = 三種都沒有覆蓋。
+   * **How full the fullest** of the schools serving this cell is. `-1` means none of the three
+   * covers it.
    *
-   * 取最糟而不是最好:小學很空、高中超收十一倍，這一格的教育服務就是有問題的。
-   * 取最好會讓那個問題被小學蓋掉。
+   * The worst rather than the best: with the primary school empty and the high school at eleven
+   * times capacity, this cell's education service has a problem, and taking the best would let
+   * the primary school hide it.
    *
-   * 距離那一邊 `getCostRatio()` 取的是**最好**的 —— 兩者方向不同是刻意的:
-   * 「有沒有學校管得到我」問的是任何一間，「我被管得好不好」問的是最糟的那一間。
+   * On the distance side `getCostRatio()` takes the **best**. The opposite directions are
+   * deliberate: whether any school reaches me is a question about any of them, and how well I am
+   * served is a question about the worst.
    */
   getLoadRatioAt(x: number, y: number): number {
     let worst = -1;
@@ -132,10 +135,10 @@ export class EducationService {
   }
 
   /**
-   * 服務這一格的學校裡，**最滿的那一間**。三種都沒有覆蓋就回 `null`。
+   * **The fullest** of the schools serving this cell, or `null` when none of the three covers it.
    *
-   * 跟 `getLoadRatioAt()` 挑的是同一間 —— 兩支各自挑的話，面板會說「負載 11 倍」
-   * 而點進去看到的是一間很空的小學。
+   * The same school `getLoadRatioAt()` picks: chosen separately, the panel would report a load of
+   * 11 and open onto a half-empty primary school.
    */
   getServingFacilityId(x: number, y: number): string | null {
     let worst = -1;
@@ -151,7 +154,7 @@ export class EducationService {
     return id;
   }
 
-  /** 全城最滿的那一間學校有多滿。沒有學校時是 0。 */
+  /** How full the fullest school in the city is. 0 when there are no schools. */
   getLoadRatio(): number {
     let worst = 0;
     for (const type of SCHOOL_TYPES) {

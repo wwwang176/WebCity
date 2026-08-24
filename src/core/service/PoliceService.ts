@@ -36,10 +36,11 @@ export class PoliceService extends RoadCoverageService<PoliceStation> {
   }
 
   /**
-   * 把需求攤到**服務那一格的那一座局**頭上。
+   * Attributes demand to **the station serving that cell**.
    *
-   * 「服務那一格」問的是覆蓋 —— 沿馬路走過來最便宜的那一座，跟圓點與圖層同一個
-   * 答案。以前這裡用歐氏直線，於是河對岸那間會吸走需求卻服務不到人（BUG-363）。
+   * "Serving that cell" is a coverage question — the station cheapest to reach by road, the same
+   * answer the dots and the overlay give. Straight-line distance let a station across a river
+   * draw demand it could not serve (BUG-363).
    */
   updateStationLoads(demands: ReadonlyArray<{ x: number; y: number; weight: number }>): void {
     const result = distributeWithSpillover(
@@ -71,7 +72,7 @@ export class PoliceService extends RoadCoverageService<PoliceStation> {
     return Math.round(base * effectiveness);
   }
 
-  /** 這一座局分到多少案子、又只吃得下多少。 */
+  /** How much this station has been allocated and how much it can take. */
   protected override facilityLoadOf(id: string): { load: number; capacity: number } | null {
     const s = this.facilities.find(f => f.id === id);
     return s ? { load: this.getStationLoad(id), capacity: s.capacity } : null;

@@ -1,17 +1,18 @@
 /**
- * StationLoadDistributor — 把全城的需求攤到各設施頭上。
+ * StationLoadDistributor — spreads city-wide demand across facilities.
  *
- * ## 誰服務這一格，只有一個答案
+ * ## One answer to who serves a cell
  *
- * 這裡原本用**歐氏直線**挑最近的設施。而覆蓋（圓點、圖層、`getCostRatio`）用的是
- * **沿馬路走過來的成本**。兩套規則會給出不同的答案:河對岸一間直線很近、開車要繞
- * 一大圈的設施會吸走這一區的需求，但它的道路覆蓋根本到不了這裡。於是那間顯示爆量
- * 卻服務不到任何人，而真正在服務這一區的那間顯示很空（BUG-363）。
+ * Picking the nearest facility by **straight-line distance** disagrees with coverage — the dots,
+ * the overlay and `getCostRatio` — which uses the **road-following cost**. A facility across a
+ * river, close in a straight line but a long drive away, draws that area's demand while its road
+ * coverage never reaches it. That facility reads overloaded while serving nobody, and the one
+ * actually serving the area reads empty (BUG-363).
  *
- * 現在改成問覆蓋:`ownerOf(x, y)` 回的就是覆蓋洪水判定「用最低成本涵蓋這一格」的
- * 那一座設施。同一個問題只有一個答案。
+ * So this asks coverage instead: `ownerOf(x, y)` returns the facility the coverage flood found
+ * to cover that cell most cheaply. One question, one answer.
  *
- * 保留的仍是零配置:呼叫端的 Map 被清空後重填。
+ * Still zero-allocation: the caller's Map is cleared and refilled.
  */
 
 export interface LoadDemand {
@@ -31,23 +32,25 @@ export interface LoadDistributionResult {
   /** Total demand / total capacity. Infinity when capacity=0 but demand>0. */
   loadRatio: number;
   /**
-   * 沒有落到任何設施頭上的需求量。
+   * Demand that landed on no facility.
    *
-   * 需求點在上一次覆蓋重算之後才失去覆蓋（設施被拆、斷電）時會發生。這些需求仍然
-   * 算進 `loadRatio` 的分子 —— 它是真的存在的需求，只是沒有人在服務。歸零的話
-   * 城市會在崩潰的當下顯示得更健康。
+   * Happens when a demand point loses coverage after the last recompute, through a facility
+   * being demolished or cut off. It still counts towards `loadRatio`'s numerator: the demand is
+   * real, merely unserved. Zeroing it would make a city look healthier at the moment it
+   * collapses.
    */
   unassigned: number;
 }
 
 /**
- * 把每一筆需求攤到**服務那一格的那座設施**頭上。
+ * Attributes each demand to **the facility serving that cell**.
  *
- * @param facilities 這一輪算得上數的設施（呼叫端自己過濾運作中／接得到路的）
- * @param demands 加權需求點
- * @param loadMap 重複使用的 Map<facilityId, 累計權重> —— 會被清空後重填
- * @param ownerOf 那一格由哪座設施服務。回 `null` 或回一個不在 `facilities` 裡的
- *   id，這筆需求就算在 `unassigned`。
+ * @param facilities The facilities that count this round; the caller filters for operational and
+ *   road-connected itself.
+ * @param demands Weighted demand points.
+ * @param loadMap A reused Map<facilityId, accumulated weight>, cleared and refilled.
+ * @param ownerOf Which facility serves that cell. `null`, or an id not in `facilities`, puts the
+ *   demand into `unassigned`.
  */
 export function distributeLoadToServingFacility(
   facilities: readonly LoadableFacility[],
@@ -58,7 +61,7 @@ export function distributeLoadToServingFacility(
   loadMap.clear();
 
   if (facilities.length === 0) {
-    // 需求還是要算 —— 一座設施都沒有時 loadRatio 應該是 Infinity，不是 0。
+    // Demand is still summed: with no facilities at all, loadRatio should be Infinity, not 0.
     let total = 0;
     for (let i = 0; i < demands.length; i++) total += demands[i]!.weight;
     return { loadRatio: total > 0 ? Infinity : 0, unassigned: total };
@@ -76,7 +79,8 @@ export function distributeLoadToServingFacility(
     const d = demands[di]!;
     total += d.weight;
     const id = ownerOf(d.x, d.y);
-    // 覆蓋算過之後才被拆掉／斷電的設施:索引還在，但它不該再收需求。
+    // A facility demolished or cut off since coverage was computed: the index survives, but it
+    // must not take demand any more.
     if (id !== null && known.has(id)) {
       loadMap.set(id, loadMap.get(id)! + d.weight);
     } else {

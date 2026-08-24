@@ -52,8 +52,8 @@ describe('roadDistanceToTargets reports the cheapest route', () => {
     const withoutStub = costTo(gridWith(false));
     const withStub = costTo(gridWith(true));
 
-    // Forced through the rural stub: 87 (= 29/6 舊制 × 18).
-    // Free to use the highway stub: 72 (= 4 × 18).
+    // Forced through the rural stub: 87 (= 29/6 on the old scale, x18).
+    // Free to use the highway stub: 72 (= 4 x 18).
     expect(withoutStub).toBe(87);
     expect(withStub).toBe(72);
   });

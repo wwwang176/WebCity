@@ -6,13 +6,13 @@ import { roadDistanceToTargets } from '../RoadCoverageFlood';
 import { toPosKey } from '../../grid/GridHelpers';
 
 /**
- * 目標現在會被摺成格子索引（`y * width + x`）再比對。**摺之前不擋界外的話，
- * 界外的座標會別名到另一格上** —— 寬 10 的地圖問 `"10,0"`，索引是 10，那是
- * `(0,1)`。於是查詢會把 `(0,1)` 當成目標，可能提早收工，而且回傳的鍵是
- * `"0,1)"` 那一格 —— 一個根本沒有人問的位置。
+ * Targets are folded into cell indices (`y * width + x`) before matching. **Without a bounds
+ * check before the fold, an out-of-bounds coordinate aliases onto another cell**: on a 10-wide
+ * map `"10,0"` gives index 10, which is `(0,1)`. The query then treats `(0,1)` as a target,
+ * possibly exits early, and returns that cell's key — a position nobody asked about.
  *
- * 今天的呼叫端（工作地候選、市民的 workplaceId）都是從網格掃出來的，不會界外;
- * 這一組守的是壞掉的存檔與未來的呼叫端。
+ * Today's callers, workplace candidates and citizens' workplaceIds, are scanned out of the grid
+ * and are never out of bounds; this group guards corrupted saves and future callers.
  */
 const W = 10, H = 10;
 const EW = RoadDirection.EAST | RoadDirection.WEST;
@@ -25,7 +25,7 @@ function city(): { grid: Grid; lookup: UnifiedRoadLookup } {
 
 describe('界外的目標不會別名到別的格子', () => {
   it('should reach a normal in-bounds target', () => {
-    // 反面對照 —— 沒有這一條，下面每一條都可能因為「什麼都查不到」而通過。
+    // The control: without it, every test below could pass by finding nothing at all.
     const { grid, lookup } = city();
     const target = toPosKey(8, 0);
 
@@ -35,7 +35,8 @@ describe('界外的目標不會別名到別的格子', () => {
   });
 
   it('should not fold a target past the right edge onto the next row', () => {
-    // `(W, 0)` 的線性索引 = W = `(0, 1)`。而 `(0,1)` 上有路，一定會被 settle。
+    // `(W, 0)`'s linear index is W, which is `(0, 1)`, and `(0,1)` has a road and is certain to
+    // be settled.
     const { grid, lookup } = city();
 
     const got = roadDistanceToTargets(grid, { x: 0, y: 0 }, new Set([`${W},0`]), 100_000, lookup);
@@ -62,8 +63,9 @@ describe('界外的目標不會別名到別的格子', () => {
   });
 
   it('should still find the good targets when a bad one is mixed in', () => {
-    // 界外的那一個被丟掉之後，早退的門檻要跟著降 —— 不然查詢會等一個永遠不會
-    // 出現的命中，白跑滿整個預算（或反過來提早停，漏掉真的目標）。
+    // Dropping the out-of-bounds target has to lower the early-exit threshold with it, or the
+    // query waits for a hit that never comes and runs the full budget, or stops early and misses
+    // a real target.
     const { grid, lookup } = city();
     const good = toPosKey(8, 0);
 

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { CoverageBits } from '../CoverageBits';
 
-/** 開一張對好尺寸的旗標圖。 */
+/** A flag array sized to the map. */
 function bits(w: number, h: number): CoverageBits {
   const b = new CoverageBits();
   b.reset(w, h);
@@ -10,7 +10,8 @@ function bits(w: number, h: number): CoverageBits {
 
 describe('逐格的覆蓋旗標', () => {
   it('should answer false before anything was ever calculated', () => {
-    // 還沒算過任何一輪的服務會被查詢 —— 那時它要跟空的 Set 一樣安靜。
+    // A service is queried before its first pass, and until then it must be as quiet as an
+    // empty Set.
     const b = new CoverageBits();
 
     expect(b.has(3, 4)).toBe(false);
@@ -35,8 +36,8 @@ describe('逐格的覆蓋旗標', () => {
   });
 
   it('should not fold out-of-bounds coordinates onto real cells', () => {
-    // `x = -1, y = 2` 的索引正好落在 `(W - 1, 1)`。不擋界外的話，左邊出界會拿到
-    // 上一列最右邊那一格的答案 —— 所以 fixture 刻意把資料放在那裡。
+    // `x = -1, y = 2` indexes exactly onto `(W - 1, 1)`. Unchecked, going off the left edge
+    // returns the previous row's rightmost cell, so the fixture deliberately puts data there.
     const W = 8;
     const b = bits(W, 6);
     b.add(W - 1, 1);
@@ -73,7 +74,8 @@ describe('逐格的覆蓋旗標', () => {
   });
 
   it('should keep answering for the whole map after growing', () => {
-    // 換大地圖之後最右下角要查得動 —— 底層陣列沒跟著長的話那裡會讀到 undefined。
+    // The bottom-right corner must be queryable after growing the map; without the backing array
+    // growing with it, that corner reads undefined.
     const b = bits(4, 4);
     b.reset(16, 12);
     b.add(15, 11);

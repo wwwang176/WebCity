@@ -4,7 +4,7 @@ import { loadRatioToDeathMultiplier, HOSPITAL_LOAD } from '../HealthService';
 
 describe('負載換算成嚴重度', () => {
   it('should treat a facility that is exactly full as fine', () => {
-    // 剛好滿不是問題,是剛剛好。從這裡開始扣分才有意義。
+    // Exactly full is not a problem but exactly right. Penalties only make sense from here on.
     expect(loadSeverity(LOAD_SEVERITY.FULL)).toBe(0);
     expect(loadSeverity(0.5)).toBe(0);
   });
@@ -21,18 +21,20 @@ describe('負載換算成嚴重度', () => {
   });
 
   it('should call an unknown load fine rather than terrible', () => {
-    // -1 是「問不到」（公園沒有負載的概念）。這支的回傳值要拿去跟距離比大小，
-    // 混進一個 -1 會讓它永遠輸,而「不知道」不該蓋過「已知很遠」。
+    // -1 means unavailable, as for parks with no notion of load. This value is compared against
+    // distance, and a -1 mixed in would always lose, letting "unknown" override "known to be
+    // far".
     expect(loadSeverity(NO_COVERAGE)).toBe(0);
   });
 
   it('should line up with the curve the game already uses for deaths', () => {
-    // 這兩個端點不是隨便挑的:遊戲自己就是這樣量超載有多糟的。差開的話,
-    // 圓點會在死亡率早就爆掉之後才變紅（或反過來）。
+    // The two endpoints are not arbitrary: this is how the game already measures how bad
+    // overload is. Diverging, the dots would turn red long after the death rate had climbed, or
+    // the other way round.
     expect(LOAD_SEVERITY.FULL).toBe(HOSPITAL_LOAD.LOAD_THRESHOLD);
     expect(LOAD_SEVERITY.USELESS).toBe(HOSPITAL_LOAD.LOAD_MAX);
 
-    // 嚴重度 1 的那一點，正好是醫院對死亡率完全沒有貢獻的那一點。
+    // The point of severity 1 is exactly where a hospital stops affecting the death rate.
     expect(loadRatioToDeathMultiplier(LOAD_SEVERITY.USELESS)).toBe(HOSPITAL_LOAD.COVERED_MAX);
     expect(loadRatioToDeathMultiplier(LOAD_SEVERITY.FULL)).toBe(HOSPITAL_LOAD.COVERED_MIN);
   });
@@ -40,14 +42,15 @@ describe('負載換算成嚴重度', () => {
 
 describe('這一格的服務有多糟', () => {
   it('should stay uncovered when there is no coverage, however empty the facilities are', () => {
-    // 「沒有人管得到我」跟「管得很差」是兩件事 —— 前者要蓋新的，後者要蓋近的。
+    // "Nobody reaches me" and "served badly" are different: the first calls for a new facility
+    // and the second for a nearer one.
     expect(serviceSeverity(NO_COVERAGE, 0)).toBe(NO_COVERAGE);
     expect(serviceSeverity(NO_COVERAGE, 5)).toBe(NO_COVERAGE);
   });
 
   it('should report a swamped facility next door as bad', () => {
-    // 這就是使用者問的那個情況:醫院就在隔壁（距離 0）,但爆到兩倍。
-    // 舊的規則只看距離，這裡會是 0 —— 最綠的。
+    // The reported situation: the hospital is next door at distance 0 but running at twice
+    // capacity. On distance alone this is 0, the greenest there is.
     expect(serviceSeverity(0, 2.0), '爆量的設施在隔壁還是綠的').toBe(1);
   });
 
@@ -56,9 +59,9 @@ describe('這一格的服務有多糟', () => {
   });
 
   it('should take the worse of the two, not the average', () => {
-    // 平均會讓「兩種都有點糟」看起來比「一種非常糟」還嚴重。
-    const bothMild = serviceSeverity(0.5, 1.5);   // 距離 0.5、負載 0.5
-    const oneSevere = serviceSeverity(0.05, 2.0); // 距離 0.05、負載 1
+    // An average makes two mildly bad terms look worse than one very bad one.
+    const bothMild = serviceSeverity(0.5, 1.5);   // distance 0.5, load 0.5
+    const oneSevere = serviceSeverity(0.05, 2.0); // distance 0.05, load 1
 
     expect(bothMild).toBeCloseTo(0.5, 6);
     expect(oneSevere).toBe(1);
@@ -66,7 +69,7 @@ describe('這一格的服務有多糟', () => {
   });
 
   it('should not let an unknown load hide a bad distance', () => {
-    // 公園之類沒有負載的服務，距離該照樣說話。
+    // For a service with no load, parks among them, distance must still speak.
     expect(serviceSeverity(0.8, NO_COVERAGE)).toBeCloseTo(0.8, 6);
   });
 

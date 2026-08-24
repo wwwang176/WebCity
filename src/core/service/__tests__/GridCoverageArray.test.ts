@@ -196,13 +196,14 @@ describe('GridCoverageArray', () => {
 
 
 describe('哪一座設施涵蓋了這一格', () => {
-  /** 每一格都用同一個成本的一批格子。 */
+  /** A batch of cells all at the same cost. */
   function flood(cells: [number, number][], cost: number): Map<string, number> {
     return new Map(cells.map(([x, y]) => [`${x},${y}`, cost]));
   }
 
   it('should remember which facility reached the cell', () => {
-    // 沒有這一份，圓點就只答得出「有多遠」，答不出「服務我的那間現在多滿」。
+    // Without this, the dots answer only how far away a facility is, not how full the one
+    // serving me is.
     const arr = new GridCoverageArray(8, 8);
     arr.applyFlood(flood([[1, 1]], 0), 100, 0);
     arr.applyFlood(flood([[5, 5]], 0), 100, 1);
@@ -212,7 +213,8 @@ describe('哪一座設施涵蓋了這一格', () => {
   });
 
   it('should hand the cell over when a closer facility arrives', () => {
-    // 成本比較低的那一座才是「服務這一格」的那一座 —— 跟 data 保留最小值同一個規則。
+    // The cheaper facility is the one serving the cell, the same rule by which data keeps the
+    // minimum.
     const arr = new GridCoverageArray(8, 8);
     arr.applyFlood(flood([[3, 3]], 80), 100, 0);
     arr.applyFlood(flood([[3, 3]], 20), 100, 1);
@@ -230,13 +232,13 @@ describe('哪一座設施涵蓋了這一格', () => {
   });
 
   it('should say nobody owns an uncovered cell', () => {
-    // 回 0 的話會跟「第 0 座設施」撞在一起。
+    // Returning 0 would collide with facility index 0.
     expect(new GridCoverageArray(8, 8).getOwner(2, 2)).toBe(-1);
   });
 
   it('should say nobody owns a cell off the map', () => {
-    // 沒有邊界檢查的話，`undefined - 1` 是 NaN —— 而 NaN 拿去當陣列索引，
-    // 呼叫端會收到一個不存在的設施 id，或者更糟，靜靜地拿到 undefined。
+    // Without a bounds check `undefined - 1` is NaN, and NaN as an array index hands the caller
+    // a facility id that does not exist or, worse, a silent undefined.
     const arr = new GridCoverageArray(8, 8);
 
     expect(arr.getOwner(-1, 0)).toBe(-1);
@@ -254,7 +256,8 @@ describe('哪一座設施涵蓋了這一格', () => {
   });
 
   it('should carry the owners across a preview merge', () => {
-    // 拖曳預覽是在既有覆蓋上面疊一座新的。既有那幾格的擁有者不能在預覽時消失。
+    // A drag preview lays a new facility over the existing coverage. The existing cells' owners
+    // must not disappear during it.
     const base = new GridCoverageArray(8, 8);
     base.applyFlood(flood([[1, 1], [2, 2]], 10), 100, 4);
 
@@ -266,8 +269,9 @@ describe('哪一座設施涵蓋了這一格', () => {
   });
 
   it('should refuse an owner index it cannot store', () => {
-    // 擁有者存在 Uint16Array 裡（+1 之後），65535 就是天花板。默默地存成別的值
-    // 會讓某一格指向錯的設施 —— 那比不知道更糟。
+    // Owners are stored in a Uint16Array after adding 1, so 65535 is the ceiling. Silently
+    // storing something else points a cell at the wrong facility, which is worse than not
+    // knowing.
     const arr = new GridCoverageArray(8, 8);
 
     expect(() => arr.applyFlood(flood([[1, 1]], 0), 100, 65535)).toThrow();

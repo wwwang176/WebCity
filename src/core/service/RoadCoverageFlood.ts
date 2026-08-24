@@ -19,8 +19,8 @@ import {
   type RoadCellGraph,
 } from '../road/RoadCellGraph';
 
-// 成本與預算的唯一來源在 `core/road/roadCost.ts`（worker 也引用同一份）。
-// 這裡轉出去只是為了不動到既有的 import 路徑。
+// The single source for costs and budgets is `core/road/roadCost.ts`, which the worker imports
+// too. This re-export exists only to leave existing import paths alone.
 export { ROAD_COVERAGE } from '../road/roadCost';
 import { roadTileCost } from '../road/roadCost';
 export { roadTileCost };
@@ -256,9 +256,10 @@ export class RoadCoverageMap {
   }
 
   /**
-   * 逐設施的涵蓋圖，順序跟上一次 `recalculate()` 收到的清單一致。
+   * Per-facility coverage maps, in the order of the list the last `recalculate()` received.
    *
-   * 合併後的 `main` 只留每格最低的那一個成本;這一份留著「誰涵蓋得到誰」的完整答案。
+   * The merged `main` keeps only the lowest cost per cell; this keeps the full answer to which
+   * facilities cover which cells.
    */
   private perFacility: Map<string, number>[] = [];
 
@@ -297,11 +298,13 @@ export class RoadCoverageMap {
     this.lastBudget = budget;
     this.perFacility = [];
 
-    // 索引一起帶下去 —— 每一格記得住是被哪一座用最低成本涵蓋的（BUG-362）。
+    // The index is carried through so each cell remembers which facility covers it most cheaply
+    // (BUG-362).
     //
-    // **逐設施那一份也留著。** 合併後的圖只答得出「最近的是誰」，答不出「這一格
-    // 還有哪幾座涵蓋得到」—— 而那正是「近的滿了就換下一座」需要的（BUG-365）。
-    // 這幾張圖本來就算出來了，只是以前合併完就丟掉。
+    // **The per-facility maps are kept too.** The merged map answers which facility is nearest
+    // but not which others also reach that cell, and that is exactly what "spill over when the
+    // nearest is full" needs (BUG-365). These maps are computed anyway; only the discarding was
+    // removed.
     for (let i = 0; i < facilities.length; i++) {
       const f = facilities[i]!;
       const size = getSize ? getSize(f) : { w: facilityWidth, h: facilityHeight };
@@ -388,20 +391,21 @@ export class RoadCoverageMap {
   }
 
   /**
-   * 用最低成本涵蓋這一格的設施，是上一次 `recalculate()` 收到的清單裡的第幾個。
-   * `-1` = 沒有人涵蓋。
+   * The index, within the list the last `recalculate()` received, of the facility covering this
+   * cell most cheaply. `-1` means uncovered.
    */
   getOwnerIndex(x: number, y: number): number {
     return this.main?.getOwner(x, y) ?? -1;
   }
 
   /**
-   * 涵蓋得到這一格的**每一座**設施，由近到遠。
+   * **Every** facility covering this cell, nearest first.
    *
-   * 索引是上一次 `recalculate()` 收到的那份清單的索引。回空陣列代表沒有人涵蓋。
+   * Indices are into the list the last `recalculate()` received. An empty array means uncovered.
    *
-   * 合併後的圖只留最低成本的那一座 —— 要做「近的滿了就換下一座」就得知道還有誰
-   * 涵蓋得到。靈車（`GlobalCoverageService.collectPending`）一直是這樣挑的。
+   * The merged map keeps only the cheapest facility, and "spill over when the nearest is full"
+   * needs to know who else reaches the cell. Hearses (`GlobalCoverageService.collectPending`)
+   * have always chosen this way.
    */
   getCoveringIndices(x: number, y: number): { index: number; cost: number }[] {
     const key = toPosKey(x, y);
@@ -447,20 +451,21 @@ export class RoadCoverageMap {
 }
 
 /**
- * 家 → 一組目標的道路距離，**只看地面**。
+ * Road distance from a home to a set of targets, **ground level only**.
  *
- * 給只有 `ReadableGrid` 的呼叫端 —— 那個介面只有 `getCell`（`GridHelpers.ts`），
- * 沒有 width/height/forEachCell，建不出 `UnifiedRoadLookup`，也就建不出
- * `RoadCellGraph`。全 repo 有十幾個這樣的呼叫端，所以這不是遷移殘骸，
- * 是這個 API 的另一半契約。
+ * For callers holding only a `ReadableGrid`, an interface with just `getCell` (`GridHelpers.ts`)
+ * and no width/height/forEachCell, from which no `UnifiedRoadLookup` and therefore no
+ * `RoadCellGraph` can be built. A dozen callers in this repo are in that position, so this is
+ * the other half of the API's contract rather than migration residue.
  *
- * 有 lookup 時請用 `roadDistanceToTargets` —— 它走圖，而且是樓層感知的。
- * 兩者在沒有高架的世界裡必須逐格相等，由 `RoadDistanceParity.test.ts` 持續守著。
+ * With a lookup, use `roadDistanceToTargets`: it walks the graph and is level-aware. The two
+ * must agree cell for cell in a world with no elevated roads, which
+ * `RoadDistanceParity.test.ts` enforces.
  *
- * 目標（建築）不一定在路格上 —— 當某個展開到的路格與目標的 Chebyshev 距離
- * ≤ ZONE_ROAD_REACH (=2) 時才被發現。這與 zone 放置的 reach 一致。
+ * Targets are buildings and need not sit on a road cell; one is found when an expanded road cell
+ * is within Chebyshev distance ZONE_ROAD_REACH (=2) of it, matching zone placement's reach.
  *
- * 找齊目標或超過 maxBudget 就停。
+ * Stops when every target is found or maxBudget is exceeded.
  */
 export function roadDistanceToTargetsOnGrid(
   grid: ReadableGrid,
@@ -585,20 +590,23 @@ export function expandFootprint(
 }
 
 /**
- * 家 → 一組目標的道路距離。
+ * Road distance from a home to a set of targets.
  *
- * 走 `RoadCellGraph`，與 workplace-distance worker **同一個 flood 核心** ——
- * 兩條路不可能給出不同的決策（BUG-109 的成因正是它們是兩份實作）。
+ * Walks the `RoadCellGraph` through the **same flood core** as the workplace-distance worker, so
+ * the two paths cannot reach different decisions (two separate implementations caused BUG-109).
  *
- * `graph` 傳進來時直接用。**應該要傳** —— 這個函式每個市民呼叫一次
- * （`JobRelocation` 的換工作迴圈），而建圖是 O(路格數 × 4)；圖只在路網改變時
- * 才變，由呼叫端（`SimulationLoop`，以 `commuteCache.roadGeneration` 為鍵）
- * 持有才不會被乘上市民數。不傳時自己建一張，正確但慢。
+ * A supplied `graph` is used directly, and **should be supplied**: this is called once per
+ * citizen from `JobRelocation`'s job-change loop while building the graph is O(road cells x 4).
+ * The graph changes only when the road network does, so holding it in the caller
+ * (`SimulationLoop`, keyed on `commuteCache.roadGeneration`) keeps it from being multiplied by
+ * the population. Without one it builds its own: correct but slow.
  *
- * 沒有 `roadLookup` 就沒有樓層資訊，退回只看地面的
- * `roadDistanceToTargetsOnGrid` —— `ReadableGrid` 只有 `getCell`，建不出 lookup。
+ * Without a `roadLookup` there is no level information, so it falls back to the ground-only
+ * `roadDistanceToTargetsOnGrid`; a `ReadableGrid` has only `getCell` and cannot produce a
+ * lookup.
  *
- * 找齊目標就提早結束。少了它同步路徑會永遠跑滿預算。
+ * Exits early once every target is found. Without that, the synchronous path always runs the
+ * full budget.
  */
 export function roadDistanceToTargets(
   grid: ReadableGrid,
@@ -617,16 +625,17 @@ export function roadDistanceToTargets(
   const seeds = seedNodesFor(g, home.x, home.y, ZONE_ROAD_REACH);
   if (seeds.length === 0) return result;
 
-  // 目標一次換算成格子索引。舊版是在**每一次附掛探點**上做 `toPosKey(x, y)`
-  // 再查字串 Map —— 每個 settle 的節點 25 次。換算一次是 O(目標數)，而目標數
-  // 遠小於 settle 數 × 25。
+  // Targets are converted to cell indices once. Doing `toPosKey(x, y)` and a string Map lookup
+  // **at every attach probe** costs 25 per settled node; converting once is O(targets), and
+  // there are far fewer targets than settled nodes x 25.
   const { width, height } = roadLookup;
   const targetCells = new Set<number>();
   for (const t of targets) {
     const p = parsePosKey(t);
-    // 界外的目標**丟掉，不要摺**。`y * width + x` 會讓界外的座標別名到另一格:
-    // 寬 10 的地圖問 `"10,0"` 得到索引 10，那是 `(0,1)`。不擋的話查詢會把
-    // 那一格當成目標，提早收工，還回報一個沒有人問的位置。
+    // Out-of-bounds targets are **dropped, not wrapped**. `y * width + x` aliases an
+    // out-of-bounds coordinate onto another cell: on a 10-wide map `"10,0"` gives index 10,
+    // which is `(0,1)`. Unchecked, the query treats that cell as a target, exits early, and
+    // reports a position nobody asked about.
     if (p && p.x >= 0 && p.y >= 0 && p.x < width && p.y < height) {
       targetCells.add(p.y * width + p.x);
     }
@@ -637,11 +646,12 @@ export function roadDistanceToTargets(
   floodRoadCellGraph(g, seeds, maxBudget, (node, cost) => {
     hits += attachAtSettledNode(g, node, cost, ZONE_ROAD_REACH, width, height,
       (x, y) => targetCells.has(y * width + x), found);
-    return hits >= targetCells.size;   // 找齊就停
+    return hits >= targetCells.size;   // stop once every target is found
   });
 
-  // 回傳仍然是字串鍵的 Map —— 呼叫端（`JobRelocation`）拿它跟工作地點的
-  // posKey 對照。轉換只跑在**找到的**格子上，最多就是目標數。
+  // The result stays a string-keyed Map, which the caller (`JobRelocation`) matches against
+  // workplace posKeys. The conversion runs only over the cells **found**, at most the number of
+  // targets.
   for (const idx of targetCells) {
     const cost = found[idx]!;
     if (cost >= 0) result.set(toPosKey(idx % width, Math.floor(idx / width)), cost);

@@ -19,15 +19,18 @@ import { roadTileCost } from '../road/roadCost';
 import { RoadType } from '../road/types';
 
 /**
- * 加權隨機挑選時，一個地點依道路距離得到的權重。越近權重越高。
+ * The weight a location gets from its road distance during weighted-random selection. Nearer is
+ * heavier.
  *
- * 下限是**一格四線道的成本**，讓設施門口附近成為一塊等權重的平台 ——
- * 沒有下限的話成本 0 會是無限大權重，隔壁那格就永遠搶不到車。
+ * The floor is **the cost of one four-lane tile**, making the area around a facility's door a
+ * plateau of equal weight. Without a floor, cost 0 is infinite weight and the cell next door
+ * never gets a vehicle.
  *
- * 下限必須與 `cost` 同尺度，所以用 `roadTileCost` 表達而不是寫死數字。
- * 成本整數化（`core/road/roadCost.ts`）時這裡漏掉了：舊制寫死的 `1` 恰好
- * 就是舊制一格四線道的成本，成本 ×18 之後那個 `1` 變成只夾得住成本 0，
- * 平台塌掉，垃圾車與靈車的挑選分布跟著變。
+ * The floor must be on the same scale as `cost`, so it is expressed through `roadTileCost`
+ * rather than as a literal. It was missed when costs became integers
+ * (`core/road/roadCost.ts`): the old literal `1` happened to be one four-lane tile's cost under
+ * the old scale, and after costs were multiplied by 18 that `1` clamped only cost 0, collapsing
+ * the plateau and changing which locations bin lorries and hearses picked.
  */
 export function distanceWeight(cost: number): number {
   return 1 / Math.max(roadTileCost(RoadType.FOUR_LANE), cost);
@@ -56,23 +59,25 @@ export abstract class GlobalCoverageService<F extends LoadFacility> extends Road
   protected roadLookup: UnifiedRoadLookup | null = null;
 
   /**
-   * 待處理佇列被動過幾次。
+   * How many times the pending queue has been touched.
    *
-   * 給「從佇列導出來的東西」判斷自己過期了沒。快樂度每個 tick 都要一張「哪一格
-   * 有幾筆待處理」的表，而佇列只在服務 tick（每 6 個）、跨日的死亡、以及玩家拆
-   * 房子的時候會動。4 萬人的存檔實測:**24 547 筆待收垃圾只落在 311 個格子上**，
-   * 六個 tick 裡有五個重數出來的結果一模一樣，而那一支佔掉主執行緒的 4.9%。
+   * Lets anything derived from the queue tell whether it is stale. Happiness needs a per-cell
+   * count of pending items every tick, while the queue changes only on a service tick (one in
+   * six), on a death at the day boundary, and when the player demolishes a building. Measured on
+   * a 40k save: **24,547 pending refuse items across only 311 cells**, with five of every six
+   * recounts producing an identical result, at 4.9% of the main thread.
    *
-   * 只保證**單調遞增**,不保證每次變動只加一 —— 讀的人只比對「跟上次一不一樣」。
+   * Only **monotonic increase** is guaranteed, not one increment per change: readers compare
+   * against the previous value.
    *
-   * 漏掉一次遞增的後果是那張表晚幾個 tick 才更新，不是算錯。三個入口
-   * （report / tick / clearPendingAt）各有一條測試釘著。
+   * A missed increment delays that table by a few ticks; it does not make it wrong. Each of the
+   * three entry points — report, tick, clearPendingAt — has a test pinning it.
    */
   private pendingQueueVersion = 0;
 
   get pendingVersion(): number { return this.pendingQueueVersion; }
 
-  /** 動過待處理佇列。 */
+  /** Records that the pending queue was touched. */
   protected bumpPendingVersion(): void { this.pendingQueueVersion++; }
 
   /** Set the road lookup for level-aware flood fill. Call after construction. */
@@ -127,10 +132,10 @@ export abstract class GlobalCoverageService<F extends LoadFacility> extends Road
   }
 
   /**
-   * 涵蓋得到這一格的每一座，由近到遠。
+   * Every facility covering this cell, nearest first.
    *
-   * 這個類別不走基底的 `RoadCoverageMap`，但它本來就留著逐設施的距離圖 ——
-   * 靈車就是靠它挑「還有空位的裡面最近的那一座」。
+   * This class does not use the base's `RoadCoverageMap`, but it already keeps per-facility
+   * distance maps: they are how hearses pick the nearest facility with room.
    */
   override getCoveringFacilityIds(x: number, y: number): { id: string; cost: number }[] {
     const key = toPosKey(x, y);
@@ -159,13 +164,6 @@ export abstract class GlobalCoverageService<F extends LoadFacility> extends Road
   // ── Weighted-random collection ────────────────────────────────────
 
   /**
-   * Collect pending items using weighted-random selection (closer = higher weight).
-   * Each facility gets `collectionRate` budget per tick. Collected items are added
-   * to the facility's `currentLoad` and `todayReceived`.
-   *
-   * Mutates `pending` in-place (removes collected items).
-   */
-  /**
    * Facilities that actually work: road-connected AND powered/watered.
    *
    * getOperationalFacilities() from the base class only asks the second half.
@@ -179,6 +177,13 @@ export abstract class GlobalCoverageService<F extends LoadFacility> extends Road
     );
   }
 
+  /**
+   * Collect pending items using weighted-random selection (closer = higher weight).
+   * Each facility gets `collectionRate` budget per tick. Collected items are added
+   * to the facility's `currentLoad` and `todayReceived`.
+   *
+   * Mutates `pending` in-place (removes collected items).
+   */
   protected collectPending(pending: PendingItem[], collectionRate: number): void {
     if (pending.length === 0) return;
 

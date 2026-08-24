@@ -53,9 +53,11 @@ export function produceGarbageAndSewage(
    */
   getGarbageMultiplier: OccupancyLookup = () => 1,
   /**
-   * 這一格排放的汙水乘數 —— 汙水處理標準。預設 1，沒有條例的呼叫端不受影響。
+   * This cell's sewage multiplier, from the sewage treatment standard. Defaults to 1, so callers
+   * without an ordinance are unaffected.
    *
-   * 跟垃圾一樣是逐格的:排放發生在建築上，全城條例只是對每一格都給同一個數字。
+   * Per cell like refuse: discharge happens at buildings, and a city-wide ordinance simply gives
+   * every cell the same number.
    */
   getSewageMultiplier: OccupancyLookup = () => 1,
 ): { sewage: number } {

@@ -96,7 +96,7 @@ export class DeathCareService extends GlobalCoverageService<Cemetery> {
   // ── Tick logic ────────────────────────────────────────────────────
 
   tick(): void {
-    // 見 GarbageService.tick 的同一段:無條件記一次。
+    // Bumped unconditionally, for the reason given in GarbageService.tick.
     this.bumpPendingVersion();
     // Step 1: Increment wait counters; remove decomposed
     for (let i = this.pendingDeathQueue.length - 1; i >= 0; i--) {

@@ -3,14 +3,15 @@ import { distributeLoadToServingFacility, type LoadDemand } from '../StationLoad
 
 interface StubFacility { id: string; x: number; y: number; capacity: number }
 
-/** 一張手寫的「這一格歸誰」表。真的那一份來自覆蓋洪水。 */
+/** A hand-written table of which facility owns a cell. The real one comes from the coverage
+ *  flood. */
 function owners(table: Record<string, string>) {
   return (x: number, y: number) => table[`${x},${y}`] ?? null;
 }
 
 describe('把需求攤到服務那一格的設施頭上', () => {
   it('should call it infinitely overloaded when there is no facility at all', () => {
-    // 0 會被讀成「很輕鬆」。一座設施都沒有而需求存在,那是最糟的情況。
+    // 0 reads as "comfortable". Demand with no facility at all is the worst case there is.
     const r = distributeLoadToServingFacility([], [{ x: 5, y: 5, weight: 10 }], new Map(), () => null);
 
     expect(r.loadRatio).toBe(Infinity);
@@ -27,8 +28,9 @@ describe('把需求攤到服務那一格的設施頭上', () => {
   });
 
   it('should follow the coverage, not the straight line', () => {
-    // B 在直線上比較近，但覆蓋說這一格是 A 在服務（開車過去 B 要繞一大圈）。
-    // 舊的規則會把需求記在 B 頭上 —— 於是 B 顯示爆量卻服務不到人，A 顯示很空。
+    // B is nearer in a straight line, but coverage says A serves this cell because driving to B
+    // means a long detour. Attributing the demand to B leaves B reading overloaded while serving
+    // nobody and A reading empty.
     const facs: StubFacility[] = [
       { id: 'A', x: 0, y: 0, capacity: 100 },
       { id: 'B', x: 10, y: 0, capacity: 100 },
@@ -60,8 +62,8 @@ describe('把需求攤到服務那一格的設施頭上', () => {
   });
 
   it('should keep unserved demand in the city total', () => {
-    // 需求點在上一次覆蓋重算之後失去覆蓋。歸零的話，城市會在崩潰的當下
-    // 顯示得比實際健康。
+    // The demand point lost coverage after the last recompute. Zeroing it makes the city look
+    // healthier than it is at the moment it collapses.
     const facs: StubFacility[] = [{ id: 'A', x: 0, y: 0, capacity: 100 }];
     const loadMap = new Map<string, number>();
     const r = distributeLoadToServingFacility(
@@ -77,8 +79,9 @@ describe('把需求攤到服務那一格的設施頭上', () => {
   });
 
   it('should ignore an owner that is no longer one of the facilities', () => {
-    // 覆蓋算過之後才被拆掉或斷電的設施:擁有者表還指著它，但它不該再收需求。
-    // 硬記上去的話，那個 id 會在 loadMap 裡冒出來,而面板拿它去查設施會查不到。
+    // A facility demolished or cut off since coverage was computed: the owner table still names
+    // it, but it must not take demand. Recorded anyway, that id appears in loadMap and the panel
+    // cannot resolve it to a facility.
     const facs: StubFacility[] = [{ id: 'A', x: 0, y: 0, capacity: 100 }];
     const loadMap = new Map<string, number>();
     const r = distributeLoadToServingFacility(

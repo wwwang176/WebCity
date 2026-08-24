@@ -4,7 +4,8 @@ import type { LoadDemand } from '../StationLoadDistributor';
 
 interface Fac { id: string; capacity: number }
 
-/** 一張手寫的「這一格由近到遠有誰涵蓋得到」表。真的那一份來自逐設施的覆蓋圖。 */
+/** A hand-written table of which facilities cover a cell, nearest first. The real one comes
+ *  from the per-facility coverage maps. */
 function covering(table: Record<string, CoveringFacility[]>) {
   return (x: number, y: number) => table[`${x},${y}`] ?? [];
 }
@@ -22,7 +23,7 @@ describe('近的優先，滿了就換下一座', () => {
   });
 
   it('should spill the surplus into the next one along', () => {
-    // 這就是使用者回報的那件事:上一版全部擠在最近那間，第二間永遠空著。
+    // As reported: everything crowded into the nearest facility and the second stayed empty.
     const facs: Fac[] = [{ id: 'A', capacity: 100 }, { id: 'B', capacity: 100 }];
     const load = new Map<string, number>();
 
@@ -44,7 +45,8 @@ describe('近的優先，滿了就換下一座', () => {
   });
 
   it('should pile the leftover on the nearest when everything is full', () => {
-    // 硬性截在容量的話，沒有任何一座會超過 100% —— 而「超載」正是這些數字的用途。
+    // Truncating at capacity means no facility ever exceeds 100%, and overload is what these
+    // numbers are for.
     const facs: Fac[] = [{ id: 'A', capacity: 10 }, { id: 'B', capacity: 10 }];
     const load = new Map<string, number>();
 
@@ -56,7 +58,8 @@ describe('近的優先，滿了就換下一座', () => {
   });
 
   it('should never send demand to a facility that cannot reach it', () => {
-    // 河對岸那一間:直線很近，但覆蓋到不了。名單裡本來就不會有它。
+    // The facility across the river: close in a straight line but out of coverage, so it never
+    // appears on the list.
     const facs: Fac[] = [{ id: 'A', capacity: 5 }, { id: 'FarSide', capacity: 999 }];
     const load = new Map<string, number>();
 
@@ -69,12 +72,12 @@ describe('近的優先，滿了就換下一座', () => {
   });
 
   it('should let the block next door claim its hospital before a distant one does', () => {
-    // 兩個街區都涵蓋得到 A。近的那個先占 —— 反過來的話，一個邊陲街區可以先把
-    // 市中心的醫院占滿，而那不像任何現實中的就醫行為。
+    // Both blocks are covered by A, and the nearer one claims it first. Reversed, an outlying
+    // block could fill a downtown hospital, which matches no real pattern of seeking care.
     const facs: Fac[] = [{ id: 'A', capacity: 100 }, { id: 'B', capacity: 100 }];
     const demands: LoadDemand[] = [
-      { x: 9, y: 0, weight: 80 }, // 離 A 很遠
-      { x: 1, y: 0, weight: 80 }, // 就在 A 隔壁
+      { x: 9, y: 0, weight: 80 }, // far from A
+      { x: 1, y: 0, weight: 80 }, // right beside A
     ];
     const load = new Map<string, number>();
 
@@ -83,16 +86,19 @@ describe('近的優先，滿了就換下一座', () => {
       '9,0': [{ id: 'A', cost: 70 }, { id: 'B', cost: 75 }],
     }));
 
-    // 隔壁那 80 先進 A，遠的那 80 只剩 20 個位子，其餘溢到 B。
+    // The neighbouring 80 enter A first, leaving 20 places for the distant 80 and the rest
+    // spilling into B.
     expect(load.get('A')).toBe(100);
     expect(load.get('B')).toBe(60);
   });
 
   it('should give the same answer whatever order the caller passes demands in', () => {
-    // 這份攤派每 6 個 tick 重算一次。順序決定結果的話，面板上的數字會自己跳動。
+    // This allocation is recomputed every 6 ticks. If order decided the result, the panel's
+    // numbers would jitter on their own.
     //
-    // 近的那個街區**只有 A 涵蓋得到**（沒有第二選擇），遠的那個兩間都到得了。
-    // 不排隊的話，遠的先占滿 A，近的就無處可去 —— 而它其實就住在 A 隔壁。
+    // The near block is covered **only by A** and has no second choice, while the far one
+    // reaches both. Unqueued, the far block fills A and the near one has nowhere to go, while
+    // living next door to A.
     const facs: Fac[] = [{ id: 'A', capacity: 100 }, { id: 'B', capacity: 100 }];
     const table = covering({
       '1,0': [{ id: 'A', cost: 1 }],
@@ -105,7 +111,8 @@ describe('近的優先，滿了就換下一座', () => {
     distributeWithSpillover(facs, [{ x: 9, y: 0, weight: 80 }, { x: 1, y: 0, weight: 80 }], backward, table);
 
     expect([...forward], '順序換了答案就不一樣').toEqual([...backward]);
-    // 隔壁那 80 先進 A，遠的那 80 只剩 20 個位子，其餘 60 溢到 B。
+    // The neighbouring 80 enter A first, leaving 20 places for the distant 80, with 60 spilling
+    // into B.
     expect(forward.get('A')).toBe(100);
     expect(forward.get('B')).toBe(60);
   });

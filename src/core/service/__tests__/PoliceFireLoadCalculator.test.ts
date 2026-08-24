@@ -96,8 +96,9 @@ describe('PoliceFireLoadCalculator', () => {
       const getBuildingResidents = (_id: number) => 4;
 
       const result = calculateFireLoads(buildCitizenLocationIndex(citizens), fire, grid, getBuildingResidents);
-      // 每位住戶 baseDemand * (1 + 擠迫) = 0.3 * (1 + 0.5) = 0.45，兩位合成一筆 0.9。
-      // 同一棟樓只出一筆是去重的重點 —— 下游對同一格只做加總，總量沒有變。
+      // Per resident, baseDemand * (1 + crowding) = 0.3 * (1 + 0.5) = 0.45, so two collapse into
+      // one entry of 0.9. One entry per building is the point of the deduplication: downstream
+      // only sums per cell, so the total is unchanged.
       expect(result.length, '同一棟樓沒有合成一筆').toBe(1);
       expect(result[0]!.weight).toBeCloseTo(0.9);
     });

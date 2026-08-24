@@ -154,30 +154,30 @@ function canRelay(roadType: number, buildingId: number, isInfra: boolean): boole
 const DX = [0, 0, -1, 1] as const;
 const DY = [-1, 1, 0, 0] as const;
 
-/** `"x,y"` 或 `"x,y,level"` → 節點編號。界外回 -1。 */
+/** `"x,y"` or `"x,y,level"` to a node number. `-1` when out of bounds. */
 function nodeOfKey(key: string, width: number, height: number, totalCells: number): number {
   const { x, y } = parsePosKeyUnsafe(key);
   if (x < 0 || y < 0 || x >= width || y >= height) return -1;
   return parseLevelFromKey(key) * totalCells + y * width + x;
 }
 
-/** 節點 → `UnifiedRoadLookup` 認得的字串鍵。只有真的碰到高架時才會走到。 */
+/** A node to the string key `UnifiedRoadLookup` recognises. Only reached with real elevated
+ *  roads. */
 function keyOfNode(x: number, y: number, level: number): string {
   return level === 0 ? toPosKey(x, y) : `${x},${y},${level}`;
 }
 
-/**
- * 走到隔壁那一格的地面道路上 —— `getCompatibleNeighborKeys` 在「來源在地面、
- * 鄰居沒有高架」時的特化，兩支 flood 各用一次。
- *
- * 那條通用路徑每個鄰居都要:解析來源字串鍵三次（層級、座標、是不是匝道）、配一個
- * 結果陣列、再配一個十四欄位的格子物件。而 `isCompatible(0, false, 0, false)`
- * 恆為真、`sourceIsRamp` 為假，所以在這個情形下它的答案就只是「鄰居是不是地面
- * 道路」。規則本身留在 `UnifiedRoadLookup` 裡，這裡只是繞過它。
- *
- * 200x200 全蓋滿、24 座廠的測資:光是電力那一輪，帶 lookup 3 102ms、完全不帶
- * lookup 1 555ms —— 那一半就是這裡。
- */
+// Both floods below inline a fast path for stepping onto a neighbouring cell's ground road: the
+// specialisation of `getCompatibleNeighborKeys` for a ground source with no elevated neighbour.
+//
+// The general path parses the source string key three times per neighbour (level, coordinates,
+// ramp), allocates a result array, and allocates a fourteen-field cell object. But
+// `isCompatible(0, false, 0, false)` is always true and `sourceIsRamp` is false, so in this case
+// its answer is simply whether the neighbour is a ground road. The rule itself stays in
+// `UnifiedRoadLookup`; the fast path only bypasses it.
+//
+// On a fully built 200x200 map with 24 plants, the power pass alone measured 3,102ms with the
+// lookup and 1,555ms without it, and this is that half.
 
 /**
  * Pure BFS flood through roads/buildings from a starting position.
@@ -185,7 +185,8 @@ function keyOfNode(x: number, y: number, level: number): string {
  * Level-aware when UnifiedRoadLookup is set; falls back to ground-only otherwise.
  * Shared between PowerGrid, WaterNetwork and SewageService.
  *
- * `scratch` 帶著走訪狀態與這一輪的基礎設施位置;呼叫端要先 `beginPass`。
+ * `scratch` carries traversal state and this pass's infrastructure positions; the caller calls
+ * `beginPass` first.
  */
 export function bfsRoadNetworkFlood(
   grid: Grid,
@@ -285,11 +286,12 @@ export interface UtilityPlant {
  * other three, so the station showed 3/4 powered and passed power to whatever
  * lay beyond it. Charging is keyed by footprint instead: paid once, all or none.
  *
- * 已付款的 footprint 記在 `scratch` 上，**跨這一輪所有的廠共用** —— 因為
- * `supplied` 也是。每座廠各記一份的話:A 在主格付掉最後一塊預算、`budget <= 0`
- * 在主格出隊之前就 break，另外三格沒被供應;B 走到附屬格，`supplied` 裡沒有它、
- * 自己那份新的已付清單裡也沒有，於是整棟再付一次 —— 那正是 BUG-070 修掉的重複
- * 計費，換成跨廠又犯一次。
+ * Charged footprints live on `scratch` and are **shared across every plant in the pass**, as
+ * `supplied` is. Per-plant records break it: plant A spends its last budget on the primary cell
+ * and breaks on `budget <= 0` before that cell is dequeued, leaving the other three unsupplied;
+ * plant B reaches a secondary cell, finds it in neither `supplied` nor its own fresh charged
+ * list, and pays for the whole building again — the double charging BUG-070 fixed, committed
+ * again across plants.
  */
 export function bfsBudgetDrainFlood(
   grid: Grid,

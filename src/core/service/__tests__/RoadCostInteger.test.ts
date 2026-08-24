@@ -1,18 +1,19 @@
 /**
- * 道路成本整數化的特徵測試（characterization test）。
+ * A characterization test for integer road costs.
  *
- * 為什麼要整數化：浮點加法**沒有結合律**。反向 Dijkstra（從工作地往外）與
- * 正向 Dijkstra（從家往外）走的是同一組邊、相反的順序，用舊的浮點成本
- * （RURAL = 100/30 = 3.333…）累加出來的總和會差到 1e-15：
+ * Why they are integers: floating-point addition is **not associative**. The reverse Dijkstra
+ * (outward from a workplace) and the forward one (outward from a home) walk the same edges in
+ * opposite orders, and with the old floating-point costs (RURAL = 100/30 = 3.333…) the totals
+ * differed by around 1e-15:
  *
  *   10/3 + 10/3 + 10/3 + 2 + 2 === 14
  *   2 + 2 + 10/3 + 10/3 + 10/3 === 14.000000000000002
  *
- * 換成 Float64 也救不了 —— 這與精度無關，是順序問題。整數加法則完全可交換，
- * 所以兩個方向可以用 `.toBe` 逐位元比對。
+ * Float64 does not help — this is about order, not precision. Integer addition is fully
+ * commutative, so the two directions can be compared bit for bit with `.toBe`.
  *
- * 這個檔案同時鎖住「整數化不改變任何遊戲行為」：涵蓋半徑、通勤評分、
- * 消防反應時間三個下游量都必須與整數化前一致。
+ * This file also pins that integer costs change no game behaviour: coverage radius, commute
+ * scoring and fire response time must all match what they were before.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -25,7 +26,7 @@ import { distanceWeight } from '../GlobalCoverageService';
 import { GarbageService } from '../GarbageService';
 import { Grid } from '../../grid/Grid';
 
-/** 整數化的放大倍率：新成本 = 舊浮點成本 × 18。 */
+/** The scaling factor: the new cost is the old floating-point cost x18. */
 const SCALE = 18;
 
 const DRIVABLE = [
@@ -37,7 +38,7 @@ const DRIVABLE = [
   RoadType.ONE_WAY,
 ] as const;
 
-/** 整數化**之前**的每格成本，凍結在這裡作為比對基準。 */
+/** The per-tile costs from **before** the change, frozen here as the baseline. */
 const OLD_TILE: Record<number, number> = {
   [RoadType.RURAL]: 100 / 30,
   [RoadType.TWO_LANE]: 100 / 50,
@@ -47,7 +48,7 @@ const OLD_TILE: Record<number, number> = {
   [RoadType.ONE_WAY]: 100 / 50,
 };
 
-/** 整數化**之前**的各項預算，凍結在這裡作為比對基準。 */
+/** The budgets from **before** the change, frozen here as the baseline. */
 const OLD_BUDGET = {
   GARBAGE_BUDGET: 80,
   POLICE_BUDGET: 30,
@@ -82,7 +83,8 @@ describe('道路成本整數化', () => {
   });
 
   it('道路之間的相對快慢完全沒變', () => {
-    // 兩兩比值必須與舊制相同 —— 這是「不改變遊戲平衡」的核心保證。
+    // Every pairwise ratio must match the old scale; this is the core guarantee that balance is
+    // unchanged.
     for (const a of DRIVABLE) {
       for (const b of DRIVABLE) {
         expect(roadTileCost(a) / roadTileCost(b), `${RoadType[a]}/${RoadType[b]}`)
@@ -92,7 +94,8 @@ describe('道路成本整數化', () => {
   });
 
   it('路徑總成本與累加順序無關（逐位元相等）', () => {
-    // 一條混合路型的路徑。舊制下正反累加會差 1.78e-15，整數制下必須完全相同。
+    // A path of mixed road types. On the old scale, forward and reverse summation differed by
+    // 1.78e-15; with integers they must be identical.
     const path: RoadType[] = [
       RoadType.RURAL, RoadType.RURAL, RoadType.RURAL,
       RoadType.TWO_LANE, RoadType.TWO_LANE,
@@ -105,7 +108,7 @@ describe('道路成本整數化', () => {
     const forward = sum(path);
     expect(sum([...path].reverse())).toBe(forward);
 
-    // 更強的版本：所有旋轉排列都必須給出同一個位元。
+    // The stronger version: every rotation must give the same bits.
     for (let shift = 1; shift < path.length; shift++) {
       const rotated = [...path.slice(shift), ...path.slice(0, shift)];
       expect(sum(rotated), `旋轉 ${shift}`).toBe(forward);
@@ -142,7 +145,7 @@ describe('道路成本整數化', () => {
   });
 
   it('通勤評分對每一個可達成本都與舊制給出同一個分數', () => {
-    // 列舉所有「整數成本的和」≤ dijkstraMaxBudget 的可達值，逐一比對。
+    // Enumerates every reachable sum of integer costs up to dijkstraMaxBudget and compares each.
     const weights = DRIVABLE.map(roadTileCost);
     const max = DEFAULT_JOB_RELOCATION_CONFIG.dijkstraMaxBudget;
     const reachable = new Set<number>([0]);
@@ -157,9 +160,9 @@ describe('道路成本整數化', () => {
         }
       }
     }
-    expect(reachable.size).toBeGreaterThan(500); // 不能是空轉的迴圈
+    expect(reachable.size).toBeGreaterThan(500); // the loop must not be vacuous
 
-    // 整數化**之前**的評分公式，常數原封不動搬過來。
+    // The scoring formula from **before** the change, with its constants carried over verbatim.
     const oldScore = (cost: number): number => {
       if (cost <= 10) return 15;
       if (cost > 40) return -15;
@@ -174,7 +177,7 @@ describe('道路成本整數化', () => {
   it('通勤評分的門檻常數同步放大', () => {
     expect(COMMUTE_SCORE.SHORT_DISTANCE).toBe(10 * SCALE);
     expect(COMMUTE_SCORE.LONG_DISTANCE).toBe(40 * SCALE);
-    // 分數本身不是距離，不能放大。
+    // The scores themselves are not distances and must not be scaled.
     expect(COMMUTE_SCORE.SHORT_BONUS).toBe(15);
     expect(COMMUTE_SCORE.LONG_PENALTY).toBe(-15);
     expect(COMMUTE_SCORE.NO_PATH_PENALTY).toBe(-20);
@@ -182,7 +185,7 @@ describe('道路成本整數化', () => {
 
   it('消防反應速度同步放大，反應時間不變', () => {
     expect(FIRE.RESPONSE_SPEED).toBe(OLD_RESPONSE_SPEED * SCALE);
-    // 反應時間 = 成本 / 速度。兩者同步 ×18 → 商不變。
+    // Response time is cost over speed; scaling both by 18 leaves the quotient unchanged.
     for (const t of DRIVABLE) {
       const tiles = 5;
       const newTime = (roadTileCost(t) * tiles) / FIRE.RESPONSE_SPEED;
@@ -192,12 +195,13 @@ describe('道路成本整數化', () => {
   });
 
   it('垃圾車／靈車的距離加權分布沒變', () => {
-    // `collectPending` 用 1/max(下限, 成本) 做加權隨機挑選，而那個下限與
-    // 成本同尺度。整數化時漏掉它的話，設施附近那塊「等權重平台」會縮成
-    // 只剩成本 0 的格子，挑選分布就變了 —— 這正是第一版整數化漏掉的地方。
+    // `collectPending` selects at random weighted by 1/max(floor, cost), and that floor is on the
+    // same scale as the cost. Missing it during the change shrinks the equal-weight plateau
+    // around a facility to only the cost-0 cells and changes the distribution — exactly what the
+    // first version of the change missed.
     //
-    // 比的是**相對**分布：所有權重同乘一個常數不影響加權隨機的結果，
-    // 所以正規化之後逐項比對。
+    // What is compared is the **relative** distribution: multiplying every weight by a constant
+    // does not affect weighted-random selection, so both are normalised first.
     const oldWeight = (oldCost: number): number => 1 / Math.max(1, oldCost);
     const oldCosts = [0, 0.5, 1, 2, 100 / 30, 5, 10, 20, 40, 80];
 
@@ -216,8 +220,8 @@ describe('道路成本整數化', () => {
   });
 
   it('距離加權的下限恰好是一格四線道（整數化前後同一個意思）', () => {
-    // 舊制的下限寫死 1，而舊制的四線道每格正好是 1。用 roadTileCost 表達，
-    // 尺度再變一次也不會鬆掉。
+    // The old floor was a literal 1, and one four-lane tile cost exactly 1 on the old scale.
+    // Expressed through roadTileCost, it survives another change of scale.
     const floor = roadTileCost(RoadType.FOUR_LANE);
     expect(distanceWeight(0), '成本 0 應該被下限夾住').toBe(1 / floor);
     expect(distanceWeight(floor), '剛好等於下限時仍是平台').toBe(1 / floor);
@@ -226,21 +230,24 @@ describe('道路成本整數化', () => {
   });
 
   it('collectPending 真的用了 distanceWeight —— 接線也要測', () => {
-    // 上面兩條只測純函式：把呼叫端改回寫死的 `1 / Math.max(1, cost)`，
-    // 它們照樣全綠。所以這一條從**實際的挑選結果**驗接線。
+    // The two tests above cover the pure function only: reverting the caller to a literal
+    // `1 / Math.max(1, cost)` leaves them green. This one checks the wiring through the
+    // **actual selection outcome**.
     //
-    // 加權隨機是 roll = r × (w近 + w遠)，r ≤ w近/(w近+w遠) 時挑到近的那個。
-    // 正確與錯誤的下限給出兩個不同的門檻；把擲點固定在兩者中間，一次挑選
-    // 就分得出來：正確會挑遠的，錯誤會挑近的。
+    // Weighted random is roll = r x (wNear + wFar), picking the near one when
+    // r <= wNear/(wNear+wFar). The correct and the incorrect floor give two different
+    // thresholds; fixing the roll halfway between them separates them in one selection: correct
+    // picks the far one, incorrect the near one.
     const grid = new Grid(10, 10);
     for (let x = 1; x < 10; x++) grid.setCell(x, 0, { roadType: RoadType.TWO_LANE });
 
     const gs = new GarbageService();
-    gs.addFacility(0, 0, 1);          // 容量 1 → 這一 tick 只收得走一袋
+    gs.addFacility(0, 0, 1);          // capacity 1, so only one bag is collected this tick
     gs.recalculateCoverage(grid);
 
-    // 從**實際的**成本圖裡挑一對跨過權重下限的格子。不手算座標 —— 設施佔地
-    // 與 seed reach 一起決定哪些格子是 0，心算會錯。
+    // A pair of cells straddling the weight floor, taken from the **actual** cost map.
+    // Coordinates are not worked out by hand: the facility footprint and the seed reach together
+    // decide which cells are 0.
     const floor = roadTileCost(RoadType.FOUR_LANE);
     const costs = [...gs.getCoveredCellsWithCost()].sort((a, b) => a[1] - b[1]);
     const nearEntry = costs.find(([, c]) => c < floor);
@@ -258,15 +265,15 @@ describe('道路成本整數化', () => {
       const wn = 1 / Math.max(f, cNear), wf = 1 / Math.max(f, cFar);
       return wn / (wn + wf);
     };
-    const good = thresholdFor(floor);   // 正確：下限與成本同尺度
-    const bad = thresholdFor(1);        // 錯誤：下限寫死 1（舊尺度）
+    const good = thresholdFor(floor);   // correct: the floor is on the cost scale
+    const bad = thresholdFor(1);        // incorrect: a literal 1 from the old scale
 
-    // 擲點取兩個門檻的正中間 —— 不手挑數字。
+    // The roll is taken halfway between the two thresholds rather than chosen by hand.
     expect(bad - good, '兩個門檻之間沒有間隙，這條測試分辨不出東西')
       .toBeGreaterThan(0.01);
     const roll = (good + bad) / 2;
 
-    gs.reportGarbage(nx!, ny!, 1);   // 先報近的 → 它是 entries[0]
+    gs.reportGarbage(nx!, ny!, 1);   // the near one is reported first, so it is entries[0]
     gs.reportGarbage(fx!, fy!, 1);
 
     const origRandom = Math.random;

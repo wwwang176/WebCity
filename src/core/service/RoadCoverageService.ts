@@ -26,10 +26,12 @@ export abstract class RoadCoverageService<F extends Facility> implements Service
   protected coverage = new RoadCoverageMap();
   protected connectedFacilityIds = new Set<string>();
   /**
-   * 上一次重算覆蓋時餵給洪水的那份清單的 id，**順序就是擁有者索引**。
+   * The ids of the list fed to the flood on the last coverage recompute, **in owner-index
+   * order**.
    *
-   * 存 id 而不是設施本身:設施陣列會被增刪，而擁有者索引是那一次重算的快照。
-   * 拿舊索引去查新陣列會指到別的設施。
+   * Ids rather than the facilities themselves: the facility array is added to and removed from,
+   * while an owner index is a snapshot of that recompute, and an old index into a new array
+   * points at a different facility.
    */
   private coveredFacilityIds: string[] = [];
   /** null = no filter (all operational); Set = only listed IDs are operational. */
@@ -86,13 +88,13 @@ export abstract class RoadCoverageService<F extends Facility> implements Service
   }
 
   /**
-   * 涵蓋得到這一格的**每一座**設施，由近到遠。
+   * **Every** facility covering this cell, nearest first.
    *
-   * 「最近的那一座」不夠用 —— 它滿了的時候，需求應該溢到第二近的（靈車一直是這樣
-   * 做的，見 `SpilloverLoadDistributor`）。上一版只認最近的那一座，於是所有人都擠到
-   * 同一間，第二間永遠空著（BUG-365）。
+   * The nearest alone will not do: when it is full, demand should spill to the second-nearest,
+   * as hearses have always done (see `SpilloverLoadDistributor`). Recognising only the nearest
+   * crowds everyone into one facility and leaves the second empty (BUG-365).
    *
-   * 上一次重算之後被拆掉的設施會被濾掉。
+   * Facilities demolished since the last recompute are filtered out.
    */
   getCoveringFacilityIds(x: number, y: number): { id: string; cost: number }[] {
     const out: { id: string; cost: number }[] = [];
@@ -106,17 +108,18 @@ export abstract class RoadCoverageService<F extends Facility> implements Service
   }
 
   /**
-   * 服務這一格的那一座設施 —— **還有空位的裡面最近的那一座**。
+   * The facility serving this cell: **the nearest one with room**.
    *
-   * 跟靈車同一個規矩。全部滿了就回最近的那一座（它就是會超載的那一座）。
-   * 沒有任何設施涵蓋得到就回 `null`。
+   * The same rule as hearses. With everything full it returns the nearest, which is the one that
+   * will be overloaded. `null` when no facility covers the cell.
    */
   getServingFacilityId(x: number, y: number): string | null {
     const covering = this.getCoveringFacilityIds(x, y);
     if (covering.length === 0) return null;
     for (const c of covering) {
       const lc = this.facilityLoadOf(c.id);
-      // 問不到負載（例如公園）就當作有空位 —— 沒有理由跳過最近的那一座。
+      // An unavailable load, as for parks, counts as having room: there is no reason to skip the
+      // nearest facility.
       if (!lc) return c.id;
       if (lc.capacity > 0 && lc.load < lc.capacity) return c.id;
     }
@@ -124,15 +127,18 @@ export abstract class RoadCoverageService<F extends Facility> implements Service
   }
 
   /**
-   * 服務這一格的那座設施現在多滿。`-1` = 沒有覆蓋。
+   * How full the facility serving this cell is. `-1` means uncovered.
    *
-   * 「服務這一格的」是**還有空位的裡面最近的那一座** —— 所以最近那間滿了、
-   * 第二間還很空時，這一格是被照顧到的，數字會反映第二間。全部滿了才會超過 1。
+   * "Serving this cell" is **the nearest facility with room**, so when the nearest is full and
+   * the second is empty this cell is served and the figure reflects the second. Only with
+   * everything full does it exceed 1.
    *
-   * 1.0 是剛好滿。**超過 1 是有意義的**（2.0 代表需求是容量的兩倍），所以不夾在 1。
-   * 容量 0 而有需求時是 `Infinity` —— 那是「完全沒有能力」，不是「很空」。
+   * 1.0 is exactly full. **Exceeding 1 is meaningful** — 2.0 is demand at twice capacity — so it
+   * is not clamped. Zero capacity with demand is `Infinity`, meaning no capability at all rather
+   * than plenty of room.
    *
-   * 子類別要能回報單一設施的負載與容量才有值,`facilityLoadOf` 預設回 `null`。
+   * A value requires the subclass to report a single facility's load and capacity;
+   * `facilityLoadOf` returns `null` by default.
    */
   getLoadRatioAt(x: number, y: number): number {
     const id = this.getServingFacilityId(x, y);
@@ -144,10 +150,10 @@ export abstract class RoadCoverageService<F extends Facility> implements Service
   }
 
   /**
-   * 單一設施的負載與容量。
+   * One facility's load and capacity.
    *
-   * 預設 `null` —— 有些服務（公園）沒有負載的概念，硬掰一個 0 會讓圓點永遠是綠的
-   * 而看起來像是「已經檢查過了」。
+   * `null` by default: some services, parks among them, have no notion of load, and inventing a
+   * 0 would keep the dot green forever while looking like a checked answer.
    */
   protected facilityLoadOf(_id: string): { load: number; capacity: number } | null {
     return null;

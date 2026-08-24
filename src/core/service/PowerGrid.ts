@@ -95,8 +95,8 @@ export class PowerGrid {
   private powered = new CoverageBits();
   private fullCoverage = new CoverageBits();
   /**
-   * flood 的走訪狀態與這一輪共用的記錄。跨呼叫重複使用 —— 每 6 個 tick 重配
-   * 一組跟地圖一樣大的 typed array 是白花的。
+   * The flood's traversal state and this pass's shared records, reused across calls:
+   * reallocating map-sized typed arrays every 6 ticks is wasted.
    */
   private readonly floodScratch = new UtilityFloodScratch();
   private totalDemand = 0;
@@ -141,10 +141,10 @@ export class PowerGrid {
   }
 
   /**
-   * 重算全城電力總需求。
+   * Recomputes the city's total power demand.
    *
-   * `demandMultiplier` 是全城條例（節能法規）的省電幅度。預設 1，所以沒有帶條例
-   * 的呼叫端不必改。
+   * `demandMultiplier` is the saving from the city-wide energy regulation ordinance. It defaults
+   * to 1, so callers without an ordinance need no change.
    */
   calculateDemand(grid: Grid, demandMultiplier = 1): void {
     let demand = 0;

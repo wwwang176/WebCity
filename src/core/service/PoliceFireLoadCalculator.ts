@@ -58,12 +58,13 @@ interface DemandEntry {
 // ── Public API ──
 
 /**
- * 每一格的警力需求權重。住宅看學歷，工作地看分區。
+ * The police demand weight per cell. Housing follows education, workplaces follow zone.
  *
- * 吃的是**位置索引**不是市民名單:同一棟樓的住戶算出來的座標與覆蓋完全一樣，
- * 逐市民做的話 12 萬人要付 24 萬次 `parsePosKey` + `getCoverage`，而不重複的位置
- * 只有幾千個。下游 `distributeLoadToNearest` 對同一格只做加總，先加起來再送進去
- * 結果一樣 —— 這是去重，不是近似。
+ * Takes a **location index** rather than a citizen list: residents of one building produce
+ * identical coordinates and coverage, so working per citizen costs 240,000 `parsePosKey` +
+ * `getCoverage` calls for 120,000 people across a few thousand distinct positions. Downstream,
+ * `distributeLoadToNearest` only sums per cell, so pre-summing gives the same result. This is
+ * deduplication, not approximation.
  */
 export function calculatePoliceLoads(
   index: CitizenLocationIndex,
@@ -95,14 +96,16 @@ export function calculatePoliceLoads(
 }
 
 /**
- * 每一格的消防需求權重。住宅看擠迫程度，工作地看分區。
+ * The fire demand weight per cell. Housing follows crowding, workplaces follow zone.
  *
- * 與警力同一個道理:吃位置索引。住宅那一項的權重原本是逐住戶 `BASE * (1 + 擠迫)`，
- * 同一棟樓每個人都一樣 —— 乘上人數即可。擠迫的定義沒有變（分母仍是建築容量，
- * 分子仍是「所有把這裡當家的人」，不受消防覆蓋範圍影響）。
+ * The same reasoning as police: it takes a location index. The housing weight is
+ * `BASE * (1 + crowding)` per resident and identical for everyone in one building, so it is
+ * multiplied by the count instead. Crowding's definition is unchanged: the denominator is still
+ * building capacity and the numerator still everyone who calls it home, independent of fire
+ * coverage.
  *
- * 數學上等值，但**不是逐位元相同**:實數的 `H × w` 與 `w` 加 H 次在 IEEE-754 下
- * 最後幾個 bit 可能不同。測試因此用 `toBeCloseTo`。
+ * Mathematically equivalent but **not bit-identical**: under IEEE-754 the last few bits of
+ * `H * w` and of `w` added H times can differ, which is why the tests use `toBeCloseTo`.
  *
  * @param getBuildingResidents Optional lookup for building capacity (default: 1).
  */

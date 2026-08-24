@@ -12,14 +12,14 @@ function scratchOn(infra?: Set<string>): { grid: Grid; scratch: UtilityFloodScra
 }
 
 /**
- * flood 暫存跨呼叫重複使用，所以「上一輪的東西有沒有清乾淨」是它唯一會出的錯，
- * 而且失敗模式全部是**安靜的**:多付一次錢、少付一次錢、或者把界外的基礎設施
- * 記在真的格子上。
+ * The flood scratch is reused across calls, so whether the previous pass was cleared properly is
+ * the only thing it can get wrong, and every failure mode is **silent**: paying twice, paying
+ * once too few, or recording an out-of-bounds facility on a real cell.
  */
 describe('水電 flood 的暫存', () => {
   it('should forget which footprints were paid for when a new pass starts', () => {
-    // 沒清的話，上一輪付過的多格建築這一輪就變免費 —— 電廠的預算會憑空多出來，
-    // 而覆蓋圖看起來完全正常。
+    // Uncleared, a multi-cell building paid for last pass becomes free this pass: the plant's
+    // budget gains capacity out of nowhere while the coverage map looks entirely normal.
     const { grid, scratch } = scratchOn();
     scratch.markPaid(3);
     expect(scratch.isPaid(3), '前置條件:要先付過').toBe(true);
@@ -30,7 +30,8 @@ describe('水電 flood 的暫存', () => {
   });
 
   it('should forget which cells belong to which building when a new pass starts', () => {
-    // 房子拆了又蓋，同一格可能換一個 footprint。記著舊的歸戶就會把錢算到別人頭上。
+    // Demolishing and rebuilding can give one cell a different footprint. A stale grouping
+    // charges the wrong building.
     const { grid, scratch } = scratchOn();
     const idx = 2 * W + 3;
     const before = scratch.chargeOf(grid, idx, 3, 2, () => 7);
@@ -44,8 +45,8 @@ describe('水電 flood 的暫存', () => {
   });
 
   it('should not let an out-of-grid facility mark a real cell', () => {
-    // `"-1,2"` 折出來的索引正好是 `(W - 1, 1)`。不擋界外的話，地圖外的東西會讓
-    // 那一格變成轉發點 —— 而它離真正的網路可能有半座城市遠。
+    // `"-1,2"` folds onto exactly `(W - 1, 1)`. Unchecked, something off the map turns that cell
+    // into a relay point, possibly half a city away from the real network.
     const victim = 1 * W + (W - 1);
     const { scratch } = scratchOn(new Set(['-1,2']));
 
@@ -53,7 +54,7 @@ describe('水電 flood 的暫存', () => {
   });
 
   it('should record facilities that are inside the grid', () => {
-    // 上一條的反面。整個 infra 都被丟掉的話，那一條也會過。
+    // The converse of the test above, which would also pass if infra were discarded entirely.
     const { scratch } = scratchOn(new Set(['3,2']));
 
     expect(scratch.isInfra(2 * W + 3)).toBe(true);

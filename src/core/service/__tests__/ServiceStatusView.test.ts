@@ -75,8 +75,8 @@ describe('utilities are on/off, services are a cost ratio', () => {
   });
 
   it('should not invent a load for a utility', () => {
-    // 電網沒有「這一格由哪一座電廠供電、那座多滿」的概念。給 0 的話,
-    // 圓點會把它讀成「已經檢查過負載，很好」。
+    // The power grid has no notion of which plant supplies a cell or how full that plant is. A 0
+    // would be read as "load checked, and fine".
     expect(buildServiceStatus(deps(), 0, 0).power.load).toBe(NO_COVERAGE);
     expect(buildServiceStatus(deps(), 0, 0).water.load).toBe(NO_COVERAGE);
     expect(buildServiceStatus(deps(), 0, 0).sewage.load).toBe(NO_COVERAGE);
@@ -90,8 +90,8 @@ describe('utilities are on/off, services are a cost ratio', () => {
   });
 
   it('should carry the load of the facility serving that cell', () => {
-    // 這是 BUG-362 的核心:距離 0（設施就在隔壁）但負載 2.4（爆到兩倍多）。
-    // 只帶距離的話，面板會把這一格畫成最好的狀態。
+    // The core of BUG-362: distance 0, with the facility next door, and load 2.4, over twice
+    // capacity. Carrying distance alone draws this cell in the best possible state.
     const status = buildServiceStatus(deps({ health: covered(0, 2.4) }), 0, 0);
 
     expect(status.health.cost).toBe(0);
@@ -99,7 +99,8 @@ describe('utilities are on/off, services are a cost ratio', () => {
   });
 
   it('should not clamp a load above 1', () => {
-    // 「剛好滿」跟「爆到三倍」是兩件事。夾在 1 的話兩者無法分辨。
+    // Exactly full and three times capacity are different things, and clamping to 1 cannot tell
+    // them apart.
     expect(buildServiceStatus(deps({ health: covered(0, 3) }), 0, 0).health.load).toBe(3);
   });
 

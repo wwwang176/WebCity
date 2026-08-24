@@ -87,12 +87,12 @@ export class WaterNetwork {
   private supplied = new CoverageBits();
   private fullCoverage = new CoverageBits();
   /**
-   * flood 的走訪狀態與這一輪共用的記錄。跨呼叫重複使用 —— 每 6 個 tick 重配
-   * 一組跟地圖一樣大的 typed array 是白花的。
+   * The flood's traversal state and this pass's shared records, reused across calls:
+   * reallocating map-sized typed arrays every 6 ticks is wasted.
    */
   private readonly floodScratch = new UtilityFloodScratch();
   private totalDemand = 0;
-  /** 節水法規的逐格乘數。1 = 沒有條例。 */
+  /** The per-cell multiplier from the water conservation ordinance. 1 means no ordinance. */
   private demandMultiplier = 1;
   /** Injected road lookup for level-aware BFS (DIP). */
   private roadLookup: import('../road/UnifiedRoadLookup').UnifiedRoadLookup | null = null;
@@ -129,15 +129,15 @@ export class WaterNetwork {
   }
 
   /**
-   * 重算總需求，並記下這一輪的節水乘數。
+   * Recomputes total demand and records this pass's conservation multiplier.
    *
-   * 乘數存在物件上而不是只乘在 `totalDemand` 上，是因為決定哪一格有水的是
-   * `calculateCoverage` 的預算式 BFS，而它問的是 `getCellDemandAt`。只降帳面數字的
-   * 話 `getSupplyRatio()` 會變好看，缺水的建築卻一棟也不會恢復供水 —— 而玩家買的
-   * 正是那個。
+   * The multiplier is stored on the object rather than only applied to `totalDemand` because
+   * which cells get water is decided by `calculateCoverage`'s budgeted BFS, which asks
+   * `getCellDemandAt`. Lowering only the headline figure improves `getSupplyRatio()` while not a
+   * single dry building regains supply, and supply is what the player is buying.
    *
-   * 兩個呼叫端都是「先 calculateDemand 再 calculateCoverage」，順序反過來的話
-   * BFS 會用到上一輪的乘數。
+   * Both callers run calculateDemand before calculateCoverage; reversed, the BFS would use the
+   * previous pass's multiplier.
    */
   calculateDemand(grid: Grid, demandMultiplier = 1): void {
     this.demandMultiplier = demandMultiplier;

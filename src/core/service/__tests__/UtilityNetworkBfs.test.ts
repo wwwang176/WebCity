@@ -11,14 +11,15 @@ function makeGrid(w: number, h: number): Grid {
   return new Grid(w, h);
 }
 
-/** 對好尺寸的空覆蓋圖。 */
+/** An empty coverage map sized to the grid. */
 function bits(grid: Grid): CoverageBits {
   const b = new CoverageBits();
   b.reset(grid.width, grid.height);
   return b;
 }
 
-/** 一輪覆蓋計算的暫存。同一輪的每一座廠共用同一份（已付款的 footprint 靠它跨廠）。 */
+/** The scratch for one coverage pass. Every plant in the pass shares it, which is how charged
+ *  footprints carry across plants. */
 function pass(grid: Grid, infra?: Set<string>): UtilityFloodScratch {
   const s = new UtilityFloodScratch();
   s.beginPass(grid, infra);

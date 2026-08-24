@@ -34,11 +34,11 @@ const RU = RoadType.RURAL;
 const F4 = RoadType.FOUR_LANE;
 
 /**
- * 「一定夠用」的預算，給那些不是在測預算上限的案例。
+ * A budget that is always enough, for the cases that are not about the budget limit.
  *
- * 這些測試原本寫死 100（舊浮點成本制下約 50 格二線道）。成本整數化後
- * （見 core/road/roadCost.ts）同樣的涵蓋範圍是 100 × 18 —— 尺度換算，
- * 每一條測試的語意都沒變。
+ * These tests used a literal 100, about 50 two-lane tiles under the old floating-point costs.
+ * With integer costs (see core/road/roadCost.ts) the same range is 100 x 18 — a change of scale
+ * that leaves every test's meaning unchanged.
  */
 const AMPLE_BUDGET = 1800;
 
@@ -128,7 +128,7 @@ describe('roadFlood', () => {
     const len = 30;
     const ruralRow = [_, ...Array(len).fill(RU)] as number[];
     const hwRow = [_, ...Array(len).fill(H)] as number[];
-    const budget = 180; // 舊制 10 × 18
+    const budget = 180; // 10 on the old scale, x18
 
     const ruralResult = roadFlood(makeGrid([ruralRow]), [{ x: 0, y: 0 }], budget);
     const hwResult = roadFlood(makeGrid([hwRow]), [{ x: 0, y: 0 }], budget);

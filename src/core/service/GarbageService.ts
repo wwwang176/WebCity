@@ -169,8 +169,9 @@ export class GarbageService extends GlobalCoverageService<GarbageFacility> {
   // ── Tick logic ────────────────────────────────────────────────────
 
   tick(): void {
-    // 腐化與收運都會讓佇列縮短，而 waitTicks 每個 entry 都會動 —— 分辨「這次到底
-    // 有沒有少東西」不比直接重數便宜，所以這裡無條件記一次。
+    // Decomposition and collection both shorten the queue, and waitTicks moves on every entry,
+    // so working out whether anything actually left is no cheaper than recounting. Bumped
+    // unconditionally.
     this.bumpPendingVersion();
     // Step 1: Increment wait counters; remove decomposed
     for (let i = this.pendingBags.length - 1; i >= 0; i--) {

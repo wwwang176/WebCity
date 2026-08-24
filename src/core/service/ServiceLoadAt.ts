@@ -1,24 +1,27 @@
 import type { GameState } from '../simulation/GameState';
 
 /**
- * 服務**這一格**的那幾座設施現在各自多滿。
+ * How full each facility serving **this cell** is.
  *
- * ## 逐格，不是全城平均
+ * ## Per cell, not a city-wide average
  *
- * 建築面板的那幾條警告（`Hospital over capacity`、`Schools overcrowded`⋯）原本吃的是
- * `service.getLoadRatio()` —— 全城總需求 ÷ 全城總容量。於是城市另一頭的醫院爆量，
- * 這一棟也跳警告;而隔壁那間爆量、全城平均還好時，反而不跳。玩家看到的是
- * 「旁邊的國小明明很空，面板卻說教育爆量」（BUG-362 的後半）。
+ * The building panel's warnings (`Hospital over capacity`, `Schools overcrowded` and the rest)
+ * were fed by `service.getLoadRatio()`, city-wide demand over city-wide capacity. A hospital
+ * overloaded across town raised the warning on this building, and one overloaded next door did
+ * not while the city-wide average stayed acceptable. The player saw "the primary school beside
+ * me is half empty and the panel says education is overloaded" (the second half of BUG-362).
  *
- * 面板講的是**這一棟**。全城那一份仍然在，Overview 的 Services 頁在用。
+ * The panel speaks about **this building**. The city-wide figure still exists and the Overview
+ * Services page uses it.
  *
- * ## 為什麼是一個獨立的檔案
+ * ## Why this is its own file
  *
- * 這段本來寫在 `Game.ts` 裡，而 `Game.ts` 直接 import Three.js —— 單元測試載不動它，
- * 於是「警告改回全城平均」這種退化可以整套測試全綠地溜過去。抽出來才測得到。
+ * This lived in `Game.ts`, which imports Three.js directly, so unit tests could not load it and
+ * a regression back to the city-wide average would pass the whole suite. Extracted, it can be
+ * tested.
  */
 
-/** 五個服務各自的逐格負載比值。`-1` = 這一格沒有覆蓋。 */
+/** Each of the five services' per-cell load ratio. `-1` means this cell is uncovered. */
 export interface ServiceLoadRatios {
   garbageLoadRatio: number;
   hospitalLoadRatio: number;
@@ -28,13 +31,14 @@ export interface ServiceLoadRatios {
 }
 
 /**
- * 服務這一格的那座掩埋場多滿。
+ * How full the landfill serving this cell is.
  *
- * 比其他四個多一項:**還沒被收走的垃圾**。它不在任何一座掩埋場裡（所以不算進
- * `currentLoad`），但它正是玩家看到的問題本身 —— 掩埋場半滿而街上堆滿垃圾時，
- * 只看 `currentLoad` 會說一切正常。
+ * One term more than the other four: **refuse not yet collected**. It is in no landfill and so
+ * not part of `currentLoad`, but it is the problem the player sees — with the landfill half full
+ * and refuse piled in the streets, `currentLoad` alone reports everything as fine.
  *
- * 待收量是全城的，攤在服務這一格的那一座頭上:「收不走」是那一座的責任。
+ * The pending amount is city-wide and attributed to the facility serving this cell: failing to
+ * collect is that facility's responsibility.
  */
 export function garbageLoadRatioAt(state: GameState, x: number, y: number): number {
   const id = state.garbage.getServingFacilityId(x, y);

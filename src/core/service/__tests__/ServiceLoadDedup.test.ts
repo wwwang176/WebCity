@@ -10,10 +10,10 @@ import { createGameState } from '../../simulation/GameState';
 import { RoadType } from '../../road/types';
 
 /**
- * 一條橫貫的路。
+ * One road across the map.
  *
- * 負載跟著**覆蓋**走（BUG-363），所以要有路、也要先算過覆蓋 —— 沒有覆蓋就沒有人
- * 在服務那一格，需求不該落到任何一座設施頭上。
+ * Load follows **coverage** (BUG-363), so there has to be a road and coverage has to have been
+ * computed: with no coverage nobody serves that cell and the demand should land on no facility.
  */
 function roadTown(width = 12) {
   const state = createGameState(width, 10);
@@ -24,12 +24,14 @@ function roadTown(width = 12) {
 }
 
 /**
- * 服務負載改成「先數成每一格幾個人，再去查」。要釘的是**這不是近似**:
- * 下游對同一格的條目只做加總，先加起來再送進去，每一座設施拿到的數字要一模一樣。
+ * Service load counts people per cell before looking anything up. What is pinned is that **this
+ * is not an approximation**: downstream only sums entries for one cell, so pre-summing must give
+ * every facility exactly the same number.
  *
- * 12 萬人實測改動前 `updatePoliceFireLoads` 102ms、`updateHospitalLoads` 33ms、
- * `updateSchoolLoads` 21ms —— 全部是逐市民付兩次 `parsePosKey` 加兩次 `getCoverage`，
- * 而不重複的位置只有幾千個（12 434 人住在 103 棟樓裡）。
+ * Measured at 120,000 people before the change: `updatePoliceFireLoads` 102ms,
+ * `updateHospitalLoads` 33ms, `updateSchoolLoads` 21ms — all of it two `parsePosKey` and two
+ * `getCoverage` calls per citizen across a few thousand distinct positions (12,434 people living
+ * in 103 buildings).
  */
 
 const BASE_DEMAND = 0.3;
@@ -52,7 +54,8 @@ interface Person {
   education: EducationLevel;
 }
 
-/** 幾棟樓塞滿人，外加幾個工作地。刻意讓同一棟樓混住不同學歷。 */
+/** A few buildings packed with people plus a few workplaces, deliberately mixing education levels
+ *  within one building. */
 function crowdedCity(residents = 900): Person[] {
   const levels = [EducationLevel.NONE, EducationLevel.ELEMENTARY,
     EducationLevel.HIGH_SCHOOL, EducationLevel.UNIVERSITY];
@@ -64,7 +67,7 @@ function crowdedCity(residents = 900): Person[] {
       education: levels[(i * 7) % 4]!,
     });
   }
-  // 有工作沒家、有家沒工作的都要有 —— 兩邊各自判斷。
+  // One with a job and no home and one with a home and no job: the two are decided separately.
   people.push({ homeId: null, workplaceId: '1,7', education: EducationLevel.NONE });
   people.push({ homeId: '2,3', workplaceId: null, education: EducationLevel.UNIVERSITY });
   return people;
@@ -77,14 +80,14 @@ const zonedGrid = {
     : { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 },
 };
 
-/** 把一組需求條目摺成「每一格的總權重」。下游看到的就是這個。 */
+/** Folds a set of demand entries into the total weight per cell, which is what downstream sees. */
 function byPosition(demands: ReadonlyArray<{ x: number; y: number; weight: number }>) {
   const out = new Map<string, number>();
   for (const d of demands) out.set(`${d.x},${d.y}`, (out.get(`${d.x},${d.y}`) ?? 0) + d.weight);
   return out;
 }
 
-/** 改動前的寫法:逐市民各出一筆。這是比對的基準。 */
+/** The pre-change form, one entry per citizen. This is the baseline. */
 function policeLoadsPerCitizen(people: readonly Person[]) {
   const demands: { x: number; y: number; weight: number }[] = [];
   for (const c of people) {
@@ -116,13 +119,14 @@ describe('去重之後每一格的總量沒有變', () => {
   });
 
   it('should collapse a crowded city to one entry per cell', () => {
-    // 這是省下來的東西本身。合不起來的話下游每一筆都要再掃一遍所有設施。
+    // The saving itself. Without the collapse, downstream rescans every facility for each entry.
     const people = crowdedCity();
     const demands = calculatePoliceLoads(
       buildCitizenLocationIndex(people), coverAll, zonedGrid);
     const cells = new Set(demands.map(d => `${d.x},${d.y}`));
-    // `cells` 是從輸出本身建的，所以「筆數 === 格數」在輸出是空陣列時也成立。
-    // 先釘住輸出真的涵蓋了該有的格子，這條才不是恆真的。
+    // `cells` is built from the output itself, so "entries === cells" also holds for an empty
+    // output. Pinning that the output really covers the expected cells first keeps this from
+    // being vacuous.
     expect(cells.size, '一筆條目都沒有 —— 底下兩條會恆真').toBe(9 + 4);
     expect(demands.length, `${people.length} 人生出 ${demands.length} 筆條目`)
       .toBe(cells.size);
@@ -130,7 +134,8 @@ describe('去重之後每一格的總量沒有變', () => {
   });
 
   it('should weight fire demand by headcount, not by address alone', () => {
-    // 只留一筆卻忘了乘人數的話，一棟住了 120 人的樓會跟只住 1 人的一樣重。
+    // Collapsing to one entry without multiplying by the headcount makes a building of 120 people
+    // weigh the same as one with 1.
     const one = calculateFireLoads(buildCitizenLocationIndex(
       [{ homeId: '3,3', workplaceId: null, education: EducationLevel.NONE }]),
     coverAll, zonedGrid, () => 4);
@@ -141,13 +146,13 @@ describe('去重之後每一格的總量沒有變', () => {
 
     expect(one.length).toBe(1);
     expect(four.length).toBe(1);
-    // 一位:0.3 × (1 + 1/4) = 0.375。四位:0.3 × (1 + 4/4) × 4 = 2.4。
+    // One person: 0.3 x (1 + 1/4) = 0.375. Four: 0.3 x (1 + 4/4) x 4 = 2.4.
     expect(one[0]!.weight).toBeCloseTo(0.375);
     expect(four[0]!.weight).toBeCloseTo(2.4);
   });
 
   it('should weight police demand by the education mix inside one building', () => {
-    // 一棟樓裡混住不同學歷。只記總人數的話會全部當成同一種。
+    // Mixed education levels in one building. Recording only a headcount treats them all alike.
     const mixed = calculatePoliceLoads(buildCitizenLocationIndex([
       { homeId: '3,3', workplaceId: null, education: EducationLevel.NONE },
       { homeId: '3,3', workplaceId: null, education: EducationLevel.UNIVERSITY },
@@ -166,8 +171,8 @@ describe('去重之後每一格的總量沒有變', () => {
 
 describe('人數有真的傳到服務裡', () => {
   it('should scale hospital demand by the count on each entry', () => {
-    // `count` 是選填的，漏傳就靜靜地退回每格一人 —— 全城需求會掉到幾百分之一，
-    // 而沒有任何型別錯誤。
+    // `count` is optional, so omitting it silently falls back to one person per cell: city-wide
+    // demand drops by a couple of orders of magnitude with no type error.
     const one = new HealthService();
     one.addHospital(0, 0);
     one.updateLoads([{ x: 3, y: 3, pollution: 0, count: 1 }]);
@@ -192,8 +197,9 @@ describe('人數有真的傳到服務裡', () => {
   });
 
   it('should carry the count through EducationService to the right school type', () => {
-    // 端到端:SimulationLoop 送的是 EnrolledCitizen（帶 schoolKey），而 EducationService
-    // 只是按學制轉送。轉送時把 count 丟掉的話，只測 SchoolService 的那條看不出來。
+    // End to end: SimulationLoop sends EnrolledCitizen with a schoolKey and EducationService
+    // merely forwards by school stage. Dropping count during that forwarding is invisible to the
+    // SchoolService-only test.
     const state = roadTown();
     const edu = new EducationService();
     const elementaryId = edu.addSchool(1, 3, 'elementary');
@@ -207,7 +213,8 @@ describe('人數有真的傳到服務裡', () => {
   });
 
   it('should treat a missing count as one', () => {
-    // 既有的呼叫端（與測試）不帶 count。預設值換掉的話它們會靜靜地全部歸零。
+    // Existing callers and tests pass no count. Changing the default would silently zero them
+    // all.
     const state = roadTown();
     const s = new SchoolService('elementary');
     const id = s.addSchool(1, 3);

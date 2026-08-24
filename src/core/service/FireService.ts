@@ -32,8 +32,9 @@ interface FireServiceJSON {
 /** Fire risk and ignition probability constants */
 export const FIRE = {
   /**
-   * 反應時間 = 道路通行成本 / RESPONSE_SPEED，所以這個常數與 `roadTileCost`
-   * 同尺度。成本整數化時舊值 2 同步變成 36（×18），反應時間不變。
+   * Response time is the road cost over RESPONSE_SPEED, so this constant is on the same scale as
+   * `roadTileCost`. When costs became integers the old 2 became 36 (x18), leaving response times
+   * unchanged.
    */
   RESPONSE_SPEED: 36,
   FIRE_DURATION: 3,
@@ -76,7 +77,7 @@ export class FireService extends RoadCoverageService<FireStation> {
   updateStationLoads(demands: ReadonlyArray<{ x: number; y: number; weight: number }>): void {
     const result = distributeWithSpillover(
       this.getOperationalFacilities(), demands, this.stationLoad,
-      // 涵蓋得到的都列出來，近的優先、滿了換下一座（BUG-363、BUG-365）。
+      // Every covering station, nearest first, spilling to the next when full (BUG-363, BUG-365).
       (x, y) => this.getCoveringFacilityIds(x, y),
     );
     this.loadRatio = result.loadRatio;

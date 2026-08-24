@@ -77,23 +77,26 @@ export class HealthService extends RoadCoverageService<Hospital> {
    * Update city-wide and per-hospital load from covered citizen positions.
    * Each citizen is assigned to the nearest hospital (Euclidean).
    *
-   * `count` 是這一格代表幾個人（預設 1）。呼叫端把同一棟樓的住戶先數起來再送進來 ——
-   * 座標與污染只跟樓有關，逐市民送的話 12 萬人要配置 12 萬個小物件，而不重複的
-   * 位置只有幾千個。這裡對同一格本來就只做加總，先加起來結果一樣。
+   * `count` is how many people this cell stands for, defaulting to 1. The caller counts a
+   * building's residents up first: coordinates and pollution depend only on the building, so
+   * passing one entry per citizen allocates 120,000 small objects for a few thousand distinct
+   * positions. This only sums per cell anyway, so pre-summing gives the same result.
    */
   updateLoads(coveredCitizens: ReadonlyArray<{ x: number; y: number; pollution: number; count?: number }>): void {
     this.hospitalDemand.clear();
     for (const h of this.facilities) this.hospitalDemand.set(h.id, 0);
 
-    // 近的醫院優先，滿了就換下一間 —— 跟靈車同一個規矩。以前這裡用歐氏直線
-    // 挑唯一一間:河對岸一間直線很近、開車要繞一大圈的醫院會吸走病人（BUG-363），
-    // 而只認最近那一間又讓所有人擠在同一間、第二間永遠空著（BUG-365）。
+    // Nearest hospital first, spilling to the next when full — the hearse rule. Picking a single
+    // hospital by straight-line distance let one across a river, close in a line but a long
+    // drive away, draw the patients (BUG-363); recognising only the nearest crowded everyone
+    // into one and left the second empty (BUG-365).
     //
-    // 覆蓋本來就只從運作中的設施淹出去，所以「不會攤給沒電的那一間」是免費附帶的
-    // （BUG-100 當初要的就是這件事）。
-    // 收得了病人的才算 —— `getActiveFacilities()` 同時要求有電**且**接得到路，
-    // 跟 `getTotalCapacity()` 是同一組。分母摻進用不到的床位，城市會在崩潰時
-    // 顯示得比較健康（BUG-100）。
+    // Coverage floods only out of operational facilities, so never allocating to an unpowered
+    // hospital comes for free (what BUG-100 asked for).
+    //
+    // Only hospitals that can take patients count: `getActiveFacilities()` requires both power
+    // **and** a road connection, the same set `getTotalCapacity()` uses. Unusable beds in the
+    // denominator make a city look healthier as it collapses (BUG-100).
     const result = distributeWithSpillover(
       this.getActiveFacilities(),
       coveredCitizens.map(c => ({
