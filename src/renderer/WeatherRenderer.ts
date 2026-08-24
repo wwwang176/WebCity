@@ -44,14 +44,15 @@ export class WeatherRenderer {
   private readonly baseHemiIntensity = 0.3;
 
   /**
-   * 地圖之外的底色，以及它在夜裡剩下多少。
+   * The backdrop beyond the map, and how much of it survives at night.
    *
-   * 這片色塊不是天空 —— 等角正交視角下它佔掉螢幕很大一塊。原本它吃的是天色
-   * 關鍵影格，於是日落時整個畫面被 `_sunsetSky`（飽和橘紅）蓋滿，城市反而看
-   * 不見。色相因此固定成一個去飽和的冷灰藍，只有明度隨晝夜走。
+   * This is not the sky: in an isometric orthographic view it covers a large share of the screen.
+   * Driven by the sky keyframes, sunset floods the whole screen with `_sunsetSky`'s saturated
+   * orange-red and the city disappears into it. So its hue is fixed at a desaturated cool
+   * blue-grey and only its brightness follows the day.
    *
-   * 這裡改的是**背景**，不是光：hemisphere 光仍然吃 `skyColor`，所以日落打在
-   * 建築頂面上的暖調沒有受影響。
+   * What this changes is the **backdrop**, not the light: the hemisphere light still takes
+   * `skyColor`, so sunset's warmth on building roofs is unaffected.
    */
   private readonly _backdropDay = new THREE.Color(0xaeb8c2);
   private readonly _backdropNight = new THREE.Color(0x2c333a);
@@ -62,11 +63,12 @@ export class WeatherRenderer {
   private readonly _sunriseSky = new THREE.Color(0x8899cc);
   private readonly _sunsetSky  = new THREE.Color(0xff4422);
   /**
-   * 夜間的環境光與月光。
+   * Night's ambient light and moonlight.
    *
-   * 原本是 `0x2244aa` / `0x3355aa` —— 藍是紅的五倍，乘完之後紅色通道只剩
-   * 7%，城市裡所有暖色在夜裡直接變黑。單純調高亮度只會讓畫面更藍，所以連同
-   * 去飽和一起改：仍然偏藍（夜的味道在這裡），但不再把其他兩個通道壓死。
+   * At `0x2244aa` and `0x3355aa`, blue is five times red, leaving the red channel at 7% after the
+   * multiply and turning every warm colour in the city black at night. Raising the brightness
+   * alone only makes the screen bluer, so they are desaturated as well: still blue, which is where
+   * night's character lives, without crushing the other two channels.
    */
   private readonly _ambNight   = new THREE.Color(0x5a72b8);
   private readonly _ambSunrise = new THREE.Color(0x99aacc);
@@ -108,17 +110,17 @@ export class WeatherRenderer {
     return this._sunIntensity;
   }
 
-  /** 一天之中的位置，0..1（0 = 午夜、0.25 = 日出、0.5 = 正午、0.75 = 日落）。 */
+  /** Position within the day, 0..1: 0 is midnight, 0.25 sunrise, 0.5 noon, 0.75 sunset. */
   get dayFraction(): number {
     return this.timeOfDay;
   }
 
   /**
-   * 直接跳到一天之中的某個時刻。
+   * Jumps straight to a moment in the day.
    *
-   * `update()` 只能讓時間往前走，所以「拉一條滑桿看不同時段的樣子」原本
-   * 做不到。展示區需要它；debug 面板要做「跳到夜晚」也會需要。
-   * 超出 0..1 的值會取小數部分，負數也一樣。
+   * `update()` only moves time forward, so dragging a slider through the day is impossible without
+   * this. The showcase needs it, and a debug panel's "jump to night" would too. Values outside
+   * 0..1 take their fractional part, negatives included.
    */
   setDayFraction(t: number): void {
     const wrapped = t % 1;
@@ -168,8 +170,9 @@ export class WeatherRenderer {
     const SS_END   = 0.88; // sunset → night complete (extended for slower decay)
 
     // ── Brightness: 6-segment ramp matching colour keyframes ──
-    // 夜間的下限。抬高它是為了看得見地形與建築；顏色的去飽和（見 `_ambNight`）
-    // 是同一件事的另一半 —— 只動這個數字會讓夜裡更藍，不會更看得清楚。
+    // Night's floor. Raising it is what makes terrain and buildings visible; desaturating the
+    // colours (see `_ambNight`) is the other half of the same change — moving this number alone
+    // makes night bluer rather than more legible.
     const NIGHT_FLOOR = 0.30;
     const PEAK_BRIGHTNESS = 0.6;
     let brightness: number;
@@ -188,15 +191,16 @@ export class WeatherRenderer {
     }
 
     // ── Sky colour ──
-    // 仍然算出來，但只餵給 hemisphere 光 —— 背景走下面那個固定色相。
+    // Still computed, but fed only to the hemisphere light; the backdrop takes the fixed hue
+    // below.
     const skyColor = this._scratchSky;
     this.timeBlend(t, SR_START, SR_PEAK, SR_END, SS_START, SS_PEAK, SS_END,
       this._nightSky, this._sunriseSky, this.baseSkyColor, this._sunsetSky, skyColor);
 
-    // ── Backdrop：色相固定，只有明度隨晝夜走 ──
-    // 日夜兩端各自寫成色票，而不是拿白天那個乘一個係數 —— `THREE.Color` 的
-    // 十六進位是 sRGB，運算卻在線性空間，乘 0.3 看起來會是 0.58。兩端直接指定，
-    // 眼睛看到的就是這裡寫的。
+    // ── Backdrop: fixed hue, with only its brightness following the day ──
+    // Both ends are written as their own colours rather than the day colour times a factor:
+    // `THREE.Color`'s hex is sRGB while the arithmetic is linear, so multiplying by 0.3 looks like
+    // 0.58. Stated at both ends, what the eye sees is what is written here.
     const nightToDay = (brightness - NIGHT_FLOOR) / (1 - NIGHT_FLOOR);
     (this.sceneManager.scene.background as THREE.Color).copy(
       this._scratchBackdrop.copy(this._backdropNight).lerp(this._backdropDay, nightToDay),
@@ -217,28 +221,32 @@ export class WeatherRenderer {
       this.sceneManager.directionalLight.color);
 
     /**
-     * 太陽高度的下限。沉到地平線以下的話光會從底下往上打，建築的下緣會亮起來，
-     * 所以它永遠停在這裡而不是真的落下去。代價是夜裡的方向被凍在仰角九度。
+     * The sun's elevation floor. Below the horizon the light comes from underneath and buildings
+     * light from below, so it stops here rather than actually setting. The cost is that at night
+     * its direction is frozen at nine degrees of elevation.
      */
     const SUN_ELEVATION_FLOOR = 0.1;
-    /** 太陽爬到這個高度因子，陰影就是實心的。 */
+    /** The elevation factor at which shadows become fully solid. */
     const SHADOW_FULL_AT = 0.30;
 
-    // ── 陰影的濃度跟著太陽高度走 ──
+    // ── Shadow strength follows the sun's elevation ──
     //
-    // 不能跟著亮度曲線走：那是兩套時程。亮度從 SR_START(0.19) 就開始爬，但上面
-    // 那個下限讓太陽在 `sunFactor` 超過 0.1 之前（約 t=0.266）一直凍在同一個
-    // 位置。照亮度給濃度的話，影子會在太陽還沒開始動的時候就浮出來、在原地僵著，
-    // 等太陽脫離下限才忽然開始縮 —— 畫面上就是「天亮了一陣子，影子才開始動」。
+    // It cannot follow the brightness curve: those are two different schedules. Brightness starts
+    // climbing at SR_START (0.19), while the floor above keeps the sun frozen in place until
+    // `sunFactor` passes 0.1, around t = 0.266. Driven by brightness, shadows appear before the sun
+    // has started moving, sit rigid, and then abruptly begin to shorten once it clears the floor —
+    // on screen, "it has been light for a while and the shadows have only just started moving".
     //
-    // 綁在 `sunFactor` 上，影子只在太陽真的在移動的區間裡才看得見。夜裡
-    // `sunFactor` 是 0，濃度也是 0，那條仰角九度、整晚不轉向的長拖影因此不會出現。
+    // Tied to `sunFactor`, shadows are visible only while the sun is genuinely moving. At night
+    // `sunFactor` is 0 and so is the strength, so the long shadow frozen at nine degrees all night
+    // never appears.
     const shadowStrength = Math.min(1, Math.max(0,
       (sunFactor - SUN_ELEVATION_FLOOR) / (SHADOW_FULL_AT - SUN_ELEVATION_FLOOR)));
     this.sceneManager.directionalLight.shadow.intensity = shadowStrength;
-    // 濃度歸零就把整個 shadow pass 停掉 —— 全透明的影子仍然要每幀重畫一張
-    // 2048² 深度圖（空地圖上量到約 0.24 ms/幀，滿城市會等比例放大）。兩者綁在
-    // 同一個數字上，所以不會出現「關掉了卻還看得見」或「看不見卻還在畫」。
+    // At zero strength the whole shadow pass is switched off: a fully transparent shadow still
+    // redraws a 2048-square depth map every frame, measured at about 0.24 ms per frame on an empty
+    // map and scaling with the city. Both are tied to the same number, so neither "switched off but
+    // still visible" nor "invisible but still drawn" can happen.
     this.sceneManager.directionalLight.castShadow = shadowStrength > 0;
 
     // Sun position based on time

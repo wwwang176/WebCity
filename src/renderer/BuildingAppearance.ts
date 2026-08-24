@@ -1,16 +1,16 @@
 /**
- * 建築外觀亂數的唯一來源。
+ * The single source of randomness for building appearance.
  *
- * 純邏輯模組 —— 不 import Three.js，因此展示區與遊戲共用同一份，
- * 也因此可以完整地單元測試。
+ * A pure logic module: it imports no Three.js, so the showcase and the game share one copy and it
+ * is fully unit-testable.
  *
- * 取代 BuildingRenderer 原本的 `hash(x, y)` 加偏移輸入寫法：
- * `hash(x+100, y+100)` 在 (0,0) 的值等於 `hash(x, y)` 在 (100,100) 的值，
- * 所以相距 100 格的兩棟建築有多條亂數流共用同一批數字、只是換了角色。
- * 這裡改成把流編號混進雜湊，流數再多也不會互相汙染。
+ * It replaces `hash(x, y)` with offset inputs: `hash(x+100, y+100)` at (0,0) equals `hash(x, y)` at
+ * (100,100), so two buildings 100 cells apart share the same numbers across several random streams
+ * with only their roles swapped. Mixing the stream number into the hash keeps any number of streams
+ * from contaminating each other.
  */
 
-/** 亂數流編號。每個用途一條，彼此獨立。 */
+/** Random stream numbers: one per purpose, independent of each other. */
 export const STREAM = {
   VARIANT: 0,
   HEIGHT: 1,
@@ -24,19 +24,19 @@ export const STREAM = {
   FACADE_RHYTHM: 9,
   FACADE_PHASE: 10,
   FACADE_MATERIAL: 11,
-  /** 庭院組合。與量體變體分開，同一種房子才不會必定配同一個院子。 */
+  /** The yard recipe. Separate from the massing variant, so one house type is not always paired with one yard. */
   GROUND_PROP: 12,
-  /** 變體撞到鄰居時的改選。見 `variantIndexOf`。 */
+  /** The re-pick used when a variant collides with a neighbour's. See `variantIndexOf`. */
   VARIANT_RETRY: 13,
 } as const;
 
 export type StreamId = (typeof STREAM)[keyof typeof STREAM];
 
 /**
- * 四輸入雜湊，回傳 [0, 1)。
+ * A four-input hash returning a value in [0, 1).
  *
- * 用 Math.imul 而不是 `*`：JavaScript 的 `*` 在乘積超過 2^53 時會失去精度，
- * `(a * b) | 0` 得到的並不是正確的 32 位元乘法結果。
+ * It uses Math.imul rather than `*`: JavaScript's `*` loses precision once a product exceeds 2^53,
+ * and `(a * b) | 0` is not the correct 32-bit multiply.
  */
 export function hashCell(x: number, y: number, seedByte: number, stream: number): number {
   let h = (Math.imul(x, 374761393)
@@ -50,15 +50,17 @@ export function hashCell(x: number, y: number, seedByte: number, stream: number)
 }
 
 /**
- * 這一格該用哪一個變體。`variantCount` 為 0 時回傳 0，不回傳 NaN。
+ * Which variant this cell uses. Returns 0 rather than NaN when `variantCount` is 0.
  *
- * 純逐格雜湊的相鄰重複率就是 `1/variantCount` —— 八個變體是 12.5%，而一條街上
- * 每八棟就有一棟跟隔壁一樣是看得出來的。要靠變體數壓到 5% 以下得寫二十個變體，
- * 那會把 draw call 也推上去。
+ * A plain per-cell hash has an adjacent-repeat rate of exactly `1/variantCount`: at eight variants
+ * that is 12.5%, and one building in eight matching its neighbour along a street is visible.
+ * Reaching under 5% through variant count alone takes twenty variants, which pushes draw calls up
+ * with it.
  *
- * 改成挑一個「西鄰與北鄰的**原始**雜湊值都沒用到」的值。比對原始值而不是最終值
- * ——最終值要看它自己的鄰居，會遞迴下去。所以這是**降低**而不是消除：鄰居自己
- * 也可能被換過，換完之後仍可能撞上。
+ * So it picks a value the **raw** hashes of the west and north neighbours do not use. Comparing raw
+ * values rather than final ones: a final value depends on its own neighbours and would recurse. So
+ * this **reduces** rather than eliminates — a neighbour may itself have been re-picked, and a
+ * collision can survive that.
  */
 export function variantIndexOf(
   x: number, y: number, seedByte: number, variantCount: number,
@@ -74,8 +76,8 @@ export function variantIndexOf(
   const north = raw(x, y - 1);
   if (v !== west && v !== north) return v;
 
-  // 從「兩個鄰居都沒用到」的值裡挑，而不是 +1 位移 —— 位移過去有可能正好
-  // 撞上另一個鄰居。
+  // Picked from the values neither neighbour uses, rather than by shifting +1: a shift can land
+  // exactly on the other neighbour.
   const allowed: number[] = [];
   for (let k = 0; k < variantCount; k++) if (k !== west && k !== north) allowed.push(k);
   if (allowed.length === 0) return v;
@@ -88,35 +90,36 @@ export interface AppearanceInput {
   y: number;
   zoneType: number;
   level: number;
-  /** 建築的身分證。第四階段之前一律傳 0。 */
+  /** The building's identity byte. Always 0 for now. */
   seedByte: number;
-  /** 這個 (分區, 等級) 桶有幾個變體。 */
+  /** How many variants this (zone, level) bucket has. */
   variantCount: number;
-  /** 這個分區的色盤長度。 */
+  /** This zone's palette length. */
   paletteSize: number;
 }
 
 export interface Appearance {
   variantIndex: number;
   /**
-   * [0, 1) 的原始亂數，交給 `footprintScaleFor` 換算成縮放。
+   * A raw value in [0, 1), handed to `footprintScaleFor` to become a scale.
    *
-   * 範圍以前寫在這裡（0.85 ~ 1.15），與「基地寬度上限」分屬兩個檔案，
-   * 所以放寬目標寬度時沒人記得抖動是再乘上去的 —— 一半以上的建築因此
-   * 越過行人包絡線（BUG-222）。現在容不容得下抖動由註冊表一處決定。
+   * With the range written here as 0.85 to 1.15, it lives in a different file from the footprint
+   * width limit, and widening the target leaves nobody remembering that the jitter multiplies on
+   * top — which put more than half the buildings across the pedestrian envelope (BUG-222). Whether
+   * the jitter fits is now decided in one place, the registry.
    */
   width01: number;
   depth01: number;
   /**
-   * 0.9 ~ 1.1，套在目標高度上的自然差異。
+   * 0.9 to 1.1: natural variation applied to the target height.
    *
-   * 原本是 +-17.5%，跨度整整一層樓，所以同一等級的兩棟房子會被讀成不同
-   * 等級。目標高度表接手之後，這裡只該是「同一種建築之間的差異」——
-   * +-10% 在 5 m 的房子上是半公尺，在 50 m 的塔樓上是五公尺，都還讀得出
-   * 是同一種建築。
+   * At +/-17.5% the spread is a full storey, and two houses at the same level read as different
+   * levels. With the target height table in charge, this should only be variation within one
+   * building type: +/-10% is half a metre on a 5 m house and five metres on a 50 m tower, and both
+   * still read as the same building type.
    */
   heightScale: number;
-  /** 0 ~ 3，四分之一圈 */
+  /** 0 to 3, in quarter turns. */
   rotationQuarter: number;
   paletteIndex: number;
   /** -0.015 ~ 0.015 */
@@ -125,15 +128,15 @@ export interface Appearance {
   satShift: number;
   /** -0.05 ~ 0.05 */
   lightShift: number;
-  /** 交給 shader 的 aSeed：節奏、相位、材質偏好。 */
+  /** The aSeed handed to the shader: rhythm, phase, material preference. */
   facadeSeed: readonly [number, number, number];
-  /** [0, 1)，庭院組合的選擇。桶數由呼叫端決定。 */
+  /** A value in [0, 1) selecting the yard recipe. The caller decides how many buckets there are. */
   propVariant01: number;
 }
 
 /**
- * 這些數值範圍刻意與重構前的 BuildingRenderer.setInstanceData 一致，
- * 好讓這個改動只搬家、不改外觀。
+ * These ranges deliberately match BuildingRenderer.setInstanceData's, so extracting this changed
+ * where the code lives without changing how anything looks.
  */
 export function appearanceOf(input: AppearanceInput): Appearance {
   const { x, y, seedByte, variantCount, paletteSize } = input;
