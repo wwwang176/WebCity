@@ -10,79 +10,83 @@ import { ViewMode, VIEW_MODE_OPACITY } from '../core/ViewMode';
 import { setMeshDim } from './ViewModeDim';
 
 /**
- * 路口號誌。
+ * Junction signals.
  *
- * 每個路口四支，一個進入方向一支：燈桿站在**駛來的車那一側**的人行道上，
- * 橫臂從路緣彎進自己這半邊的車道正上方，燈頭吊在臂端。
+ * Four per junction, one per approach: the pole stands on the sidewalk **on the side traffic
+ * arrives from**, the arm reaches from the kerb over that half's lanes, and the head hangs at the
+ * arm's tip.
  *
- * 原本四支都固定插在離中心線 0.18 的地方。號誌只出現在兩條幹道相交處，
- * 而四車道的路緣在 0.425、六車道在 0.475 —— 0.18 是在柏油路**裡面**，
- * 而且落在對向車道上：從北邊來的車走 x = −0.09，燈卻在 x = +0.18，跨過
- * 中心線、在駕駛的左手邊。
+ * Fixed at 0.18 from the centre line, all four sit **inside** the asphalt — signals only appear
+ * where two arterials cross, and a four-lane kerb is at 0.425 and a six-lane at 0.475 — and on the
+ * opposing carriageway: traffic from the north runs at x = -0.09 while the signal is at x = +0.18,
+ * across the centre line and on the driver's left.
  */
 
 /**
- * 桿高。**從路燈的高度算出來**，不是各寫一個數字 —— 號誌矮過路燈的話，
- * 讀起來就不像號誌，而分開寫的話路燈哪天調高了，號誌會靜靜地變成路邊最矮的
- * 那根柱子。
+ * Pole height, **derived from the street lamp's height** rather than written separately: a signal
+ * shorter than a street lamp does not read as a signal, and written separately it silently becomes
+ * the shortest post on the street the day the lamps are raised.
  */
 const POLE_H = STREET_LAMP_HEIGHT + 0.04;
 
-/** 橫臂的高度。略低於桿頂，讓桿露出一小截。 */
+/** The arm's height, just below the pole's top so a short length of pole shows above it. */
 const ARM_Y = POLE_H - 0.02;
 
-/** 橫臂的粗細。 */
+/** The arm's thickness. */
 const ARM_T = 0.012;
 
-/** 燈頭的邊長。以路燈的燈泡為上限 —— 比路燈還大顆的話路口會變成一排燈籠。 */
+/** The head's edge length, capped at the street lamp's bulb: larger, and a junction becomes a row of lanterns. */
 const HEAD_SIZE = STREET_LAMP_BULB_RADIUS;
 
-/** 號誌的尺寸（格；1 格 = 12 m）。 */
+/** The signal's dimensions, in cells (1 cell = 12 m). */
 export const SIGNAL = {
   POLE_H,
   ARM_Y,
   ARM_T,
   HEAD_SIZE,
   /**
-   * 燈頭的中心高度。
+   * The head's centre height.
    *
-   * **從橫臂的底面算出來**，不是寫死 —— 寫死的話燈泡尺寸一改，兩者之間就會
-   * 冒出一條縫，而燈泡看起來是浮在空中的。這正是把燈泡縮成路燈那麼大時
-   * 發生的事：縫是 0.01 格（12 公分）。
+   * **Derived from the arm's underside** rather than hard-coded: hard-coded, a change to the bulb
+   * size opens a gap between the two and the bulb looks like it is floating. That is exactly what
+   * happens on shrinking the bulb to street-lamp size: a gap of 0.01 cells, 12 cm.
    */
   HEAD_Y: ARM_Y - ARM_T / 2 - HEAD_SIZE / 2,
   /**
-   * 橫臂伸出去的比例：從路緣到該向車道中間的那段距離，只走這麼多。
+   * How far the arm reaches, as a fraction of the distance from the kerb to the middle of that
+   * approach's lanes.
    *
-   * 走滿的話燈頭正好在車道中線上，但橫臂在等角視角下顯得過長。純粹是外觀值，
-   * 下限由「燈頭必須整顆在柏油路上方」守著。
+   * Reaching all the way puts the head exactly on the lane centre line, but the arm then looks
+   * over-long in an isometric view. A purely visual value, with its lower bound guarded by "the
+   * whole head has to be above the asphalt".
    */
   ARM_REACH: 2 / 3,
-  /** 桿的粗細。 */
+  /** The pole's thickness. */
   POLE_T: 0.016,
   /**
-   * 沿著行進方向離格心多遠。
+   * How far from the cell centre along the direction of travel.
    *
-   * 近端：燈在車**進來**的那一側，就在停止線上方，不是路口對面。
+   * The near side: the signal is on the side traffic **arrives** from, over the stop line, rather
+   * than across the junction.
    */
   STOP_LINE: 0.42,
 } as const;
 
-/** 一支號誌的擺放。座標與 `TrafficLight` 同一套（格，格心為原點）。 */
+/** One signal's placement. Coordinates use the same system as `TrafficLight`: cells, with the cell centre as origin. */
 export interface SignalMount {
-  /** 這一支是給從哪個方向駛來的車看的。 */
+  /** Which approach this one faces. */
   from: Direction;
-  /** 桿底。 */
+  /** The pole's foot. */
   poleX: number;
   poleZ: number;
-  /** 燈頭（水平位置）。 */
+  /** The head's horizontal position. */
   headX: number;
   headZ: number;
-  /** 南北向（相位 0）還是東西向（相位 1）。 */
+  /** North-south (phase 0) or east-west (phase 1). */
   isNS: boolean;
 }
 
-/** 各方向的單位向量：從格心指向那個方向。 */
+/** Unit vectors per direction, pointing from the cell centre outward. */
 const APPROACH: ReadonlyArray<{
   dir: Direction; dx: number; dz: number; isNS: boolean; flag: number;
 }> = [
@@ -93,26 +97,31 @@ const APPROACH: ReadonlyArray<{
 ];
 
 /**
- * 四支號誌的位置。
+ * The four signals' positions.
  *
- * 橫向的那一邊必須與 `LaneGraph` 的進場點同號。從方向 `d` 駛來的車，行進方向
- * 是 `opposite(d)`，靠右行駛 —— 換算成以 `d` 為基準就是**左**側，也就是
- * `(v.dz, -v.dx)`。這裡與 `LaneGraph.buildFromGrid` 的 `entryPerp` 是同一條式子；
- * 驗收拿真正的車道圖比對，不是再算一次（見 `TrafficLightPlacement.test.ts`）。
+ * The lateral side has to carry the same sign as `LaneGraph`'s entry point. Traffic arriving from
+ * direction `d` travels toward `opposite(d)` and keeps right, which relative to `d` is the **left**
+ * side, that is `(v.dz, -v.dx)`. This is the same expression as `entryPerp` in
+ * `LaneGraph.buildFromGrid`, and the acceptance test compares against the real lane graph rather
+ * than computing it a second time (see `TrafficLightPlacement.test.ts`).
  */
 export function signalMounts(
   light: { x: number; y: number; roadType: number; roadFlags: number },
 ): SignalMount[] {
   const width = ROAD_WIDTHS[light.roadType] ?? 0.6;
-  // 桿站在人行道中線上 —— 路燈用的也是這條線（`RoadRenderer` 的 `half`）。
+  // The pole stands on the sidewalk's centre line, the same line street lamps use
+  // (`RoadRenderer`'s `half`).
   const poleOffset = width / 2 + SIDEWALK_WIDTH / 2;
-  // 該向所有車道的**中間**：車道由內往外排 0..lanes×LANE_WIDTH，中點就是
-  // lanes×LANE_WIDTH/2。單車道時剛好落在那條車道的中心線上。
+  // The **middle** of that approach's lanes: lanes run from the inside outward across
+  // 0..lanes x LANE_WIDTH, so the midpoint is lanes x LANE_WIDTH / 2. With one lane it lands
+  // exactly on that lane's centre line.
   //
-  // 不用最外側車道的外緣：六車道的 3×0.18 = 0.54 比路的半寬 0.475 還大
-  // —— 車道模型與路寬模型在六車道上對不起來，取外緣會讓燈頭吊到路面外。
+  // Not the outermost lane's outer edge: at six lanes, 3 x 0.18 = 0.54 exceeds the road's
+  // half-width of 0.475. The lane model and the road width model disagree at six lanes, and taking
+  // the outer edge hangs the head off the carriageway.
   const laneMid = getLaneCount(light.roadType) * getLaneWidth(light.roadType) / 2;
-  // 橫臂只走那段距離的 `ARM_REACH`，所以燈頭落在車道與路緣之間。
+  // The arm covers `ARM_REACH` of that distance, so the head lands between the lanes and the
+  // kerb.
   const headOffset = poleOffset - (poleOffset - laneMid) * SIGNAL.ARM_REACH;
 
   return APPROACH.filter(a => (light.roadFlags & a.flag) !== 0).map(({ dir, dx, dz, isNS }) => {
@@ -139,10 +148,10 @@ export class TrafficLightRenderer {
   private lightCount = 0;
   private mounts: SignalMount[] = [];
   /**
-   * 每一支號誌歸哪一盞燈（`build` 收到的那個陣列的索引）。
+   * Which light each signal belongs to, as an index into the array `build` received.
    *
-   * 不能用「每盞四支」硬算：T 字路口只有三支，用固定步長的話從第一個 T 字
-   * 路口之後，所有號誌的顏色都會錯位一格。
+   * It cannot be computed as four per light: a T junction has three, and with a fixed stride every
+   * signal after the first T junction takes the wrong light's colour.
    */
   private mountOwner: number[] = [];
   private viewMode: ViewMode = ViewMode.NORMAL;
@@ -167,11 +176,12 @@ export class TrafficLightRenderer {
     this.lightCount = Math.min(this.mounts.length, this.maxLights);
 
     const matrix = new THREE.Matrix4();
-    // 桿與臂沿用路燈的顏色 —— 路邊的金屬桿件應該是同一個顏色，而各寫一個
-    // 十六進位數的話，哪天路燈改色，號誌會靜靜地留在舊的顏色。
+    // Pole and arm take the street lamp's colour: metal posts along a street should be one colour,
+    // and written as separate hex values the signals silently keep the old one when the lamps
+    // change.
     const poleMat = new THREE.MeshLambertMaterial({ color: STREET_LAMP_COLOR });
 
-    // 桿 —— 從地面立到 POLE_H
+    // The pole, standing from the ground to POLE_H.
     const poleGeo = new THREE.BoxGeometry(SIGNAL.POLE_T, SIGNAL.POLE_H, SIGNAL.POLE_T);
     poleGeo.translate(0, SIGNAL.POLE_H / 2, 0);
     this.poleMesh = new THREE.InstancedMesh(poleGeo, poleMat, this.lightCount);
@@ -185,8 +195,9 @@ export class TrafficLightRenderer {
     this.poleMesh.instanceMatrix.needsUpdate = true;
     scene.add(this.poleMesh);
 
-    // 橫臂 —— 單位長度的方棒，沿 +x 從原點長出去。每一支各自旋轉、各自拉長：
-    // 臂長隨路寬變，而 InstancedMesh 只有一份幾何，長度只能靠矩陣的縮放。
+    // The arm: a unit-length bar extending from the origin along +x. Each one is rotated and
+    // stretched individually, since the arm's length varies with road width while an InstancedMesh
+    // has one geometry and length can only come from the matrix's scale.
     const armGeo = new THREE.BoxGeometry(1, SIGNAL.ARM_T, SIGNAL.ARM_T);
     armGeo.translate(0.5, 0, 0);
     this.armMesh = new THREE.InstancedMesh(armGeo, poleMat, this.lightCount);
@@ -205,7 +216,7 @@ export class TrafficLightRenderer {
     this.armMesh.instanceMatrix.needsUpdate = true;
     scene.add(this.armMesh);
 
-    // 燈頭 —— 吊在臂端，會變色
+    // The head, hanging at the arm's tip and changing colour.
     const headGeo = new THREE.BoxGeometry(SIGNAL.HEAD_SIZE, SIGNAL.HEAD_SIZE, SIGNAL.HEAD_SIZE);
     const headMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
     this.lightMesh = new THREE.InstancedMesh(headGeo, headMat, this.lightCount);
@@ -222,10 +233,11 @@ export class TrafficLightRenderer {
   }
 
   /**
-   * 號誌與路燈同一類路邊家具，所以跟著 `road` 的透明度走。
+   * Signals are street furniture like street lamps, so they follow `road`'s opacity.
    *
-   * 模式記在這裡是因為改動路口會整個 `build()` 重建 —— 材質全是新的，重建完
-   * 必須自己把視角套回去，否則玩家在地下模式改個路口就多出一排實心紅綠燈。
+   * The mode is stored here because changing a junction rebuilds everything through `build()` with
+   * fresh materials, and the view mode has to be reapplied afterwards; otherwise editing a junction
+   * in underground mode adds a row of solid traffic lights.
    */
   setViewMode(mode: ViewMode): void {
     this.viewMode = mode;
@@ -234,7 +246,8 @@ export class TrafficLightRenderer {
 
   private applyViewMode(): void {
     const opacity = VIEW_MODE_OPACITY[this.viewMode].road;
-    // 桿與臂共用一份材質，重複套用是無害的：原色在第一次就記下來了。
+    // Pole and arm share one material, and reapplying is harmless: the original colour is recorded
+    // on the first pass.
     for (const mesh of [this.poleMesh, this.armMesh, this.lightMesh]) {
       if (mesh) setMeshDim(mesh, opacity);
     }
@@ -251,7 +264,7 @@ export class TrafficLightRenderer {
     const GREEN = this._green;
     const RED = this._red;
 
-    // 逐盞算出這一幀該是什麼顏色，再照 `mountOwner` 發下去。
+    // Compute each light's colour for this frame, then distribute it through `mountOwner`.
     const states = this._states;
     states.length = 0;
     for (const light of lights) {
@@ -275,8 +288,8 @@ export class TrafficLightRenderer {
   }
 
   dispose(scene: THREE.Scene): void {
-    // 桿與臂共用同一份材質，所以只 dispose 一次 —— 兩次的話第二次是對著
-    // 已經釋放的資源呼叫。
+    // Pole and arm share one material, so it is disposed once; twice, the second call is against
+    // an already released resource.
     const disposed = new Set<THREE.Material>();
     for (const mesh of [this.poleMesh, this.armMesh, this.lightMesh]) {
       if (!mesh) continue;

@@ -5,7 +5,7 @@ import { buildAirplaneNavLightsGeometry, buildAirplaneVTailGeometry } from './ge
 import { ViewMode, getVehicleVisibility } from '../core/ViewMode';
 import { ROAD_SURFACE_Y, LEVEL_HEIGHT } from './surfaceHeights';
 
-/** 車燈離路面多高。原本寫成 0.055 的絕對高度，那是舊的車身基準加 0.03。 */
+/** How far a vehicle's lights sit above the road surface. */
 const LIGHT_ABOVE_SURFACE = 0.03;
 
 /** Airline body colors (vivid, multiplied with near-white vertex colors). */
@@ -61,31 +61,35 @@ const COMMERCIAL_COLORS = [
 export class VehicleRenderer {
   private meshes = new Map<string, THREE.InstancedMesh>();
   /**
-   * 起始容量。不是上限 —— 不夠時 `grow` 會換一個更大的（見 BUG-261）。
+   * The initial capacity. Not a limit: `grow` replaces the mesh with a larger one when it runs out
+   * (see BUG-261).
    *
-   * 寫死上限的話，越過的那些車照樣參與碰撞（`advanceEdgeVehicles` 走的是
-   * `traffic.vehicles`，與渲染無關），只是不畫：畫面上是一台車對著一段空白
-   * 煞車，過一兩秒那台看不見的車才憑空出現。而模擬端的上限是**全部車種
-   * 合計**，車種分佈由城市決定，所以渲染端沒有一個逐車種的數字是安全的。
+   * With a hard limit, vehicles past it still take part in collisions —
+   * `advanceEdgeVehicles` runs over `traffic.vehicles` and is unrelated to rendering — and simply
+   * are not drawn: on screen a vehicle brakes for empty road, and a second or two later the
+   * invisible one appears out of nothing. The simulation's own limit is **across all vehicle
+   * types**, and the mix of types is decided by the city, so no per-type number is safe on the
+   * rendering side.
    */
   private readonly initialPerType = 500;
   private _viewMode = ViewMode.NORMAL;
 
   /**
-   * 視錐剔除用的鏡頭。`null` 就不剔除（展示區、測試等不帶鏡頭的呼叫端）。
+   * The camera used for frustum culling. `null` disables culling, for callers with no camera such
+   * as the showcase and the tests.
    *
-   * 判準是鏡頭的視錐，不是離鏡頭目標的固定距離。行人那邊是固定半徑
-   * （`cullPedestrians` 的 `CULL_RADIUS`），照抄的話鏡頭一拉遠，車就只出現在
-   * 畫面中央一小圈。
+   * The test is the camera's frustum rather than a fixed distance from its target. Pedestrians use
+   * a fixed radius (`CULL_RADIUS` in `cullPedestrians`), and copying that leaves vehicles appearing
+   * only in a small circle at the screen's centre as soon as the camera pulls back.
    */
   private cullCamera: THREE.Camera | null = null;
 
   /**
-   * 視錐往外放寬的格數。
+   * How many cells the frustum is widened by.
    *
-   * 剛好切在畫面邊界的話，邊緣的車會在鏡頭平移時突然消失／出現。車有體積
-   * （公車、消防車比小客車長得多），而且會投影 —— 畫面外一點點的車，影子
-   * 可能落在畫面裡。
+   * Cut exactly at the screen edge, vehicles there appear and disappear abruptly as the camera
+   * pans. Vehicles have volume — a bus or a fire engine is much longer than a car — and cast
+   * shadows, so one just off screen can have its shadow on it.
    */
   private readonly cullMargin = 2;
 
@@ -202,20 +206,20 @@ export class VehicleRenderer {
   }
 
   /**
-   * 設定視錐剔除用的鏡頭。傳 `null` 就畫全部。
+   * Sets the camera used for frustum culling. `null` draws everything.
    *
-   * 每幀從鏡頭當下的矩陣重算視錐，所以平移、旋轉、縮放都會自動跟上 ——
-   * 呼叫端設一次就好。
+   * The frustum is recomputed each frame from the camera's current matrices, so panning, rotating
+   * and zooming all follow automatically and the caller sets it once.
    */
   setCullCamera(camera: THREE.Camera | null): void {
     this.cullCamera = camera;
   }
 
   /**
-   * 這台車在畫面裡嗎。
+   * Is this vehicle on screen?
    *
-   * 用一顆半徑 `cullMargin` 的球去測而不是一個點：那顆球同時代表車的體積、
-   * 它的影子，以及邊緣的餘裕。
+   * Tested with a sphere of radius `cullMargin` rather than a point: that sphere stands in for the
+   * vehicle's volume, its shadow, and the margin at the edge all at once.
    */
   private inView(v: VehicleData): boolean {
     const y = v.altitude ?? (v.elevation ? v.elevation * LEVEL_HEIGHT : 0);
@@ -225,16 +229,18 @@ export class VehicleRenderer {
   }
 
   /**
-   * 讓一個 `InstancedMesh` 至少容得下 `need` 個實例，不夠就換一個更大的。
+   * Ensures an `InstancedMesh` holds at least `need` instances, replacing it with a larger one when
+   * it does not.
    *
-   * `InstancedMesh` 的容量在建構時就固定了（`instanceMatrix` 的長度），所以
-   * 「擴容」只能換一個新的接上場景。幾何與材質是**接手**過去的，不能 dispose
-   * —— 那會把還在用的緩衝區收掉。
+   * An `InstancedMesh`'s capacity is fixed at construction by `instanceMatrix`'s length, so growing
+   * means attaching a new one to the scene. The geometry and material are **handed over** and must
+   * not be disposed, which would free buffers still in use.
    *
-   * 倍增而不是剛好夠：車輛數每幀都在變，剛好夠的話尖峰附近會一直重建。
+   * It doubles rather than fitting exactly: the vehicle count changes every frame, and fitting
+   * exactly rebuilds continuously around a peak.
    *
-   * `instanceColor` 不用搬。它是 `setColorAt` 第一次呼叫時才長出來的，而顏色
-   * 每幀都重寫一遍。
+   * `instanceColor` is not copied: it is created on the first `setColorAt` call, and the colours
+   * are rewritten every frame.
    */
   private grow(
     mesh: THREE.InstancedMesh | null, need: number,
@@ -260,7 +266,8 @@ export class VehicleRenderer {
     const groups = this._groups;
     for (const arr of groups.values()) arr.length = 0;
 
-    // 視錐在這裡算一次，整幀共用。鏡頭的矩陣在渲染迴圈裡是最新的。
+    // The frustum is computed once here and shared for the frame. The camera's matrices are
+    // current inside the render loop.
     const camera = this.cullCamera;
     if (camera) {
       camera.updateMatrixWorld();
@@ -269,8 +276,9 @@ export class VehicleRenderer {
       ));
     }
 
-    // 剔除發生在分組時，所以下游全部跟著走：逐車種的數量、頭尾燈的數量、
-    // 擴容的判斷。在後面某一處另外過濾的話，那三個一定有一個會對不上。
+    // Culling happens during grouping, so everything downstream follows it: the per-type counts,
+    // the light counts, and the capacity decision. Filtering again somewhere later leaves one of
+    // those three disagreeing.
     for (const v of vehicles) {
       if (camera && !this.inView(v)) continue;
       let arr = groups.get(v.type);
@@ -290,18 +298,22 @@ export class VehicleRenderer {
     const tlMatrix = this._tlMatrix;
     const tlTranslation = this._tlTranslation;
 
-    // 頭尾燈是一整批共用的，不像車身逐車種分開，所以要先數出這一幀要幾盞。
-    // 鐵路車廂不掛燈（`rail_carriage` 在下面被跳過）。
-    // 數的是剔除之後留下的那些（`groups`）而不是傳進來的整份。這只影響**容量**
-    // —— 燈的數量是繪製迴圈跑完之後才寫進 `count` 的，拿整份算不會多畫燈，
-    // 只是替看不見的車先配好位子。
+    // Headlights and tail lights share one batch rather than being split per vehicle type, so the
+    // count for this frame is worked out first. Rail carriages carry none (`rail_carriage` is
+    // skipped below).
+    //
+    // It counts what survived culling (`groups`) rather than everything passed in. That affects
+    // **capacity** only: the light count is written into `count` after the draw loop, so counting
+    // everything would not draw extra lights, only reserve slots for vehicles that are not
+    // visible.
     let lightNeed = 0;
     for (const [type, arr] of groups) if (type !== 'rail_carriage') lightNeed += arr.length;
     this.headlightMesh = this.grow(this.headlightMesh, lightNeed);
     this.taillightMesh = this.grow(this.taillightMesh, lightNeed);
 
-    // 機尾與航行燈**必須在主迴圈之前**擴容：垂直尾翼的顏色是在主迴圈裡逐架
-    // 寫進去的，之後才換 mesh 的話，那些顏色會留在被丟掉的那一個上面。
+    // Tails and navigation lights **have to grow before the main loop**: the vertical tail's
+    // colour is written per aircraft inside it, and replacing the mesh afterwards leaves those
+    // colours on the discarded one.
     const planeNeed = groups.get('airplane')?.length ?? 0;
     this.airplaneVTailMesh = this.grow(this.airplaneVTailMesh, planeNeed);
     this.airplaneNavMesh = this.grow(this.airplaneNavMesh, planeNeed);
@@ -396,8 +408,9 @@ export class VehicleRenderer {
           const hlX = vx + cosH * fOff;
           const hlZ = vz - sinH * fOff;
           // Light Y: airplane follows altitude; others use base + elevation
-          // 車燈的高度是相對於路面量的 —— 車身抬到柏油表面之後，燈也要跟著抬，
-          // 不然大燈會縮進保險桿裡。
+          // A vehicle's light height is measured relative to the road surface: with the body
+          // raised to the asphalt, the lights rise with it, or the headlights sink into the
+          // bumper.
           let lightY = type === 'airplane'
             ? yPos + 0.01
             : ROAD_SURFACE_Y + LIGHT_ABOVE_SURFACE + (v.elevation ? v.elevation * LEVEL_HEIGHT : 0);
