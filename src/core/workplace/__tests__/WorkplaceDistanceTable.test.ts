@@ -5,7 +5,7 @@ import {
 
 const W = 8, H = 6;
 
-/** 一張 `dense[y * W + x] = cost` 的表，其餘都是 -1。 */
+/** A `dense[y * W + x] = cost` table, with -1 everywhere else. */
 function dense(entries: Array<[number, number, number]>): Int32Array {
   const a = new Int32Array(W * H).fill(-1);
   for (const [x, y, cost] of entries) a[y * W + x] = cost;
@@ -47,7 +47,8 @@ describe('逐格的工作地距離表', () => {
   });
 
   it('should not leak a cost across cells', () => {
-    // 轉置的計數排序寫錯位移，最典型的症狀就是成本落到隔壁格。
+    // A wrong offset in the transpose's counting sort typically lands costs on the neighbouring
+    // cell.
     const t = build([
       { pos: '5,5', cells: [[1, 1, 36], [4, 3, 900]] },
       { pos: '7,0', cells: [[4, 3, 180]] },
@@ -59,7 +60,7 @@ describe('逐格的工作地距離表', () => {
   });
 
   it('should treat a zero cost as reachable', () => {
-    // 0 是合法成本（住在工作地隔壁）。用 falsy 判斷會把它當成「到不了」。
+    // 0 is a valid cost, for living next door to work. A falsy check reads it as unreachable.
     const t = build([{ pos: '5,5', cells: [[1, 1, 0]] }]);
 
     expect(t.costAt(1, 1, '5,5')).toBe(0);
@@ -67,8 +68,8 @@ describe('逐格的工作地距離表', () => {
   });
 
   it('should say nothing outside the grid', () => {
-    // `x = -1, y = 2` 摺出來的索引正好是 `(W - 1, 1)`。不擋界外的話，左邊出界
-    // 會拿到上一列最右邊那一格的答案 —— 所以 fixture 刻意把資料放在那裡。
+    // `x = -1, y = 2` folds onto exactly `(W - 1, 1)`. Unchecked, going off the left edge returns
+    // the previous row's rightmost cell, so the fixture deliberately puts data there.
     const t = build([{ pos: '5,5', cells: [[W - 1, 1, 36], [1, 1, 12]] }]);
 
     expect(t.reachableWorkplacesAt(W - 1, 1), 'fixture 沒把資料放在會被撞到的格子上')
@@ -106,7 +107,8 @@ describe('逐格的工作地距離表', () => {
     const list = WorkplaceDistanceTable.transferables(buffers);
 
     expect(list).toEqual([buffers.offsets.buffer, buffers.wpIndex.buffer, buffers.cost.buffer]);
-    // structured clone 不複製它們才是重點 —— 三個都要是自己獨立的 buffer。
+    // The point is that structured clone does not copy them, so all three have to be independent
+    // buffers.
     expect(new Set(list).size, '三個檢視共用同一個 buffer，transfer 會爆').toBe(3);
   });
 
@@ -123,8 +125,8 @@ describe('逐格的工作地距離表', () => {
   });
 
   it('should refuse more workplaces than the index can hold', () => {
-    // wpIndex 是 Uint16Array。悄悄溢位的話，第 65 536 個工作地會變成第 0 個 ——
-    // 全城的通勤距離都指到別人家，而且不會有任何錯誤。
+    // wpIndex is a Uint16Array. Overflowing silently makes the 65,536th workplace the 0th, and
+    // the whole city's commute distances point somewhere else with no error at all.
     const b = new WorkplaceDistanceTableBuilder(W, H);
     const empty = new Int32Array(W * H).fill(-1);
     for (let i = 0; i < MAX_WORKPLACES; i++) b.addWorkplace(`w${i}`, empty);

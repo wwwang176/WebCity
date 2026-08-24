@@ -60,11 +60,12 @@ export enum TrafficControl {
 }
 
 /**
- * 各路型的柏油寬度（格；1 格 = 12 m）。
+ * Each road type's asphalt width in cells, where one cell is 12 metres.
  *
- * 放在 core 而不是渲染層：路面多寬決定了車開在哪，那是模擬的事實，不是畫法。
- * 原本有兩份一模一樣的拷貝（`SidewalkGraph` 與 `RoadStripBuilder` 各一份），
- * 而 core 的那份還是為了避免反向 import 才複製過去的。
+ * In core rather than in the renderer: how wide the road is decides where vehicles drive, which
+ * is a simulation fact rather than a drawing choice. There were two identical copies, in
+ * `SidewalkGraph` and `RoadStripBuilder`, and core's own copy existed only to avoid a reverse
+ * import.
  */
 export const ROAD_WIDTHS: Record<number, number> = {
   [RoadType.RURAL]: 0.5,
@@ -76,16 +77,18 @@ export const ROAD_WIDTHS: Record<number, number> = {
 };
 
 /**
- * 一條車道有多寬（格）：把該向的半幅路面平分給它的車道。
+ * A lane's width in cells: the half road width for that direction, divided among its lanes.
  *
- * **算出來而不是一個常數。** 原本是寫死的 0.18，與 `ROAD_WIDTHS` 各算各的
- * —— 六車道每向三條 = 0.54，而路面半寬只有 0.475，最外側那條車道有一部分在
- * 路面外，而車子實際上就開在那裡：一台 0.125 寬的卡車會壓出路緣 45 公分。
+ * **Derived rather than a constant.** A fixed 0.18, computed independently of `ROAD_WIDTHS`, put
+ * three lanes per direction on a six-lane road at 0.54 against a half road width of 0.475, so
+ * part of the outermost lane lay off the asphalt with vehicles driving there: a 0.125-wide truck
+ * overhangs the kerb by 45cm.
  *
- * 單行道也切半幅。它所有車道同向，理論上整幅都能用，但 `LaneGraph` 是從中心線
- * 往**行進方向的右側**排車道的 —— 給它整幅的話，最外側那條會排到路面外。單行道
- * 因此只用到右半邊的柏油，左半邊是空的；那是錨點的問題，不是車道寬的問題，
- * 記在 TODO.md。
+ * A one-way road divides the half width too. All its lanes run the same way and in principle it
+ * could use the full width, but `LaneGraph` lays lanes out from the centre line towards the
+ * **right of travel**, so the full width would put the outermost lane off the asphalt. A one-way
+ * road therefore uses only the right half of its asphalt, leaving the left half empty; that is an
+ * anchoring problem rather than a lane width one, and it is recorded in TODO.md.
  */
 export function getLaneWidth(roadType: number): number {
   return (ROAD_WIDTHS[roadType] ?? 0.6) / 2 / getLaneCount(roadType);

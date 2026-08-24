@@ -1,14 +1,16 @@
 /**
- * 圖表的時間序列。
+ * The charts' time series.
  *
- * 採樣跟著**遊戲的時間**走，不是跟著畫面。原本是每次 UI 更新記一筆 —— 那是每一幀，
- * 六十個點一秒就跑完，玩家看到的是資料往左邊衝，而那個速度只反映了 FPS。
+ * Sampled against **game time** rather than the display. Recording on every UI update means once
+ * per frame, sixty points a second, and the player watches the data race leftwards at a speed
+ * that reflects nothing but the frame rate.
  *
- * 底層一律以「日」為單位保存，範圍（週／月／年）是在畫的時候併出來的。三個範圍各存
- * 一份的話，切過去才開始累積，玩家會看到一張空圖 —— 而那段歷史明明已經發生過了。
+ * Everything is stored by day, and the ranges — week, month, year — are bucketed at draw time.
+ * Storing each range separately means it starts accumulating when it is first opened and the
+ * player sees an empty chart for history that has already happened.
  */
 
-/** 一天的一筆樣本。五條序列共用一個時間軸。 */
+/** One day's sample. The five series share one time axis. */
 export interface ChartSample {
   pop: number;
   happiness: number;
@@ -22,16 +24,16 @@ export type ChartSeriesKey = keyof ChartSample;
 export const CHART_SERIES_KEYS: readonly ChartSeriesKey[] =
   ['pop', 'happiness', 'funds', 'income', 'expenses'];
 
-/** 逐日的歷史。`days` 是時間軸，其餘每條序列跟它等長。 */
+/** The per-day history. `days` is the time axis and every other series matches its length. */
 export type ChartHistory = { days: number[] } & Record<ChartSeriesKey, number[]>;
 
 export type ChartRange = 'week' | 'month' | 'year';
 
 /**
- * 每個範圍看多少天、幾天併成一根長條。
+ * How many days each range covers and how many days go into one bar.
  *
- * 長條數壓在 60 以內:一年 360 天一格一根的話，在 613px 寬的圖上每根不到兩像素，
- * 那不是圖表是雜訊。
+ * The bar count is held under 60: a year of 360 days at one bar each is under two pixels per bar
+ * on a 613px chart, which is noise rather than a chart.
  */
 export const CHART_RANGES: Record<ChartRange, { days: number; bucketDays: number; label: string }> = {
   week: { days: 7, bucketDays: 1, label: 'Week' },
@@ -39,7 +41,7 @@ export const CHART_RANGES: Record<ChartRange, { days: number; bucketDays: number
   year: { days: 360, bucketDays: 10, label: 'Year' },
 };
 
-/** 要留多少天。最長的範圍看多少就留多少。 */
+/** How many days are kept: as many as the longest range covers. */
 export const CHART_HISTORY_DAYS = CHART_RANGES.year.days;
 
 export function emptyChartHistory(): ChartHistory {
@@ -47,13 +49,14 @@ export function emptyChartHistory(): ChartHistory {
 }
 
 /**
- * 記下這一天。
+ * Records this day.
  *
- * 同一天再來就覆蓋 —— 一天之內 UI 會更新幾百次，每次都追加的話一天就長出幾百個點，
- * 又回到原本那個問題。
+ * The same day again overwrites: the UI updates hundreds of times within one day, and appending
+ * each time grows hundreds of points a day, which is the original problem again.
  *
- * 時間軸存的是實際的日數，不補中間跳過的天。讀存檔或關著面板跑很久之後天數會一次跳
- * 很多，補零會在圖上畫出一段不曾發生過的谷底。
+ * The axis stores actual day numbers and does not fill skipped days. Loading a save, or running
+ * with the panel closed for a long time, jumps the day count sharply, and filling with zeros
+ * draws a trough on the chart that never happened.
  */
 export function appendChartDay(
   history: ChartHistory,
@@ -83,14 +86,16 @@ export function appendChartDay(
   return next;
 }
 
-/** 併好的資料。`days` 是每一根結束在哪一天，跟其餘序列等長。 */
+/** The bucketed data. `days` is the day each bar ends on and matches the other series' length. */
 export type BucketedSeries = { days: number[] } & Record<ChartSeriesKey, number[]>;
 
 /**
- * 併成這個範圍要畫的點。最新的在右邊 —— 玩家讀圖是從左讀到右。
+ * Buckets into the points this range draws, newest on the right, because a chart is read left to
+ * right.
  *
- * 桶內取**平均**不是加總。加總會讓「年」的長條比「月」高十倍，而那十倍只是格子變寬，
- * 城市的收支根本沒變 —— 切換範圍時縱軸的意思必須一樣。
+ * A bucket takes the **average** rather than the sum. Summing makes the year's bars ten times the
+ * month's when nothing about the city's finances changed except the bucket width: the vertical
+ * axis has to mean the same thing across ranges.
  */
 export function bucketChartSeries(
   history: ChartHistory,
@@ -105,20 +110,20 @@ export function bucketChartSeries(
   const n = history.days.length;
   if (n === 0) return out;
 
-  // 只用真的有的資料。開局第三天切到「年」，畫的就是一根，不是 36 根裡有 35 根
-  // 是憑空捏的。
+  // Only data that exists. Switching to the year view on day three draws one bar rather than 36
+  // of which 35 are invented.
   const usable = Math.min(n, spec.days);
   const buckets = Math.floor(usable / spec.bucketDays);
   if (buckets === 0) return out;
 
-  // 從尾巴往回切，讓最新的那一天一定落在最後一根裡。從頭切的話餘數會留在右邊，
-  // 最後一根永遠是舊資料。
+  // Bucketed backwards from the end, so the newest day always lands in the last bar. Bucketing
+  // forwards leaves the remainder on the right and the last bar is always old data.
   const from = n - buckets * spec.bucketDays;
 
   for (let b = 0; b < buckets; b++) {
     const lo = from + b * spec.bucketDays;
     const hi = lo + spec.bucketDays;
-    // 這一根結束在哪一天。滑上去的提示要說得出「這是什麼時候」。
+    // Which day this bar ends on, so the hover tooltip can say when it was.
     out.days.push(history.days[hi - 1]!);
     for (const key of CHART_SERIES_KEYS) {
       let sum = 0;

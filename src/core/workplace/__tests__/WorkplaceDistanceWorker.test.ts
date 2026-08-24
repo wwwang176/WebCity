@@ -10,17 +10,19 @@ import { WorkplaceDistanceTable } from '../WorkplaceDistanceTable';
 const BYTES_PER_CELL = 12;
 
 /**
- * 這個檔案原本測的是 `reverseFloodFromWorkplace` —— worker 自己那份看不到
- * 高架的平面 Dijkstra。它已經被 `reverseFloodFromGraph` 取代（BUG-109 治本）。
+ * This file tested `reverseFloodFromWorkplace`, the worker's own flat Dijkstra that could not see
+ * elevated roads. It has been replaced by `reverseFloodFromGraph` (the underlying fix for
+ * BUG-109).
  *
- * 遷移時有兩件事變了，都是刻意的：
+ * Two things changed with the migration, both deliberately:
  *
- * 1. **結果不再包含道路格。** 附掛的 `accept` 是「這一格是不是建築」，而距離
- *    表的唯一用途是 `getDistance(homePos, workplacePos)` —— home 一定是建築。
- *    道路格在表裡是死重量，還要跟著 structured clone。同步查詢也只回傳目標
- *    集合裡的格子，所以這也讓兩條路更一致。
- * 2. **預算 ×18。** 成本整數化（見 `core/road/roadCost.ts`），舊制的 60 是
- *    現在的 1080。涵蓋範圍不變。
+ * 1. **Results no longer include road cells.** Attachment's `accept` asks whether a cell is a
+ *    building, and the distance table's only use is `getDistance(homePos, workplacePos)`, where
+ *    the home is always a building. Road cells are dead weight in the table and are
+ *    structured-cloned with it. The synchronous query also returns only cells in the target set,
+ *    so this makes the two paths more consistent.
+ * 2. **The budget is x18.** Costs became integers (see `core/road/roadCost.ts`), so the old 60 is
+ *    now 1080. The range is unchanged.
  */
 
 /** Build a minimal grid buffer with only roadType set. */
@@ -36,10 +38,10 @@ function makeGridBuffer(width: number, height: number, roads: Map<string, RoadTy
 }
 
 /**
- * 把 `roads` map 包成 `UnifiedRoadLookup` 收得下的 grid。
+ * Wraps a `roads` map into a grid `UnifiedRoadLookup` accepts.
  *
- * 這些 fixture 從來沒有真的 `Grid` —— 只有一個 map 與手捏的 buffer。
- * `fromGrid()` 需要 width/height/getCell/forEachCell，所以在這裡補齊。
+ * These fixtures never had a real `Grid`, only a map and a hand-built buffer. `fromGrid()` needs
+ * width, height, getCell and forEachCell, which this supplies.
  */
 function gridFromRoads(width: number, height: number, roads: Map<string, RoadType>) {
   return {
@@ -54,7 +56,8 @@ function gridFromRoads(width: number, height: number, roads: Map<string, RoadTyp
   };
 }
 
-/** 一次備好 worker 需要的兩樣東西：轉置圖的 buffer，與「是不是建築」的判斷。 */
+/** Prepares both things the worker needs: the transposed graph's buffer and the is-a-building
+ *  predicate. */
 function workerInputs(width: number, height: number, roads: Map<string, RoadType>) {
   const lookup = UnifiedRoadLookup.fromGrid(gridFromRoads(width, height, roads));
   const graphBuffer = serializeRoadCellGraph(
@@ -69,10 +72,11 @@ function workerInputs(width: number, height: number, roads: Map<string, RoadType
 }
 
 /**
- * flood 一次，攤成 `{ "x,y": cost }`。
+ * Runs one flood and spreads it into `{ "x,y": cost }`.
  *
- * `reverseFloodFromGraph` 收在密集陣列裡（見它的說明）；這裡攤回物件只是為了讓
- * 下面的斷言講座標而不是講索引算術。
+ * `reverseFloodFromGraph` collects into a dense array (see its documentation); spreading it back
+ * into an object here only lets the assertions below talk about coordinates rather than index
+ * arithmetic.
  */
 function flood(
   width: number, height: number, roads: Map<string, RoadType>,
@@ -89,16 +93,16 @@ function flood(
   return out;
 }
 
-const BUDGET = 1080;   // 舊制 60 × 18
+const BUDGET = 1080;   // 60 on the old scale, x18
 
 describe('reverseFloodFromGraph', () => {
   it('returns the workplace building itself at cost 0', () => {
-    // 5x5，道路在 (2,2)，工作地點 (2,1) 緊鄰它。
+    // 5x5, with a road at (2,2) and the workplace at (2,1) beside it.
     const roads = new Map([['2,2', RoadType.TWO_LANE]]);
     const result = flood(5, 5, roads, { pos: '2,1', x: 2, y: 1 }, BUDGET);
 
     expect(result['2,1']).toBe(0);
-    // 道路格**不在**結果裡 —— 見檔頭說明。
+    // Road cells are **not** in the result; see the file header.
     expect(result['2,2'], '道路格不該出現在距離表裡').toBeUndefined();
   });
 
@@ -111,19 +115,19 @@ describe('reverseFloodFromGraph', () => {
     ]);
     const result = flood(6, 5, roads, { pos: '1,2', x: 1, y: 2 }, BUDGET);
 
-    // 路邊的建築都要在
+    // Every building beside the road is present.
     expect(result['1,1']).toBeDefined();
     expect(result['3,1']).toBeDefined();
     expect(result['4,1']).toBeDefined();
-    // 路本身不在
+    // The road itself is not.
     expect(result['3,2']).toBeUndefined();
   });
 
   it('respects the budget limit', () => {
-    // 長路 + 小預算。y=1 那一列是建築，用來觀察涵蓋到哪裡。
+    // A long road and a small budget. The y=1 row is buildings, showing how far coverage gets.
     const roads = new Map<string, RoadType>();
     for (let x = 0; x < 20; x++) roads.set(`${x},0`, RoadType.TWO_LANE);
-    const result = flood(20, 2, roads, { pos: '0,0', x: 0, y: 0 }, 90);   // 舊制 5 × 18
+    const result = flood(20, 2, roads, { pos: '0,0', x: 0, y: 0 }, 90);   // 5 on the old scale, x18
 
     expect(result['0,1'], '近處的建築應該收得到').toBeDefined();
     expect(result['19,1'], '遠處的建築超出預算，不該收得到').toBeUndefined();
@@ -144,30 +148,33 @@ describe('reverseFloodFromGraph', () => {
   });
 
   it('seeds the flood even when the workplace sits 2 tiles from the road', () => {
-    // 路在 y=5（x 0..9），工作地點 (3,3) —— 距離路兩格（內圈）。
+    // The road is at y=5 across x 0..9, with the workplace at (3,3), two cells back in the inner
+    // ring.
     const roads = new Map<string, RoadType>();
     for (let x = 0; x < 10; x++) roads.set(`${x},5`, RoadType.TWO_LANE);
     const result = flood(10, 10, roads, { pos: '3,3', x: 3, y: 3 }, 18000);
 
     expect(result['3,3'], '工作地點自己沒被收 —— 內圈沒有種到 flood').toBeDefined();
-    // 種好之後 flood 會沿路傳到底，遠端路邊的建築也要收得到
+    // Once seeded, the flood runs the length of the road and buildings at the far end are
+    // attached too.
     expect(result['9,4']).toBeDefined();
   });
 
   it('picks up non-road buildings across the whole inner ring', () => {
-    // 只有一格路 (5,5)。Chebyshev 2 以內的建築都要在，3 以外的不能在。
+    // One road cell at (5,5). Buildings within Chebyshev 2 are present and those beyond 3 are
+    // not.
     const roads = new Map<string, RoadType>([['5,5', RoadType.TWO_LANE]]);
     const result = flood(10, 10, roads, { pos: '5,5', x: 5, y: 5 }, BUDGET);
 
-    // 四鄰
+    // The four neighbours.
     expect(result['4,5']).toBeDefined();
     expect(result['5,4']).toBeDefined();
-    // 對角（Chebyshev 1）
+    // Diagonally, Chebyshev 1.
     expect(result['4,4']).toBeDefined();
-    // 內圈（Chebyshev 2）
+    // The inner ring, Chebyshev 2.
     expect(result['3,3']).toBeDefined();
     expect(result['7,7']).toBeDefined();
-    // 超出 reach（Chebyshev 3）
+    // Past the reach, Chebyshev 3.
     expect(result['2,2']).toBeUndefined();
     expect(result['8,8']).toBeUndefined();
   });
@@ -175,8 +182,8 @@ describe('reverseFloodFromGraph', () => {
 
 describe('one flood per workplace', () => {
   it('produces an independent table for each workplace', () => {
-    // 取代舊的 computeAllDistances —— 那個包裝只是 workplaces.map()，
-    // 訊息處理端現在直接做這件事。
+    // Replaces the former computeAllDistances, a wrapper that was only workplaces.map(); the
+    // message handler now does it directly.
     const roads = new Map<string, RoadType>([
       ['1,0', RoadType.TWO_LANE],
       ['2,0', RoadType.TWO_LANE],
@@ -190,7 +197,7 @@ describe('one flood per workplace', () => {
     ], BUDGET, 5, 3, isBuilding));
 
     expect(table.workplaceCount).toBe(2);
-    // 兩個工作地點沿同一條路互相到得了
+    // Two workplaces reach each other along the same road.
     expect(table.costAt(3, 1, '1,1')).toBeDefined();
     expect(table.costAt(1, 1, '3,1')).toBeDefined();
   });

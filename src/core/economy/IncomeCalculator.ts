@@ -42,8 +42,9 @@ export interface BuildingIncomeDeps {
   /**
    * Optional per-building revenue multiplier (e.g. district specialization).
    *
-   * 帶 `zoneType` 是為了讓條例的收入代價能只落在特定產業上 —— 少了它，「只扣商業」
-   * 會平均攤在住宅、商業、工業、辦公身上。
+   * `zoneType` is passed so an ordinance's revenue cost can fall on particular industries alone;
+   * without it, "commercial only" spreads evenly across residential, commercial, industrial and
+   * office.
    */
   getRevenueMultiplier?: (x: number, y: number, zoneType: ZoneType) => number;
   /** Optional power check — unpowered buildings produce zero income. Defaults to true. */

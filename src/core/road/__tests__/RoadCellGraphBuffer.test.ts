@@ -11,7 +11,7 @@ import {
 const EW = RoadDirection.EAST | RoadDirection.WEST;
 const NS = RoadDirection.NORTH | RoadDirection.SOUTH;
 
-/** 見 RoadCellGraph.test.ts 的說明。拓撲細節不寫進斷言。 */
+/** See RoadCellGraph.test.ts. The topology is never written into an assertion. */
 function testCity() {
   const w = 12, h = 6;
   const cells = new Map<string, { roadType: number; roadFlags: number }>();
@@ -41,7 +41,7 @@ function testCity() {
   return { grid, lookup: new UnifiedRoadLookup(grid, em) };
 }
 
-/** 一張真正空的圖 —— 用來證明「空圖的 buffer 不是 0 bytes」。 */
+/** A genuinely empty graph, showing that an empty graph's buffer is not 0 bytes. */
 function emptyGraph(): RoadCellGraph {
   return {
     nodeKeys: [], indexOf: new Map(), offsets: new Uint32Array(1),
@@ -52,8 +52,8 @@ function emptyGraph(): RoadCellGraph {
 
 describe('RoadCellGraph serialization', () => {
   it('should round-trip every field exactly', () => {
-    // 位元組佈局錯位不會報錯 —— 它會把一段 Uint32 當 Uint16 讀出一堆看似
-    // 合理的距離。所以每個欄位都要比。
+    // A misaligned byte layout does not throw: it reads a run of Uint32 as Uint16 and produces
+    // plausible-looking distances. So every field is compared.
     const { lookup } = testCity();
     const g = buildRoadCellGraph(lookup);
     const back = deserializeRoadCellGraph(serializeRoadCellGraph(g));
@@ -68,10 +68,10 @@ describe('RoadCellGraph serialization', () => {
   });
 
   it('should align every section to its element size, for any n and e', () => {
-    // 直接斷言佈局的對齊性，而不是「用某個 fixture 跑跑看會不會丟 RangeError」——
-    // 那種驗證會因為 fixture 的節點數奇偶剛好對齊而靜默失效（審核實測：
-    // n=26 e=56 時本來就對齊，所以拿掉對齊也不會紅）。
-    // 這裡掃一大片 (n, e) 組合，任何一組沒對齊都會抓到。
+    // The layout's alignment is asserted directly rather than by running a fixture to see whether
+    // it throws `RangeError`, which fails silently whenever the fixture's node count happens to
+    // align: at n=26 and e=56 it already aligns, so removing the alignment turns nothing red.
+    // A large sweep of (n, e) combinations catches any that do not align.
     for (let n = 0; n < 40; n++) {
       for (let e = 0; e < 40; e++) {
         const L = layoutOf(n, e);
@@ -87,8 +87,8 @@ describe('RoadCellGraph serialization', () => {
   });
 
   it('should rebuild elevated keys from coordinates', () => {
-    // key 字串不序列化（省 structured clone），所以反序列化端必須組得回來 ——
-    // 高架的 key 有第三段。
+    // Key strings are not serialised, to save a structured clone, so deserialisation has to
+    // reassemble them, and an elevated key has a third segment.
     const { lookup } = testCity();
     const g = buildRoadCellGraph(lookup);
     const back = deserializeRoadCellGraph(serializeRoadCellGraph(g));
@@ -105,8 +105,9 @@ describe('RoadCellGraph serialization', () => {
   });
 
   it('should round-trip an empty graph, and report zero nodes', () => {
-    // 空圖的 buffer 有 header，byteLength 不是 0。任何「byteLength === 0」的
-    // 判斷都擋不到它 —— 那是快取那邊「空圖不要送出去」的守門條件。
+    // An empty graph's buffer has a header and a byteLength that is not 0. Any
+    // `byteLength === 0` check misses it, and that is the condition guarding "do not send an
+    // empty graph" on the cache side.
     const buf = serializeRoadCellGraph(emptyGraph());
     expect(buf.byteLength, '空圖的 buffer 不該是 0 bytes —— 它有 header')
       .toBeGreaterThan(0);

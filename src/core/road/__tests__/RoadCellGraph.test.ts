@@ -10,18 +10,19 @@ const EW = RoadDirection.EAST | RoadDirection.WEST;
 const NS = RoadDirection.NORTH | RoadDirection.SOUTH;
 
 /**
- * 混合路型 + 高架 + 匝道的測試城市。
+ * A test city mixing road types with an elevated section and ramps.
  *
- *   y=1   x 0..11  雙線道主幹（每格 36）
- *   y=3   x 2..8   鄉道支線（每格 60）
- *   x=2   y=2      鄉道，連接主幹與支線
- *   level 1, y=1, x 4..9  高速高架（每格 9），x=4 與 x=9 是匝道
+ *   y=1   x 0..11  two-lane arterial, 36 per cell
+ *   y=3   x 2..8   rural branch, 60 per cell
+ *   x=2   y=2      rural, joining the arterial to the branch
+ *   level 1, y=1, x 4..9  elevated highway, 9 per cell, with ramps at x=4 and x=9
  *
- * 路型混合是必要的 —— 全部同路型時正向與反向剛好相等，而那正好會讓反向
- * 對稱性的 bug 測不出來（BUG-237 就是這樣漏掉的）。
+ * The mix of road types is necessary: with one road type throughout, forward and reverse happen
+ * to be equal, which is exactly what hides a reverse-symmetry defect (how BUG-237 was missed).
  *
- * 這個 fixture 的**拓撲細節不寫進斷言** —— 測試一律從 lookup 或獨立參考
- * 演算法推導期望值。手算過兩次，兩次都錯。
+ * **This fixture's topology is never written into an assertion**: expectations are always derived
+ * from the lookup or from an independent reference algorithm. Worked out by hand twice, wrong
+ * both times.
  */
 function testCity() {
   const w = 12, h = 6;
@@ -52,7 +53,7 @@ function testCity() {
   return { grid, lookup: new UnifiedRoadLookup(grid, em) };
 }
 
-/** 節點 key 的所有出邊，回傳 [目標 key, 權重]。 */
+/** A node key's out-edges, as [target key, weight]. */
 function outEdges(g: ReturnType<typeof buildRoadCellGraph>, key: string): [string, number][] {
   const i = g.indexOf.get(key);
   if (i === undefined) return [];
@@ -71,9 +72,10 @@ describe('buildRoadCellGraph', () => {
   });
 
   it('should contain exactly the edges the lookup permits, for every node', () => {
-    // 全域比對，不是抽樣。期望值直接向 lookup 問 —— 不需要我心算哪一格連
-    // 哪一格（手算過兩次，兩次都錯）。這一條同時涵蓋樓層規則、匝道軸向、
-    // 邊界裁切，因為那些全都在 getCompatibleNeighborKeys 裡。
+    // Compared exhaustively rather than sampled, with the expectation asked of the lookup so
+    // nothing has to be worked out by hand (done twice, wrong both times). This covers the level
+    // rules, ramp axis and boundary clipping at once, because all of them live in
+    // getCompatibleNeighborKeys.
     const { lookup } = testCity();
     const g = buildRoadCellGraph(lookup);
 
@@ -91,7 +93,7 @@ describe('buildRoadCellGraph', () => {
   });
 
   it('should charge the cost of the destination cell, for every edge', () => {
-    // 同樣是全域的。每一條邊的權重都必須等於「走進去那一格」的路型成本。
+    // Exhaustive too. Every edge's weight has to equal the road type cost of the cell it enters.
     const { lookup } = testCity();
     const g = buildRoadCellGraph(lookup);
     let checked = 0;
@@ -106,8 +108,8 @@ describe('buildRoadCellGraph', () => {
   });
 
   it('should store integral weights that fit the Uint16 range', () => {
-    // 整數是順序無關性的地基（見 roadCost.ts）。浮點權重會讓正反向 flood
-    // 不可能位元相等。
+    // Integers are the foundation of order independence (see roadCost.ts). Floating-point weights
+    // make bit-identical forward and reverse floods impossible.
     const { lookup } = testCity();
     const g = buildRoadCellGraph(lookup);
     expect(g.weights).toBeInstanceOf(Uint16Array);
@@ -117,9 +119,10 @@ describe('buildRoadCellGraph', () => {
     }
   });
 
-  // ── fixture 健全性 ──────────────────────────────────────────────
-  // 以下兩條不斷言座標，只斷言「這個 fixture 真的含有要測的東西」。
-  // 算錯也只會讓測試更嚴格，不會讓正確實作紅燈。
+  // ── Fixture sanity ──────────────────────────────────────────────
+  // The two below assert no coordinates, only that the fixture really contains what is being
+  // tested. Getting them wrong makes the tests stricter rather than failing a correct
+  // implementation.
 
   it('fixture sanity: the ground reaches the viaduct, and only at ramps', () => {
     const { lookup } = testCity();
@@ -139,7 +142,8 @@ describe('buildRoadCellGraph', () => {
   });
 
   it('fixture sanity: it really mixes road tiers', () => {
-    // 全部同路型時正反向剛好相等，BUG-237 就是這樣漏掉的。
+    // With one road type throughout, forward and reverse happen to be equal, which is how
+    // BUG-237 was missed.
     const { lookup } = testCity();
     const g = buildRoadCellGraph(lookup);
     expect(new Set(g.weights).size, 'fixture 只有一種路型，測不出方向性')
@@ -157,8 +161,9 @@ describe('buildRoadCellGraph', () => {
     expect(g.offsets[g.nodeKeys.length]).toBe(g.targets.length);
     expect(g.weights.length).toBe(g.targets.length);
 
-    // 去重：上面「edges the lookup permits」用 Set 比對，重複的邊會被它藏起來。
-    // 重複邊不影響最短路徑結果，但會讓 flood 白做工，而且是建圖邏輯出錯的訊號。
+    // Duplicates: "edges the lookup permits" above compares Sets, which hide a repeated edge.
+    // Duplicates do not change the shortest path but make the flood do wasted work, and they are
+    // a sign the graph construction is wrong.
     for (let i = 0; i < g.nodeKeys.length; i++) {
       const seen = new Set<number>();
       for (let k = g.offsets[i]!; k < g.offsets[i + 1]!; k++) {

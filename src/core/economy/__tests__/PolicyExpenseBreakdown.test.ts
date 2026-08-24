@@ -10,9 +10,9 @@ import { SimulationLoop } from '../../simulation/SimulationLoop';
 import { buildEconomyBreakdownContext } from '../EconomyBreakdownContext';
 
 /**
- * 預算面板只給一個總額的話，「政策從 $800 漲到 $4,200」會是一個玩家事後才發現的坑。
- * 看得見才做得了決定 —— 這也是這套設計不設預算上限的前提:上限會替玩家自動砍掉
- * 政策，而且砍得無聲無息。
+ * A single total in the budget panel would hide a rise from $800 to $4,200 in policy cost
+ * until after the fact. Line-by-line visibility is what lets the player decide, and it is why
+ * the design carries no budget cap: a cap would silently cancel policies for them.
  */
 
 const districts = () => [{
@@ -25,7 +25,8 @@ describe('政策支出明細', () => {
   it('should list one line per active policy, district and city alike', () => {
     const ord = new CityOrdinances();
     ord.setLevel(PolicyType.ENERGY_REGULATION, 2);
-    // 人口不能是 0 —— 節能法規按人口計費，人口 0 的話那一行的 cost 是 0 而被跳過。
+    // Population must not be 0: the energy code bills per capita, so at 0 that line costs 0
+    // and is skipped.
     const lines = listPolicyExpenses(districts(), ord, scaleOf({ population: 1000 }));
     expect(lines).toHaveLength(2);
     expect(lines.find(l => l.scope === 'district')!.districtName).toBe('Downtown');
@@ -47,11 +48,11 @@ describe('政策支出明細', () => {
   });
 
   it('should sum to exactly what the budget charges', () => {
-    // 明細跟帳對不起來的話，玩家看到的解釋是假的。所以比的是**模擬迴圈實際寫進
-    // 預算的那個數字**，不是把同一條公式再算一次。
+    // The comparison is against the number the simulation loop actually wrote into the budget,
+    // not the same formula evaluated a second time.
     //
-    // 人口必須造出來:節能法規按人口計費，人口 0 的話全城那一段恆為 0，刪掉
-    // listPolicyExpenses 的全城迴圈也不會被抓到。
+    // Population has to exist: the energy code bills per capita, so at 0 the citywide term is
+    // always 0 and deleting the citywide loop in listPolicyExpenses would go unnoticed.
     const build = (on: boolean) => {
       const state = createGameState(30, 30);
       const loop = new SimulationLoop(state);
@@ -62,7 +63,7 @@ describe('政策支出明細', () => {
         state.policies.setPolicyLevel(d.id, PolicyType.ENCOURAGE_RECYCLING, 2);
         state.ordinances.setLevel(PolicyType.ENERGY_REGULATION, 2);
       }
-      // calculateIncome 在 slowSlot 5 跑，六個 tick 剛好涵蓋一次。
+      // calculateIncome runs on slowSlot 5; six ticks cover exactly one pass.
       for (let i = 0; i < 6; i++) loop.tick();
       return { state, expenses: state.budget.expenses };
     };
@@ -87,12 +88,13 @@ describe('政策支出明細', () => {
 });
 
 describe('明細與面板總額', () => {
-  // 玩家會做的事是:打開預算面板，看到「Policies −$2,840」，把它展開看逐條。
-  // 那幾行必須加得起來 —— 對不起來的話，玩家看到的解釋是假的。
+  // The player opens the budget panel, sees "Policies -$2,840" and expands it; those lines
+  // have to add up to that total.
   //
-  // 「面板等於國庫上一次實際扣的錢」則**不是**這裡守的東西:面板是即時重算的，
-  // 帳本每六個 tick 才算一次，中間人口變了兩邊就會差。那對每一列支出都成立
-  // （道路維護、服務費用也都是即時重算），不是政策獨有的。
+  // What is NOT guarded here is the panel matching the last amount the treasury actually
+  // deducted: the panel recomputes live while the ledger runs every six ticks, so a population
+  // change in between separates them. That holds for every expense row (road maintenance and
+  // service costs also recompute live), not just policies.
   it('should add up to the total the panel shows', () => {
     const state = createGameState(20, 20);
     for (let i = 0; i < 100; i++) state.citizens.restoreCitizen({}, 0);

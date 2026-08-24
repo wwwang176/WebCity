@@ -5,21 +5,20 @@ import {
 } from '../ChartSeries';
 
 /**
- * 圖表的採樣。
- *
- * 原本是每次 UI 更新就記一筆 —— 那是每一幀，六十個點一秒就跑完，玩家看到的是資料
- * 往左邊衝。時間軸要跟著遊戲的時間走，不是跟著畫面。
+ * Chart sampling. The time axis advances with in-game days, not with render frames: one
+ * sample per frame would fill a sixty-point chart in a single second.
  */
 
 /**
- * 五條序列**刻意給不同的值**。全部設成同一個數字的話，把 population 寫進全部五條
- * 序列這種接錯法，長度、平均與所有預期值都會完全一樣，測試看不出來。
+ * The five series deliberately carry different values. Were they all the same number, a
+ * wiring bug that writes population into all five would leave every length, average and
+ * expectation identical, and the tests would still pass.
  */
 const sample = (n: number) => ({
   pop: n, happiness: n + 1000, funds: n + 2000, income: n + 3000, expenses: n + 4000,
 });
 
-/** 從第 0 天開始連續記 `days` 天，第 d 天的值都是 d。 */
+/** Records `days` consecutive days starting at day 0; the value on day d is d. */
 function fill(days: number, keep = 400): ChartHistory {
   let h = emptyChartHistory();
   for (let d = 0; d < days; d++) h = appendChartDay(h, d, sample(d), keep);
@@ -32,7 +31,8 @@ describe('依日採樣', () => {
   });
 
   it('should overwrite the day already in progress', () => {
-    // 同一天之內 UI 會更新很多次。每次都追加的話，一天就長出幾百個點。
+    // The UI refreshes many times within one day; appending on every refresh would grow
+    // hundreds of points per day.
     let h = emptyChartHistory();
     h = appendChartDay(h, 3, sample(10), 400);
     h = appendChartDay(h, 3, sample(20), 400);
@@ -48,8 +48,8 @@ describe('依日採樣', () => {
   });
 
   it('should cap at a year by default, without being told', () => {
-    // 上面那條每次都明講 `keep`，所以**正式路徑用的預設值完全沒被測到** ——
-    // 把它拿掉，遊戲跑久了歷史會無限成長，而測試照樣全綠。
+    // The default `keep` is what the production path uses. Without a case that leaves it
+    // implicit, removing it would let history grow without bound and every test would pass.
     let h = emptyChartHistory();
     for (let d = 0; d < CHART_HISTORY_DAYS + 25; d++) h = appendChartDay(h, d, sample(d));
     expect(h.days.length, '沒有裁到預設上限').toBe(CHART_HISTORY_DAYS);
@@ -57,7 +57,8 @@ describe('依日採樣', () => {
   });
 
   it('should keep every series the same length', () => {
-    // 五條序列共用一個時間軸。長度對不齊的話，圖表上第 i 個點會是不同時間的資料。
+    // The five series share one time axis. Mismatched lengths would place different days at
+    // the same index.
     const h = fill(10, 4);
     for (const key of ['pop', 'happiness', 'funds', 'income', 'expenses'] as const) {
       expect(h[key].length, `${key} 的長度跟時間軸對不上`).toBe(h.days.length);
@@ -65,8 +66,9 @@ describe('依日採樣', () => {
   });
 
   it('should not lose a day when the clock jumps', () => {
-    // 讀存檔、或關著面板跑很久之後，天數會一次跳很多。這裡只記有拿到的樣本 ——
-    // 補零會在圖上畫出一段不曾發生過的谷底。
+    // Loading a save, or running long with the panel closed, jumps the day counter. Only the
+    // samples actually received are recorded; zero-filling would draw a trough that never
+    // happened.
     let h = emptyChartHistory();
     h = appendChartDay(h, 0, sample(5), 400);
     h = appendChartDay(h, 50, sample(9), 400);
@@ -87,7 +89,8 @@ describe('三個範圍', () => {
   });
 
   it('should keep every range down to a readable number of bars', () => {
-    // 一年 360 天一格一根的話是三百多根長條，在 613px 寬的圖上每根不到兩像素。
+    // A 360-day year at one bar per day is over three hundred bars, each under two pixels
+    // wide on a 613px chart.
     for (const r of Object.keys(CHART_RANGES) as ChartRange[]) {
       const spec = CHART_RANGES[r];
       const bars = spec.days / spec.bucketDays;
@@ -102,13 +105,14 @@ describe('併成要畫的點', () => {
     const out = bucketChartSeries(fill(30), 'week');
     expect(out.pop.length).toBe(7);
     expect(out.pop, '週的範圍不該做平均').toEqual([23, 24, 25, 26, 27, 28, 29]);
-    // 每條序列讀的是自己那一欄。全部指向 pop 的話這裡會全部相等。
+    // Each series reads its own column. Were they all pointed at pop, these would be equal.
     expect(out.income, 'income 讀到的不是 income').toEqual([3023, 3024, 3025, 3026, 3027, 3028, 3029]);
   });
 
   it('should average within a bucket, not sum', () => {
-    // 平均而不是加總:加總會讓「年」的長條比「月」高十倍，而那十倍只是格子變寬，
-    // 城市的收支根本沒變。切換範圍時縱軸的意思必須一樣。
+    // Average, not sum: summing would make a year bar ten times taller than a month bar
+    // purely because the bucket is wider. The vertical axis must mean the same thing in
+    // every range.
     const out = bucketChartSeries(fill(360), 'year');
     const spec = CHART_RANGES.year;
     const last = out.income[out.income.length - 1]!;
@@ -118,15 +122,15 @@ describe('併成要畫的點', () => {
   });
 
   it('should only use the days it actually has', () => {
-    // 開局第三天切到「年」，不該畫出 36 根長條，其中 35 根是憑空捏的。
+    // Switching to 'year' on day three must not draw 36 bars, 35 of them invented.
     const out = bucketChartSeries(fill(3), 'year');
     expect(out.pop.length).toBeLessThanOrEqual(1);
     expect(out.pop.every(v => Number.isFinite(v)), '出現了 NaN').toBe(true);
   });
 
   it('should say which day each bucket ends on', () => {
-    // 滑到某一根長條上要說得出「這是什麼時候」。沒有時間軸的話那個提示只能寫
-    // 「第 3 根」，而玩家關心的是第幾天。
+    // Hovering a bar has to say when it was. Without a time axis the tooltip can only say
+    // 'bar 3', while the player cares about the day number.
     const week = bucketChartSeries(fill(30), 'week');
     expect(week.days).toEqual([23, 24, 25, 26, 27, 28, 29]);
 
@@ -142,17 +146,17 @@ describe('併成要畫的點', () => {
   });
 
   it('should keep the newest data at the right edge', () => {
-    // 時間往右長。反過來的話最新的一筆會在最左邊，而玩家讀圖是從左讀到右。
+    // Time runs left to right, so the newest sample sits at the right edge.
     const out = bucketChartSeries(fill(30), 'month');
     expect(out.pop[out.pop.length - 1]).toBe(29);
     expect(out.pop[0]).toBeLessThan(out.pop[out.pop.length - 1]!);
   });
 
   it('should put the newest day in the last bucket even when it does not divide evenly', () => {
-    // 25 天、十天一根 —— 兩根，餘五天。餘數要留在**左邊**（丟掉最舊的），不然
-    // 最後一根畫的是第 10–19 天，而玩家看到的「現在」其實是五天前。
-    //
-    // 上面那條驗不到這件事:30 天一天一根剛好整除，兩種切法算出來一樣。
+    // 25 days at ten days per bucket is two bars with five left over. The remainder is dropped
+    // from the left (oldest first); kept on the right, the last bar would cover days 10-19 and
+    // the rightmost bar would be five days stale. The 30-day case above divides evenly, so both
+    // placements agree there.
     const out = bucketChartSeries(fill(25), 'year');
     expect(out.pop.length).toBe(2);
     const newest = (15 + 24) / 2;

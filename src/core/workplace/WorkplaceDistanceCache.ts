@@ -15,33 +15,38 @@ export enum CacheStatus {
  * Invalidated via observer pattern — call invalidate() when roads or buildings change.
  * Computation is done in a web worker; main thread only does O(1) lookups.
  *
- * ## 失效不等於丟掉，但要看是什麼變了
+ * ## Invalidation is not discarding, but it depends on what changed
  *
- * `status` 講的是「這份表是不是**當前**的」，`table` 是「有沒有一份可以用的」。
- * 兩件不同的事。
+ * `status` says whether the table is **current**; `table` says whether there is a usable one.
+ * Two different things.
  *
- * **建築變了**（長出來、升級、燒毀、廢棄）不會改變任何一條道路的距離 —— 它只改變
- * 哪些格子算是工作地，而那件事由呼叫端當下的候選集合過濾。續用舊表只是稍舊。
+ * **A building change** — growth, an upgrade, a fire, abandonment — changes no road distance. It
+ * changes only which cells count as workplaces, and the caller's own candidate set filters that.
+ * Continuing with the old table only makes it slightly stale.
  *
- * **路網變了**就不同了:拆一條路、改單行方向、升級路型之後，舊表會把已經到不了的
- * 工作地說成到得了（市民被指派到一個開不過去的班），或反過來把新通的排除掉。
- * 那不是稍舊，那是錯的 —— 所以 `invalidateTopology()` 會把表丟掉，也不收算到一半
- * 那份（它是照舊路網算的）。
+ * **A road change** is different: after a road is demolished, a one-way direction is reversed or
+ * a road type is upgraded, the old table calls unreachable workplaces reachable, assigning
+ * citizens to shifts they cannot drive to, or excludes newly connected ones. That is not stale
+ * but wrong, so `invalidateTopology()` discards the table and refuses a result computed midway,
+ * which was computed against the old network.
  *
- * 理由是量出來的。4 萬人的存檔:`runJobRelocation` 大約每 13 秒跑一次，而
- * `invalidate()` 的觸發者（房子長出來、升級、燒毀、廢棄、道路改變）在活城市裡
- * 一直在發生，快取 READY 的窗只有 6~8 秒。落在空檔就掉回同步 Dijkstra ——
- * **實測 2,684ms**，而走快取是 161ms。落在哪裡純粹是運氣。
+ * The reasoning is measured. On a 40k save, `runJobRelocation` runs about every 13 seconds while
+ * `invalidate()`'s triggers — houses growing, upgrading, burning, being abandoned, roads changing
+ * — happen constantly in a live city, leaving the cache READY for only 6-8 seconds. Falling in a
+ * gap drops back to a synchronous Dijkstra at a **measured 2,684ms** against 161ms through the
+ * cache, and where it falls is luck.
  *
- * 一棟房子升級不會改變路網距離。上一份表隔一輪的誤差，遠小於凍住主執行緒 2.7 秒。
+ * One house upgrading does not change road distances. A table one round behind is a far smaller
+ * error than freezing the main thread for 2.7 seconds.
  */
 export class WorkplaceDistanceCache {
   private status: CacheStatus = CacheStatus.EMPTY;
   /** Set to true if invalidate() is called while status === CacheStatus.COMPUTING. */
   private invalidatedDuringBuild = false;
-  /** 路網在重算期間變了 —— 那份結果照的是舊路網，不能收。 */
+  /** The road network changed during the recompute, so that result is against the old network
+   *  and cannot be accepted. */
   private topologyChangedDuringBuild = false;
-  /** 逐格的 CSR 表。`null` = 從來沒算成功過。 */
+  /** The per-cell CSR table. `null` means no computation has ever succeeded. */
   private table: WorkplaceDistanceTable | null = null;
   private client: WorkplaceDistanceClient | null = null;
 
@@ -50,7 +55,8 @@ export class WorkplaceDistanceCache {
   }
 
   /**
-   * 建築變了 —— 表不再是當前的，但仍然可以用（道路距離沒變）。
+   * A building changed: the table is no longer current but is still usable, because road
+   * distances have not changed.
    */
   invalidate(): void {
     if (this.status === CacheStatus.COMPUTING) {
@@ -61,10 +67,10 @@ export class WorkplaceDistanceCache {
   }
 
   /**
-   * **路網**變了 —— 表現在是錯的，丟掉。
+   * The **road network** changed: the table is now wrong and is discarded.
    *
-   * 也標記算到一半那份要作廢:它是照舊路網跑出來的，收下它等於把錯的可達性
-   * 當成新的。
+   * A computation in flight is marked for rejection too, since it ran against the old network and
+   * accepting it would install wrong reachability as fresh.
    */
   invalidateTopology(): void {
     this.table = null;
@@ -83,7 +89,7 @@ export class WorkplaceDistanceCache {
   /**
    * Trigger async recomputation if not already computing. Returns false if skipped.
    *
-   * @param graphBuffer 序列化的**轉置** RoadCellGraph（見 `WDWorkerRequest`）。
+   * @param graphBuffer The serialised **transposed** RoadCellGraph (see `WDWorkerRequest`).
    */
   requestUpdate(
     gridWidth: number,
@@ -94,11 +100,12 @@ export class WorkplaceDistanceCache {
     maxBudget: number,
   ): boolean {
     if (!this.client) return false;
-    // 空圖代表城市還沒有路。送出去只會拿回一張空表，而空表會被 applyResult
-    // 標成 READY —— 全城變成互相到不了。寧可維持 EMPTY 走同步 fallback。
+    // An empty graph means the city has no roads yet. Sending it returns an empty table, which
+    // applyResult marks READY, and the whole city becomes mutually unreachable. Staying EMPTY and
+    // falling back to the synchronous path is better.
     //
-    // 看 header 的 nodeCount，不是 byteLength：空圖的 buffer 有 16 bytes 的
-    // header 加一個 offsets[0]，長度是 20。
+    // The header's nodeCount rather than byteLength: an empty graph's buffer is a 16-byte header
+    // plus one offsets[0], a length of 20.
     if (graphBufferNodeCount(graphBuffer) === 0) return false;
     if (this.status === CacheStatus.COMPUTING) return false;
     this.status = CacheStatus.COMPUTING;
@@ -113,9 +120,9 @@ export class WorkplaceDistanceCache {
   /**
    * Worker error — reset to empty so next tick retries.
    *
-   * **兩個旗標都要清。** 少清 `topologyChangedDuringBuild` 的話，下一份照**新**
-   * 路網算對的結果會被 `applyResult` 當成「照舊路網算的」丟掉，要到第三次請求
-   * 才會 READY。
+   * **Both flags are cleared.** Leaving `topologyChangedDuringBuild` set makes `applyResult`
+   * discard the next result, correctly computed against the **new** network, as one computed
+   * against the old, and READY arrives only on the third request.
    */
   private onComputeFailed(): void {
     this.status = CacheStatus.EMPTY;
@@ -126,18 +133,19 @@ export class WorkplaceDistanceCache {
   /** Apply worker result — called internally from the promise callback. */
   private applyResult(buffers: WorkplaceDistanceBuffers): void {
     if (this.topologyChangedDuringBuild) {
-      // 這份是照**舊路網**算的。收下它等於把錯的可達性當成新的。
+      // Computed against the **old road network**. Accepting it installs wrong reachability as
+      // fresh.
       this.topologyChangedDuringBuild = false;
       this.invalidatedDuringBuild = false;
       this.status = CacheStatus.EMPTY;
       return;
     }
-    // 建築變了那一種**一定收下**:這份結果不算當前，但它仍然比手上那份新
-    // —— 丟掉它等於抱著更舊的一份繼續回答。
+    // A building change is **always accepted**: this result is not current, but it is still newer
+    // than the one in hand, and discarding it means answering from an older one.
     this.table = new WorkplaceDistanceTable(buffers);
     if (this.invalidatedDuringBuild) {
       this.invalidatedDuringBuild = false;
-      this.status = CacheStatus.EMPTY;   // 下一輪會再請一次
+      this.status = CacheStatus.EMPTY;   // the next round requests again
       return;
     }
     this.status = CacheStatus.READY;
@@ -175,13 +183,13 @@ export class WorkplaceDistanceCache {
     return this.table.distancesAt(p.x, p.y, targets);
   }
 
-  /** 這份表是不是**當前**的。 */
+  /** Whether the table is **current**. */
   get isReady(): boolean { return this.status === CacheStatus.READY; }
   /**
-   * 有沒有一份可以用的表 —— 可能已經過期。
+   * Whether there is a usable table, which may be stale.
    *
-   * 呼叫端要的幾乎都是這個而不是 `isReady`:同步 fallback 貴到會凍住畫面，
-   * 用一份差一輪的表比凍 2.7 秒好得多。
+   * Almost every caller wants this rather than `isReady`: the synchronous fallback is expensive
+   * enough to freeze the display, and a table one round behind beats freezing for 2.7 seconds.
    */
   get hasTable(): boolean { return this.table !== null; }
   get isStale(): boolean { return this.status === CacheStatus.EMPTY; }

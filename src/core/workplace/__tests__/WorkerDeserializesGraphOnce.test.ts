@@ -1,11 +1,12 @@
 import { describe, it, expect, vi } from 'vitest';
 
 /**
- * 反序列化**不是**零成本的視圖:它要為每個路網節點配一個字串鍵、再塞進一個
- * `Map`（`RoadCellGraphBuffer.ts`）。放在逐工作地的迴圈裡就是
- * O(工作地數 × 路格數) 次字串配置，疊在真正的 flood 之上（BUG-334）。
+ * Deserialisation is **not** a zero-cost view: it allocates a string key per road node and puts
+ * it into a `Map` (`RoadCellGraphBuffer.ts`). Inside a per-workplace loop that is
+ * O(workplaces x road cells) string allocations on top of the flood itself (BUG-334).
  *
- * 這一條盯的是「圖只建一次」。用間諜數呼叫次數，不用時間 —— 計時的測試會抖。
+ * This checks the graph is built once, counting calls with a spy rather than measuring time,
+ * because timing tests are flaky.
  */
 vi.mock('../../road/RoadCellGraphBuffer', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../road/RoadCellGraphBuffer')>();
@@ -24,7 +25,7 @@ const BUDGET = 1080;
 const W = 12;
 const H = 5;
 
-/** 一條橫貫的路在 y=2，工作地排在 y=1 貼著它。 */
+/** One road across y=2, with workplaces lined up against it at y=1. */
 function fixture() {
   const roads = new Map<string, RoadType>();
   for (let x = 0; x < W; x++) roads.set(`${x},2`, RoadType.TWO_LANE);
@@ -86,8 +87,9 @@ describe('computeWorkplaceDistances', () => {
   });
 
   it('should keep each workplace on its own entry', () => {
-    // 圖共用之後，每次 flood 都拿同一個 graph 物件，而且**密集暫存陣列也是共用的**。
-    // 沒有在每個工作地之前重填 -1 的話，後面的工作地會讀到前面的殘留。
+    // With the graph shared, every flood takes the same graph object, and **the dense scratch
+    // array is shared too**. Without refilling it with -1 before each workplace, later workplaces
+    // read earlier ones' residue.
     const { graphBuffer, isBuilding, workplaces } = fixture();
 
     const together = new WorkplaceDistanceTable(

@@ -9,7 +9,7 @@ import {
 const EW = RoadDirection.EAST | RoadDirection.WEST;
 const NS = RoadDirection.NORTH | RoadDirection.SOUTH;
 
-/** 見 RoadCellGraph.test.ts 的說明。拓撲細節不寫進斷言。 */
+/** See RoadCellGraph.test.ts. The topology is never written into an assertion. */
 function testCity() {
   const w = 12, h = 6;
   const cells = new Map<string, { roadType: number; roadFlags: number }>();
@@ -41,7 +41,7 @@ function testCity() {
 
 const BIG = 1_000_000;
 
-/** 圖裡所有的邊，正規化成可比對的字串集合。 */
+/** Every edge in the graph, normalised into a comparable set of strings. */
 function edgeSet(g: RoadCellGraph): Set<string> {
   const out = new Set<string>();
   for (let i = 0; i < g.nodeKeys.length; i++) {
@@ -53,15 +53,16 @@ function edgeSet(g: RoadCellGraph): Set<string> {
 }
 
 /**
- * 成本加在**目的地**那一格，所以正向邊 A→B 的價格是 cost(B)。
- * 反向擴散必須讓權重跟著邊走 —— 直接在正向圖上從 B 往外走會付成 cost(A)。
+ * Cost is charged at the **destination** cell, so a forward edge A->B is priced at cost(B).
+ * Spreading backwards has to keep the weight on the edge: walking outward from B on the forward
+ * graph charges cost(A) instead.
  *
- * 現行的 `reverseFloodFromWorkplace` 就是後者（BUG-237）。既有測試沒抓到，
- * 因為它們只用單一路型 —— 全部一樣貴時正反向剛好相等。
+ * That is what `reverseFloodFromWorkplace` did (BUG-237). The existing tests missed it because
+ * they used a single road type, where forward and reverse happen to be equal.
  */
 describe('transposeRoadCellGraph', () => {
   it('should be exactly the edge set with every arrow reversed', () => {
-    // 全域比對，不抽樣。權重跟著邊走。
+    // Compared exhaustively rather than sampled. The weight follows the edge.
     const { lookup } = testCity();
     const g = buildRoadCellGraph(lookup);
     const t = transposeRoadCellGraph(g);
@@ -72,8 +73,8 @@ describe('transposeRoadCellGraph', () => {
   });
 
   it('should give the same cost as a forward flood, for every pair', () => {
-    // 這是轉置存在的唯一理由：在轉置圖上從工作往外跑一次，等於對每一個家
-    // 各跑一次正向 flood。路型混合時才測得出來。
+    // The only reason the transpose exists: one outward run from a workplace on it equals a
+    // forward flood from every home. Only a mix of road types can show it.
     const { lookup } = testCity();
     const g = buildRoadCellGraph(lookup);
     const t = transposeRoadCellGraph(g);
@@ -91,8 +92,8 @@ describe('transposeRoadCellGraph', () => {
   });
 
   it('fixture sanity: the graph is genuinely asymmetric', () => {
-    // 若正向圖本身就對稱（每條邊的反向邊權重相同），轉置等於沒做事，
-    // 上一條測試就是空轉的。
+    // If the forward graph is already symmetric, with each edge's reverse carrying the same
+    // weight, the transpose does nothing and the test above is vacuous.
     const { lookup } = testCity();
     const g = buildRoadCellGraph(lookup);
     expect(edgeSet(g), '圖是對稱的 —— 轉置測不出東西，fixture 的路型不夠混合')

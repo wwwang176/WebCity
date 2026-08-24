@@ -13,10 +13,11 @@ import { createSyncFakeWorker } from '../../traffic/__tests__/SyncFakeWorker';
 import { useSeededRandom, reseedRandom } from '../../__tests__/helpers/seededRandom';
 
 /**
- * 帳本上的收入要跟市庫實際入帳的一致。
+ * Income on the ledger must match what the treasury actually takes in.
  *
- * 既有的 `EconomyPanelMatchesBudget` 只守支出那一半 —— 條例學會賺錢之後，收入這
- * 半邊也會走散:市庫加了過路費而面板沒加，玩家看到的「收支平衡」就是假的。
+ * `EconomyPanelMatchesBudget` guards only the expense half. Ordinances that earn money can
+ * drift on the income half: the treasury adds a toll the panel does not, and the balance the
+ * player reads is wrong.
  */
 
 function chargedCity(): { state: GameState; loop: SimulationLoop } {
@@ -63,7 +64,8 @@ describe('條例的收入也要上帳本', () => {
     const b = getEconomyBreakdown(
       buildEconomyBreakdownContext(state, null, loop.billableDistricts()));
     expect(state.budget.income, '市庫沒有收入，這條測試等於空轉').toBeGreaterThan(0);
-    // 面板的加總抽成函式才守得住 —— 寫在 .tsx 裡的話，漏加一項不會有任何測試轉紅。
+    // The panel total lives in an extracted function; written inline in the .tsx, a missing
+    // term would turn no test red.
     expect(panelIncomeTotal(b), '面板的總收入跟市庫入帳的對不起來')
       .toBeCloseTo(state.budget.income, 0);
   });
@@ -75,8 +77,8 @@ describe('條例的收入也要上帳本', () => {
   });
 
   it('should list both sides of the same policy', () => {
-    // 壅塞費同時有兩邊。折成淨額的話，玩家看不出這個月由賺轉賠是因為車變少了
-    // 還是因為收費區畫大了。
+    // Congestion charging has both sides. Netted into one figure, the player cannot tell
+    // whether a swing from profit to loss came from fewer cars or from a larger charging zone.
     const { state, loop } = chargedCity();
     const scale = computeCityScales(
       state.citizens.getCitizens(), (x, y) => state.health.getCoverage(x, y));

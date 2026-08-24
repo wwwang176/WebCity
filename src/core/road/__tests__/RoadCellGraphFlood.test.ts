@@ -7,7 +7,7 @@ import { buildRoadCellGraph, floodRoadCellGraph, type RoadCellGraph } from '../R
 const EW = RoadDirection.EAST | RoadDirection.WEST;
 const NS = RoadDirection.NORTH | RoadDirection.SOUTH;
 
-/** 見 RoadCellGraph.test.ts 的說明。拓撲細節不寫進斷言。 */
+/** See RoadCellGraph.test.ts. The topology is never written into an assertion. */
 function testCity() {
   const w = 12, h = 6;
   const cells = new Map<string, { roadType: number; roadFlags: number }>();
@@ -38,11 +38,12 @@ function testCity() {
 }
 
 /**
- * 獨立的參考實作：Bellman-Ford。
+ * An independent reference implementation: Bellman-Ford.
  *
- * 期望值不手算 —— 用一個**演算法完全不同**的最短路徑實作對照。Bellman-Ford
- * 不用堆、不靠 settle 順序、不做提早結束，所以 Dijkstra 那邊任何關於順序、
- * stale 判斷、relax 條件的錯誤，它都不會一起犯。
+ * Expectations are not worked out by hand but compared against a shortest-path implementation
+ * with an **entirely different algorithm**. Bellman-Ford uses no heap, depends on no settle order
+ * and exits early nowhere, so it cannot repeat any of Dijkstra's mistakes about ordering, stale
+ * entries or the relax condition.
  */
 function bellmanFord(g: RoadCellGraph, seeds: readonly number[], maxBudget: number): Int32Array {
   const n = g.nodeKeys.length;
@@ -68,24 +69,24 @@ function bellmanFord(g: RoadCellGraph, seeds: readonly number[], maxBudget: numb
 const BIG = 1_000_000;
 
 /**
- * 手工 CSR 圖，**入邊權重不同**。
+ * A hand-built CSR graph with **differing in-edge weights**.
  *
- * 為什麼需要它：路網圖的成本加在**目的地**那一格，所以進入節點 j 的每一條邊
- * 權重都相同，於是 `dist[j] = w_j + min(已 settle 的前驅)`。Dijkstra 依成本
- * 遞增 settle，第一個 settle 的前驅就是最小的那個 —— **第一次 relax 就已經
- * 最佳**。結果是「重新 relax 成更便宜的值」與「過期堆項」這兩條分支在路網圖
- * 上永遠走不到，用 testCity 去驗它們是空轉的。
+ * Why it is needed: the road graph charges cost at the **destination** cell, so every edge into
+ * node j carries the same weight and `dist[j] = w_j + min(settled predecessors)`. Dijkstra settles
+ * in increasing cost order, so the first settled predecessor is the smallest and **the first relax
+ * is already optimal**. As a result the "relax to a cheaper value" and "stale heap entry" branches
+ * are unreachable on a road graph, and exercising them with testCity is vacuous.
  *
- * 這張圖讓那兩條分支真的被執行：
+ * This graph really executes both branches:
  *
- *   S ──1──▶ A ──100──▶ T
- *   └──10──▶ B ───1───▶ T
+ *   S --1--> A --100--> T
+ *   +--10--> B ---1---> T
  *
- * settle S(0) → relax A=1, B=10；settle A(1) → relax T=101；
- * settle B(10) → **T 改寫成 11**，而堆裡那個 101 變成過期項。
+ * Settling S(0) relaxes A=1 and B=10; settling A(1) relaxes T=101; settling B(10) **rewrites T to
+ * 11**, leaving the 101 in the heap as a stale entry.
  *
- * `floodRoadCellGraph` 是通用的加權圖 Dijkstra，契約本來就該對任何圖成立 ——
- * 而且哪天成本模型加上轉彎懲罰，入邊權重就不再一致了。
+ * `floodRoadCellGraph` is a general weighted-graph Dijkstra whose contract should hold for any
+ * graph — and the day the cost model gains a turn penalty, in-edge weights stop being uniform.
  */
 function skewedGraph(): RoadCellGraph {
   const nodeKeys = ['S', 'A', 'B', 'T'];
@@ -111,7 +112,7 @@ describe('floodRoadCellGraph on a graph with uneven incoming weights', () => {
   });
 
   it('should settle each node exactly once despite the stale heap entry', () => {
-    // T 先以 101 入堆、再以 11 入堆。少了過期過濾，T 會被 settle 兩次。
+    // T enters the heap at 101 and then at 11. Without the stale filter, T settles twice.
     const g = skewedGraph();
     const settled: number[] = [];
     floodRoadCellGraph(g, [0], BIG, (n) => { settled.push(n); return false; });
@@ -120,7 +121,8 @@ describe('floodRoadCellGraph on a graph with uneven incoming weights', () => {
   });
 
   it('fixture sanity: this graph really has uneven incoming weights', () => {
-    // 若入邊權重一致，上面兩條就退化成空轉 —— 那正是 testCity 的情況。
+    // With uniform in-edge weights the two tests above are vacuous, which is exactly testCity's
+    // situation.
     const g = skewedGraph();
     const intoT = new Set<number>();
     for (let i = 0; i < g.nodeKeys.length; i++) {
@@ -134,7 +136,7 @@ describe('floodRoadCellGraph on a graph with uneven incoming weights', () => {
 
 describe('floodRoadCellGraph', () => {
   it('should match an independent shortest-path implementation, node for node', () => {
-    // 這是整個 flood 核心的主測試。全圖、每一個種子、精確相等。
+    // The flood core's main test: the whole graph, every seed, exact equality.
     const { lookup } = testCity();
     const g = buildRoadCellGraph(lookup);
     for (let seed = 0; seed < g.nodeKeys.length; seed++) {
@@ -177,7 +179,7 @@ describe('floodRoadCellGraph', () => {
   });
 
   it('should settle in non-decreasing cost order', () => {
-    // BUG-102 的守門：附掛依賴「第一次 settle 就是最便宜的那條路」。
+    // Guards BUG-102: attachment depends on the first settle being the cheapest route.
     const { lookup } = testCity();
     const g = buildRoadCellGraph(lookup);
     const seen: number[] = [];

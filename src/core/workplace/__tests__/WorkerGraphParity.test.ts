@@ -10,7 +10,7 @@ const EW = RoadDirection.EAST | RoadDirection.WEST;
 const NS = RoadDirection.NORTH | RoadDirection.SOUTH;
 const W = 12, H = 6;
 
-/** 見 RoadCellGraph.test.ts 的說明。拓撲細節不寫進斷言。 */
+/** See RoadCellGraph.test.ts. The topology is never written into an assertion. */
 function testCity() {
   const cells = new Map<string, { roadType: number; roadFlags: number }>();
   for (let x = 0; x < W; x++) cells.set(`${x},1`, { roadType: RoadType.TWO_LANE, roadFlags: EW });
@@ -52,14 +52,16 @@ function buildingCells(grid: { getCell(x: number, y: number): { roadType: number
 const BUDGET = 1080;
 
 /**
- * 本設計的硬約束：**worker 算的必須等於同步查詢算的。**
+ * The design's hard constraint: **what the worker computes must equal what the synchronous query
+ * computes.**
  *
- * 兩者共用同一個 flood 核心，所以這條理應永遠綠 —— 它守的是「有人哪天為了
- * 效能在 worker 裡另外寫一份」。城市有高架、匝道，而且**路型混合** ——
- * 全部同路型時正反向剛好相等，BUG-237 就是這樣漏掉的。
+ * Both share one flood core, so this should stay green permanently; what it guards against is
+ * someone writing a second copy in the worker for performance. The city has elevated roads, ramps
+ * and **a mix of road types**: with one type throughout, forward and reverse happen to be equal,
+ * which is how BUG-237 was missed.
  *
- * 用 `.toBe`：成本是整數，加法可交換，所以正向與反向必然位元相同。
- * （浮點下這條在數學上就不可能通過。）
+ * Checked with `.toBe`: costs are integers and addition commutes, so forward and reverse are
+ * necessarily bit-identical. Under floating point this could not pass mathematically.
  */
 describe('worker result equals the synchronous query', () => {
   it('should agree on every home → workplace cost, exactly', () => {
@@ -100,8 +102,8 @@ describe('worker result equals the synchronous query', () => {
   });
 
   it('should disagree if given the forward graph instead of the transpose', () => {
-    // 這一條證明「用轉置圖」不是可有可無的裝飾。路型混合時，拿正向圖跑反向
-    // flood 會得到不同的答案 —— 那正是 BUG-237。
+    // Shows the transpose is not decoration. With a mix of road types, a reverse flood on the
+    // forward graph gives a different answer, which is BUG-237.
     const { grid, lookup } = testCity();
     const g = buildRoadCellGraph(lookup);
     const isBuilding = (x: number, y: number): boolean => {

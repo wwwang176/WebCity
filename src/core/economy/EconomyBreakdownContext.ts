@@ -23,11 +23,12 @@ export function buildEconomyBreakdownContext(
   state: GameState,
   elevationManager: ElevationManager | null,
   /**
-   * 分區的計費資料（道路格數與付費人數）。
+   * The districts' billing data: road cell counts and paying drivers.
    *
-   * 必填而不是自己從 `state` 算 —— 付費人數算不出來自 GameState（要知道每個人選了
-   * 哪一種交通方式，那是通勤統計那一趟的產物）。漏填的話面板會少報一筆收入，
-   * 跟市庫實際入帳的對不起來。
+   * Required rather than derived from `state`, because the paying-driver count cannot be computed
+   * from GameState: it needs each citizen's chosen mode of travel, which is a product of the
+   * commute statistics pass. Omitted, the panel under-reports income and disagrees with what the
+   * treasury actually receives.
    */
   districts: readonly {
     name: string;

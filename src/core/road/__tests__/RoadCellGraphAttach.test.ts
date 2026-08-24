@@ -11,7 +11,7 @@ const EW = RoadDirection.EAST | RoadDirection.WEST;
 const NS = RoadDirection.NORTH | RoadDirection.SOUTH;
 const W = 12, H = 6;
 
-/** 見 RoadCellGraph.test.ts 的說明。拓撲細節不寫進斷言。 */
+/** See RoadCellGraph.test.ts. The topology is never written into an assertion. */
 function testCity() {
   const cells = new Map<string, { roadType: number; roadFlags: number }>();
   for (let x = 0; x < W; x++) cells.set(`${x},1`, { roadType: RoadType.TWO_LANE, roadFlags: EW });
@@ -44,7 +44,8 @@ const BIG = 1_000_000;
 
 describe('seedNodesFor', () => {
   it('should return exactly the road nodes within Chebyshev reach, at every level', () => {
-    // 期望值暴力算：掃全部節點，看誰在範圍內。不手算座標。
+    // The expectation is brute-forced by scanning every node for those in range, rather than
+    // working coordinates out by hand.
     const { lookup } = testCity();
     const g = buildRoadCellGraph(lookup);
     for (const [cx, cy] of [[6, 0], [2, 4], [0, 5], [11, 5]] as const) {
@@ -60,7 +61,8 @@ describe('seedNodesFor', () => {
   });
 
   it('fixture sanity: at least one probe really picks up an elevated cell', () => {
-    // 否則「涵蓋所有樓層」是空轉的 —— 完全不處理高架的實作也會通過。
+    // Otherwise "covers every level" is vacuous and an implementation ignoring elevated roads
+    // entirely would pass.
     const { lookup } = testCity();
     const g = buildRoadCellGraph(lookup);
     const keys = seedNodesFor(g, 6, 0, ZONE_ROAD_REACH).map(i => g.nodeKeys[i]!);
@@ -70,11 +72,12 @@ describe('seedNodesFor', () => {
 
 describe('attachAtSettledNode', () => {
   /**
-   * 跑一次 flood，並在 settle 當下附掛。
+   * Runs a flood, attaching at each settle.
    *
-   * `attachAtSettledNode` 收在密集陣列裡（見它的說明），這裡攤回 `Map` 只是為了
-   * 讓下面的斷言講「(x,y) 收到多少」而不是講索引算術。**回傳的 `added` 總數獨立
-   * 於攤平**，所以「有沒有真的收到」不是靠這層轉換推出來的。
+   * `attachAtSettledNode` collects into a dense array (see its documentation); spreading it back
+   * into a `Map` here only lets the assertions below talk about what (x,y) received rather than
+   * about index arithmetic. **The returned `added` total is independent of that spreading**, so
+   * whether anything was really attached is not inferred from this conversion.
    */
   function floodAndAttach(startKey: string, accept: (x: number, y: number) => boolean) {
     const { lookup } = testCity();
@@ -93,8 +96,8 @@ describe('attachAtSettledNode', () => {
   }
 
   it('should report how many cells it newly collected', () => {
-    // 呼叫端拿這個數字做「找齊目標就早退」的計數。恆回 0 的話同步查詢會永遠
-    // 跑滿預算，而且沒有別的斷言看得出來。
+    // The caller counts towards its early exit with this number. Always returning 0 makes the
+    // synchronous query run the full budget forever, and no other assertion would show it.
     const { out, added } = floodAndAttach('0,1', () => true);
 
     expect(added).toBe(out.size);
@@ -102,7 +105,8 @@ describe('attachAtSettledNode', () => {
   });
 
   it('should not count a cell twice when a cheaper road settles later', () => {
-    // 只記第一次 —— 重複計數會讓早退提前觸發，查詢在找齊之前就停。
+    // Only the first attachment counts: double counting fires the early exit too soon and the
+    // query stops before finding everything.
     const { g, added } = floodAndAttach('0,1', () => true);
     let distinct = 0;
     const seen = new Set<string>();
@@ -119,8 +123,9 @@ describe('attachAtSettledNode', () => {
   });
 
   it('should stay inside the grid', () => {
-    // 密集陣列要求上界也要擋。舊版只擋負數，靠 `accept` 拒絕界外 —— 寫進陣列
-    // 就不能這樣賭了，越界會安靜地寫壞別人的格子。
+    // The dense array requires the upper bound to be checked too. Checking only for negatives
+    // and relying on `accept` to reject out-of-bounds cells is not a bet that can be taken when
+    // writing into an array: an overrun silently corrupts another cell.
     const { lookup } = testCity();
     const g = buildRoadCellGraph(lookup);
     const dense = new Int32Array(W * H).fill(-1);
@@ -137,8 +142,9 @@ describe('attachAtSettledNode', () => {
   });
 
   /**
-   * 獨立參考：一個格子應該拿到的成本 = reach 內所有**到得了的**路格中最便宜的。
-   * 暴力掃全圖，不依賴 settle 順序，也不依賴 attachAtSettledNode 的邏輯。
+   * An independent reference: a cell's cost is the cheapest of every **reachable** road cell
+   * within reach. Brute-forced over the whole graph, depending on neither settle order nor
+   * attachAtSettledNode's logic.
    */
   function cheapestNearby(
     g: ReturnType<typeof buildRoadCellGraph>, cost: Int32Array, x: number, y: number,
@@ -153,8 +159,8 @@ describe('attachAtSettledNode', () => {
   }
 
   it('should give every accepted cell its cheapest reachable road cost', () => {
-    // 全域比對。「(5,5) 應該掛在 (5,3) 上」這種手算的期望值連錯兩次，
-    // 所以這裡對**每一個**格子比對暴力算出來的最小值。
+    // Compared exhaustively. Hand-worked expectations such as "(5,5) should attach to (5,3)" were
+    // wrong twice, so **every** cell is compared against the brute-forced minimum.
     const { g, out, cost } = floodAndAttach('0,1', () => true);
     for (let x = 0; x < W; x++) {
       for (let y = 0; y < H; y++) {
@@ -165,7 +171,7 @@ describe('attachAtSettledNode', () => {
   });
 
   it('fixture sanity: some cell is genuinely contested by roads of different cost', () => {
-    // 若每個格子在 reach 內都只有一個路格，「取最便宜」就是空轉的。
+    // With one road cell within reach of every cell, "takes the cheapest" is vacuous.
     const { g, cost } = floodAndAttach('0,1', () => true);
     let contested = 0;
     for (let x = 0; x < W; x++) {
@@ -185,11 +191,12 @@ describe('attachAtSettledNode', () => {
   });
 
   it('should cover road cells too, not just buildings', () => {
-    // 舊實作有一段「道路格本身也可能是目標」。dx/dy 包含 (0,0) 就涵蓋了，
-    // 但那是實作細節 —— 這一條把「路格也會被收」釘成契約。
+    // A road cell can itself be a target. `dx`/`dy` including (0,0) covers that, but that is an
+    // implementation detail; this pins "road cells are attached too" as a contract.
     //
-    // **只斷言有被收，不斷言收到自己的成本。** 附掛取的是 reach 內最便宜的
-    // 路格，而一個路格的鄰居可能更便宜。實際成本由上面那條全域比對負責。
+    // **Only that it was attached, not that it received its own cost.** Attachment takes the
+    // cheapest road cell within reach, and a road cell's neighbour can be cheaper. The actual
+    // costs are the exhaustive comparison above.
     const { g, out, cost } = floodAndAttach('0,1', () => true);
     let checked = 0;
     for (let i = 0; i < g.nodeKeys.length; i++) {
@@ -202,8 +209,8 @@ describe('attachAtSettledNode', () => {
   });
 
   it('fixture sanity: some road cell is cheaper via a neighbour than on its own', () => {
-    // 這一條把上面那段註解釘成可驗證的事實。第 3 版曾經斷言「路格會收到自己
-    // 的成本」，那會讓正確實作紅燈 —— 這裡的計數就是反證。
+    // Makes the note above a checkable fact. Asserting that a road cell receives its own cost
+    // fails a correct implementation, and this count is the counter-example.
     const { g, out, cost } = floodAndAttach('0,1', () => true);
     let cheaperViaNeighbour = 0;
     for (let i = 0; i < g.nodeKeys.length; i++) {

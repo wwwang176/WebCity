@@ -32,8 +32,8 @@ export class UnifiedRoadLookup {
   ) {}
 
   /**
-   * 地圖尺寸。走這一層而不是要呼叫端自己帶 —— 拿得到 lookup 就拿得到尺寸，
-   * 兩邊各記一份遲早會對不上。
+   * The map's size, taken from here rather than carried by the caller: whoever holds a lookup
+   * holds the size, and two separate copies eventually disagree.
    */
   get width(): number { return this.grid.width; }
   get height(): number { return this.grid.height; }
@@ -58,12 +58,13 @@ export class UnifiedRoadLookup {
   }
 
   /**
-   * 這個位置有沒有任何高架層。
+   * Whether this position has any elevated level.
    *
-   * 給熱迴圈用的**快速否定**:`getCompatibleNeighborKeys` 每次呼叫都要解析來源
-   * 字串鍵、配一個陣列、再問一次格子;而水電覆蓋的 flood 每個鄰居都會呼叫它一次。
-   * 一座只有幾段高架的城市裡，那些工作幾乎全部白做 —— 這一支讓呼叫端能先問
-   * 「這裡到底有沒有高架」，沒有就走地面那條便宜的路。
+   * A **fast negative** for hot loops: every `getCompatibleNeighborKeys` call parses the source
+   * string key, allocates a result array and queries the cell again, and the utility coverage
+   * flood calls it once per neighbour. In a city with a few elevated sections almost all of that
+   * work is wasted, and this lets a caller ask whether there is anything elevated here and take
+   * the cheap ground path when there is not.
    */
   hasElevatedAt(x: number, y: number): boolean {
     return this.em.levelsAt(x, y) !== 0;
@@ -108,9 +109,10 @@ export class UnifiedRoadLookup {
 
     // Check all elevated levels at neighbor.
     //
-    // 先問一次「這一格有哪幾層」的位元遮罩。沒有高架的位置就到此為止 ——
-    // 原本無條件問三層，每問一次配一個 `x,y,level` 字串再查一次 Map。4 萬人的
-    // 存檔實測 `ElevationManager.get` 佔主執行緒 5.8%，而那座城市總共 7 段高架。
+    // A bitmask of which levels this cell has is asked for once, and a position with no elevated
+    // levels stops there. Asking about all three unconditionally allocated an `x,y,level` string
+    // and did a Map lookup each time: `ElevationManager.get` measured 5.8% of the main thread on
+    // a 40k save whose city had seven elevated sections in total.
     const mask = this.em.levelsAt(nx, ny);
     if (mask === 0) return result;
     for (let lv = MIN_ELEVATION_LEVEL; lv <= MAX_ELEVATION_LEVEL; lv++) {

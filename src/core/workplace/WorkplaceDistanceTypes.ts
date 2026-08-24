@@ -15,16 +15,17 @@ export interface WDWorkerRequest {
   gridWidth: number;
   gridHeight: number;
   /**
-   * 格子緩衝。worker 只用它判斷「這一格是不是建築」（附掛時要收哪些格子）——
-   * 走訪規則不在這裡，在 `graphBuffer` 裡。
+   * The grid buffer. The worker uses it only to decide whether a cell is a building, which
+   * decides what attachment collects; the traversal rules are not here but in `graphBuffer`.
    */
   gridBuffer: SharedArrayBuffer | ArrayBuffer;
   /**
-   * 序列化的**轉置** RoadCellGraph。
+   * The serialised **transposed** RoadCellGraph.
    *
-   * 樓層與匝道規則在建圖時就消化掉了，worker 不解讀樓層 —— 那是 BUG-109 的
-   * 治本。轉置的理由見 BUG-237：成本加在目的地那一格，用正向圖跑反向 flood
-   * 會付成來源那格的價格。
+   * Level and ramp rules are consumed at build time and the worker never interprets a level,
+   * which is the underlying fix for BUG-109. The transpose is explained by BUG-237: cost is
+   * charged at the destination cell, and a reverse flood on the forward graph charges the source
+   * cell's price instead.
    */
   graphBuffer: ArrayBuffer;
   workplaces: WorkplacePosition[];
@@ -32,11 +33,11 @@ export interface WDWorkerRequest {
 }
 
 /**
- * Worker → Main messages
+ * Worker to main messages.
  *
- * `table` 的三個檢視是**用 transfer list 搬過來的**，不是複製。舊格式是逐工作地
- * 一份 `Record<string, number>`，4 萬人存檔實測光是讀一次 `e.data` 就要 1.1 秒
- * （375 個工作地、合計 408,712 個字串鍵）。
+ * `table`'s three views arrive **through a transfer list** rather than being copied. The old
+ * format was a `Record<string, number>` per workplace, where reading `e.data` alone measured 1.1
+ * seconds on a 40k save: 375 workplaces across 408,712 string keys.
  */
 export type WDWorkerResponse =
   | { type: 'RESULT'; requestId: number; table: WorkplaceDistanceBuffers }

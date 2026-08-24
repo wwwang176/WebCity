@@ -43,9 +43,10 @@ function buildCity() {
 
   // A district with a BILLABLE policy, so policyCost is non-zero.
   //
-  // 限制型條例（禁重工業、禁高密度）現在刻意不收費 —— 它們的代價是機會成本。
-  // 拿它們當夾具的話 policyCost 恆為 0，這支測試的不變量就沒有東西可驗。
-  // 費用也跟著分區格數走，所以格子要夠多。
+  // Restrictive ordinances (no heavy industry, no high density) carry no fee; their cost is
+  // opportunity cost. As a fixture they would hold policyCost at 0 and leave this invariant
+  // with nothing to check. The fee also scales with district cell count, so the district
+  // needs enough cells.
   const district = state.districts.createDistrict('Downtown');
   for (let x = 10; x < 20; x++) state.districts.addCellToDistrict(district.id, x, 9);
   state.policies.setPolicyLevel(district.id, PolicyType.ENCOURAGE_RECYCLING, 2);

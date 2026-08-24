@@ -29,8 +29,9 @@ export class WorkplaceDistanceClient {
   }
 
   /**
-   * @param graphBuffer 序列化的**轉置** RoadCellGraph。走訪規則（含樓層與
-   *   匝道）在建圖時就消化掉了，worker 不解讀樓層 —— 見 `WDWorkerRequest`。
+   * @param graphBuffer The serialised **transposed** RoadCellGraph. The traversal rules,
+   *   including levels and ramps, are consumed at build time and the worker never interprets a
+   *   level; see `WDWorkerRequest`.
    */
   compute(
     gridWidth: number,

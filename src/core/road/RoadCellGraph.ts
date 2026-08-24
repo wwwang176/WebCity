@@ -1,11 +1,13 @@
 /**
- * 路網的格子層圖 —— workplace 距離的同步與非同步兩條路共用的資料結構。
+ * The cell-level road graph, shared by the synchronous and asynchronous workplace distance paths.
  *
- * 節點是道路格（含高架），邊是 `UnifiedRoadLookup` 判定的合法鄰接。
+ * Nodes are road cells including elevated ones, and edges are the adjacencies
+ * `UnifiedRoadLookup` allows.
  *
- * **樓層與匝道規則在建圖時就被消化掉了** —— 拿到這張圖的人（尤其是 worker）
- * 看不到樓層，也不需要重新解讀規則。那是它存在的理由：規則只有一份
- * （BUG-109 的成因正是 worker 有一份看不到高架的平面緩衝）。
+ * **Level and ramp rules are consumed at build time**, so whoever holds the graph — the worker in
+ * particular — never sees levels and never re-interprets the rules. That is why it exists: the
+ * rules live in one place (BUG-109 was caused by the worker holding a flat buffer that could not
+ * see elevated roads).
  */
 
 import { parsePosKeyUnsafe, parseLevelFromKey, toPosKey, FOUR_NEIGHBORS } from '../grid/GridHelpers';
@@ -13,38 +15,39 @@ import { roadTileCost } from './roadCost';
 import type { UnifiedRoadLookup } from './UnifiedRoadLookup';
 
 /**
- * CSR（壓縮稀疏列）表示的路網圖。節點 i 的鄰接是
- * `targets[offsets[i] .. offsets[i+1])`。
+ * The road graph in compressed sparse row form. Node i's adjacency is
+ * `targets[offsets[i] .. offsets[i+1])`.
  *
- * **權重是整數**（`Uint16Array`，9 ~ 60，見 `roadCost.ts`）。整數加法可交換，
- * 所以正向與反向 flood 對同一條路必然算出位元相同的總和。浮點做不到 ——
- * 那不是精度問題，是順序問題。
+ * **Weights are integers** in a `Uint16Array`, from 9 to 60 (see `roadCost.ts`). Integer addition
+ * commutes, so a forward and a reverse flood over one route necessarily produce bit-identical
+ * totals. Floating point cannot: that is about order, not precision.
  */
 export interface RoadCellGraph {
   readonly nodeKeys: readonly string[];
   readonly indexOf: ReadonlyMap<string, number>;
-  /** 長度 n+1。 */
+  /** Length n+1. */
   readonly offsets: Uint32Array;
   readonly targets: Uint32Array;
-  /** 走進 targets[j] 那一格要付的成本。整數。 */
+  /** The integer cost of entering the cell at targets[j]. */
   readonly weights: Uint16Array;
   readonly nodeX: Uint16Array;
   readonly nodeY: Uint16Array;
-  /** 0 = 地面，1–3 = 高架。 */
+  /** 0 is ground, 1-3 elevated. */
   readonly nodeLevel: Uint8Array;
 }
 
-/** 從 key 取樓層。地面的 key 沒有第三段，回傳 0。 */
+/** The level from a key. A ground key has no third segment and returns 0. */
 export function levelOfKey(key: string): number {
   return parseLevelFromKey(key);
 }
 
 /**
- * 從 lookup 建圖。O(路格數 × 4)。
+ * Builds the graph from a lookup, in O(road cells x 4).
  *
- * **不要每次查詢都呼叫它。** `roadDistanceToTargets` 是每個市民呼叫一次的，
- * 在裡面建圖等於把 O(路格數) 乘上市民數。圖只在路網改變時才變，所以由
- * `SimulationLoop` 以 `commuteCache.roadGeneration` 為鍵持有。
+ * **Not to be called per query.** `roadDistanceToTargets` is called once per citizen, and
+ * building the graph inside it multiplies O(road cells) by the population. The graph changes only
+ * when the road network does, so `SimulationLoop` holds it, keyed on
+ * `commuteCache.roadGeneration`.
  */
 export function buildRoadCellGraph(lookup: UnifiedRoadLookup): RoadCellGraph {
   const nodeKeys = lookup.getAllCellKeys();
@@ -95,9 +98,9 @@ export function buildRoadCellGraph(lookup: UnifiedRoadLookup): RoadCellGraph {
   };
 }
 
-// ── flood 核心 ──────────────────────────────────────────────────────
+// ── The flood core ──────────────────────────────────────────────────
 
-/** 二元堆。節點是整數索引，成本是整數。 */
+/** A binary heap. Nodes are integer indices and costs are integers. */
 class NodeHeap {
   private idx: number[] = [];
   private cost: number[] = [];
@@ -139,24 +142,30 @@ class NodeHeap {
 }
 
 /**
- * 從 `seedNodes` 出發的加權 flood。回傳每個節點的成本，未到達為 -1。
+ * A weighted flood from `seedNodes`, returning each node's cost with -1 for unreached.
  *
- * 四個不變式 —— 同步查詢與 worker 都靠它們：
+ * Four invariants, relied on by both the synchronous query and the worker:
  *
- * 1. **成本加在目的地那一格**（`weights[j]` 是走進 `targets[j]` 的價格）。
- * 2. **`onSettle` 在 pop 時呼叫，不是 relax 時。** pop 順序就是成本遞增順序，
- *    所以第一次 settle 一定是最便宜的那條路。在 relax 時記錄會讓「先碰到的」
- *    永久獲勝 —— 門口一條鄉道贏過兩格外的高速公路（BUG-102）。
- * 3. **超過 `maxBudget` 的鄰居不入堆。**
- * 4. **成本全程整數。** `cost` 是 `Int32Array`，權重是 `Uint16Array`，兩者都
- *    精確；stale 判斷不可能因捨入而誤判。這也是「worker 與同步逐格相等」能
- *    成立的唯一理由 —— 浮點加法沒有結合律，反向走同一組邊會算出不同的位元。
+ * 1. **Cost is charged at the destination cell**: `weights[j]` is the price of entering
+ *    `targets[j]`.
+ * 2. **`onSettle` fires on pop, not on relax.** Pop order is increasing cost order, so the first
+ *    settle is always the cheapest route. Recording on relax lets whichever was reached first win
+ *    permanently: a rural lane at the door beats a motorway two cells away (BUG-102).
+ * 3. **Neighbours past `maxBudget` never enter the heap.**
+ * 4. **Costs are integers throughout.** `cost` is an `Int32Array` and the weights a
+ *    `Uint16Array`, both exact, so the stale check cannot misjudge through rounding. That is
+ *    also the only reason the worker and the synchronous path can agree cell for cell:
+ *    floating-point addition is not associative, and walking the same edges in reverse produces
+ *    different bits.
  *
- * `onSettle` 回傳 true 表示提早結束（同步查詢找齊目標之後就不必再走）。
+ * `onSettle` returning true ends the flood early, which the synchronous query uses once it has
+ * found every target.
  *
- * 這是**通用**的加權圖 Dijkstra，不假設權重來自路網。路網圖恰好讓每個節點的
- * 入邊權重一致（成本加在目的地），於是「重新 relax 成更便宜的值」與「過期
- * 堆項」兩條分支走不到 —— 但契約對任何圖都成立，測試用一張合成圖守著它們。
+ * This is a **general** weighted-graph Dijkstra and assumes nothing about the weights coming from
+ * a road network. The road graph happens to give every node uniform in-edge weights, since cost
+ * is charged at the destination, so the "relax to a cheaper value" and "stale heap entry"
+ * branches are unreachable — but the contract holds for any graph, and the tests guard them with
+ * a synthetic one.
  */
 export function floodRoadCellGraph(
   graph: RoadCellGraph,
@@ -176,7 +185,7 @@ export function floodRoadCellGraph(
 
   while (heap.size > 0) {
     const cur = heap.pop()!;
-    if (cost[cur.node]! < cur.cost) continue; // 過期的堆項
+    if (cost[cur.node]! < cur.cost) continue; // a stale heap entry
     if (onSettle && onSettle(cur.node, cur.cost)) return cost;
 
     for (let j = graph.offsets[cur.node]!; j < graph.offsets[cur.node + 1]!; j++) {
@@ -193,13 +202,13 @@ export function floodRoadCellGraph(
   return cost;
 }
 
-// ── 種子與附掛 ──────────────────────────────────────────────────────
+// ── Seeds and attachment ────────────────────────────────────────────
 
 /**
- * 建築格附近的道路節點（所有樓層）。
+ * The road nodes near a building cell, across every level.
  *
- * 家與工作都不是道路格，它們要「附掛」到 Chebyshev(reach) 內的路上 ——
- * 與 zone/civic 的內圈模型一致（`ZONE_ROAD_REACH`）。
+ * Neither a home nor a workplace is a road cell; each attaches to a road within Chebyshev(reach),
+ * matching the inner-ring model used by zoning and civic buildings (`ZONE_ROAD_REACH`).
  */
 export function seedNodesFor(
   graph: RoadCellGraph, x: number, y: number, reach: number,
@@ -209,7 +218,7 @@ export function seedNodesFor(
     for (let dx = -reach; dx <= reach; dx++) {
       const nx = x + dx, ny = y + dy;
       if (nx < 0 || ny < 0) continue;
-      // 同一個 (x, y) 可能有多層，全部都要 —— 高架也是路。
+      // One (x, y) can carry several levels, and all of them count: an elevated road is a road.
       for (let lv = 0; lv <= 3; lv++) {
         const key = lv === 0 ? toPosKey(nx, ny) : `${nx},${ny},${lv}`;
         const i = graph.indexOf.get(key);
@@ -221,26 +230,30 @@ export function seedNodesFor(
 }
 
 /**
- * 一個節點 settle 時，附掛它周圍 Chebyshev(reach) 內、`accept` 接受的格子。
+ * When a node settles, attaches the cells within Chebyshev(reach) of it that `accept` allows.
  *
- * **在 settle 當下呼叫，不是先收集整串再處理。** 這樣同步查詢才能在找齊目標
- * 時提早結束（舊實作有這個早退）；先收集再附掛等於永遠跑滿預算。
+ * **Called at the moment of settling rather than collecting the whole sequence first.** That is
+ * what lets the synchronous query exit early once it has found every target; collecting first and
+ * attaching afterwards always runs the full budget.
  *
- * 只記第一次 —— settle 順序即成本遞增順序，所以第一次就是最便宜的那條路
- * （BUG-102 的語意）。`dx`/`dy` 包含 `(0, 0)`，所以道路格自身也會被檢查。
+ * Only the first attachment is recorded: settle order is increasing cost order, so the first is
+ * the cheapest route (BUG-102's semantics). `dx`/`dy` include `(0, 0)`, so a road cell checks
+ * itself too.
  *
- * 注意這代表**一個路格拿到的不一定是它自己的成本** —— 它 reach 內若有更便宜
- * 的路格，就記那個。這是「附掛到最近的路」的正確語意，不是 bug。
+ * Note that this means **a road cell does not necessarily get its own cost**: a cheaper road cell
+ * within reach gives it that one instead. That is the correct meaning of attaching to the nearest
+ * road, not a defect.
  *
- * ## 為什麼收在密集陣列裡而不是 `Map<string, number>`
+ * ## Why a dense array rather than a `Map<string, number>`
  *
- * 這支函式每個 settle 的節點各跑一次，每次掃 (2·reach+1)² = 25 格。舊版每一格
- * 都配一個 `"x,y"` 字串當鍵。4 萬人存檔的 Chrome trace:一次同步查詢凍住主執行緒
- * 2 686ms，其中 **47.9% 的自身時間就在這裡**。改成以 `y * width + x` 當索引之後
- * 這一格的成本是一次整數寫入，沒有配置。
+ * This runs once per settled node and scans (2*reach+1)^2 = 25 cells each time. Allocating a
+ * `"x,y"` string key per cell dominated: a Chrome trace on a 40k save showed one synchronous
+ * query freezing the main thread for 2,686ms with **47.9% of its self time here**. Indexed by
+ * `y * width + x`, a cell costs one integer write and no allocation.
  *
- * @param out 長度 `width * height`，`-1` 代表這一格還沒被收。呼叫端負責填 -1。
- * @returns 這一次新收了幾格 —— 呼叫端用它做「找齊目標就早退」的計數。
+ * @param out Length `width * height`, with `-1` for a cell not yet attached. The caller fills it
+ *   with -1.
+ * @returns How many cells were newly attached, which the caller counts towards its early exit.
  */
 export function attachAtSettledNode(
   graph: RoadCellGraph,
@@ -260,8 +273,9 @@ export function attachAtSettledNode(
     const rowBase = ny * width;
     for (let dx = -reach; dx <= reach; dx++) {
       const nx = cx + dx;
-      // 上界的檢查是密集陣列要求的 —— 舊版靠 `accept` 擋掉界外，寫進陣列就不能
-      // 這樣賭了。行為不變:`accept` 本來就會拒絕它們。
+      // The bounds check is what the dense array requires: relying on `accept` to reject
+      // out-of-bounds cells is not a bet that can be taken when writing into an array. The
+      // behaviour is unchanged, since `accept` rejects them anyway.
       if (nx < 0 || nx >= width) continue;
       const idx = rowBase + nx;
       if (out[idx]! >= 0) continue;
@@ -273,23 +287,23 @@ export function attachAtSettledNode(
   return added;
 }
 
-// ── 轉置 ────────────────────────────────────────────────────────────
+// ── Transpose ───────────────────────────────────────────────────────
 
 /**
- * 轉置：每條邊 `(i → j, w)` 變成 `(j → i, w)`。節點不變。
+ * The transpose: every edge `(i -> j, w)` becomes `(j -> i, w)`, with the nodes unchanged.
  *
- * **權重跟著邊走，不跟著端點走** —— 這是它存在的全部理由。成本加在目的地
- * 那一格，所以正向邊 A→B 的價格是 cost(B)；在轉置圖上從 B 往外跑 Dijkstra，
- * 得到的正是每個 A 沿正向走到 B 的成本。
+ * **The weight follows the edge rather than an endpoint**, which is the whole reason this exists.
+ * Cost is charged at the destination, so a forward edge A->B is priced at cost(B); running
+ * Dijkstra outward from B on the transpose gives exactly each A's forward cost of reaching B.
  *
- * 直接在正向圖上從 B 反向擴散會付成 cost(A) —— 那是舊的
- * `reverseFloodFromWorkplace`（已隨本次改動刪除）的做法，也就是 BUG-237。
+ * Spreading backwards from B on the forward graph charges cost(A) instead, which is what the
+ * former `reverseFloodFromWorkplace` did, and which is BUG-237.
  */
 export function transposeRoadCellGraph(graph: RoadCellGraph): RoadCellGraph {
   const n = graph.nodeKeys.length;
   const e = graph.targets.length;
 
-  // 先數每個節點的入度
+  // Counts each node's in-degree first.
   const counts = new Uint32Array(n);
   for (let j = 0; j < e; j++) counts[graph.targets[j]!]!++;
 

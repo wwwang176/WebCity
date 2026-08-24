@@ -45,8 +45,9 @@ describe('A 格和 B 格通不通', () => {
     const r = roadConnectivity(c.graph(), { x: 0, y: 2 }, { x: 9, y: 2 });
 
     expect(r.connected).toBe(true);
-    // 兩端各自附掛到 reach 內的路,所以最便宜的一條是 x=2 走到 x=7:
-    // 五格雙線道 × 36。取的必須是最便宜的那一條,不是最後碰到的那一個目標。
+    // Each end attaches to a road within reach, so the cheapest route is x=2 to x=7: five
+    // two-lane cells at 36. What is taken has to be the cheapest route rather than the last
+    // target reached.
     expect(r.cost).toBe(5 * 36);
   });
 
@@ -70,10 +71,10 @@ describe('A 格和 B 格通不通', () => {
   });
 
   it('should not stop at a coverage budget', () => {
-    // 這就是 BUG-368 的重點。服務覆蓋走到預算耗盡就停，所以它的「0 覆蓋」
-    // 分不出「不連通」與「連通但太遠」。這一支必須分得出來。
+    // The point of BUG-368. Service coverage stops when its budget runs out, so its zero coverage
+    // cannot distinguish disconnected from connected but too far. This has to.
     const c = city(60, 6);
-    c.row(0, 49, 2, RoadType.RURAL); // 鄉道每格 60，走 49 格 = 2940
+    c.row(0, 49, 2, RoadType.RURAL); // rural is 60 per cell, so 49 cells is 2940
 
     const r = roadConnectivity(c.graph(), { x: 0, y: 2 }, { x: 49, y: 2 });
 
@@ -82,7 +83,8 @@ describe('A 格和 B 格通不通', () => {
   });
 
   it('should attach a building cell to a road within reach', () => {
-    // 家與工作都不是道路格 —— 它們附掛到 reach 內的路上，跟服務覆蓋同一條規則。
+    // Neither a home nor a workplace is a road cell: each attaches to a road within reach, the
+    // same rule service coverage uses.
     const c = city(20, 8);
     c.row(0, 9, 2);
 
@@ -102,7 +104,7 @@ describe('A 格和 B 格通不通', () => {
   });
 
   it('should walk across a bridge that is the only link', () => {
-    // 兩塊地面各自成塊，中間只有一座高架橋接著。
+    // Two separate patches of ground, joined only by a viaduct.
     const c = city(20, 6);
     c.row(0, 4, 2);
     c.row(8, 14, 2);
@@ -120,7 +122,8 @@ describe('A 格和 B 格通不通', () => {
   });
 
   it('should not invent a link where the bridge has no ramp', () => {
-    // 同樣兩塊地，橋兩端沒有匝道 —— 下不來的橋不是通路。
+    // The same two patches with no ramps at either end of the bridge: a bridge with no way down
+    // is not a route.
     const c = city(20, 6);
     c.row(0, 4, 2);
     c.row(8, 14, 2);

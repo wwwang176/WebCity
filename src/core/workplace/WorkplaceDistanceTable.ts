@@ -1,49 +1,51 @@
 /**
- * 「這一格到得了哪些工作地，各多少成本」—— 逐格的 CSR 表。
+ * Which workplaces a cell can reach and at what cost, as a per-cell CSR table.
  *
- * ## 為什麼換掉 `Record<string, number>`
+ * ## Why `Record<string, number>` was replaced
  *
- * 舊格式是逐工作地一份 `{ "x,y": cost }` 的普通物件。4 萬人存檔實測:375 個工作地
- * 合計 **408,712 個字串鍵**，worker 每次回傳都整包 structured clone 過來。量到的
- * 代價是**主執行緒單單讀一次 `e.data` 就要 1,057–1,131ms**，每 8 秒左右一次;
- * 之後 `Object.entries().map()` 重建 Map 再花 70ms。
+ * The old format was a plain `{ "x,y": cost }` object per workplace. On a 40k save that measured
+ * **408,712 string keys** across 375 workplaces, structured-cloned in full on every worker
+ * response. The measured cost was **1,057-1,131ms on the main thread simply to read `e.data`**,
+ * about every 8 seconds, plus 70ms to rebuild a Map with `Object.entries().map()`.
  *
- * 現在三個檢視都是 typed array，`postMessage` 帶 transfer list 是零複製。
+ * All three views are now typed arrays, and `postMessage` with a transfer list copies nothing.
  *
- * ## 為什麼索引是「格子」不是「工作地」
+ * ## Why it is indexed by cell rather than by workplace
  *
- * 主執行緒問的兩件事都以**家**為主詞:「哪些工作地到得了這一格」與「這一格到這
- * 幾個工作地各多遠」。舊格式兩者都得掃過全部工作地。轉置之後兩者都是讀一列。
+ * Both questions the main thread asks have a **home** as their subject: which workplaces this
+ * cell can reach, and how far this cell is from these workplaces. The old format scanned every
+ * workplace for either. Transposed, both are one row.
  *
- * ## 格式
+ * ## The format
  *
  * ```
- * offsets[cellIndex]     這一格的第一筆在哪
- * offsets[cellIndex + 1] 下一格的第一筆
- * wpIndex[i] / cost[i]   第 i 筆:哪個工作地、多少成本
+ * offsets[cellIndex]     where this cell's first entry is
+ * offsets[cellIndex + 1] the next cell's first entry
+ * wpIndex[i] / cost[i]   entry i: which workplace, at what cost
  * ```
  *
- * 跟 `RoadCellGraph` 用的是同一套 CSR 慣例。
+ * The same CSR convention `RoadCellGraph` uses.
  */
 
-/** `wpIndex` 是 `Uint16Array`，`0xffff` 留給「沒有」。 */
+/** `wpIndex` is a `Uint16Array`, with `0xffff` reserved for "none". */
 export const MAX_WORKPLACES = 65535;
 
 export interface WorkplaceDistanceBuffers {
   width: number;
   height: number;
-  /** 索引 → 工作地的 `"x,y"`。 */
+  /** Index to a workplace's `"x,y"`. */
   workplacePos: readonly string[];
-  /** 長度 `width * height + 1`。 */
+  /** Length `width * height + 1`. */
   offsets: Uint32Array;
   wpIndex: Uint16Array;
   cost: Int32Array;
 }
 
-/** 給 worker 用:一個工作地一個工作地收，最後轉置。 */
+/** For the worker: collects one workplace at a time and transposes at the end. */
 export class WorkplaceDistanceTableBuilder {
   private readonly positions: string[] = [];
-  /** 逐筆的格子索引與成本，工作地索引是 `wpOf`。三個平行陣列。 */
+  /** Per-entry cell indices and costs, with workplace indices in `wpOf`. Three parallel
+   *  arrays. */
   private cells: number[] = [];
   private costs: number[] = [];
   private wpOf: number[] = [];
@@ -53,7 +55,7 @@ export class WorkplaceDistanceTableBuilder {
   get workplaceCount(): number { return this.positions.length; }
 
   /**
-   * @param dense 長度 `width * height`，`-1` 代表這一格到不了。
+   * @param dense Length `width * height`, with `-1` for an unreachable cell.
    */
   addWorkplace(pos: string, dense: Int32Array): void {
     if (this.positions.length >= MAX_WORKPLACES) {
@@ -70,7 +72,7 @@ export class WorkplaceDistanceTableBuilder {
     }
   }
 
-  /** 計數排序轉置成 CSR。O(筆數 + 格數)。 */
+  /** A counting-sort transpose into CSR, in O(entries + cells). */
   build(): WorkplaceDistanceBuffers {
     const cellCount = this.width * this.height;
     const n = this.cells.length;
@@ -80,7 +82,7 @@ export class WorkplaceDistanceTableBuilder {
 
     const wpIndex = new Uint16Array(n);
     const cost = new Int32Array(n);
-    // `cursor` 從 offsets 複製一份 —— 直接拿 offsets 當游標會把它改掉。
+    // `cursor` is a copy of offsets: using offsets itself as the cursor would overwrite it.
     const cursor = offsets.slice(0, cellCount);
     for (let i = 0; i < n; i++) {
       const at = cursor[this.cells[i]!]!++;
@@ -95,7 +97,7 @@ export class WorkplaceDistanceTableBuilder {
   }
 }
 
-/** 給主執行緒用:唯讀查詢。 */
+/** For the main thread: read-only queries. */
 export class WorkplaceDistanceTable {
   private readonly indexOfPos: Map<string, number>;
 
@@ -107,19 +109,20 @@ export class WorkplaceDistanceTable {
   get workplaceCount(): number { return this.b.workplacePos.length; }
   get entryCount(): number { return this.b.wpIndex.length; }
 
-  /** `postMessage` 的 transfer list。三個檢視各自獨立，可以零複製搬過去。 */
+  /** The transfer list for `postMessage`. The three views are independent and move without a
+   *  copy. */
   static transferables(b: WorkplaceDistanceBuffers): ArrayBuffer[] {
     return [b.offsets.buffer as ArrayBuffer, b.wpIndex.buffer as ArrayBuffer, b.cost.buffer as ArrayBuffer];
   }
 
-  /** 這一格在 CSR 裡的區間。界外回一段空的。 */
+  /** This cell's range in the CSR. Out of bounds returns an empty one. */
   private rowOf(x: number, y: number): { from: number; to: number } {
     if (x < 0 || y < 0 || x >= this.b.width || y >= this.b.height) return { from: 0, to: 0 };
     const i = y * this.b.width + x;
     return { from: this.b.offsets[i]!, to: this.b.offsets[i + 1]! };
   }
 
-  /** 哪些工作地到得了這一格。 */
+  /** Which workplaces can reach this cell. */
   reachableWorkplacesAt(x: number, y: number): Set<string> {
     const { from, to } = this.rowOf(x, y);
     const out = new Set<string>();
@@ -127,7 +130,7 @@ export class WorkplaceDistanceTable {
     return out;
   }
 
-  /** 這一格到那個工作地的道路成本。到不了回 `undefined`。 */
+  /** The road cost from this cell to that workplace. `undefined` when unreachable. */
   costAt(x: number, y: number, workplacePos: string): number | undefined {
     const wp = this.indexOfPos.get(workplacePos);
     if (wp === undefined) return undefined;
@@ -137,10 +140,10 @@ export class WorkplaceDistanceTable {
   }
 
   /**
-   * 這一格到 `targets` 裡那些工作地各多遠。
+   * How far this cell is from each of the workplaces in `targets`.
    *
-   * 掃的是**這一格那一列**而不是 `targets` —— 一格平均到得了的工作地遠少於全城
-   * 工作地總數，掃列一次就把交集算完了。
+   * Scans **this cell's row** rather than `targets`: a cell reaches far fewer workplaces on
+   * average than the city has, and one pass over the row computes the intersection.
    */
   distancesAt(x: number, y: number, targets: ReadonlySet<string>): Map<string, number> {
     const { from, to } = this.rowOf(x, y);

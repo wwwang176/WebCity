@@ -10,7 +10,7 @@ import {
   serializeRoadCellGraph, graphBufferNodeCount,
 } from '../../road/RoadCellGraphBuffer';
 
-/** 不回覆的 worker stub —— 這個檔案測的是狀態機，不是 worker 的計算。 */
+/** A worker stub that never replies: this file tests the state machine, not the computation. */
 class FakeWorker {
   onmessage: ((e: { data: unknown }) => void) | null = null;
   postMessage(): void {}
@@ -19,14 +19,15 @@ class FakeWorker {
   terminate(): void {}
 }
 
-/** 一條直路就夠 —— 這個檔案測的是 cache 的狀態機，不是路網。 */
+/** One straight road is enough: this file tests the cache's state machine, not the network. */
 function roadGraphBuffer(): ArrayBuffer {
   const grid = new Grid(10, 10);
   for (let x = 0; x < 10; x++) grid.setCell(x, 5, { roadType: RoadType.TWO_LANE });
   return serializeRoadCellGraph(buildRoadCellGraph(UnifiedRoadLookup.fromGrid(grid)));
 }
 
-/** 快取吃的是 CSR 緩衝。這裡把「工作地 → 哪幾格多少錢」寫成表再組起來。 */
+/** The cache takes CSR buffers. This writes workplace-to-cell costs as a table and assembles
+ *  them. */
 const TW = 12, TH = 12;
 function buffersFrom(rows: Array<[string, Record<string, number>]>) {
   const b = new WorkplaceDistanceTableBuilder(TW, TH);
@@ -114,8 +115,8 @@ describe('WorkplaceDistanceCache', () => {
   });
 
   it('requestUpdate returns false without client', () => {
-    // 圖必須是**非空**的 —— 否則這條可能只是因為空圖提前返回而綠燈，
-    // 根本沒驗到「沒有 client」這條路徑。
+    // The graph has to be **non-empty**, or this could pass through the empty-graph early return
+    // without exercising the "no client" path at all.
     const cache = new WorkplaceDistanceCache();
     const graph = roadGraphBuffer();
     expect(graphBufferNodeCount(graph), 'fixture 的圖是空的，這條測不出東西')
@@ -125,10 +126,12 @@ describe('WorkplaceDistanceCache', () => {
   });
 
   it('requestUpdate refuses an empty graph', () => {
-    // 空圖代表城市還沒有路。送出去只會拿回一張空表，而空表會被標成 READY ——
-    // 全城變成互相到不了。寧可維持 EMPTY 走同步 fallback。
+    // An empty graph means the city has no roads yet. Sending it returns an empty table, which is
+    // marked READY, and the whole city becomes mutually unreachable. Staying EMPTY and falling
+    // back to the synchronous path is better.
     //
-    // 判斷要看 header 的 nodeCount，不是 byteLength：空圖的 buffer 有 header。
+    // The check reads the header's nodeCount rather than byteLength: an empty graph's buffer has
+    // a header.
     const cache = new WorkplaceDistanceCache(new WorkplaceDistanceClient(
       new FakeWorker() as unknown as Worker,
     ));
@@ -145,11 +148,13 @@ describe('WorkplaceDistanceCache', () => {
 
 describe('重算期間繼續用上一份', () => {
   /**
-   * 這一整組守的是 4 萬人存檔量到的東西:`runJobRelocation` 大約每 13 秒跑一次，
-   * 快取 READY 的窗只有 6~8 秒 —— 落在空檔就掉回同步 Dijkstra，**實測 2,684ms**，
-   * 而走快取只要 161ms。落在哪裡純粹是運氣。
+   * This group guards what was measured on a 40k save: `runJobRelocation` runs about every 13
+   * seconds while the cache is READY for only 6-8, so falling in a gap drops back to a synchronous
+   * Dijkstra at a **measured 2,684ms** against 161ms through the cache, and where it falls is
+   * luck.
    *
-   * 一棟房子升級不會改變路網距離。上一份表隔一輪的誤差，遠小於凍住主執行緒 2.7 秒。
+   * One house upgrading does not change road distances. A table one round behind is a far smaller
+   * error than freezing the main thread for 2.7 seconds.
    */
   function ready() {
     const cache = new WorkplaceDistanceCache();
@@ -171,7 +176,8 @@ describe('重算期間繼續用上一份', () => {
   });
 
   it('should throw the table away on reset', () => {
-    // 換一座城市。舊城的距離表對新城毫無意義,留著比沒有更糟。
+    // A different city. The old city's distance table means nothing for the new one, and keeping
+    // it is worse than having none.
     const cache = ready();
     cache.reset();
 
@@ -180,8 +186,8 @@ describe('重算期間繼續用上一份', () => {
   });
 
   it('should take a result that arrived after an invalidation', () => {
-    // 算到一半城市變了。這份結果不算「當前」，但它比手上那份新 ——
-    // 丟掉它等於抱著更舊的一份。
+    // The city changed midway. This result is not current, but it is newer than the one in hand,
+    // and discarding it means holding an older one.
     const cache = ready();
     cache.invalidate();
     cache.populateSync(buffersFrom([['5,5', { '3,3': 99 }]]));
@@ -192,12 +198,14 @@ describe('重算期間繼續用上一份', () => {
 
 describe('路網變了跟建築變了不是同一件事', () => {
   /**
-   * 續用舊表的前提是「這份距離還算得準」。**房子長高一層不會改變任何一條道路的
-   * 距離** —— 它只改變哪些格子算是工作地，而那件事由當下的候選集合過濾掉。
+   * Continuing with an old table assumes its distances are still about right. **A house gaining a
+   * floor changes no road distance**: it changes only which cells count as workplaces, and the
+   * current candidate set filters that.
    *
-   * 路網不一樣:拆一條路、改單行方向、升級路型，舊表就會把**已經到不了的工作地
-   * 說成到得了**（市民被指派到一個開不過去的班），或反過來把新通的工作地排除掉。
-   * 那不是「稍舊」，那是錯的。
+   * The road network is different: after a road is demolished, a one-way direction is reversed or
+   * a road type is upgraded, the old table calls **unreachable workplaces reachable**, assigning
+   * citizens to shifts they cannot drive to, or excludes newly connected ones. That is not stale
+   * but wrong.
    */
   function ready() {
     const cache = new WorkplaceDistanceCache();
@@ -223,8 +231,9 @@ describe('路網變了跟建築變了不是同一件事', () => {
   });
 
   it('should refuse a result computed on the old road network', () => {
-    // 算到一半路被拆了。這份結果是照舊路網算的 —— 收下它等於把錯的可達性
-    // 當成新的。建築變了那一種可以收（距離沒變），這一種不行。
+    // A road was demolished midway. This result was computed against the old network, and
+    // accepting it installs wrong reachability as fresh. A building change can be accepted, since
+    // distances are unchanged; this cannot.
     const cache = new WorkplaceDistanceCache();
     cache.populateSync(buffersFrom([['5,5', { '3,3': 10 }]]));
     (cache as unknown as { status: string }).status = 'computing';
@@ -254,8 +263,9 @@ describe('路網變了跟建築變了不是同一件事', () => {
 
 describe('worker 失敗之後的狀態機', () => {
   it('should not discard the next good result after a failed topology rebuild', () => {
-    // 路網變了 → 標記在途那份要作廢 → worker 這次卻失敗了。旗標沒清的話，
-    // **下一份照新路網算對的結果也會被丟掉**，要到第三次請求才會 READY。
+    // The network changed, the in-flight result was marked for rejection, and the worker then
+    // failed. Leaving the flag set means **the next result, correctly computed against the new
+    // network, is discarded too**, and READY arrives only on the third request.
     const cache = new WorkplaceDistanceCache();
     const inner = cache as unknown as {
       status: string;
@@ -265,12 +275,12 @@ describe('worker 失敗之後的狀態機', () => {
     };
     inner.status = 'computing';
     cache.invalidateTopology();
-    // worker 炸了 —— requestUpdate 的 catch 走的就是這一段。
+    // The worker threw, which is the path requestUpdate's catch takes.
     inner.onComputeFailed();
 
     expect(inner.topologyChangedDuringBuild, '失敗之後旗標還留著').toBe(false);
 
-    // 下一次成功的結果必須被收下。
+    // The next successful result has to be accepted.
     inner.applyResult(buffersFrom([['5,5', { '3,3': 7 }]]));
     expect(cache.hasTable).toBe(true);
     expect(cache.getDistance('3,3', '5,5')).toBe(7);

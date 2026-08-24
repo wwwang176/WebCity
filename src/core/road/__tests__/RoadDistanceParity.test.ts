@@ -11,7 +11,7 @@ const EW = RoadDirection.EAST | RoadDirection.WEST;
 const NS = RoadDirection.NORTH | RoadDirection.SOUTH;
 const W = 12, H = 6;
 
-/** 見 RoadCellGraph.test.ts 的說明。`withViaduct=false` 時不掛任何高架段。 */
+/** See RoadCellGraph.test.ts. With `withViaduct=false` no elevated segments are attached. */
 function testCity(withViaduct = true) {
   const cells = new Map<string, { roadType: number; roadFlags: number }>();
   for (let x = 0; x < W; x++) cells.set(`${x},1`, { roadType: RoadType.TWO_LANE, roadFlags: EW });
@@ -42,7 +42,7 @@ function testCity(withViaduct = true) {
   return { grid, lookup: new UnifiedRoadLookup(grid, em) };
 }
 
-/** 所有非道路格 —— 潛在的家與工作。 */
+/** Every non-road cell: the potential homes and workplaces. */
 function buildingCells(grid: { width: number; height: number; getCell(x: number, y: number): { roadType: number } | null }) {
   const out: string[] = [];
   for (let y = 0; y < grid.height; y++) {
@@ -54,14 +54,15 @@ function buildingCells(grid: { width: number; height: number; getCell(x: number,
 }
 
 /**
- * 重構的證明，而且是永久的。
+ * A permanent proof of the refactor.
  *
- * 新實作走圖，舊實作直接掃格子。**在沒有高架的世界裡**，同一組查詢兩者必須
- * 逐格精確相等 —— 用 toBe。成本是整數，所以「精確相等」是可達成的契約
- * （浮點下不是：加法沒有結合律）。
+ * One implementation walks the graph and the other scans cells directly. **In a world with no
+ * elevated roads**, one set of queries must give both exactly the same answer, cell for cell,
+ * checked with toBe. Costs are integers, so exact equality is an achievable contract; under
+ * floating point it is not, because addition is not associative.
  *
- * 有高架的世界裡兩者本來就該不同 —— 那正是 BUG-109。那一半由
- * `WorkerGraphParity` 與 `ElevatedAwareReachability` 守。
+ * With elevated roads they should differ, which is BUG-109. That half is guarded by
+ * `WorkerGraphParity` and `ElevatedAwareReachability`.
  */
 describe('roadDistanceToTargets parity with the ground-only implementation', () => {
   it('should match the ground-only result for every home, exactly', () => {
@@ -98,7 +99,7 @@ describe('roadDistanceToTargets parity with the ground-only implementation', () 
   });
 
   it('should build its own graph when none is passed', () => {
-    // 不傳圖也必須算得一樣 —— 只是慢。
+    // Without a graph passed in the answer must be the same, only slower.
     const { grid, lookup } = testCity(false);
     const targets = new Set(buildingCells(grid));
     const home = { x: 0, y: 0 };
@@ -116,7 +117,8 @@ describe('roadDistanceToTargets parity with the ground-only implementation', () 
   });
 
   it('should differ from the ground-only path once a viaduct exists', () => {
-    // 這一條證明走圖不是白工。有高架時，地面版本看不到它。
+    // Shows that walking the graph is not wasted work: with elevated roads, the ground-only
+    // version cannot see them.
     const { grid, lookup } = testCity(true);
     const targets = new Set(buildingCells(grid));
     const home = { x: 0, y: 0 };

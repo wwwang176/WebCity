@@ -19,28 +19,30 @@ import { DEFAULT_JOB_RELOCATION_CONFIG } from '../../citizen/JobRelocation';
 import type { WDWorkerRequest } from '../WorkplaceDistanceTypes';
 
 /**
- * BUG-109 的驗收測試。
+ * The acceptance test for BUG-109.
  *
- * 以前 worker 只拿到格子緩衝，看不到高架，而同步 fallback 是樓層感知的 ——
- * 在高架是唯一通路的城市裡兩者答案相反，市民的工作隨著快取 READY／stale
- * 來回得失。當時的對策是一道閘門：有任何一格高架道路就完全不用快取。
+ * The worker received only a grid buffer and could not see elevated roads while the synchronous
+ * fallback was level-aware, so in a city where an elevated road is the only route the two gave
+ * opposite answers and citizens gained and lost jobs as the cache went READY and stale. The
+ * response at the time was a gate: any elevated road cell disabled the cache entirely.
  *
- * **這個檔案原本測的是那道閘門，不是行為。** 它灌一份謊報的 ground-only
- * 快取（`distances: {}`），然後斷言市民仍然有工作 —— 通過的原因是閘門讓
- * fallback 獲勝。閘門移除後那份謊報會被採信，測試就紅了。
+ * **This file tested that gate rather than the behaviour.** It installed a lying ground-only
+ * cache (`distances: {}`) and asserted citizens still had jobs, which passed because the gate let
+ * the fallback win. Remove the gate and the lie is believed, and the test turns red.
  *
- * 現在改成用**真正的管線**暖機：建圖 → 轉置 → 序列化 → 在 FakeWorker 裡
- * 同步跑 `reverseFloodFromGraph` 回填。要斷言的變成「快取自己就是樓層感知
- * 的」—— 那才是治本的驗收條件。
+ * It now warms up through the **real pipeline**: build the graph, transpose it, serialise it, and
+ * run `reverseFloodFromGraph` synchronously inside a FakeWorker to fill it in. What is asserted
+ * is that **the cache is itself level-aware**, which is the acceptance condition for the
+ * underlying fix.
  *
- * 刪掉的三條：
- *   - leave the ready cache untouched     閘門「拒用但不清除」的語意，已消失
+ * Three tests were removed:
+ *   - leave the ready cache untouched — the gate's "refuse but do not clear" semantics, now gone
  *   - not disable the cache for elevated RAIL
  *   - disable the cache for an elevated road
- * 後兩條其實只在測 `ElevationManager` 的 predicate，已搬到
- * `elevation/__tests__/ElevationManager.test.ts`。
+ * The last two tested `ElevationManager`'s predicate and moved to
+ * `elevation/__tests__/ElevationManager.test.ts`.
  */
-/** 不回覆的 stub —— 給不需要真實計算的負向控制用。 */
+/** A stub that never replies, for negative controls that need no real computation. */
 class FakeWorker {
   onmessage: ((e: { data: unknown }) => void) | null = null;
   postMessage(): void {}
@@ -50,15 +52,15 @@ class FakeWorker {
 }
 
 /**
- * 真的跑一次 worker 的計算，同步回呼。
+ * Really runs the worker's computation, replying synchronously.
  *
- * 回覆不會遺失（`WorkplaceDistanceClient` 先登記 pending 再 postMessage），
- * 但 `.then(applyResult)` 仍排在 **microtask** —— 所以測試必須 await 一次，
- * 見 `flush()`。
+ * The reply cannot be lost, because `WorkplaceDistanceClient` registers the pending entry before
+ * posting, but `.then(applyResult)` is still queued as a **microtask**, so the test has to await
+ * once; see `flush()`.
  */
 class ComputingFakeWorker {
   onmessage: ((e: { data: unknown }) => void) | null = null;
-  /** 最後一次收到的圖 —— 用來驗證主執行緒傳的是**轉置**圖。 */
+  /** The last graph received, used to check the main thread sends the **transposed** one. */
   lastGraphBuffer: ArrayBuffer | null = null;
   postMessage(req: WDWorkerRequest): void {
     if (req.type !== 'COMPUTE') return;
@@ -77,7 +79,7 @@ class ComputingFakeWorker {
   terminate(): void {}
 }
 
-/** 讓已排入的 microtask 跑完。 */
+/** Lets the queued microtasks run. */
 const flush = (): Promise<void> => new Promise(r => { setTimeout(r, 0); });
 
 const HOME = '2,2';
@@ -117,9 +119,10 @@ function bridgedCity() {
   serviceBothSides(state);
 
   const em = new ElevationManager();
-  // 高架用 HIGHWAY（每格 9），地面是 TWO_LANE（每格 36）。
-  // **路型必須混合** —— 全部同路型時正向圖與轉置圖的邊集完全相同，
-  // 「傳錯圖」那類錯誤就測不出來（BUG-237 當初就是這樣漏掉的）。
+  // The elevated road is HIGHWAY at 9 per cell and the ground TWO_LANE at 36.
+  // **The road types have to differ**: with one type throughout, the forward and transposed
+  // graphs have identical edge sets and sending the wrong one is undetectable (which is how
+  // BUG-237 was missed).
   const seg = (isRamp: boolean, ascend: number) => ({
     roadType: RoadType.HIGHWAY, roadFlags: 12, railType: RailType.NONE, railFlags: 0,
     isRamp, rampAscendDirection: ascend,
@@ -133,7 +136,8 @@ function bridgedCity() {
   loop.setElevationManager(em);
   loop.setRoadLookup(new UnifiedRoadLookup(state.grid, em));
 
-  // 真的算 —— 不灌謊報的快取。快取要自己走完整條管線才會 READY。
+  // Really computed, with no lying cache installed: the cache reaches READY only by walking the
+  // whole pipeline itself.
   const worker = new ComputingFakeWorker();
   const cache = new WorkplaceDistanceCache(
     new WorkplaceDistanceClient(worker as unknown as Worker),
@@ -169,22 +173,23 @@ describe('workplace reachability is elevation-aware', () => {
   useSeededRandom();
 
   it('should employ someone whose only route to work is a viaduct, from the cache', async () => {
-    // BUG-109 的驗收條件。以前這裡靠「有高架就別用快取」的閘門；現在快取
-    // 本身就是樓層感知的，所以要斷言的是**快取真的 READY、真的被讀、
-    // 而且答案讓高架另一端的工作有人做**。
+    // BUG-109's acceptance condition. This relied on the "elevated roads disable the cache" gate;
+    // the cache is now level-aware itself, so what is asserted is that **the cache really reaches
+    // READY, is really read, and gives an answer that fills the job on the far side of the
+    // viaduct**.
     const { state, loop, cache } = bridgedCity();
 
-    // requestUpdate 在慢速槽才跑，所以要 tick 到它發生為止。
-    // 每個 tick 後 flush 一次：ComputingFakeWorker 是同步回覆的，但
-    // `.then(applyResult)` 排在 microtask。
+    // requestUpdate runs on a slow slot, so ticks continue until it happens.
+    // A flush after each tick: ComputingFakeWorker replies synchronously, but
+    // `.then(applyResult)` is queued as a microtask.
     for (let i = 0; i < 24 && !cache.isReady; i++) { loop.tick(); await flush(); }
     expect(cache.isReady, '快取沒有變成 READY —— 高架城市仍然沒在用快取').toBe(true);
 
-    // READY 之後才開始觀察，否則看到的是同步 fallback 的結果。
+    // Observation starts after READY, or what is seen is the synchronous fallback's result.
     //
-    // spy 的是 getReachableWorkplaces：那是**指派**路徑
-    // （buildWorkplaceReachabilityFromCache）實際呼叫的方法。換工作路徑用的
-    // 是 getDistancesFromHome，但它每 120 tick 才跑一次，這裡等不到。
+    // The spy is on getReachableWorkplaces, the method the **assignment** path
+    // (buildWorkplaceReachabilityFromCache) actually calls. The job-change path uses
+    // getDistancesFromHome, which runs once every 120 ticks and is too far away to wait for.
     const spy = vi.spyOn(cache, 'getReachableWorkplaces');
     for (let i = 0; i < 24; i++) { loop.tick(); await flush(); }
 
@@ -195,7 +200,8 @@ describe('workplace reachability is elevation-aware', () => {
   });
 
   it('should give the cache the same answer as the synchronous query', async () => {
-    // 兩條路一致才是治本。挑高架兩端的一對家與工作直接比。
+    // The two paths agreeing is what the underlying fix means. One home and workplace on either
+    // side of the viaduct are compared directly.
     const { loop, cache, state } = bridgedCity();
     for (let i = 0; i < 24 && !cache.isReady; i++) { loop.tick(); await flush(); }
     expect(cache.isReady, '快取沒有變成 READY').toBe(true);
@@ -211,12 +217,14 @@ describe('workplace reachability is elevation-aware', () => {
   });
 
   it('should hand the worker the transposed graph, not the forward one', async () => {
-    // 接線測試。轉置本身的正確性由 WorkerGraphParity 全域守著（它比對每一對
-    // 家與工作）；這裡守的是**主執行緒有沒有傳對那一張**。
+    // A wiring test. The transpose's own correctness is guarded exhaustively by
+    // WorkerGraphParity, which compares every home and workplace pair; what is guarded here is
+    // that **the main thread sends the right one**.
     //
-    // 為什麼不靠就業結果來測：bridgedCity 的 HOME 與 WORK 兩端都直接附掛到
-    // 高架格，路徑沒有用到會產生正反差異的「上下橋」邊，所以傳錯圖時那一對
-    // 的成本剛好相同 —— 用行為去測會是空轉的。直接比 buffer 才有辨識力。
+    // Why not through employment: bridgedCity's HOME and WORK both attach directly to elevated
+    // cells and the route uses no on-and-off-the-bridge edge that would differ by direction, so
+    // sending the wrong graph gives that pair the same cost and a behavioural test would be
+    // vacuous. Comparing the buffers directly discriminates.
     const { loop, cache, worker } = bridgedCity();
     for (let i = 0; i < 24 && !cache.isReady; i++) { loop.tick(); await flush(); }
     expect(worker.lastGraphBuffer, 'worker 根本沒收到圖').not.toBeNull();
@@ -224,7 +232,7 @@ describe('workplace reachability is elevation-aware', () => {
     const g = buildRoadCellGraph(loop.getRoadLookup()!);
     const expected = serializeRoadCellGraph(transposeRoadCellGraph(g));
     const forward = serializeRoadCellGraph(g);
-    // fixture 健全性：兩者必須不同，否則這條分辨不出東西
+    // Fixture sanity: the two have to differ, or this discriminates nothing.
     expect([...new Uint8Array(expected)], 'fixture 的圖是對稱的，這條測不出東西')
       .not.toEqual([...new Uint8Array(forward)]);
 
@@ -233,7 +241,8 @@ describe('workplace reachability is elevation-aware', () => {
   });
 
   it('fixture sanity: bridgedCity really mixes road tiers', () => {
-    // 全部同路型時正向圖與轉置圖相同，「傳錯圖」測不出來。
+    // With one road type throughout, the forward and transposed graphs are identical and sending
+    // the wrong one is undetectable.
     const { loop } = bridgedCity();
     const g = buildRoadCellGraph(loop.getRoadLookup()!);
     expect(new Set(g.weights).size, 'bridgedCity 只有一種路型 —— 正反向圖無法區分')

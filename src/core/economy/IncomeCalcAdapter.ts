@@ -39,8 +39,8 @@ export function buildIncomeCalcDeps(state: GameState): IncomeCalcDeps {
     taxRates: state.taxRates,
     getResidentEducations: (key) => educationsByHome.get(key) ?? EMPTY_EDUCATIONS,
     getRevenueMultiplier: (x, y, zoneType) => {
-      // 全城條例對每一格都生效，包含不屬於任何分區的格子 —— 那正是它「全城」的
-      // 意思，所以要在提早 return 之前乘。
+      // A city ordinance applies to every cell, including those in no district, which is what
+      // city-wide means, so it is multiplied in before the early return.
       const cityWide = state.ordinances.getRevenueMultiplier(zoneType);
       const district = state.districts.getDistrictAt(x, y);
       if (!district) return cityWide;

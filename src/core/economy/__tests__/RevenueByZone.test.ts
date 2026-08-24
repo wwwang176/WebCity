@@ -9,15 +9,17 @@ import { createGameState } from '../../simulation/GameState';
 import { getBuildingType } from '../../building/types';
 
 /**
- * 收入乘數只有座標，所以任何「收入代價」都會平均落在住宅、商業、工業、辦公上。
- * 而多數條例的代價本來就落在特定產業:回收增加的是商家的處理成本，跟住戶無關。
+ * The income multiplier receives only coordinates, so an income penalty spreads evenly over
+ * residential, commercial, industrial and office. Most ordinance costs land on one industry:
+ * recycling raises handling costs for businesses and leaves households untouched.
  */
 
 /**
- * 暫時把某一條政策的效果換掉。測的是機制，不是某一條政策現在剛好長什麼樣 ——
- * 綁死在真實條目上的話，之後調整那條政策的數字就會誤傷這支測試。
+ * Temporarily replaces one policy's effect. The subject is the mechanism, not the numbers a
+ * particular policy happens to carry; bound to the real entry, tuning those numbers would
+ * break this test.
  *
- * 傳進來的是**每一級一格的陣列**，跟 `POLICY_EFFECTS` 的形狀一致。
+ * `tiers` is one entry per level, matching the shape of `POLICY_EFFECTS`.
  */
 function withEffect(type: PolicyType, tiers: unknown[], body: () => void) {
   const saved = POLICY_EFFECTS[type];
@@ -38,7 +40,8 @@ describe('收入乘數認得分區類型', () => {
   });
 
   it('should still apply a flat multiplier to every zone', () => {
-    // `revenue` 與 `revenueByZone` 是兩個獨立的槓桿，加了後者不能讓前者失效。
+    // `revenue` and `revenueByZone` are independent levers; adding the latter must not
+    // disable the former.
     const dm = new DistrictManager();
     const d = dm.createDistrict('D');
     const pm = new PolicyManager(dm);
@@ -51,8 +54,9 @@ describe('收入乘數認得分區類型', () => {
   });
 
   it('should hand the building zone type to the multiplier', () => {
-    // 這條抓的是接線:簽章改了但呼叫端沒傳，PolicyManager 的單元測試照樣會過。
-    // buildingId 1 是 Small House（RESIDENTIAL_LOW），見 building/types.ts。
+    // This covers the wiring: if the signature changes but the caller stops passing the value,
+    // PolicyManager's own unit tests still pass. buildingId 1 is Small House
+    // (RESIDENTIAL_LOW), see building/types.ts.
     const HOUSE = 1;
     const expected = getBuildingType(HOUSE)!.zoneType;
     expect(expected, 'buildingId 1 不是住宅建築，這條測試的前提壞了')
@@ -69,7 +73,8 @@ describe('收入乘數認得分區類型', () => {
   });
 
   it('should hand the zone type through for a non-residential building too', () => {
-    // 住宅與非住宅是 calculateBuildingIncome 裡兩條不同的分支，各自呼叫一次。
+    // Residential and non-residential are separate branches in calculateBuildingIncome, each
+    // calling the multiplier once.
     const SHOP = 7;
     const expected = getBuildingType(SHOP)!.zoneType;
     expect(expected, 'buildingId 7 不是商業建築，這條測試的前提壞了')
@@ -88,11 +93,13 @@ describe('收入乘數認得分區類型', () => {
 
 describe('adapter 把建築的分區類型接對了', () => {
   it('should pass the building zone type, not a coordinate', () => {
-    // `ZoneType` 是數值 enum，所以 adapter 把 `x` 傳成 `zoneType` 型別檢查完全會過，
-    // 而只測 calculateBuildingIncome 的話那條錯線也照樣綠 —— 測試自己提供的
-    // callback 根本沒經過 adapter。這條走完整條路。
+    // `ZoneType` is a numeric enum, so an adapter passing `x` where `zoneType` belongs
+    // type-checks cleanly, and testing calculateBuildingIncome alone would not catch it
+    // because the callback the test supplies never goes through the adapter. This case runs
+    // the whole path.
     const state = createGameState(20, 20);
-    // 沒有電廠的話 calculateBuildingIncome 第一行就回 0，乘數永遠不會被呼叫。
+    // Without power, calculateBuildingIncome returns 0 on its first line and the multiplier
+    // is never called.
     state.power.isPowered = () => true;
 
     const SHOP = 7;

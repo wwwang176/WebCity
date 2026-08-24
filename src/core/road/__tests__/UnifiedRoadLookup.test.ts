@@ -45,9 +45,9 @@ describe('UnifiedRoadLookup', () => {
   // --- getAllKeysAtPosition ---
 
   describe('getAllKeysAtPosition', () => {
-    // 這幾條是突變驗證逼出來的:高架那一段原本沒有任何測試守著，把它整段
-    // 短路掉全套測試仍然全綠。而 `NetworkCoverage` 的水電洪水正是靠它找起點,
-    // 少了高架就是「橋上的路不通電」。
+    // Mutation testing forced these out: no test guarded the elevated branch, and short-circuiting
+    // it entirely left the whole suite green. `NetworkCoverage`'s utility flood finds its seeds
+    // through it, and without elevated roads a road on a bridge has no power.
     it('should list the ground road', () => {
       grid.setCell(4, 4, { roadType: RoadType.TWO_LANE });
 
@@ -69,7 +69,7 @@ describe('UnifiedRoadLookup', () => {
     });
 
     it('should skip an elevated rail deck', () => {
-      // 高架鐵軌住在同一張表裡，`roadType` 是 NONE。它不是路。
+      // Elevated rail lives in the same table with a `roadType` of NONE. It is not a road.
       em.set(4, 4, 1, { roadType: RoadType.NONE, roadFlags: 0, railType: 1, railFlags: 0, isRamp: false, rampAscendDirection: 0 });
 
       expect(lookup.getAllKeysAtPosition(4, 4)).toEqual([]);

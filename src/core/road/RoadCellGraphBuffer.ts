@@ -1,22 +1,24 @@
 /**
- * `RoadCellGraph` 的扁平位元組佈局，給 worker 用。
+ * The flat byte layout of a `RoadCellGraph`, for the worker.
  *
- * **只有格式，沒有演算法** —— 改權重公式不該碰這個檔案，改佈局不該碰 Dijkstra。
+ * **Format only, no algorithm**: changing the weight formula should not touch this file, and
+ * changing the layout should not touch Dijkstra.
  *
- * 佈局（little-endian）：
+ * The layout, little-endian:
  *
- *   Header 16 bytes: nodeCount u32 / edgeCount u32 / version u32 / reserved u32
- *   nodeX     Uint16[n]      （align 2）
- *   nodeY     Uint16[n]      （align 2）
+ *   Header, 16 bytes: nodeCount u32 / edgeCount u32 / version u32 / reserved u32
+ *   nodeX     Uint16[n]      (align 2)
+ *   nodeY     Uint16[n]      (align 2)
  *   nodeLevel Uint8[n]
- *   offsets   Uint32[n+1]    （align 4）
- *   targets   Uint32[e]      （align 4）
- *   weights   Uint16[e]      （align 2）
+ *   offsets   Uint32[n+1]    (align 4)
+ *   targets   Uint32[e]      (align 4)
+ *   weights   Uint16[e]      (align 2)
  *
- * 權重是 `Uint16`（成本是整數，最大 60），所以不需要 8-byte 對齊 ——
- * 這是成本整數化順帶簡化掉的一段。
+ * Weights are `Uint16`, since costs are integers with a maximum of 60, so no 8-byte alignment is
+ * needed — one of the simplifications integer costs brought with them.
  *
- * **key 字串不序列化** —— 從座標與樓層現組，省下數百個字串的 structured clone。
+ * **Key strings are not serialised**: they are assembled from coordinates and level, saving a
+ * structured clone of hundreds of strings.
  */
 
 import { toPosKey } from '../grid/GridHelpers';
@@ -28,21 +30,23 @@ const HEADER_BYTES = 16;
 const align4 = (n: number): number => (n + 3) & ~3;
 
 /**
- * 各段的起始位移。序列化與反序列化共用，避免兩邊算式漂移。
+ * Each section's starting offset, shared by serialisation and deserialisation so the two formulas
+ * cannot drift.
  *
- * 匯出僅供測試直接檢查對齊性 —— 用 fixture 跑跑看會不會丟 `RangeError`
- * 是不可靠的驗證，節點數剛好對齊時它就靜默失效。
+ * Exported only so tests can check alignment directly: running a fixture to see whether it throws
+ * `RangeError` is unreliable verification and fails silently whenever the node count happens to
+ * align.
  */
 export function layoutOf(n: number, e: number): {
   oNodeX: number; oNodeY: number; oLevel: number;
   oOffsets: number; oTargets: number; oWeights: number; total: number;
 } {
-  const oNodeX = HEADER_BYTES;              // 16，已 align 4
+  const oNodeX = HEADER_BYTES;              // 16, already aligned to 4
   const oNodeY = oNodeX + n * 2;
-  const oLevel = oNodeY + n * 2;            // Uint16 段長度必為偶數
-  const oOffsets = align4(oLevel + n);      // Uint32 需要 align 4
+  const oLevel = oNodeY + n * 2;            // a Uint16 section's length is always even
+  const oOffsets = align4(oLevel + n);      // Uint32 needs 4-byte alignment
   const oTargets = oOffsets + (n + 1) * 4;
-  const oWeights = oTargets + e * 4;        // 已 align 4，Uint16 只需 align 2
+  const oWeights = oTargets + e * 4;        // already aligned to 4, and Uint16 needs only 2
   return { oNodeX, oNodeY, oLevel, oOffsets, oTargets, oWeights, total: oWeights + e * 2 };
 }
 
@@ -68,10 +72,10 @@ export function serializeRoadCellGraph(graph: RoadCellGraph): ArrayBuffer {
 }
 
 /**
- * 不反序列化就讀出節點數。
+ * Reads the node count without deserialising.
  *
- * 「圖是不是空的」要用這個判斷，**不能用 `byteLength === 0`** —— 空圖的
- * buffer 有 16 bytes 的 header 加上一個 `offsets[0]`，長度是 20。
+ * Whether a graph is empty is decided with this and **not with `byteLength === 0`**: an empty
+ * graph's buffer is a 16-byte header plus one `offsets[0]`, a length of 20.
  */
 export function graphBufferNodeCount(buffer: ArrayBuffer): number {
   if (buffer.byteLength < HEADER_BYTES) return 0;
