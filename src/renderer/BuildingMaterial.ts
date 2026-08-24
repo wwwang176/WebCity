@@ -9,8 +9,8 @@ import { ZoneType } from '../core/grid/types';
 import { METRES_PER_CELL } from '../core/grid/constants';
 
 /**
- * 把 TS 數字寫成 GLSL 一定會當作 float 的形式 —— 整數在 GLSL 裡不是 float，
- * `vPartType > 1` 會是編譯錯誤。
+ * Writes a TS number in a form GLSL always reads as a float. An integer is not a float in GLSL,
+ * and `vPartType > 1` is a compile error.
  */
 function glslFloat(v: number): string {
   return Number.isInteger(v) ? `${v}.0` : String(v);
@@ -19,7 +19,7 @@ function glslFloat(v: number): string {
 const vec3 = ([r, g, b]: RoofColor) =>
   `vec3(${glslFloat(r)}, ${glslFloat(g)}, ${glslFloat(b)})`;
 
-/** 一個分區的色票鏈：把 [0, 1) 等分給 n 個顏色。 */
+/** One zone's palette chain: [0, 1) split evenly between n colours. */
 function pickChain(palette: readonly RoofColor[]): string {
   const n = palette.length;
   const head = palette.slice(0, n - 1)
@@ -29,19 +29,19 @@ function pickChain(palette: readonly RoofColor[]): string {
 }
 
 /**
- * `ZONE_CAT` 依 cat 遞增排序後的 key。分支順序與門檻都由它推導。
+ * `ZONE_CAT`'s keys sorted by ascending cat. Branch order and thresholds are both derived from it.
  */
 export function sortedFacadeKeys(): number[] {
   return sortKeysByCat(ZONE_CAT);
 }
 
 /**
- * 依 cat 遞增排序一張 cat 表的 key。
+ * Sorts a cat table's keys by ascending cat.
  *
- * 抽成獨立函式是為了測得到：`Object.entries` 對整數字串 key 是照**數值**
- * 遞增列舉的，而 `ZONE_CAT` 現在的 key 順序剛好等於 cat 順序 —— 所以直接
- * 用 `ZONE_CAT` 測的話，把 `.sort()` 整條拿掉也不會有任何測試轉紅。
- * 要用一張 key 順序與 cat 順序不一致的表才測得出排序有沒有真的發生。
+ * A separate function so it can be tested: `Object.entries` enumerates integer-string keys in
+ * **numeric** order, and `ZONE_CAT`'s key order currently equals its cat order, so testing against
+ * `ZONE_CAT` directly stays green even with `.sort()` removed entirely. Detecting whether sorting
+ * happens takes a table whose key order differs from its cat order.
  */
 export function sortKeysByCat(table: Record<number, number>): number[] {
   return Object.entries(table)
@@ -51,10 +51,12 @@ export function sortKeysByCat(table: Record<number, number>): number[] {
 }
 
 /**
- * 每個分支的上界 —— 相鄰兩個 cat 的中點。最後一個是 `Infinity`（GLSL 的 else）。
+ * Each branch's upper bound: the midpoint between adjacent cats. The last is `Infinity`, GLSL's
+ * else.
  *
- * 取中點而不是取下一個 cat：頂點色是 Float32，插值與往返可能讓 1.2 變成
- * 1.1999999。門檻壓在兩個分區正中間，誤差要大到半個間距才會走錯分支。
+ * The midpoint rather than the next cat: vertex colours are Float32, and interpolation and round
+ * trips can turn 1.2 into 1.1999999. With the threshold halfway between two zones, an error has
+ * to reach half a spacing before a branch is taken wrongly.
  */
 export function facadeThresholds(): number[] {
   const cats = sortedFacadeKeys().map(k => ZONE_CAT[k]!);
@@ -64,24 +66,25 @@ export function facadeThresholds(): number[] {
 }
 
 /**
- * 中點修到 6 位小數。
+ * Rounds a midpoint to 6 decimal places.
  *
- * `(0.2 + 0.4) / 2` 是 `0.30000000000000004` —— 17 位有效數字，而 GLSL ES 1.00
- * 的 highp float 只有約 7 位，那些尾數在編譯時就沒了。留著只會讓產生出來的
- * shader 難讀，並且與人手寫的同一個數字對不起來。
+ * `(0.2 + 0.4) / 2` is `0.30000000000000004`, 17 significant digits, while GLSL ES 1.00's highp
+ * float carries about 7 and those trailing figures are gone at compile time. Keeping them only
+ * makes the generated shader harder to read and stops it matching the same number written by hand.
  *
- * 6 位遠比分區間距（0.2）細，所以修完之後門檻仍嚴格落在兩個 cat 之間 ——
- * 那件事由測試守，不是靠這個註解。
+ * Six places is far finer than the 0.2 spacing between zones, so a rounded threshold still falls
+ * strictly between two cats — guarded by a test rather than by this comment.
  */
 function round6(v: number): number {
   return Number(v.toFixed(6));
 }
 
 /**
- * 給定 cat 值，這條 if 鏈會走進哪一個 key 的分支。
+ * Which key's branch this if-chain takes for a given cat value.
  *
- * 它是 GLSL 的 JS 分身，本身就是第二份資料 —— 所以測試會從產生出來的原始碼
- * 把門檻數字挖回來與 `facadeThresholds()` 比對，讓這個迴圈閉合。
+ * It is the GLSL's JS counterpart and therefore a second copy of the data, so the tests read the
+ * threshold numbers back out of the generated source and compare them against
+ * `facadeThresholds()`, closing the loop.
  */
 export function facadeKeyOf(cat: number): number {
   const keys = sortedFacadeKeys();
@@ -91,14 +94,16 @@ export function facadeKeyOf(cat: number): number {
 }
 
 /**
- * 由 `ZONE_CAT` 產生一條 if 鏈。屋頂色票與立面共用這一個 —— 兩份手寫的門檻
- * 表就是「改了一邊不會有任何東西報錯」的形狀。
+ * Generates one if-chain from `ZONE_CAT`. The roof palette and the facade share it: two
+ * hand-written threshold tables are exactly the shape of "changing one reports nothing".
  *
- * 這個函式**不排版**：`bodyOf` 與 `commentOf` 回傳的東西原樣輸出。它要能
- * 產生與手寫版逐字元相同的結果，而排版是那個目標的相反面。
+ * This function **does not format**: whatever `bodyOf` and `commentOf` return is emitted verbatim.
+ * It has to produce output character-for-character identical to the hand-written version, and
+ * formatting is the opposite of that goal.
  *
- * @param varName 屋頂鏈讀的是函式參數 `zoneCat`，立面鏈讀的是 varying `vZoneCat`。
- * @param join 屋頂鏈的分支之間是一個空格，立面鏈之間是一個空行。
+ * @param varName The roof chain reads the function parameter `zoneCat`; the facade chain reads the
+ *   varying `vZoneCat`.
+ * @param join The roof chain separates branches with a space, the facade chain with a blank line.
  */
 export function catChainGlsl(
   bodyOf: (facadeKey: number) => string,
@@ -120,34 +125,35 @@ export function catChainGlsl(
 }
 
 /**
- * `getRoofColor` 的函式體，由 `ROOF_PALETTE_TABLE` 產生。
+ * `getRoofColor`'s body, generated from `ROOF_PALETTE_TABLE`.
  *
- * 分區門檻取相鄰兩個 `ZONE_CAT` 的中點 —— 手寫的話門檻與分區常數是兩份資料，
- * 而改了一邊只會讓某個分區默默拿到別人的屋頂，不會有任何東西報錯。
- * 陣列索引在 WebGL1 的 GLSL ES 1.00 需要常數索引，所以仍然展開成 if 鏈。
+ * Zone thresholds are the midpoints between adjacent `ZONE_CAT` values. Written by hand, the
+ * thresholds and the zone constants are two copies of the data, and changing one quietly gives a
+ * zone somebody else's roof with nothing reported. Array indexing in WebGL1's GLSL ES 1.00
+ * requires constant indices, so this still expands into an if-chain.
  */
 function roofColorGlsl(): string {
   return catChainGlsl(zone => `\n    c = ${pickChain(roofPaletteFor(zone))};\n  `);
 }
 
 /**
- * 每個分區的立面規則 —— `{` 與 `}` 之間的 GLSL。
+ * Each zone's facade rules: the GLSL between `{` and `}`.
  *
- * 這些分支原本直接寫在 `BUILDING_FRAG` 裡，門檻也是手寫的六個數字，
- * 也就是 `ZONE_CAT` 的第二份資料。搬出來由 `catChainGlsl` 串接之後，
- * 新增一個立面類別只要在 `ZONE_CAT` 與這兩張表各加一列 —— 而不是同時
- * 記得去改一條藏在 340 行 GLSL 中間的 if 鏈。
+ * Written directly into `BUILDING_FRAG` with six hand-written thresholds, these branches are a
+ * second copy of `ZONE_CAT`. Extracted and joined by `catChainGlsl`, adding a facade category
+ * takes one row in `ZONE_CAT` and one in each of these two tables, rather than also remembering
+ * to edit an if-chain buried in the middle of 340 lines of GLSL.
  */
 const FACADE_BODY: Record<number, string> = {
   [ZoneType.RESIDENTIAL_LOW]: /* glsl */ `
       color = vBldgColor * 0.9;
       if (onWall) {
-        // 水平壁板（保留原本的質感）
+        // Horizontal siding, keeping the original texture.
         float board = fract(y / 0.06);
         float line = smoothstep(0.0, 0.06, board) * smoothstep(0.12, 0.06, board);
         vec3 wallColor = vBldgColor * (0.88 - line * 0.06);
 
-        // 住宅的窗比公寓大而稀疏，一層一排
+        // A house's windows are larger and sparser than a flat's: one row per storey.
         float houseFloor = floorHeight * 0.72;
         float houseWin = windowWidth * 1.35;
         float fy = y / houseFloor;
@@ -160,12 +166,14 @@ const FACADE_BODY: Record<number, string> = {
             smoothstep(0.30 - fwX, 0.30 + fwX, fracX) * smoothstep(0.70 + fwX, 0.70 - fwX, fracX)
           * smoothstep(0.30 - fwY, 0.30 + fwY, fracY) * smoothstep(0.72 + fwY, 0.72 - fwY, fracY);
 
-        // 一樓開一道門。位置必須綁在**建築**上，不能只看格內偏移：以 fract
-        // 量到牆中央的距離對每一格都成立，所以一面牆 1.5–2.3 格、四面牆繞
-        // 一圈，一棟房子會長出六到八道門（BUG-233）。
+        // One door on the ground floor. Its position has to be bound to the **building** rather
+        // than to an in-cell offset: measuring the distance to a wall's centre with fract holds
+        // for every cell, so with walls 1.5 to 2.3 cells wide on four sides, one house grows six
+        // to eight doors (BUG-233).
         //
-        // fragment shader 裡每棟固定的量只有格子座標與牆面法線，所以用格子
-        // 擲一面牆，再用格心對齊那面牆的中央。
+        // The only quantities constant per building inside the fragment shader are the cell
+        // coordinate and the wall normal, so the cell picks one wall and the cell centre aligns
+        // to that wall's middle.
         vec2 bldgCell = floor(vWorldPos.xz + 0.5);
         float wallCentre = (abs(n.x) > abs(n.z)) ? bldgCell.y : bldgCell.x;
         float doorSide = floor(hash21(bldgCell * 3.1 + 7.0) * 4.0);
@@ -173,14 +181,15 @@ const FACADE_BODY: Record<number, string> = {
           ? (n.x > 0.0 ? 0.0 : 1.0)
           : (n.z > 0.0 ? 2.0 : 3.0);
         bool doorRow = y < houseFloor;
-        // 半寬照舊是 0.18 格，只是改成量世界座標而不是 fract —— 實際寬度
-        // 不變（0.93–1.4 m）。
+        // The half-width is still 0.18 cells, measured in world coordinates rather than through
+        // fract; the actual width is unchanged at 0.93 to 1.4 m.
         bool onDoorWall = abs(doorSide - thisSide) < 0.5;
         float doorMask = (doorRow && onDoorWall
           && abs(wallU - wallCentre) < houseWin * 0.18
           && y < houseFloor * 0.78) ? 1.0 : 0.0;
-        // 一樓其餘的地方照樣開窗。以前這裡是 winMask = 0 —— 整層一樓沒有窗，
-        // 所以它拿不到 windowMask：沒有玻璃、沒有天空反射，夜裡也永遠不亮。
+        // The rest of the ground floor still gets windows. At winMask = 0 the whole ground floor
+        // has none and therefore no windowMask: no glass, no sky reflection, and never lit at
+        // night.
         winMask *= 1.0 - doorMask;
 
         vec2 wid = floor(vec2(fx, fy)) + floor(vWorldPos.xz + 0.5) * 4.7;
@@ -251,11 +260,13 @@ const FACADE_BODY: Record<number, string> = {
     `,
   [ZoneType.COMMERCIAL_LOW]: /* glsl */ `
       if (onWall && y < ${glslFloat(SHOPFRONT_CEILING)}) {
-        // 落地窗：一整層樓高的玻璃，中間只有豎向窗框，**不切樓層橫線** ——
-        // 這正是它與樓上那些小窗長得不一樣的原因，要保留。
+        // Shopfront glazing: a full storey of glass with vertical mullions only and **no
+        // horizontal floor line**, which is exactly why it looks different from the small windows
+        // above and has to stay that way.
         //
-        // 上緣用 SHOPFRONT_CEILING 而不是自己寫一個 0.22：雨遮就掛在這條線上，
-        // 兩邊各寫一份的話，雨遮會壓在落地窗中間。
+        // The top edge takes SHOPFRONT_CEILING rather than a local 0.22: the canopy hangs on that
+        // same line, and written on both sides the canopy lands across the middle of the
+        // glazing.
         float bay = wallU / 0.25;
         float bayU = fract(bay);
         float fwB = fwidth(bay);
@@ -266,20 +277,22 @@ const FACADE_BODY: Record<number, string> = {
         vec3 glassColor = mix(vec3(0.45, 0.58, 0.68), vec3(0.55, 0.7, 0.78), r);
         color = mix(vBldgColor * 0.6, glassColor, glass); // 窗框 -> 玻璃
 
-        // 這一扇的店今晚有沒有開。逐扇而不是逐棟 —— 一排店面全暗或全亮都不對。
+        // Whether this bay's shop is open tonight. Per bay rather than per building: a row of
+        // shopfronts all dark or all lit is wrong either way.
         float sPeriod = 150.0 + hash21(wid + 99.0) * 150.0;
         float sPhase = hash21(wid * 2.71 + 47.0) * sPeriod;
         float sEpoch = floor((uTime + sPhase) / sPeriod);
         float sLit = hash21(wid + sEpoch * 13.7);
-        // 店面比樓上的辦公室更常亮著 —— 一條商店街的夜景主角就是它。
+        // Shopfronts are lit more often than the offices above: they are what a shopping street
+        // looks like at night.
         float litThreshSF = mix(0.95, 0.25, occ);
         if (sLit > litThreshSF) {
           winBrightness = 0.7 + hash21(wid + 21.3) * 0.5;
           isLitWindow = glass > 0.5;
         }
         windowMask = glass;
-        // 落地窗白天已經有自己的玻璃色與逐扇變化。整片換成統一的天空反射色
-        // 會把那個變化抹掉，所以只取一部分。
+        // By day the glazing already has its own glass colour and per-bay variation. Replacing it
+        // wholesale with one sky reflection erases that, so only part is taken.
         glassiness = 0.45;
       } else if (onWall) {
         // Upper wall — sparse small windows
@@ -363,9 +376,10 @@ const FACADE_BODY: Record<number, string> = {
         float shade = smoothstep(0.0, 0.3, ridge) * smoothstep(1.0, 0.7, ridge);
         color = vBldgColor * (0.72 + shade * 0.18);
 
-        // 高窗帶。廠房的窗開得高 —— 下面那一段牆要靠著放料架與機具，所以
-        // 它不是一格一格的小窗，是一條沿著樓板線下方的長條窗。
-        // 靠既有的樓層節奏定位，所以一層樓的廠房與三層樓的都對得上。
+        // The high window band. A plant's windows sit high, because the wall below carries racking
+        // and machinery, so they are not a grid of small panes but a strip beneath the floor line.
+        // It is positioned from the existing floor rhythm, so a single-storey shed and a
+        // three-storey one both line up.
         float fy = y / floorHeight;
         float fx = (wallU + phase) / (windowWidth * 2.2);
         float fracY = fract(fy);
@@ -381,11 +395,12 @@ const FACADE_BODY: Record<number, string> = {
         float wPhase = hash21(wid * 2.71 + 47.0) * wPeriod;
         float wEpoch = floor((uTime + wPhase) / wPeriod);
         float wLit = hash21(wid + wEpoch * 13.7);
-        // 廠房夜裡亮的窗比住宅少 —— 只有值夜班的那幾跨。
+        // Fewer of a plant's windows are lit at night than a house's: only the bays on night
+        // shift.
         float litThreshIN = mix(0.98, 0.6, occ);
         vec3 winColor;
         if (wLit > litThreshIN) {
-          // 偏冷白：廠房用的是金屬鹵素／LED，不是住家的黃光。
+          // Cool white: a plant uses metal halide or LED, not a home's warm light.
           winColor = mix(vec3(0.90, 0.92, 0.80), vec3(0.78, 0.84, 0.72), wLit) * 0.85;
           winBrightness = 0.6 + hash21(wid + 21.3) * 0.4;
           isLitWindow = bandMask > 0.5;
@@ -396,8 +411,9 @@ const FACADE_BODY: Record<number, string> = {
         windowMask = bandMask;
 
         // Large loading door at ground level
-        // **畫在高窗之後**，所以它蓋掉落在同一段高度的高窗 —— 矮樓層的廠房
-        // 高窗帶會落進捲門的高度範圍，兩者疊在一起就是一扇長了窗戶的捲門。
+        // **Drawn after the high windows**, so it covers any that fall in the same height range:
+        // on a low-storey plant the band lands within the door's height, and the two overlapping
+        // give a roller door with windows in it.
         float doorU = fract(wallU / 0.35);
         if (y < 0.18 && doorU > 0.12 && doorU < 0.88) {
           color = vBldgColor * 0.4 + vec3(0.02, 0.02, 0.01);
@@ -405,9 +421,9 @@ const FACADE_BODY: Record<number, string> = {
           float slat = fract(y / 0.03);
           color *= 0.9 + 0.1 * step(0.5, slat);
 
-          // 有些捲門是開著的，裡面的燈光整片透出來。
-          // glassiness = 0：捲門會透光，但它不是玻璃 —— 白天不該變成一片藍，
-          // 也不該有陽光鏡面。
+          // Some roller doors are open, with the light inside spilling out across them.
+          // glassiness = 0: a roller door passes light but is not glass — by day it should
+          // neither turn blue nor take a sun highlight.
           vec2 did = vec2(floor(wallU / 0.35), 0.0) + floor(vWorldPos.xz + 0.5) * 9.1;
           float dPeriod = 200.0 + hash21(did + 5.0) * 200.0;
           float dPhase = hash21(did * 1.7 + 13.0) * dPeriod;
@@ -467,9 +483,11 @@ const FACADE_BODY: Record<number, string> = {
     `,
 
   [FACADE_CIVIC]: /* glsl */ `
-      // 公家建築：混凝土或磚石，窗比住宅大、比辦公稀疏，樓層之間有實體腰線。
-      // 一樓是挑高的門廳，所以窗格從門廳頂之上才開始 —— 直接從地面起算的話，
-      // 一座警局的一樓會長出跟三樓一樣的小窗，那正是它看起來不像公家建築的原因。
+      // Civic buildings: concrete or masonry, with windows larger than a house's and sparser than
+      // an office's, and a solid string course between floors. The ground floor is a double-height
+      // lobby, so the window grid starts above it; measured from the ground, a police station's
+      // ground floor grows the same small windows as its third, which is exactly why it stops
+      // looking like a civic building.
       float portico = floorHeight * 1.35;
       float fy = (y - portico) / floorHeight;
       float fx = (wallU + phase) / (windowWidth * 1.15);
@@ -483,13 +501,14 @@ const FACADE_BODY: Record<number, string> = {
         : 0.0;
 
       vec3 wallColor = vBldgColor * 0.93;
-      // 腰線：樓板位置的一條實體帶。公家建築的立面幾乎都有。
+      // The string course: a solid band at the floor line. Almost every civic facade has one.
       if (onWall && y > portico && (fracY > 0.86 || fracY < 0.08)) {
         wallColor = vBldgColor * 0.76;
       }
 
-      // 有電時約 85% 的窗亮著，而且哪幾扇亮會隨時間換 —— 值班室換班、
-      // 有人下班關燈。整棟全亮看起來像一張發光的板子，不像一棟建築。
+      // Powered, about 85% of the windows are lit, and which ones changes over time as shifts
+      // change and people leave. A whole building lit reads as a glowing slab rather than a
+      // building.
       vec2 wid = floor(vec2(fx, fy)) + floor(vWorldPos.xz + 0.5) * 6.1;
       float period = 150.0 + hash21(wid + 99.0) * 150.0;
       float phaseT = hash21(wid * 2.71 + 47.0) * period;
@@ -498,7 +517,7 @@ const FACADE_BODY: Record<number, string> = {
       vec3 winColor;
       if (lit) {
         float w = hash21(wid + 77.7);
-        // 偏冷白：公家建築用的是日光燈，不是住家的黃光。
+        // Cool white: a civic building uses fluorescent light, not a home's warm light.
         winColor = mix(vec3(0.92, 0.94, 0.88), vec3(0.82, 0.86, 0.80), w) * (0.82 + w * 0.14);
         winBrightness = 0.78 + hash21(wid + 21.3) * 0.22;
         isLitWindow = winMask > 0.5;
@@ -508,8 +527,8 @@ const FACADE_BODY: Record<number, string> = {
       color = mix(wallColor, winColor, winMask);
       windowMask = winMask;
 
-      // 門廳：一整層樓高的落地玻璃，柱間分割，**不切樓層橫線**。
-      // 畫在窗格之後，所以它蓋掉落在同一段高度的東西。
+      // The lobby: a full storey of glazing divided between columns, with **no horizontal floor
+      // line**. Drawn after the window grid, so it covers anything in the same height range.
       if (onWall && y <= portico && y > 0.06) {
         float bay = wallU / 0.34;
         float bayU = fract(bay);
@@ -520,11 +539,13 @@ const FACADE_BODY: Record<number, string> = {
         vec3 glassColor = mix(vec3(0.42, 0.52, 0.60), vec3(0.52, 0.62, 0.68), hash21(lid));
         color = mix(vBldgColor * 0.66, glassColor, glass);   // 石材柱 -> 玻璃
         windowMask = glass;
-        // 門廳整夜亮著 —— 值班台在那裡。這是公家建築夜景的主角。
+        // The lobby stays lit all night, since the duty desk is there. It is what a civic building
+        // looks like at night.
         isLitWindow = powered && glass > 0.5;
         winBrightness = 0.75 + hash21(lid + 4.1) * 0.3;
-        // 門廳玻璃白天已經有自己的顏色與逐柱變化，整片換成統一的天空反射色
-        // 會把那個變化抹掉，所以只取一部分（與商業低密度的落地窗同樣理由）。
+        // By day the lobby glazing already has its own colour and per-bay variation, and replacing
+        // it wholesale with one sky reflection erases that, so only part is taken — the same
+        // reason as low-density commercial's shopfronts.
         glassiness = 0.5;
       }
 
@@ -534,15 +555,17 @@ const FACADE_BODY: Record<number, string> = {
     `,
 
   [FACADE_UTILITY]: /* glsl */ `
-      // 公用設施：電廠、水廠、垃圾場、汙水廠。它們就是工業設施，只是歸市府管，
-      // 所以語彙沿用工業的浪板與高窗帶 —— 但沒有捲門（那是貨運廠房的東西），
-      // 換成常亮的警示燈帶。
+      // Utilities: power plant, water plant, landfill, sewage plant. They are industrial
+      // facilities that happen to be municipal, so they borrow industry's corrugated cladding and
+      // high window band — but no roller doors, which belong to a freight shed, replaced by a band
+      // of permanently lit warning lamps.
       if (onWall) {
         float ridge = fract(y / 0.09);
         float shade = smoothstep(0.0, 0.3, ridge) * smoothstep(1.0, 0.7, ridge);
         color = vBldgColor * (0.70 + shade * 0.20);
 
-        // 高窗帶：機具與管線佔滿下半段的牆，所以窗開在樓板線下方一條。
+        // The high window band: machinery and pipework fill the lower wall, so the windows sit in
+        // a strip beneath the floor line.
         float fy = y / floorHeight;
         float fx = (wallU + phase) / (windowWidth * 2.4);
         float fracY = fract(fy);
@@ -553,18 +576,20 @@ const FACADE_BODY: Record<number, string> = {
             smoothstep(0.64 - fwY, 0.64 + fwY, fracY) * smoothstep(0.88 + fwY, 0.88 - fwY, fracY)
           * smoothstep(0.10 - fwX, 0.10 + fwX, fracX) * smoothstep(0.90 + fwX, 0.90 - fwX, fracX);
 
-        // 這些設施是 24 小時運轉的，所以亮得比一般廠房多 —— 但仍有幾跨是
-        // 暗的（維修中、沒在用的機組），而且會隨時間換。
+        // These run around the clock and are therefore lit more than an ordinary plant, though a
+        // few bays stay dark — under maintenance, or an unused unit — and which ones changes over
+        // time.
         vec2 wid = floor(vec2(fx, fy)) + floor(vWorldPos.xz + 0.5) * 8.3;
         float wPeriod = 150.0 + hash21(wid + 99.0) * 150.0;
         float wPhase = hash21(wid * 2.71 + 47.0) * wPeriod;
         float wEpoch = floor((uTime + wPhase) / wPeriod);
-        // 24 小時運轉，但窗本來就少 —— 比公家機關再亮一點。
+        // Round-the-clock operation with few windows to begin with: a little brighter than a civic
+        // building.
         bool wOn = powered && hash21(wid + wEpoch * 13.7) > civicDark * 0.8;
         vec3 winColor;
         if (wOn) {
           float w = hash21(wid + 77.7);
-          // 金屬鹵素的冷白。
+          // Metal halide's cool white.
           winColor = mix(vec3(0.90, 0.93, 0.84), vec3(0.76, 0.83, 0.74), w) * 0.88;
           winBrightness = 0.72 + hash21(wid + 21.3) * 0.28;
           isLitWindow = bandMask > 0.5;
@@ -574,8 +599,9 @@ const FACADE_BODY: Record<number, string> = {
         color = mix(color, winColor, bandMask);
         windowMask = bandMask;
 
-        // 警示燈帶：高處一排常亮的紅點。**畫在高窗之後**，所以它蓋掉落在
-        // 同一段高度的高窗 —— 兩者疊在一起就是一扇長了紅點的窗。
+        // The warning lamp band: a high row of permanently lit red points. **Drawn after the high
+        // windows**, so it covers any in the same height range; overlapping, the two give a window
+        // with red dots in it.
         float lampU = fract(wallU / 0.55);
         float lampBand = smoothstep(0.40 - fwidth(y), 0.40 + fwidth(y), fracY)
                        * smoothstep(0.46 + fwidth(y), 0.46 - fwidth(y), fracY);
@@ -583,9 +609,11 @@ const FACADE_BODY: Record<number, string> = {
         if (lampDot > 0.5) {
           color = vec3(0.35, 0.10, 0.08);
           windowMask = 1.0;
-          // 警示燈不是玻璃 —— 白天不該變成一片藍，也不該有陽光鏡面。
+          // A warning lamp is not glass: by day it should neither turn blue nor take a sun
+          // highlight.
           glassiness = 0.0;
-          // 警示燈接的是緊急電源 —— 連停電都還亮著，所以它不看 powered。
+          // Warning lamps run on emergency power and stay lit through an outage, so they do not
+          // read powered.
           isLitWindow = true;
           winBrightness = 0.9;
         }
@@ -598,28 +626,30 @@ const FACADE_BODY: Record<number, string> = {
     `,
 
   [FACADE_TRANSIT]: /* glsl */ `
-      // 交通站點：玻璃幕與輕構造。月台與大廳整夜亮著 —— 車站是城市夜景裡
-      // 最亮的東西之一，比辦公樓亮得多。
+      // Transit stops: glazing and light construction. Platforms and concourses stay lit all
+      // night — a station is among the brightest things in a city at night, far brighter than an
+      // office block.
       float fy = y / (floorHeight * 1.1);
       float fx = (wallU + phase) / (windowWidth * 0.75);
       float fracY = fract(fy);
       float fracX = fract(fx);
       float fwX = fwidth(fx);
       float fwY = fwidth(fy);
-      // 窗框很細 —— 車站的玻璃幕是大片的。
+      // The mullions are thin: a station's glazing comes in large panes.
       float winMask = onWall
         ? smoothstep(0.06 - fwX, 0.06 + fwX, fracX) * smoothstep(0.94 + fwX, 0.94 - fwX, fracX)
         * smoothstep(0.08 - fwY, 0.08 + fwY, fracY) * smoothstep(0.90 + fwY, 0.90 - fwY, fracY)
         : 0.0;
       vec3 wallColor = vBldgColor * 0.55;   // 細窗櫺
 
-      // 車站是城市夜景裡最亮的東西之一，所以暗掉的比例比別人小一半 ——
-      // 但不是零：月台盡頭、沒開的閘門那幾格是暗的。
+      // A station is among the brightest things in a city at night, so its dark fraction is half
+      // everyone else's — but not zero: the platform's far end and the closed gatelines are
+      // dark.
       vec2 wid = floor(vec2(fx, fy)) + floor(vWorldPos.xz + 0.5) * 5.9;
       float period = 150.0 + hash21(wid + 99.0) * 150.0;
       float phaseT = hash21(wid * 2.71 + 47.0) * period;
       float epoch = floor((uTime + phaseT) / period);
-      // 車站是城市夜景裡最亮的東西之一，暗掉的比例只有別人的一半。
+      // Among the brightest things in a city at night, with half everyone else's dark fraction.
       bool lit = powered && hash21(wid + epoch * 13.7) > civicDark * 0.5;
       vec3 winColor;
       if (lit) {
@@ -638,14 +668,17 @@ const FACADE_BODY: Record<number, string> = {
     `,
 
   [FACADE_GREEN]: /* glsl */ `
-      // 綠地：公園與墓園。這裡幾乎沒有牆 —— 走到這個分支的是圍牆、擋土牆、
-      // 涼亭的柱間與管理室。
+      // Green space: parks and cemeteries. There is almost no wall here — what reaches this
+      // branch is boundary walls, retaining walls, the gaps between a pavilion's posts, and the
+      // keeper's hut.
       //
-      // **刻意不畫窗格。** 一個標籤分不出「管理室」與「圍牆」，而在圍牆上
-      // 開窗比在管理室上不開窗難看得多。公園的夜間存在感靠 PART_LAMP 的
-      // 庭園燈，不靠窗 —— 真實的公園入夜之後本來就是燈亮、房子暗。
+      // **No window grid, deliberately.** One tag cannot separate a keeper's hut from a boundary
+      // wall, and windows on a boundary wall look far worse than a hut without them. A park's
+      // presence at night comes from PART_LAMP garden lamps rather than windows, which is how a
+      // real park looks after dark: the lamps are lit and the buildings are not.
       if (onWall) {
-        // 石砌：水平砌縫加上世界座標的雜訊，避免一整面圍牆是死板的單色。
+        // Masonry: horizontal courses plus world-coordinate noise, so a whole boundary wall is not
+        // one flat colour.
         float course = fract(y / 0.055);
         float joint = smoothstep(0.0, 0.05, course) * smoothstep(0.10, 0.05, course);
         float grain = hash21(floor(vWorldPos.xz * 18.0)) * 0.06 - 0.03;
@@ -659,7 +692,7 @@ const FACADE_BODY: Record<number, string> = {
     `,
 };
 
-/** 掛在每個分支 `if` 之前的註解。與 `FACADE_BODY` 分開，讓 body 保持純 GLSL。 */
+/** The comment placed before each branch's `if`. Kept apart from `FACADE_BODY` so the bodies stay pure GLSL. */
 const FACADE_COMMENT: Record<number, string> = {
   [ZoneType.RESIDENTIAL_LOW]: '    // ---- RESIDENTIAL LOW: painted siding, no window grid ----\n    ',
   [ZoneType.RESIDENTIAL_HIGH]: '    // ---- RESIDENTIAL HIGH: medium-spaced windows ----\n    ',
@@ -673,7 +706,7 @@ const FACADE_COMMENT: Record<number, string> = {
   [FACADE_GREEN]: '    // ---- GREEN: masonry walls only, no window grid ----\n    ',
 };
 
-/** 立面的 if 鏈。讀的是 varying `vZoneCat`，分支之間空一行。 */
+/** The facade if-chain. It reads the varying `vZoneCat` and separates branches with a blank line. */
 function facadeChainGlsl(): string {
   return catChainGlsl(facadeBodyOf, {
     varName: 'vZoneCat',
@@ -683,12 +716,12 @@ function facadeChainGlsl(): string {
 }
 
 /**
- * 這個立面類別的 GLSL。少一張表就**當場炸掉**。
+ * This facade category's GLSL. A missing table **throws on the spot**.
  *
- * 沒有這個 throw 的話，在 `ZONE_CAT` 加了類別卻忘了寫立面，結果是那一類
- * 建築拿到一片沒有窗的純色牆 —— 畫面上看起來像「還沒做完」而不像「壞了」，
- * 而它會一路活到有人截圖問為止。整條 if 鏈存在的理由就是消滅這種靜默，
- * 所以它自己不能留一個靜默的預設值。
+ * Without the throw, adding a category to `ZONE_CAT` and forgetting its facade gives that class of
+ * building a flat windowless wall, which reads as unfinished rather than broken and survives until
+ * someone posts a screenshot asking about it. Eliminating that kind of silence is the whole reason
+ * the if-chain exists, so it cannot carry a silent default of its own.
  */
 function facadeBodyOf(key: number): string {
   const body = FACADE_BODY[key];
@@ -705,21 +738,22 @@ export const BUILDING_VERT = /* glsl */ `
 #include <common>
 #include <shadowmap_pars_vertex>
 
-// 頂點端也要時間 —— 水位的起伏是真的位移，不是 fragment 的花紋。
+// The vertex stage needs time too: the water level's motion is real displacement, not a fragment
+// pattern.
 uniform float uTime;
 
 attribute float aHighlight;
 attribute vec3 aHighlightColor;
 attribute float aOccupancy;
 attribute vec3 aSeed;
-// 逐幾何的建築色。
+// Per-geometry building colour.
 //
-// 實例化的建築走 instanceColor（InstancedMesh.setColorAt）；公共建築在遊戲
-// 裡是 Group 底下的普通 Mesh、展示區也是普通 Mesh，兩者都沒有 instanceColor，
-// 所以要靠這個屬性才有自己的顏色。以前那條路徑寫死 vec3(0.7) —— 不論警局
-// 還是消防局，牆一律是同一片灰。
+// Instanced buildings use instanceColor (InstancedMesh.setColorAt). Civic buildings are plain
+// Meshes under a Group in the game and plain Meshes in the showcase, and neither has
+// instanceColor, so this attribute is what gives them a colour of their own. Hard-coded to
+// vec3(0.7), that path leaves police station and fire station walls the same grey.
 //
-// 注意：這裡不能用反引號，整段 GLSL 住在一個模板字面值裡。
+// Note: no backticks here — the whole GLSL block lives inside a template literal.
 attribute vec3 aBldgColor;
 
 varying vec3 vNormal;
@@ -765,10 +799,12 @@ void main() {
 
   vec4 wPos = world * vec4(position, 1.0);
 
-  // 水位上下起伏。**只動朝上的面** —— 連池壁一起動的話整個槽會跟著呼吸。
+  // The water level rises and falls. **Only upward-facing surfaces move**: moving the walls too
+  // makes the whole vessel breathe.
   //
-  // fragment 端那道波光只是顏色，平面本身不動 —— 差別看得出來，所以真的
-  // 位移在這裡。相位吃世界座標，所以相鄰的兩座池不會同步。
+  // The fragment stage's shimmer is only colour and the plane itself does not move, which is a
+  // visible difference, so the real displacement happens here. The phase takes world coordinates,
+  // so two adjacent basins do not move in step.
   if (vPartType > ${glslFloat(PART_THRESHOLDS.WATER_MIN)}
     && vPartType < ${glslFloat(PART_THRESHOLDS.WATER_MAX)}
     && normal.y > 0.5) {
@@ -818,7 +854,8 @@ float hash21(vec2 p) {
 }
 
 // === Independent roof color palettes per zone ===
-// 函式體由 ColorPalettes.ROOF_PALETTE_TABLE 產生 —— 顏色寫在那裡才測得到。
+// The body is generated from ColorPalettes.ROOF_PALETTE_TABLE: the colours are testable only
+// where they live.
 vec3 getRoofColor(float zoneCat, float h) {
   vec3 c = vec3(0.35, 0.35, 0.38);
   ${roofColorGlsl()}
@@ -853,26 +890,27 @@ void main() {
   float directRatio = length(direct) / max(length(lighting), 0.001);
 
   bool isFoliage = vPartType > ${glslFloat(PART_THRESHOLDS.FOLIAGE_MIN)} && vPartType < ${glslFloat(PART_THRESHOLDS.FOLIAGE_MAX)};
-  // 金屬／深色細節：水塔、冷氣機、天線、管架。不畫窗戶，也不吃分區的
-  // 立面規則 —— 否則屋頂上的設備會長出一格一格的窗。
+  // Metal and dark details: water tanks, air handling units, antennas, pipe racks. No windows and
+  // no zone facade rules, or rooftop equipment grows a grid of windows.
   bool isDetail = vPartType > ${glslFloat(PART_THRESHOLDS.ROOF_BY_NORMAL)}
     && vPartType < ${glslFloat(PART_THRESHOLDS.LAMP_MIN)};
-  // 自己會發光的東西：燈頭、側招、廣告看板。與 isDetail 分開是必要的 ——
-  // 水塔與管架不該在晚上亮起來，而標籤只有一個的話唯一的選擇是兩者都不亮。
+  // Things that emit light: lamp heads, projecting signs, billboards. Separating them from
+  // isDetail is necessary — water tanks and pipe racks should not light up at night, and with a
+  // single tag the only alternative is that neither does.
   bool isLamp = vPartType > ${glslFloat(PART_THRESHOLDS.LAMP_MIN)}
     && vPartType < ${glslFloat(PART_THRESHOLDS.FOLIAGE_MIN)};
-  // 地面貼片：柏油、鋪面、標線。自己一個分支，否則會落到牆的分支 ——
-  // 柏油地面上長出一格一格的窗。
+  // Ground decals: asphalt, paving, markings. Their own branch, or they fall to the wall branch
+  // and asphalt grows a grid of windows.
   bool isGround = vPartType > ${glslFloat(PART_THRESHOLDS.GROUND_MIN)}
     && vPartType < ${glslFloat(PART_THRESHOLDS.GROUND_MAX)};
-  // 水面。與地面分支分開是必要的：地面的色譜是柏油到磚鋪，全是灰的，
-  // 所以「很暗的鋪面」是這套 shader 畫得出來最接近水的東西 —— 而一座碼頭
-  // 有一半的說服力來自它旁邊那片藍色。
+  // Water. Separating it from the ground branch is necessary: the ground ramp runs from asphalt to
+  // brick and is entirely grey, so very dark paving is the closest this shader can draw to water —
+  // and half a quay's conviction comes from the blue beside it.
   bool isWater = vPartType > ${glslFloat(PART_THRESHOLDS.WATER_MIN)}
     && vPartType < ${glslFloat(PART_THRESHOLDS.WATER_MAX)};
-  // 塗裝過的殼：水塔、煙囪、儲槽、冷卻塔。唯一照著量體自己的顏色畫的分支 ——
-  // 牆會被立面規則壓暗並加上高窗帶，而 isDetail 寫死一片金屬灰，
-  // 在那上面指定顏色等於沒指定。
+  // Painted shells: water tanks, stacks, storage vessels, cooling towers. The only branch that
+  // draws a mass in its own colour — walls are darkened by the facade rules and given a high
+  // window band, while isDetail hard-codes a metal grey, where specifying a colour does nothing.
   bool isShell = vPartType > ${glslFloat(PART_THRESHOLDS.SHELL_MIN)}
     && vPartType < ${glslFloat(PART_THRESHOLDS.SHELL_MAX)};
   bool isRoof = vPartType > ${glslFloat(PART_THRESHOLDS.ROOF_MIN)} || (n.y > 0.85 && vPartType < ${glslFloat(PART_THRESHOLDS.ROOF_BY_NORMAL)});
@@ -880,11 +918,14 @@ void main() {
 
   vec3 color;
 
-  // 這一塊白天是不是玻璃。1 = 整片換成天空反射並吃陽光鏡面（一般窗戶）；
-  // 0 = 完全不反射（工業的捲門夜裡會透光，但它不是玻璃）。落地窗取中間值 ——
-  // 它白天已經有自己的玻璃色與逐扇變化，整片換成統一的反射色會把那個變化抹掉。
+  // Whether this piece is glass by day. 1 replaces it entirely with a sky reflection and takes a
+  // sun highlight, as an ordinary window does; 0 reflects nothing, as an industrial roller door
+  // that passes light at night but is not glass. Shopfront glazing takes a middle value: by day it
+  // already has its own glass colour and per-bay variation, and one uniform reflection erases
+  // that.
   float glassiness = 1.0;
-  // 自發光。夜晚才加，而且加在陰影之後 —— 招牌與燈頭不會被自己的建築遮住。
+  // Emissive light, added only at night and after shadowing: a sign or a lamp head is not
+  // shadowed by its own building.
   vec3 emissive = vec3(0.0);
 
   if (isFoliage) {
@@ -896,34 +937,36 @@ void main() {
     color = baseGreen * (0.7 + 0.3 * topFade);
     color *= lighting;
   } else if (isLamp) {
-    // 燈罩／招牌面板。白天是灰白的板子，晚上自己發光。
+    // A lamp shade or sign panel: a grey-white board by day, glowing at night.
     float g = 0.62 + vSeed.z * 0.12;
     color = vec3(g, g * 0.98, g * 0.94) * lighting;
-    // **沒有人的建築不該亮。** 燒毀與空置的建築 occupancy 是 0，招牌就跟著暗。
-    // 用 smoothstep 而不是 step：半空的樓不必整排招牌一起熄。
+    // **An empty building should not light.** Burned and vacant buildings have occupancy 0 and
+    // their signage goes dark with them. smoothstep rather than step: a half-empty block does not
+    // need its whole run of signs to go out at once.
     emissive = vec3(1.0, 0.86, 0.58) * 0.95 * smoothstep(0.0, 0.15, vOccupancy);
   } else if (isDetail) {
-    // 略帶藍的中灰金屬，靠種子微調明度，避免整片設備同一個顏色
+    // A slightly blue mid-grey metal, with brightness varied by the seed so a field of equipment
+    // is not one colour.
     float m = 0.42 + vSeed.z * 0.16;
     color = vec3(m, m * 1.02, m * 1.06) * lighting;
   } else if (isShell) {
-    // 塗裝過的殼。這裡**不加任何花紋**：一支煙囪、一座水塔的說服力來自
-    // 它的剪影與那一片乾淨的顏色，多畫一條線都是雜訊。
+    // The painted shell. **No pattern is added here**: a stack's or a water tank's conviction
+    // comes from its silhouette and one clean colour, and any extra line is noise.
     //
-    // 係數在 parts.ts 的 SHELL_LIFT，而且**必須 ≥ 1** —— 小於 1 的話這條
-    // 分支只是把一個灰換成另一個灰，白色照樣畫成米灰（第一版寫 0.90，
-    // 截圖抓到的）。注意：這裡不能用反引號，整段 GLSL 住在一個模板字面值裡。
+    // The factor lives in parts.ts as SHELL_LIFT and **has to be >= 1**: below 1 this branch merely
+    // swaps one grey for another and white still renders beige-grey, as at 0.90. Note: no
+    // backticks here — the whole GLSL block lives inside a template literal.
     float lift = ${glslFloat(SHELL_LIFT.BASE)} + ${glslFloat(SHELL_LIFT.TOP)} * max(n.y, 0.0);
     color = vBldgColor * lift * lighting;
   } else if (isWater) {
-    // 色譜三段：**泥漿 → 深水 → 淺水**，由 B 通道挑。
+    // A three-segment ramp — **sludge, deep water, shallow water** — selected by the B channel.
     //
-    // 原本只有深藍到淺藍兩端，而汙水是土色的 —— 那個顏色在藍色的色譜上
-    // 不存在，shade 調到 0 也只是很深的藍。轉折點在 parts.ts 的
-    // WATER_MURK_MAX，兩座廠的 shade 都對著它測。
+    // With only deep to pale blue, sewage's earth colour does not exist on the ramp and shade at 0
+    // is still very dark blue. The turning point lives in parts.ts as WATER_MURK_MAX, and both
+    // plants' shade values are tested against it.
     //
-    // 波光是兩道不同頻率的正弦相乘，隨時間走 —— 靜止的色塊在等角視角下
-    // 看起來是一塊有顏色的地板，不是水。
+    // The shimmer is two sine waves of different frequencies multiplied together and moving over
+    // time: a static patch reads in an isometric view as coloured flooring rather than water.
     vec3 murk = vec3(0.34, 0.27, 0.14);
     vec3 deep = vec3(0.05, 0.18, 0.34);
     vec3 shallow = vec3(0.13, 0.42, 0.66);
@@ -935,11 +978,12 @@ void main() {
       ? mix(murk, deep, s / murkMax)
       : mix(deep, shallow, (s - murkMax) / (1.0 - murkMax));
     color *= lighting;
-    // 水面會反天空。比玻璃弱得多，但少了它，夜裡的水是一塊純黑。
+    // Water reflects the sky, far more weakly than glass; without it, water at night is pure
+    // black.
     glassiness = 0.35;
   } else if (isGround) {
-    // 柏油 -> 混凝土 -> 磚鋪，由頂點的 B 通道決定。加一點世界座標雜訊，
-    // 否則一整片鋪面是死板的單一色塊。
+    // Asphalt to concrete to brick, selected by the vertex B channel, with a little
+    // world-coordinate noise so a large paved area is not one flat block of colour.
     vec3 tarmac = vec3(0.20, 0.20, 0.21);
     vec3 paving = vec3(0.60, 0.58, 0.55);
     float grain = hash21(floor(vWorldPos.xz * 26.0)) * 0.07 - 0.035;
@@ -952,15 +996,16 @@ void main() {
     color *= lighting;
   } else {
     // === WALL — zone-specific patterns ===
-    // 每棟樓自己的立面節奏。以前這些是常數，所以整座城市的塔樓共用同一個
-    // 窗戶格；量體再怎麼變，立面看起來還是同一棟。
+    // Each building's own facade rhythm. As constants, every tower in the city shares one window
+    // grid, and however the masses vary the facades still read as one building.
     float seedRhythm = vSeed.x;
-    // 相位偏移只改起算點，不改尺度 —— 窗戶仍是真實世界尺寸，但相鄰建築的
-    // 窗戶不再橫向對齊成一條線。
+    // The phase offset moves the starting point without changing the scale: windows keep their
+    // real-world size, and neighbouring buildings' windows stop aligning into one horizontal
+    // line.
     float phase = vSeed.y * 10.0;
-    // 樓層高度的實體在 propBands.FLOOR_HEIGHT_UNITS —— 幾何（雨遮掛在哪）
-    // 與 shader（窗戶畫在哪）對不上的話，雨遮會壓在窗戶中間，而那不會有
-    // 任何東西報錯。
+    // The storey height's value lives in propBands.FLOOR_HEIGHT_UNITS. With the geometry, which
+    // decides where a canopy hangs, disagreeing with the shader, which decides where a window is
+    // drawn, the canopy lands across the middle of a window and nothing reports it.
     float floorHeight = mix(${glslFloat(FLOOR_HEIGHT_UNITS.MIN)}, ${glslFloat(FLOOR_HEIGHT_UNITS.MAX)}, seedRhythm);
     float windowWidth = mix(0.16, 0.24, seedRhythm);
     float y = vWorldPos.y;
@@ -974,21 +1019,22 @@ void main() {
     // Occupancy-adjusted lit threshold: fewer lit windows when building is less occupied
     // occ=0 → no windows lit at all (abandoned/burned/empty buildings)
     float occ = vOccupancy < 0.01 ? -1.0 : clamp(vOccupancy, 0.0, 1.0);
-    // 公共建築的夜間語意與分區建築不同：它們不是住的，所以「多少人住在裡面」
-    // 對它們沒有意義 —— 變暗的原因是**停電**。aOccupancy 在公共建築上載的
-    // 因此是「有沒有電」，而不是使用率。
+    // Civic buildings' night semantics differ from zoned buildings': nobody lives in them, so how
+    // many people are inside means nothing, and what darkens one is **a power cut**. So
+    // aOccupancy on a civic building carries whether it has power rather than a utilisation
+    // rate.
     bool powered = occ > 0.0;
-    // 有電的時候，亮窗的門檻。這是住宅那條規則在住戶比例 85% 時的值：
-    // 住宅高密度是 mix(0.95, 0.4, occ)，代入 0.85 得 0.4825 —— 也就是
-    // 大約一半的窗亮著，而不是「85% 的窗亮著」。
+    // The lit-window threshold when powered. It is the residential rule's value at 85% occupancy:
+    // high-density residential is mix(0.95, 0.4, occ), and 0.85 gives 0.4825 — about half the
+    // windows lit rather than 85% of them.
     //
-    // 這兩件事差很多：85% 亮看起來仍然像一張發光的板子，一半亮才看得出
-    // 「有的開有的關」，而要的是後者。
+    // The two differ considerably: 85% lit still reads as a glowing slab, and only half lit reads
+    // as some on and some off, which is what is wanted.
     //
-    // 哪幾扇亮會隨 uTime 的 epoch 換（見各分支），週期 150-300 秒 ——
-    // 那個「開開關關」是慢的，與住宅同一個節奏。
+    // Which windows are lit changes with uTime's epoch (see the individual branches) on a 150 to
+    // 300 second period: the switching is slow, at the same rhythm as residential.
     //
-    // 注意：這裡不能用反引號，整段 GLSL 住在一個模板字面值裡。
+    // Note: no backticks here — the whole GLSL block lives inside a template literal.
     float civicDark = 0.4825;
 
 ${facadeChainGlsl()}
@@ -1012,8 +1058,8 @@ ${facadeChainGlsl()}
     color *= shadowVal;
   #endif
 
-  // 日夜係數算在 windowMask 的判斷**之外** —— 招牌與燈頭沒有窗戶，
-  // 但它們一樣要知道現在是不是晚上。
+  // The day-night factor is computed **outside** the windowMask test: signage and lamp heads have
+  // no windows and still need to know whether it is night.
   // Per-building random offset so lights turn on gradually during dusk
   float bldgRand = fract(sin(dot(floor(vWorldPos.xz), vec2(12.9898, 78.233))) * 43758.5453);
   float onOffset = bldgRand * 0.3; // stagger over 0.3 sunIntensity range
@@ -1039,7 +1085,8 @@ ${facadeChainGlsl()}
     }
   }
 
-  // 自發光加在陰影之後：燈與招牌自己就是光源，被自己的建築遮住沒有道理。
+  // Emissive light is added after shadowing: a lamp or a sign is a light source itself, and being
+  // shadowed by its own building makes no sense.
   color += emissive * nightFactor;
 
   // Underground mode: white model effect (fade to near-white)
@@ -1082,7 +1129,7 @@ export function getBuildingMaterial(): THREE.ShaderMaterial {
   return _buildingMaterial;
 }
 
-/** 測試用：清掉 singleton，讓下一次 getBuildingMaterial 重新建立。 */
+/** For tests: clears the singleton so the next getBuildingMaterial rebuilds it. */
 export function resetBuildingMaterial(): void {
   _buildingMaterial = null;
 }
