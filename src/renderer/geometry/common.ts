@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 
-/** 為 BufferGeometry 設定統一的頂點顏色。 */
+/** Sets one uniform vertex colour across a BufferGeometry. */
 export function setVertexColors(geo: THREE.BufferGeometry, r: number, g: number, b: number): void {
   const count = geo.attributes.position!.count;
   const colors = new Float32Array(count * 3);

@@ -16,10 +16,11 @@ const M = (m: number) => m / METRES_PER_CELL;
 interface PropFingerprint { tris: number; fp: string }
 
 /**
- * 穩定的指紋：所有頂點座標與標籤，量化到 1e-6 之後累加。
+ * A stable fingerprint: every vertex coordinate and tag, quantised to 1e-6 and accumulated.
  *
- * 只比三角形數不夠 —— 把一棵樹搬到別的位置、換個半徑、標錯零件，三角形數
- * 都不會變。這次是 20 個函式的機械搬移，需要比得出「一模一樣」的東西。
+ * A triangle count alone is not enough: moving a tree, changing its radius or mis-tagging a piece
+ * all leave the count unchanged. A mechanical move of 20 functions needs something that can prove
+ * "identical".
  */
 function fingerprint(g: THREE.BufferGeometry): string {
   let h = 2166136261;
@@ -47,13 +48,14 @@ function tagsOf(geos: ReturnType<typeof columnarTree>): number[] {
 }
 
 /**
- * 植栽圖元。
+ * Planting primitives.
  *
- * 抽出來是因為公共建築原本自己寫了一棵樹 —— 兩棵樹在同一座城市裡長得
- * 不一樣，而且改一邊不會連動另一邊。
+ * Separated because a civic building drawing its own tree gives two differently shaped trees in
+ * one city, with a change to one not reaching the other.
  *
- * 這個模組**不知道**呼叫者是誰：它吃世界座標與尺寸，不吃「格子的物件帶」。
- * 住宅那一側從帶算出座標再呼叫它，公共建築直接給座標。
+ * This module **does not know** who calls it: it takes world coordinates and sizes, not "the
+ * cell's prop band". The residential side computes coordinates from its band and then calls in,
+ * while civic buildings pass coordinates directly.
  */
 describe('柱狀樹', () => {
   it('should be a trunk plus a crown, not one lump', () => {
@@ -62,8 +64,8 @@ describe('柱狀樹', () => {
   });
 
   it('should tag the trunk as detail and the crown as foliage', () => {
-    // 樹幹標 PART_WALL 的話它會長出窗戶；樹冠標錯就不是綠的。
-    // 逐位比對不行 —— 頂點色是 Float32，0.2 存不下。
+    // A trunk tagged PART_WALL grows windows, and a mis-tagged crown is not green. Exact
+    // comparison does not work: vertex colours are Float32 and cannot hold 0.2.
     const [trunk, crown] = tagsOf(columnarTree(0, 0, 6, M(1.2)));
     expect(trunk).toBeCloseTo(PART_DETAIL, 6);
     expect(crown).toBeCloseTo(PART_FOLIAGE, 6);
@@ -88,11 +90,13 @@ describe('柱狀樹', () => {
   });
 
   it('should stand where it was put', () => {
-    // 比對「同一棵樹放在原點與放在 (0.4, −0.25) 的差」，而不是量它的中心。
+    // This compares the same tree at the origin against the same tree at (0.4, -0.25), rather
+    // than measuring its centre.
     //
-    // 樹幹是五邊柱，端面又是扇形（有中心頂點），所以包圍盒中心與頂點平均
-    // **都不在軸心上** —— 兩者離軸心各差約 1 mm。那不是「位置錯了」，
-    // 但用它們當斷言會讓這條測試在一個與位置無關的理由上紅。
+    // The trunk is a five-sided prism whose end caps are fans with a centre vertex, so **neither**
+    // the bounding box centre nor the vertex mean lies on the axis; each is about 1 mm off. That
+    // is not a positioning error, but asserting on either would turn this case red for a reason
+    // unrelated to position.
     const at0 = columnarTree(0, 0, 6, M(1.2))[0]!;
     const at1 = columnarTree(0.4, -0.25, 6, M(1.2))[0]!;
     const p0 = at0.getAttribute('position');
@@ -106,7 +110,8 @@ describe('柱狀樹', () => {
   });
 
   it('should report a radius wide enough to bound the crown', () => {
-    // 公共建築用它做佔地檢查 —— 少報的話樹會伸出去壓到鄰格。
+    // Civic buildings use it for the plot check: under-reported, a tree reaches out over a
+    // neighbouring cell.
     const r = M(1.2);
     const [, crown] = columnarTree(0, 0, 6, r);
     crown!.computeBoundingBox();
@@ -128,13 +133,14 @@ describe('灌木球', () => {
 });
 
 /**
- * 住宅的樹**一個三角形都不能變**。
+ * The residential trees must not change by **a single triangle**.
  *
- * 這一輪只是把矮物件的做法搬到共用模組，住宅那一側改成先算座標再呼叫它。
- * 基準是在動任何程式碼**之前**存下來的 —— 重構之後才存的基準等於沒有基準。
+ * Moving the low-prop implementation into a shared module leaves the residential side computing
+ * coordinates first and then calling in. The baseline was captured **before** any code moved: a
+ * baseline captured after the refactor is no baseline at all.
  *
- * 比的是**頂點指紋**而不只是三角形數：搬錯位置、半徑算錯、標錯零件，
- * 三角形數都不會變。
+ * It compares a **vertex fingerprint** rather than only a triangle count: a wrong position, a
+ * wrong radius or a mis-tagged piece all leave the count unchanged.
  */
 describe('住宅的庭院沒有被這次重構動到', () => {
   it('should keep every ground prop variant at its original triangle count', () => {

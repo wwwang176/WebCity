@@ -91,7 +91,7 @@ function quad(
   y: number, part: number, shade: number,
 ): THREE.BufferGeometry {
   const geo = new THREE.PlaneGeometry(w, d);
-  geo.rotateX(-Math.PI / 2); // 朝上
+  geo.rotateX(-Math.PI / 2); // face up
   geo.translate(cx, y, cz);
   tagPart(geo, part);
   setGroundShade(geo, shade);

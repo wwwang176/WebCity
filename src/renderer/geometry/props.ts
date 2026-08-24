@@ -6,26 +6,28 @@ import {
 } from './plants';
 
 /**
- * 街道家具與工業雜項 —— 人造的矮物件。
+ * Street furniture and industrial clutter: the manufactured low props.
  *
- * 綠化在 `plants.ts`，這裡是其餘的：路燈、垃圾桶、單車架、矮柱、圍籬、
- * 告示牌、信箱、消防栓、旗桿，以及工業的油桶、管架、氣瓶、棧板。
+ * Planting is in `plants.ts`; this is everything else — lamps, bins, bike racks, bollards, fences,
+ * sign posts, mailboxes, hydrants, flagpoles, and industry's drums, pipe racks, gas bottles and
+ * pallets.
  *
- * 抽出來的理由與 `plants.ts` 相同：這些東西原本綁在「格子的物件帶」上
- * （吃 `band` / `axis` / `sign` / `t`），而公共建築佔 2×2 到 9×6 格，
- * 根本沒有環帶這回事，而所有矮物件都該是共用的。
+ * Separated for the same reason as `plants.ts`: these were bound to "the cell's prop band", taking
+ * `band`, `axis`, `sign` and `t`, while civic buildings occupy 2x2 to 9x6 cells and have no ring
+ * at all — and every low prop should be shared.
  *
- * **這個模組不知道呼叫者是誰。** 它吃世界座標與尺寸（單位是格），住宅那一側
- * 從帶算出座標再呼叫它，公共建築直接給座標。
+ * **This module does not know who calls it.** It takes world coordinates and sizes in cells: the
+ * residential side computes coordinates from its band and then calls in, while civic buildings
+ * pass coordinates directly.
  *
- * `axis` 一律是「這個東西**延伸的方向**」：`'z'` 表示沿世界 x 展開。那個
- * 看起來反過來的約定來自住宅那一側的「沿著格子的哪一條邊」—— 兩邊用同一套
- * 才不會有人得在腦中翻譯。
+ * `axis` is always **the direction the object extends**: `'z'` means it runs along world x. That
+ * apparently inverted convention comes from the residential side's "along which edge of the cell",
+ * and both sides use it so that nobody has to translate in their head.
  */
 
 export type PropAxis = 'x' | 'z';
 
-/** 一段連續的帶狀物（矮牆、花台邊、路緣）。標 `PART_DETAIL` 走金屬灰分支。 */
+/** A continuous strip: a low wall, a planter edge, a kerb. Tagged `PART_DETAIL` for the metal-grey branch. */
 export function strip(
   x: number, z: number, axis: PropAxis,
   length: number, depth: number, heightM: number, part = PART_DETAIL,
@@ -39,7 +41,7 @@ export function strip(
   return geo;
 }
 
-/** 信箱：一根柱加一個箱。 */
+/** A mailbox: a post and a box. */
 export function mailbox(x: number, z: number): THREE.BufferGeometry[] {
   const post = new THREE.BoxGeometry(M(0.12), M(1.0), M(0.12));
   post.translate(x, M(0.5), z);
@@ -50,7 +52,7 @@ export function mailbox(x: number, z: number): THREE.BufferGeometry[] {
   return [post, box];
 }
 
-/** 垃圾桶。 */
+/** A bin. */
 export function bin(x: number, z: number, radius: number): THREE.BufferGeometry[] {
   const body = new THREE.CylinderGeometry(radius, radius * 0.85, M(0.9), 5);
   body.translate(x, M(0.45), z);
@@ -61,7 +63,7 @@ export function bin(x: number, z: number, radius: number): THREE.BufferGeometry[
   return [body, lid];
 }
 
-/** 一根擋車矮柱。方柱而不是圓柱：0.11 m 的柱子在等角視角下看不出圓方，圓柱貴八成。 */
+/** One bollard. Square rather than round: at 0.11 m the difference is invisible in an isometric view, and a cylinder costs 80% more. */
 export function bollard(x: number, z: number, radius: number): THREE.BufferGeometry {
   const post = new THREE.BoxGeometry(radius * 1.7, M(0.85), radius * 1.7);
   post.translate(x, M(0.425), z);
@@ -69,7 +71,7 @@ export function bollard(x: number, z: number, radius: number): THREE.BufferGeome
   return post;
 }
 
-/** 一根圍籬柱。比矮柱細。 */
+/** One fence post, thinner than a bollard. */
 export function fencePost(x: number, z: number): THREE.BufferGeometry {
   const post = new THREE.BoxGeometry(M(0.1), M(1.0), M(0.1));
   post.translate(x, M(0.5), z);
@@ -77,7 +79,7 @@ export function fencePost(x: number, z: number): THREE.BufferGeometry {
   return post;
 }
 
-/** 圍籬的橫桿。 */
+/** A fence rail. */
 export function fenceRail(
   x: number, z: number, axis: PropAxis, span: number,
 ): THREE.BufferGeometry {
@@ -89,7 +91,7 @@ export function fenceRail(
   return rail;
 }
 
-/** 單車架：兩個半圓環。 */
+/** A bike rack: two half hoops. */
 export function bikeRack(
   x: number, z: number, axis: PropAxis,
 ): THREE.BufferGeometry[] {
@@ -105,10 +107,11 @@ export function bikeRack(
 }
 
 /**
- * 庭園燈／路燈。
+ * A garden or street lamp.
  *
- * 燈桿是冷的金屬（`PART_DETAIL`），只有**燈頭**發光（`PART_LAMP`）——
- * 整支都標成發光的話，夜裡會看到一根從地上亮到頂的柱子（BUG-230 的教訓）。
+ * The pole is cold metal (`PART_DETAIL`) and only the **head** glows (`PART_LAMP`); tagging the
+ * whole thing as glowing gives a post lit from the ground to the top at night (the lesson of
+ * BUG-230).
  */
 export function lamp(x: number, z: number, heightM: number): THREE.BufferGeometry[] {
   const pole = new THREE.CylinderGeometry(M(0.07), M(0.09), M(heightM), 4);
@@ -120,7 +123,7 @@ export function lamp(x: number, z: number, heightM: number): THREE.BufferGeometr
   return [pole, head];
 }
 
-/** 曬衣桿的一根柱。 */
+/** One drying rack post. */
 export function dryingPost(x: number, z: number): THREE.BufferGeometry {
   const post = new THREE.BoxGeometry(M(0.09), M(1.7), M(0.09));
   post.translate(x, M(0.85), z);
@@ -128,7 +131,7 @@ export function dryingPost(x: number, z: number): THREE.BufferGeometry {
   return post;
 }
 
-/** 曬衣繩。 */
+/** A drying line. */
 export function dryingLine(
   x: number, z: number, axis: PropAxis, span: number, heightM: number,
 ): THREE.BufferGeometry {
@@ -140,7 +143,7 @@ export function dryingLine(
   return line;
 }
 
-/** 告示牌／招牌立柱。 */
+/** A notice board or sign post. */
 export function signPost(
   x: number, z: number, axis: PropAxis,
 ): THREE.BufferGeometry[] {
@@ -155,7 +158,7 @@ export function signPost(
   return [post, board];
 }
 
-/** 油桶。 */
+/** A drum. */
 export function drum(x: number, z: number, radius: number): THREE.BufferGeometry {
   const body = new THREE.CylinderGeometry(radius, radius, M(0.88), 6);
   body.translate(x, M(0.44), z);
@@ -164,12 +167,14 @@ export function drum(x: number, z: number, radius: number): THREE.BufferGeometry
 }
 
 /**
- * 管架：兩根立柱撐著兩條橫管。
+ * A pipe rack: two posts carrying two horizontal pipes.
  *
- * 廠區最好認的東西之一，而且它是**水平**的 —— 一整層站著的柱狀物裡加一個
- * 橫的，立刻讀得出「這裡有製程」。
+ * One of the most recognisable things on an industrial site, and it is **horizontal**. Among a
+ * layer otherwise made entirely of upright posts, one horizontal piece immediately reads as "a
+ * process runs here".
  *
- * 高度壓在 2 m 以下：再高就侵入懸挑層的淨空（`OVERHEAD_CLEARANCE`）。
+ * Kept under 2 m: any higher and it enters the overhead layer's clearance
+ * (`OVERHEAD_CLEARANCE`).
  */
 export function pipeRack(
   x: number, z: number, axis: PropAxis, span: number,
@@ -183,8 +188,8 @@ export function pipeRack(
   }
   for (const [h, r] of [[1.35, 0.13], [1.75, 0.1]] as const) {
     const pipe = new THREE.CylinderGeometry(M(r), M(r), span, 4);
-    // `CylinderGeometry` 的軸是 y。沿邊擺就得先轉倒 —— z 軸的邊沿 x 展開，
-    // x 軸的邊沿 z 展開（與 `strip` 同一套約定）。
+    // `CylinderGeometry`'s axis is y, so laying one along an edge means turning it first: a z-axis
+    // edge runs along x and an x-axis edge runs along z, the same convention as `strip`.
     if (axis === 'z') pipe.rotateZ(Math.PI / 2);
     else pipe.rotateX(Math.PI / 2);
     pipe.translate(x, M(h), z);
@@ -194,7 +199,7 @@ export function pipeRack(
   return out;
 }
 
-/** 氣瓶架：三支高壓氣瓶靠著一道矮框。 */
+/** A gas bottle rack: three cylinders against a low frame. */
 export function gasBottles(
   x: number, z: number, axis: PropAxis, radius: number,
 ): THREE.BufferGeometry[] {
@@ -216,10 +221,11 @@ export function gasBottles(
 }
 
 /**
- * 棧板堆：三層木棧板疊著。
+ * A pallet stack: three wooden pallets.
  *
- * 沿邊的長度不受帶寬限制 —— 住宅那側的帶子只有 0.4 m 深，但沿著牆可以擺
- * 1.2 m 長。所以這是窄帶裡少數還放得下的「有體積的貨」。
+ * Its length along the edge is not bounded by the band's width: the residential side's band is
+ * 0.4 m deep, but 1.2 m fits along the wall. So it is one of the few pieces of goods with real
+ * volume that a narrow band can still hold.
  */
 export function palletStack(
   x: number, z: number, axis: PropAxis, depth: number,
@@ -236,7 +242,7 @@ export function palletStack(
   return out;
 }
 
-/** 消防栓。 */
+/** A hydrant. */
 export function hydrant(x: number, z: number): THREE.BufferGeometry[] {
   const body = new THREE.CylinderGeometry(M(0.11), M(0.14), M(0.7), 5);
   body.translate(x, M(0.35), z);
@@ -247,7 +253,7 @@ export function hydrant(x: number, z: number): THREE.BufferGeometry[] {
   return [body, cap];
 }
 
-/** 旗桿。回傳順序是 [旗, 桿] —— 與住宅那側的舊實作一致。 */
+/** A flagpole. Returned as [flag, pole], matching the residential side's existing implementation. */
 export function flagpole(
   x: number, z: number, axis: PropAxis,
 ): THREE.BufferGeometry[] {
@@ -266,16 +272,18 @@ export function flagpole(
   return [flag, pole];
 }
 
-// ===== 宣告式介面 =====
+// ===== Declarative interface =====
 
 /**
- * 一件矮物件的宣告。
+ * The declaration of one low prop.
  *
- * 上面那些函式吃座標與尺寸，適合住宅那側（它從帶算出座標）。公共建築是
- * **宣告式**的 —— 一棟建築就是一張表 —— 所以它需要一個能寫進表裡的形式。
+ * The functions above take coordinates and sizes, which suits the residential side, where
+ * coordinates come from the band. Civic buildings are **declarative** — one building is one table
+ * — so they need a form that can be written into a table.
  *
- * 綠化與街道家具放在同一個聯集：對呼叫者來說它們是同一件事（「在這裡放一個
- * 東西」），而分開成兩張表只會讓每棟建築多一個欄位要記得填。
+ * Planting and street furniture share one union: to a caller they are the same thing, "put an
+ * object here", and splitting them into two tables only adds a field every building has to
+ * remember to fill.
  */
 export type PropSpec =
   | { kind: 'tree'; x: number; z: number; heightM: number; crownRadius: number }
@@ -300,23 +308,25 @@ export type PropSpec =
   | { kind: 'palletStack'; x: number; z: number; axis: PropAxis; depth: number }
   | { kind: 'fence'; x: number; z: number; axis: PropAxis; length: number };
 
-/** 圍籬柱的間距（格）。2 m —— 再疏的話橫桿看起來是垂的。 */
+/** Fence post spacing in cells, 2 m. Any sparser and the rail reads as sagging. */
 const FENCE_POST_SPACING = M(2.0);
-/** 圍籬柱的邊長。與 `fencePost` 裡的一致。 */
+/** A fence post's edge length, matching the one inside `fencePost`. */
 const FENCE_POST_W = M(0.1);
 
 /**
- * 一段圍籬：等距的柱子加一條橫桿。
+ * One run of fence: evenly spaced posts plus a rail.
  *
- * 柱數隨長度成長 —— 固定三根的話，一道 30 m 的圍籬中間會垂著兩條沒有支撐的
- * 長桿。圖元本身（`fencePost` / `fenceRail`）與住宅那側共用。
+ * The post count grows with the length; fixed at three, a 30 m fence leaves two long unsupported
+ * rails sagging across the middle. The primitives themselves (`fencePost` and `fenceRail`) are
+ * shared with the residential side.
  */
 function fenceRun(
   x: number, z: number, axis: PropAxis, length: number,
 ): THREE.BufferGeometry[] {
   const out: THREE.BufferGeometry[] = [fenceRail(x, z, axis, length)];
-  // 兩端的柱子往內縮半個柱寬，整段圍籬才**剛好**佔 `length` —— 柱心對齊
-  // 端點的話它會多伸出去半個柱寬，而兩道相接的圍籬就會在轉角互相插進去。
+  // The end posts are inset by half a post width so the run occupies **exactly** `length`. With
+  // post centres on the endpoints it reaches half a post further, and two fences meeting at a
+  // corner enter each other.
   const run = length - FENCE_POST_W;
   const spans = Math.max(1, Math.round(run / FENCE_POST_SPACING));
   for (let i = 0; i <= spans; i++) {
@@ -326,7 +336,7 @@ function fenceRun(
   return out;
 }
 
-/** 這件物件的幾何。 */
+/** This object's geometry. */
 export function propGeometry(p: PropSpec): THREE.BufferGeometry[] {
   switch (p.kind) {
     case 'tree': return columnarTree(p.x, p.z, p.heightM, p.crownRadius);
@@ -351,14 +361,16 @@ export function propGeometry(p: PropSpec): THREE.BufferGeometry[] {
 }
 
 /**
- * 這件物件在 x / z 兩軸各佔多寬（半寬，單位是格）。
+ * How wide this object is on each of x and z: half-widths, in cells.
  *
- * 公共建築用它做佔地檢查。**寧可高報**：少報的話東西會伸出去壓到鄰格，
- * 而多報只是讓它站得離邊界遠一點。
+ * Civic buildings use it for the plot check. **Over-report rather than under-report**:
+ * under-reported, the object reaches out over a neighbouring cell, while over-reporting only
+ * stands it further from the boundary.
  */
 export function propExtent(p: PropSpec): { x: number; z: number } {
   const iso = (r: number) => ({ x: r, z: r });
-  // 沿 `axis` 展開的東西：`'z'` 表示沿世界 x 展開（見檔頭的約定）。
+  // Objects extending along `axis`: `'z'` means along world x (see the convention at the top of
+  // this file).
   const along = (len: number, thick: number, axis: PropAxis) =>
     (axis === 'z' ? { x: len / 2, z: thick } : { x: thick, z: len / 2 });
 
@@ -370,11 +382,11 @@ export function propExtent(p: PropSpec): { x: number; z: number } {
     case 'hedge': return along(p.length, p.depth / 2, p.axis);
     case 'lamp': return iso(M(0.18));
     case 'bin': return iso(p.radius * 1.1);
-    // 兩個環各偏 0.35 m，環半徑 0.32 m。
+    // The two hoops are offset 0.35 m each, with a hoop radius of 0.32 m.
     case 'bikeRack': return along(M(1.34), M(0.37), p.axis);
     case 'bollard': return iso(p.radius * 0.85);
     case 'hydrant': return iso(M(0.14));
-    // 旗子往 +x（或 +z）伸出 0.32 m，再加半個旗寬。
+    // The flag reaches 0.32 m along +x (or +z), plus half the flag's width.
     case 'flagpole': return along(M(1.0), M(0.5), p.axis);
     case 'signPost': return along(M(0.7), M(0.06), p.axis);
     case 'mailbox': return iso(M(0.17));
@@ -382,7 +394,7 @@ export function propExtent(p: PropSpec): { x: number; z: number } {
     case 'pipeRack': return along(p.span, M(0.08), p.axis);
     case 'gasBottles': return along(M(1.5), p.radius, p.axis);
     case 'palletStack': return along(M(1.2), p.depth / 2, p.axis);
-    // 柱子 0.1 m 見方，橫桿 0.06 m —— 厚度取柱子的半寬。
+    // Posts are 0.1 m square and the rail 0.06 m, so the thickness takes the post's half-width.
     case 'fence': return along(p.length, M(0.05), p.axis);
   }
 }

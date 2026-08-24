@@ -1,4 +1,4 @@
-/** Barrel export — 所有車輛幾何建構函式的統一匯出口。 */
+/** Barrel export: the single entry point for every vehicle geometry builder. */
 export { setVertexColors } from './common';
 export { buildCarGeometry } from './car';
 export { buildBusGeometry } from './bus';
@@ -12,6 +12,6 @@ export { buildMetroTrainGeometry, buildMetroCarriageGeometry } from './metro';
 export { buildRailTrainGeometry, buildRailCarriageGeometry } from './railTrain';
 export { buildFerryGeometry } from './ferry';
 
-/** 交通系統公車 — 與道路 bus 相同模型（由 update() 上色） */
+/** The transit system's bus: the same model as the road bus, coloured by update(). */
 export { buildBusGeometry as buildTransportBusGeometry } from './bus';
 export { buildAirplaneGeometry, buildAirplaneNavLightsGeometry, buildAirplaneVTailGeometry } from './airplane';
