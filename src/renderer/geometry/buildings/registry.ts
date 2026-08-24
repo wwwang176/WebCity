@@ -2,30 +2,32 @@ import type * as THREE from 'three';
 import { ZoneType } from '../../../core/grid/types';
 
 /**
- * 建築的尺寸表與共用型別。
+ * Buildings' dimension tables and shared types.
  *
- * 量體幾何本身已經搬到 `massing/` —— 這裡曾經有十七個手寫變體與六個縮放函式，
- * 全部由參數化生成器取代（階段 2C-1）。留下的是「目標高度」「目標寬度」這類
- * 由遊戲數值推導的表，以及桶的識別方式。
+ * The massing geometry itself lives in `massing/`, where parameterised generators replaced
+ * seventeen hand-written variants and six scaling functions. What remains here are the tables
+ * derived from the game's own numbers — target heights, target widths — and how a bucket is
+ * identified.
  */
 
-/** 產生一份幾何的函式。桶在建立時呼叫一次。 */
+/** A function producing one geometry. A bucket calls it once at creation. */
 export type GeoBuilder = () => THREE.BufferGeometry;
 
 export const LEVELS = [1, 2, 3] as const;
 
-/** 三角形上限。展示區的計數器照這兩條線標示。 */
+/** Triangle limits. The showcase's counter marks both lines. */
 export const TRIANGLE_BUDGET = {
   HOUSE: 400,
   TOWER: 800,
   /**
-   * 地面物件另外計算：它是獨立圖層，不佔量體的預算，而且遠距離時只要把
-   * 這一層的 count 設 0 就等於免費（規格 §4.6）。
+   * Ground props are budgeted separately: they are their own layer, take nothing from the massing
+   * budget, and at range setting that layer's count to 0 makes them free (spec section 4.6).
    *
-   * 240 是階段 2B 只有住宅樹籬時訂的。2B-2 把詞彙擴到十二種零件、擴及所有
-   * 分區之後，實測最高是住宅高 L3 的 272。320 留了兩成餘裕。
-   * 圖元段數已經削過一輪（矮柱改方柱、球體降段數），砍到 240 以下就會開始
-   * 傷到觀感，而這個專案的取捨是好看優先、效能寬鬆。
+   * 240 was set when the vocabulary was residential hedges alone. With twelve piece types across
+   * every zone, the measured maximum is 272, on high-density residential L3. 320 leaves 20%
+   * headroom. The primitives' segment counts have already been trimmed once — bollards became
+   * square posts and spheres lost segments — and cutting below 240 starts to hurt the look, while
+   * this project's trade-off favours appearance over performance.
    */
   PROP: 320,
 } as const;
@@ -34,34 +36,40 @@ export const TRIANGLE_BUDGET = {
 
 export type Density = 'LOW' | 'HIGH';
 
-/** 高度表的 key：分區加密度。辦公區兩種密度差 11 倍人口（BUG-220）。 */
+/** The height table's key: zone plus density. The office zone's two densities differ elevenfold in population (BUG-220). */
 export function heightKey(zoneType: number, density: Density): string {
   return `${zoneType}:${density}`;
 }
 
 /**
- * 每個 (分區, 密度) 三個等級的目標高度，單位是**公尺**。
+ * Target heights in **metres** for each (zone, density) at all three levels.
  *
- * 由容納人口推導（樓層 3 m、工業 6 m；佔地率 低密度 60% / 高密度 85% /
- * 工業 70%；每人樓地板 住宅低 35、住宅高 28、商業 30、工業 40、辦公 15 m2）。
+ * Derived from the population they hold: 3 m per storey, 6 m for industry; plot coverage of 60%
+ * at low density, 85% at high density and 70% for industry; floor area per person of 35 m2 for
+ * low-density residential, 28 for high-density residential, 30 for commercial, 40 for industrial
+ * and 15 for office.
  *
- * 低密度照實算。高密度壓縮：320 人塞進 144 m2 的一格是現實的三倍密度，
- * 照實算 L3 高層住宅要 220 m、比基地寬 18 倍，一整區會像針床。
- * 壓縮之後高密度建築的視覺密度低於它實際容納的人口 —— 這是刻意接受的取捨，
- * 要讓兩者一致該改的是遊戲的人口數值，不是渲染（規格修訂 1）。
+ * Low density follows the arithmetic directly. High density is compressed: 320 people in a 144 m2
+ * cell is three times real density, and taken literally an L3 residential tower needs 220 m,
+ * eighteen times its footprint width, leaving a whole district looking like a bed of nails.
+ * Compressed, a high-density building's visual density is lower than the population it holds —
+ * a deliberate trade-off, and reconciling the two means changing the game's population numbers
+ * rather than the rendering (spec revision 1).
  *
- * 高密度下修過兩輪：30/51/75 -> 22/36/52 -> 22/32/42（住宅高，其餘同步）。
- * 第二輪只壓 L2 與 L3，L1 維持不動，因為過高的觀感集中在頂端等級。
- * 住宅低與商業低三輪都不動 —— 它們本來就是照實算的。
+ * High density was reduced twice: 30/51/75 to 22/36/52 to 22/32/42 for high-density residential,
+ * with the others following. The second pass touched only L2 and L3 and left L1 alone, because
+ * the "too tall" impression concentrates at the top levels. Low-density residential and
+ * commercial were untouched throughout: they follow the arithmetic already.
  *
- * 低密度辦公上修 9/15/24 -> 12/18/24：9 m 的辦公樓在高密度旁邊顯得發育不良。
- * L3 停在 24 m 是有意的 —— 辦公低 L3 是 50 人、辦公高 L1 是 160 人，
- * 讓前者更高會把階梯倒過來。
+ * Low-density office was raised from 9/15/24 to 12/18/24: a 9 m office block looks stunted beside
+ * high density. Stopping L3 at 24 m is deliberate — low-density office L3 holds 50 people and
+ * high-density office L1 holds 160, so raising the former further inverts the ladder.
  *
- * 工業三個等級一起下修（8/12/16 -> 7/10/13 -> 6/7.5/9）並把基地拉到上限。
- * 現代廠房幾乎都是單層挑高、鋪滿基地，多層工廠很少見，所以工業的等級階梯
- * 不該表現在高度上 —— 它應該表現在煙囪、筒倉、管架、貨櫃這些設備上，
- * 那是階段 2C 屋頂與地面物件的工作。
+ * Industry was reduced at all three levels (8/12/16 to 7/10/13 to 6/7.5/9) with the footprint
+ * pushed to the limit. Modern plants are almost all single-storey with high ceilings, covering the
+ * plot, and multi-storey factories are rare, so industry's level ladder should not show in height:
+ * it should show in stacks, silos, pipe racks and containers, which is the roof and ground-prop
+ * work.
  */
 export const TARGET_HEIGHTS_M: Record<string, [number, number, number]> = {
   [heightKey(ZoneType.RESIDENTIAL_LOW, 'LOW')]:   [5, 7, 10],
@@ -74,33 +82,35 @@ export const TARGET_HEIGHTS_M: Record<string, [number, number, number]> = {
 };
 
 /**
- * 有建築的分區。以前是從 `VARIANTS` 的 key 推導，那張表已經不存在了 ——
- * 量體由生成器產出，而「哪些分區有建築」的實體是高度表。
+ * The zones that have buildings. Derived from the height table: the masses come from generators,
+ * and the height table is what "which zones have buildings" amounts to.
  */
 export const ZONE_TYPES: number[] = [
   ...new Set(Object.keys(TARGET_HEIGHTS_M).map(k => Number(k.split(':')[0]))),
 ];
 
 /**
- * 每個 (分區, 密度) 的目標基地寬度，單位是**公尺**。
+ * Target footprint widths in **metres** for each (zone, density).
  *
- * 以前是從 `FOOTPRINTS` 的抖動表推導出來的。生成器接手之後抖動不存在了 ——
- * 八個變體各自在目標的 85%–100% 之間取一個實際寬度，「最窄／最寬的牆面」
- * 是量出來的（見 `propBands`），不再是公式推出來的。
+ * Each of the eight variants takes an actual width between 85% and 100% of the target, and the
+ * narrowest and widest wall faces are **measured** (see `propBands`) rather than derived from a
+ * jitter formula.
  *
- * 上限是 `MAX_BUILDING_WIDTH_M` 9.8 m —— 行人的門與走道節點放在建築牆面
- * 外側，超過就會讓行人走進建築裡面（BUG-221）。那個常數與 SidewalkGraph 共用。
+ * The ceiling is `MAX_BUILDING_WIDTH_M` at 9.8 m: pedestrian door and walkway nodes sit outside
+ * the building's wall, and anything wider sends pedestrians into the building (BUG-221). That
+ * constant is shared with SidewalkGraph.
  *
- * 建築原本一律 7–8 m 寬、只佔格子 60%，所以 42 m 的高層住宅是 5.5:1 的細針
- * —— 看起來「太高」有一半是因為太瘦。真實的高層幾乎鋪滿基地。
+ * At a uniform 7 to 8 m covering 60% of the cell, a 42 m residential tower is a 5.5:1 needle, and
+ * half of "it looks too tall" is that it is too thin. Real towers cover almost their whole plot.
  *
- * 住宅低 7.2 → 6.0（階段 2B）：7.2 量的是「房子 + 車庫 + 樹」的包圍盒，
- * 房子本體只佔 4.3 m。庭院物件搬進獨立圖層之後若仍以 7.2 為目標，房子本體
- * 會被放大到 7.2 m、庭院只剩 0.76 m。
+ * Low-density residential is 6.0 rather than 7.2: 7.2 measured the bounding box of house plus
+ * garage plus tree, where the house itself was only 4.3 m. With the yard objects moved to their
+ * own layer, keeping 7.2 as the target would inflate the house to 7.2 m and leave the yard 0.76 m.
  *
- * 階段 2B-2 縮寬：商業低／辦公低 8.4 → 7.8（−7%），鋪滿基地者 9.8 → 9.0（−8%）。
- * 為的是讓每個分區都有 0.4 m 以上的矮物件帶 —— 那個寬度放得下矮柱、垃圾桶、
- * 單車架、消防栓。原本這些分區的帶寬是 0.07 m 或 0，什麼都放不下。
+ * Widths were trimmed once more: low-density commercial and office from 8.4 to 7.8 (7%), and the
+ * plot-filling types from 9.8 to 9.0 (8%). That gives every zone a low-prop band of at least
+ * 0.4 m, which holds bollards, bins, bike racks and hydrants; before, those zones' bands were
+ * 0.07 m or nothing, and held nothing at all.
  */
 export const TARGET_WIDTHS_M: Record<string, number> = {
   [heightKey(ZoneType.RESIDENTIAL_LOW, 'LOW')]:   6.0,
@@ -113,9 +123,9 @@ export const TARGET_WIDTHS_M: Record<string, number> = {
 };
 
 /**
- * 變體桶的完整識別。分區、密度、等級、變體序號四個維度缺一不可：
- * 少了密度，辦公區 15 人與 160 人的建築同桶（BUG-220）；
- * 少了等級，升級只能靠縮放。
+ * A variant bucket's complete identity. All four dimensions are required — zone, density, level
+ * and variant index: without density, the office zone's 15-person and 160-person buildings share a
+ * bucket (BUG-220), and without level, upgrading can only scale.
  */
 export function bucketKey(
   zoneType: number, density: Density, level: number, variantIndex: number,

@@ -7,27 +7,29 @@ import {
   SHOPFRONT_CEILING, GROUND_LAYERS,
 } from './massing/metrics';
 
-// 既有呼叫端從 propBands 取這些常數。實體在 massing/metrics —— 這裡只轉出，
-// 不再定義：propBands 之後要量 massing 產出的量體，常數留在這裡就是循環。
+// Existing callers take these constants from propBands. The values live in massing/metrics and
+// are only re-exported here: propBands measures the masses massing produces, and defining them
+// here would be a cycle.
 export { OVERHEAD_CLEARANCE, FLOOR_HEIGHT_UNITS, SHOPFRONT_CEILING, GROUND_LAYERS };
 
 /**
- * 地面物件的三類放置帶。
+ * The three placement bands for ground objects.
  *
- * 階段 2B 只推導了一類（矮物件），結論是「只有住宅低密度有空間」。那個結論
- * 沒有錯，但它只涵蓋「站在地上、佔據高度、行人會撞到」的東西。另外兩類的
- * 限制完全不同：
+ * Deriving only the low-prop band gives "only low-density residential has room", which is correct
+ * as far as it goes but covers only things that stand on the ground, occupy height, and can be
+ * walked into. The other two have entirely different constraints:
  *
- *   貼片  完全平，行人走在上面 —— 那本來就是人行道，可以鋪到格子邊界
- *   懸挑  最低點高過人頭，行人從下面走過 —— 可以像騎樓一樣挑出去
+ *   decals    perfectly flat, walked on — that is a sidewalk, and it can reach the cell boundary
+ *   overhead  lowest point above head height, walked under — it can project like an arcade
  *
- * 兩者對每個分區都有一公尺以上的空間，而且不必動任何建築尺寸。
+ * Both have more than a metre of room in every zone, and neither requires changing any building
+ * dimension.
  */
 
-/** 矮物件帶窄於 0.4 m 就不給 —— 那個寬度塞不下任何看得見的東西。 */
+/** No low-prop band narrower than 0.4 m: nothing visible fits in less. */
 const MIN_LOW_BAND = 0.4 / METRES_PER_CELL;
 
-/** 貼片與懸挑帶窄於 1 m 就不給。 */
+/** No decal or overhead band narrower than 1 m. */
 const MIN_WIDE_BAND = 1.0 / METRES_PER_CELL;
 
 export interface Band {
@@ -36,20 +38,21 @@ export interface Band {
 }
 
 /**
- * 建築牆面的位置 —— 但同一桶的八個變體寬度各不相同，所以「牆面在哪」有兩個
- * 答案，用哪一個取決於這個物件**要不要碰到牆**：
+ * Where the building's wall is — but the eight variants in a bucket differ in width, so "where is
+ * the wall" has two answers, and which one applies depends on whether the object **has to touch**
+ * the wall:
  *
- *   最寬（`widest`）    自立的東西用它。樹、垃圾桶要放在**所有**建築之外，
- *                       否則最寬的那一棟會把它們吃進牆裡。
- *   最窄（`narrowest`）  要貼牆的東西用它。雨遮、鋪面要碰到**所有**建築，
- *                       多出來的部分埋在牆內、被擋住，看不見。
+ *   widest       for free-standing things. Trees and bins go outside **every** building, or the
+ *                widest one swallows them into its wall.
+ *   narrowest    for things that attach. Canopies and paving have to reach **every** building, and
+ *                the excess buries inside the wall where it is hidden.
  *
- * 貼牆的東西用最寬值就是 BUG-226：只有最寬的那一棟碰得到牆，其餘每一棟上
- * 都浮空 0.68–1.17 m。
+ * Using the widest value for something that attaches is BUG-226: only the widest building is
+ * reached, and on every other one it floats 0.68 to 1.17 m away.
  *
- * 兩個值現在是**量**出來的（跑一遍八個變體的量體），不再是「目標寬乘抖動
- * 係數」。推導與幾何各走各的正是 BUG-226 發生的方式；而量量體不必建幾何，
- * 所以這件事很便宜。
+ * Both values are **measured** by running the eight variants' masses, rather than derived as
+ * target width times a jitter factor. A derivation running separately from the geometry is exactly
+ * how BUG-226 happened, and measuring masses needs no geometry, so it is cheap.
  */
 function edgesOf(
   zoneType: number, density: Density, level: number,
@@ -72,17 +75,17 @@ function edgesOf(
   return out;
 }
 
-/** 量測快取。每放一棟建築都跑一遍八個變體的話，開局會很慢。 */
+/** The measurement cache. Running all eight variants for every building placed makes startup slow. */
 const edgeCache = new Map<string, { lo: number; hi: number } | null>();
 
-/** 最寬的那一個變體的牆面。自立物件的內緣。 */
+/** The widest variant's wall. The inner edge for free-standing objects. */
 export function widestBuildingEdge(
   zoneType: number, density: Density, level: number,
 ): number | null {
   return edgesOf(zoneType, density, level)?.hi ?? null;
 }
 
-/** 最窄的那一個變體的牆面。貼牆物件的內緣。 */
+/** The narrowest variant's wall. The inner edge for objects that attach. */
 export function narrowestBuildingEdge(
   zoneType: number, density: Density, level: number,
 ): number | null {
@@ -95,10 +98,12 @@ function band(inner: number | null, outer: number, min: number): Band | null {
 }
 
 /**
- * 貼片：建築牆面到格子邊界。行人走在上面，所以可以蓋過走道。
+ * Decals: from the building's wall to the cell boundary. Pedestrians walk on them, so they may
+ * cover the walkway.
  *
- * 內緣用最窄的牆面 —— 鋪面要碰得到每一棟的牆腳，伸進建築底下的部分被
- * 建築本身擋住。用最寬值的話，窄的那些建築腳下會露出一圈裸地。
+ * The inner edge takes the narrowest wall: paving has to reach every building's foot, and the part
+ * reaching under a building is hidden by the building itself. With the widest value, a ring of
+ * bare ground shows at the foot of the narrower ones.
  */
 export function decalBand(
   zoneType: number, density: Density, level: number,
@@ -106,14 +111,14 @@ export function decalBand(
   return band(narrowestBuildingEdge(zoneType, density, level), CELL_EDGE, MIN_WIDE_BAND);
 }
 
-/** 矮物件：建築牆面到行人包絡線。自立，所以內緣用最寬的牆面。窄於 0.4 m 回傳 null。 */
+/** Low props: from the building's wall to the pedestrian envelope. Free-standing, so the inner edge takes the widest wall. Returns null below 0.4 m. */
 export function lowPropBand(
   zoneType: number, density: Density, level: number,
 ): Band | null {
   return band(widestBuildingEdge(zoneType, density, level), HALF_ENVELOPE, MIN_LOW_BAND);
 }
 
-/** 懸挑：與貼片同寬同理由，但物件的最低點必須高於 `OVERHEAD_CLEARANCE`。 */
+/** Overhead: the same width and the same reasoning as decals, but an object's lowest point has to clear `OVERHEAD_CLEARANCE`. */
 export function overheadBand(
   zoneType: number, density: Density, level: number,
 ): Band | null {

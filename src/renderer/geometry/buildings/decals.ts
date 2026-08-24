@@ -7,36 +7,40 @@ import { tagPart, setGroundShade, PART_GROUND, PART_FOLIAGE } from './parts';
 import { heightKey, type Density, type GeoBuilder } from './registry';
 
 /**
- * 地面貼片 —— 建築腳下的鋪面。
+ * Ground decals: the paving at a building's feet.
  *
- * 完全平（單層四邊形，沒有厚度），行人走在上面，所以它是三類地面物件裡
- * 唯一每個分區都放得下的：矮物件要避開行人繞行建築的路徑，貼片不必 ——
- * 那條路徑本來就是人行道，鋪面正是它應該長的樣子。
+ * Perfectly flat — a single quad with no thickness — and walked on, which makes them the one of
+ * the three ground-object classes that fits in every zone. Low props have to avoid the path
+ * pedestrians take around a building; decals do not, because that path is a sidewalk and paving is
+ * exactly what it should look like.
  *
- * 有厚度的話側面會長出牆，而牆會長出窗戶。所以一律用 `PlaneGeometry`。
+ * With thickness the sides become walls, and walls grow windows. So these always use
+ * `PlaneGeometry`.
  *
- * 地面固定在 y = 0（`cell.elevation` 從未被 TerrainGenerator 寫入），
- * 離地高度統一由 `GROUND_LAYERS` 決定 —— 貼片與建築必須一樣高，
- * 否則前庭鋪面與牆腳對不上（BUG-224）。
+ * The ground is fixed at y = 0, since `cell.elevation` is never written by TerrainGenerator, and
+ * the height above it comes from `GROUND_LAYERS`: decals and buildings have to sit at the same
+ * height, or the forecourt paving does not meet the wall's foot (BUG-224).
  */
 
-/** 底層鋪面的高度。實體在 `GROUND_LAYERS` —— 貼片與建築的離地高度必須一致，
- * 否則前庭鋪面與牆腳對不上（BUG-224）。 */
+/** The base paving's height. The value lives in `GROUND_LAYERS`: decals and buildings have to sit
+ * at the same height above the ground, or the forecourt paving does not meet the wall's foot
+ * (BUG-224). */
 export const DECAL_Y = GROUND_LAYERS.DECAL;
 
 /**
- * 標線與踏板的高度。
+ * The markings' and treads' height.
  *
- * 兩層是必要的：停車格線本來就疊在柏油上。但**底層彼此不得重疊** ——
- * 兩塊同高度同位置的四邊形會 z-fighting，而那在靜態截圖上看不出來、
- * 一移動鏡頭就整片閃爍。所以底層用「四個邊各自一種鋪面」的結構表達，
- * 疊放只能發生在標線層。
+ * Two layers are necessary: parking bay lines lie over asphalt by nature. But **base layers must
+ * not overlap each other** — two quads at the same height and position z-fight, which does not
+ * show in a static screenshot and turns into a flickering sheet as soon as the camera moves. So
+ * the base layer is expressed as "one surface per side" and stacking happens only on the marking
+ * layer.
  */
 export const MARK_Y = GROUND_LAYERS.MARKING;
 
 const M = (metres: number) => metres / METRES_PER_CELL;
 
-// 明度（頂點色 B 通道）：0 是柏油，1 是白漆。
+// Brightness in the vertex colour's B channel: 0 is asphalt, 1 is white paint.
 const TARMAC = 0.0;
 const ASPHALT_PATH = 0.22;
 const CONCRETE = 0.58;
@@ -45,7 +49,7 @@ const LINE_PAINT = 1.0;
 
 export type Side = 'n' | 's' | 'e' | 'w';
 
-/** 一個邊的鋪面。`lawn` 走樹葉分支拿到綠色，其餘是 PART_GROUND 加明度。 */
+/** One side's surface. `lawn` takes the foliage branch for green; everything else is PART_GROUND plus a brightness. */
 type Surface = { kind: 'paved'; shade: number } | { kind: 'lawn' };
 
 const paved = (shade: number): Surface => ({ kind: 'paved', shade });
@@ -58,20 +62,21 @@ interface Mark {
 }
 
 interface Forecourt {
-  /** 四個邊各自的鋪面。省略的邊不鋪。結構上不可能兩塊疊在同一邊。 */
+  /** One surface per side. Omitted sides are unpaved, and by construction two cannot stack on one side. */
   sides: Partial<Record<Side, Surface>>;
   /**
-   * 疊在鋪面之上的標線與踏板，一個邊最多一個。
+   * Markings and treads stacked over the paving, at most one per side.
    *
-   * 用 Record 而不是陣列的理由與 `sides` 相同：同一邊兩個標線（落客區加
-   * 停車格）必定重疊，而標線只有一層，重疊就是 z-fighting。
+   * A Record rather than an array for the same reason as `sides`: two markings on one side, a
+   * drop-off plus parking bays, necessarily overlap, and there is only one marking layer, where an
+   * overlap is a z-fight.
    */
   marks?: Partial<Record<Side, Mark>>;
 }
 
 /**
- * 邊 → 軸與方向。矮物件層也吃這一張表 —— 樹要站在草皮那一邊，而兩邊各寫
- * 一份約定的話，樹會種到對面去。
+ * Side to axis and sign. The low-prop layer reads this table too: trees stand on the grass side,
+ * and with the convention written on both sides they end up planted opposite.
  */
 export const SIDE_AXIS: Record<Side, { axis: 'x' | 'z'; sign: 1 | -1 }> = {
   n: { axis: 'z', sign: -1 },
@@ -80,7 +85,7 @@ export const SIDE_AXIS: Record<Side, { axis: 'x' | 'z'; sign: 1 | -1 }> = {
   w: { axis: 'x', sign: -1 },
 };
 
-/** 一塊躺平的四邊形，中心在 (cx, cz)。 */
+/** One flat quad centred at (cx, cz). */
 function quad(
   cx: number, cz: number, w: number, d: number,
   y: number, part: number, shade: number,
@@ -94,20 +99,21 @@ function quad(
 }
 
 /**
- * 一條邊的長度。
+ * One side's length.
  *
- * 南北向的邊跨滿整格（`outer * 2`），東西向的只跨建築的寬度（`inner * 2`）——
- * 四邊都鋪滿時，這個分工讓四塊拼成一個沒有縫也沒有重疊的環。兩邊都跨滿的話
- * 會在四個角落各疊出一塊 1.5 m 見方的重疊區，而兩塊同高同位的四邊形會
- * z-fighting：靜態截圖看不出來，一移動鏡頭就整片閃爍。
+ * North-south sides span the full cell (`outer * 2`) and east-west sides span only the building's
+ * width (`inner * 2`). With all four paved, that division makes the four pieces a ring with
+ * neither gaps nor overlaps. Spanning both fully would stack a 1.5 m square overlap in each
+ * corner, and two quads at the same height and position z-fight: invisible in a static
+ * screenshot, a flickering sheet as soon as the camera moves.
  *
- * 標線與踏板也吃這個長度，所以它們不會伸出自己那條邊。
+ * Markings and treads take the same length, so they never reach past their own side.
  */
 function sideLength(band: Band, side: Side): number {
   return SIDE_AXIS[side].axis === 'z' ? band.outer * 2 : band.inner * 2;
 }
 
-/** 沿著一整條邊的鋪面帶。 */
+/** A paving strip along one whole side. */
 function sideQuad(band: Band, side: Side, surface: Surface): THREE.BufferGeometry {
   const { axis, sign } = SIDE_AXIS[side];
   const mid = (band.inner + band.outer) / 2;
@@ -120,7 +126,7 @@ function sideQuad(band: Band, side: Side, surface: Surface): THREE.BufferGeometr
     : quad(sign * mid, 0, depth, len, DECAL_Y, part, shade);
 }
 
-/** 停車格／卸貨標線：沿著一條邊等距的短白線。 */
+/** Parking bay or loading markings: short white lines evenly spaced along one side. */
 function bays(band: Band, side: Side, count: number): THREE.BufferGeometry[] {
   const { axis, sign } = SIDE_AXIS[side];
   const mid = (band.inner + band.outer) / 2;
@@ -136,7 +142,7 @@ function bays(band: Band, side: Side, count: number): THREE.BufferGeometry[] {
   return out;
 }
 
-/** 入口踏板／落客區：貼著一邊中段的一小塊。 */
+/** An entrance tread or drop-off: a small patch against the middle of one side. */
 function pad(band: Band, side: Side, shade: number): THREE.BufferGeometry {
   const { axis, sign } = SIDE_AXIS[side];
   const mid = (band.inner + band.outer) / 2;
@@ -160,13 +166,14 @@ function buildForecourt(band: Band, f: Forecourt): THREE.BufferGeometry {
 }
 
 /**
- * 各分區的前庭。等級愈高鋪面愈完整、材質愈高級。
+ * Each zone's forecourt. Higher levels are more fully paved and in better materials.
  *
- * 每個等級只有一個組合（不像立體物件有多個變體）：貼片在視覺上是底色，
- * 重複感來自站在上面的東西，不是地面本身。
+ * One recipe per level, unlike the three-dimensional objects with their several variants: visually
+ * a decal is a background, and the sense of repetition comes from what stands on it rather than
+ * from the ground itself.
  */
 const RECIPES: Record<string, [Forecourt, Forecourt, Forecourt]> = {
-  // 住宅低：草坪為主，車道與入口踏板隨等級加上
+  // Low-density residential: mostly lawn, gaining a driveway and an entrance tread with level.
   [heightKey(ZoneType.RESIDENTIAL_LOW, 'LOW')]: [
     { sides: { n: LAWN } },
     { sides: { n: LAWN, e: LAWN, s: paved(ASPHALT_PATH) } },
@@ -175,7 +182,7 @@ const RECIPES: Record<string, [Forecourt, Forecourt, Forecourt]> = {
       marks: { n: { kind: 'pad', shade: CONCRETE } },
     },
   ],
-  // 住宅高：混凝土環，等級換進綠地與磚鋪入口
+  // High-density residential: a concrete ring, gaining grass and a brick entrance with level.
   [heightKey(ZoneType.RESIDENTIAL_HIGH, 'HIGH')]: [
     { sides: { n: paved(CONCRETE), s: paved(CONCRETE), e: paved(CONCRETE), w: paved(CONCRETE) } },
     { sides: { n: LAWN, s: paved(CONCRETE), e: paved(CONCRETE), w: paved(CONCRETE) } },
@@ -184,7 +191,8 @@ const RECIPES: Record<string, [Forecourt, Forecourt, Forecourt]> = {
       marks: { s: { kind: 'pad', shade: BRICK } },
     },
   ],
-  // 商業低：人行道，等級換成店前磚鋪與騎樓地坪
+  // Low-density commercial: sidewalk, becoming brick shopfront paving and arcade flooring with
+  // level.
   [heightKey(ZoneType.COMMERCIAL_LOW, 'LOW')]: [
     { sides: { n: paved(CONCRETE), s: paved(CONCRETE), e: paved(CONCRETE), w: paved(CONCRETE) } },
     { sides: { n: paved(CONCRETE), s: paved(BRICK), e: paved(CONCRETE), w: paved(CONCRETE) } },
@@ -193,7 +201,7 @@ const RECIPES: Record<string, [Forecourt, Forecourt, Forecourt]> = {
       marks: { n: { kind: 'pad', shade: BRICK } },
     },
   ],
-  // 商業高：人行道環 → 廣場 → 磚鋪廣場加落客區
+  // High-density commercial: sidewalk ring, then a plaza, then a brick plaza with a drop-off.
   [heightKey(ZoneType.COMMERCIAL_HIGH, 'HIGH')]: [
     { sides: { n: paved(CONCRETE), s: paved(CONCRETE), e: paved(CONCRETE), w: paved(CONCRETE) } },
     { sides: { n: paved(CONCRETE), s: paved(BRICK), e: paved(CONCRETE), w: paved(BRICK) } },
@@ -202,7 +210,7 @@ const RECIPES: Record<string, [Forecourt, Forecourt, Forecourt]> = {
       marks: { s: { kind: 'pad', shade: CONCRETE }, w: { kind: 'bays', count: 3 } },
     },
   ],
-  // 工業：柏油鋪滿，等級加卸貨標線與停車格
+  // Industrial: asphalt throughout, gaining loading markings and parking bays with level.
   [heightKey(ZoneType.INDUSTRIAL, 'LOW')]: [
     { sides: { n: paved(TARMAC), s: paved(TARMAC), e: paved(TARMAC), w: paved(TARMAC) } },
     {
@@ -214,7 +222,7 @@ const RECIPES: Record<string, [Forecourt, Forecourt, Forecourt]> = {
       marks: { s: { kind: 'bays', count: 5 }, w: { kind: 'bays', count: 4 } },
     },
   ],
-  // 辦公低：人行道 → 入口步道 → 磚鋪廣場帶綠地
+  // Low-density office: sidewalk, then an entrance walk, then a brick plaza with grass.
   [heightKey(ZoneType.OFFICE, 'LOW')]: [
     { sides: { n: paved(CONCRETE), s: paved(CONCRETE), e: paved(CONCRETE), w: paved(CONCRETE) } },
     {
@@ -226,7 +234,7 @@ const RECIPES: Record<string, [Forecourt, Forecourt, Forecourt]> = {
       marks: { s: { kind: 'pad', shade: CONCRETE } },
     },
   ],
-  // 辦公高：同商業高，但保留一塊綠地
+  // High-density office: as high-density commercial, but keeping one patch of grass.
   [heightKey(ZoneType.OFFICE, 'HIGH')]: [
     { sides: { n: paved(CONCRETE), s: paved(CONCRETE), e: paved(CONCRETE), w: paved(CONCRETE) } },
     { sides: { n: paved(CONCRETE), s: paved(BRICK), e: paved(CONCRETE), w: paved(CONCRETE) } },
@@ -238,10 +246,10 @@ const RECIPES: Record<string, [Forecourt, Forecourt, Forecourt]> = {
 };
 
 /**
- * 這個 (分區, 密度, 等級) 的前庭有哪幾邊是草皮。
+ * Which sides of this (zone, density, level)'s forecourt are grass.
  *
- * 矮物件層靠它決定樹種在哪一邊 —— 兩層各自寫一份「哪邊是綠地」的話，樹會
- * 從柏油裡長出來，而那不會有任何東西報錯。
+ * The low-prop layer uses it to decide which side trees go on: with each layer stating which sides
+ * are grass, trees grow out of asphalt and nothing reports it.
  */
 export function lawnSidesFor(
   zoneType: number, density: Density, level: number,
@@ -255,7 +263,7 @@ export function lawnSidesFor(
     .map(([side]) => side);
 }
 
-/** 這個 (分區, 密度, 等級) 的前庭。沒有貼片帶就沒有前庭。 */
+/** This (zone, density, level)'s forecourt. No decal band means no forecourt. */
 export function getDecalVariants(
   zoneType: number, density: Density, level: number,
 ): GeoBuilder[] {
