@@ -17,18 +17,20 @@ const BASELINE = readFileSync(
 );
 
 /**
- * 立面的 if 鏈原本是手寫的六個門檻，而屋頂色票是由 `ZONE_CAT` 生成的。
- * 同一張表兩份資料 —— 改了一邊不會有任何東西報錯，而錯的表現是「某個分區
- * 默默拿到別人的立面」。
+ * The facade if-chain and the roof palette are generated from one table, `ZONE_CAT`. Written by
+ * hand as six thresholds alongside a generated palette, they are two copies of the same data:
+ * changing one reports nothing, and the fault shows up as "one zone quietly took another zone's
+ * facade".
  *
- * 統一的那一輪不改變任何行為，所以驗收標準取最嚴格的那一種：產生出來的
- * 原始碼一個 byte 都不變。
+ * The acceptance standard is the strictest available: the generated source does not change by a
+ * single byte.
  *
- * **基準什麼時候該重新產生：** 只有在 shader 真的該變的時候（例如加一個
- * 立面類別）。做法是暫時寫一個把 `BUILDING_FRAG` 寫進 fixture 的測試，跑完
- * 刪掉，然後**逐行看 diff** —— 這一條的價值不在「shader 永遠不變」，而在
- * 「每一次改變都被人看過」。改門檻的推導方式時它會抓到整條鏈的位移；
- * 動某個分區的立面時它會抓到你不小心也碰到了別人的分支。
+ * **When the baseline should be regenerated:** only when the shader genuinely should change,
+ * such as when a facade category is added. Write a temporary test that dumps `BUILDING_FRAG` to
+ * the fixture, delete it afterwards, and **read the diff line by line**. The value here is not
+ * "the shader never changes" but "every change was looked at": changing how thresholds are
+ * derived shows up as a shift across the whole chain, and touching one zone's facade shows up as
+ * having touched another zone's branch too.
  */
 describe('生成的 shader 與基準逐字元相同', () => {
   it('should emit a byte-identical fragment shader', () => {
@@ -38,12 +40,12 @@ describe('生成的 shader 與基準逐字元相同', () => {
 
 describe('門檻由 ZONE_CAT 推導', () => {
   /**
-   * 這一條用的是自備的表，不是 `ZONE_CAT`。
+   * This case uses a table of its own rather than `ZONE_CAT`.
    *
-   * `Object.entries` 對整數字串 key 是照**數值**遞增列舉的，而 `ZONE_CAT`
-   * 現在的 key 順序剛好等於 cat 順序 —— 拿它來測的話，把 `.sort()` 整條
-   * 拿掉也不會轉紅（回退驗證時實際發生過）。要 key 順序與 cat 順序不一致
-   * 的表才測得到排序有沒有真的發生。
+   * `Object.entries` enumerates integer-string keys in **numeric** order, and `ZONE_CAT`'s key
+   * order currently equals its cat order, so testing against it stays green even with `.sort()`
+   * removed entirely, as regression checking confirmed. Detecting whether sorting happens takes
+   * a table whose key order differs from its cat order.
    */
   it('should sort by category, not by key', () => {
     expect(sortKeysByCat({ 1: 0.9, 2: 0.5, 3: 0.1 })).toEqual([3, 2, 1]);
@@ -68,8 +70,9 @@ describe('門檻由 ZONE_CAT 推導', () => {
   });
 
   it('should not emit float noise', () => {
-    // `(0.2 + 0.4) / 2` 是 0.30000000000000004。GLSL 的 highp float 只有約
-    // 7 位有效數字，那些尾數編譯時就沒了 —— 留著只會讓 shader 難讀。
+    // `(0.2 + 0.4) / 2` is 0.30000000000000004. GLSL's highp float carries about 7 significant
+    // digits, so those trailing figures are gone at compile time and only make the shader harder
+    // to read.
     for (const t of facadeThresholds().filter(t => Number.isFinite(t))) {
       const decimals = String(t).split('.')[1]?.length ?? 0;
       expect(decimals, `門檻 ${t} 帶著浮點雜訊`).toBeLessThanOrEqual(6);
@@ -77,8 +80,9 @@ describe('門檻由 ZONE_CAT 推導', () => {
   });
 
   it('should keep every threshold strictly between its two categories', () => {
-    // 四捨五入若把門檻推到某個 cat 之上或之下，那個分區會**整個消失** ——
-    // 它的分支永遠不成立，而畫面上只表現為「某一區長得像隔壁區」。
+    // If rounding pushes a threshold above or below a cat, that zone **disappears entirely**:
+    // its branch never holds, and on screen it reads only as "one district looks like the one
+    // next to it".
     const keys = sortedFacadeKeys();
     const th = facadeThresholds();
     for (let i = 0; i < keys.length - 1; i++) {
@@ -97,10 +101,10 @@ describe('門檻由 ZONE_CAT 推導', () => {
   });
 
   /**
-   * 這一條把「JS 的門檻」與「GLSL 的門檻」綁在一起。
+   * This ties the JS thresholds to the GLSL ones.
    *
-   * `facadeKeyOf` 是 GLSL if 鏈的 JS 分身 —— 它本身就是第二份資料。從產生
-   * 出來的原始碼把數字挖回來比對，這個迴圈才閉合。
+   * `facadeKeyOf` is the JS counterpart of the GLSL if-chain and is itself a second copy of the
+   * data. Reading the numbers back out of the generated source closes the loop.
    */
   it('should emit exactly the thresholds it computed', () => {
     const wall = BUILDING_FRAG.slice(BUILDING_FRAG.indexOf('=== WALL'));
@@ -109,7 +113,7 @@ describe('門檻由 ZONE_CAT 推導', () => {
     expect(emitted, 'GLSL 裡的門檻與 JS 算出來的不一致').toEqual(expected);
   });
 
-  /** 屋頂色票鏈與立面鏈吃同一張門檻表，所以它也要挖回來比對。 */
+  /** The roof palette chain reads the same threshold table as the facade chain, so it is read back too. */
   it('should emit the same thresholds in the roof colour chain', () => {
     const roof = BUILDING_FRAG.slice(
       BUILDING_FRAG.indexOf('vec3 getRoofColor'),
@@ -122,7 +126,7 @@ describe('門檻由 ZONE_CAT 推導', () => {
 });
 
 describe('六個分區的立面沒有被搬錯', () => {
-  /** 每個分支獨有的標記，照 cat 遞增的順序。搬錯位置的話順序會亂。 */
+  /** A marker unique to each branch, in ascending cat order. Moved to the wrong place, the order breaks. */
   const SIGNATURE: Array<[number, string]> = [
     [ZoneType.RESIDENTIAL_LOW, 'RESIDENTIAL LOW'],
     [ZoneType.RESIDENTIAL_HIGH, 'RESIDENTIAL HIGH'],
@@ -143,7 +147,8 @@ describe('六個分區的立面沒有被搬錯', () => {
   });
 
   it('should order the signatures the same way ZONE_CAT does', () => {
-    // 標記的順序是照 cat 排的 —— 這一條讓上面那條「原始碼位置遞增」有意義。
+    // The markers are ordered by cat, which is what gives the "positions increase in the source"
+    // case above its meaning.
     const cats = SIGNATURE.map(([zone]) => ZONE_CAT[zone]!);
     expect(cats).toEqual([...cats].sort((a, b) => a - b));
   });
@@ -151,15 +156,15 @@ describe('六個分區的立面沒有被搬錯', () => {
 
 describe('少一張立面表要當場炸掉', () => {
   it('should have a facade body for every category in ZONE_CAT', () => {
-    // 沒有這一條的話，在 ZONE_CAT 加了類別卻忘了寫立面，結果是那一類建築
-    // 拿到一片沒有窗的純色牆 —— 看起來像「還沒做完」而不像「壞了」。
-    // `facadeChainGlsl` 在模組載入時就會跑，所以缺表的話這個檔案根本 import
-    // 不進來；這一條在那之前先給出看得懂的訊息。
+    // Without this, adding a category to ZONE_CAT and forgetting its facade gives that class of
+    // building a flat windowless wall, which reads as unfinished rather than broken.
+    // `facadeChainGlsl` runs at module load, so a missing table stops this file importing at
+    // all; this case gives a legible message before that happens.
     for (const key of sortedFacadeKeys()) {
       const cat = ZONE_CAT[key]!;
       expect(facadeKeyOf(cat), `類別 ${key} 沒有自己的分支`).toBe(key);
     }
-    // 分支數 = 類別數。少一個就表示某兩個類別共用了一段立面。
+    // One branch per category. One fewer means two categories share a facade.
     const wall = BUILDING_FRAG.slice(BUILDING_FRAG.indexOf('=== WALL'));
     const opens = (wall.match(/\n    (?:else )?if \(vZoneCat|\n    else \{/g) ?? []).length;
     expect(opens, '立面分支數與 ZONE_CAT 的類別數對不上').toBe(sortedFacadeKeys().length);
@@ -170,8 +175,8 @@ describe('公共建築的立面類別', () => {
   const CIVIC_KEYS = [FACADE_CIVIC, FACADE_UTILITY, FACADE_TRANSIT, FACADE_GREEN];
 
   it('should not collide with any ZoneType', () => {
-    // ZoneType 是 0–6。撞號的話公共建築會覆蓋掉某個分區的 cat 與屋頂色票，
-    // 而 Record 的 key 相同只會靜靜地互相蓋掉，不會有任何東西報錯。
+    // ZoneType is 0-6. On a collision a civic building overwrites a zone's cat and roof palette,
+    // and duplicate Record keys simply overwrite each other in silence with nothing reported.
     for (const k of CIVIC_KEYS) expect(k).toBeGreaterThan(100);
     expect(new Set(CIVIC_KEYS).size, '公共類別之間撞號').toBe(CIVIC_KEYS.length);
   });
@@ -187,11 +192,12 @@ describe('公共建築的立面類別', () => {
   });
 
   /**
-   * 這是整輪最重要的一條。
+   * The most important case here.
    *
-   * 立面鏈的最後一個分支原本是無條件的 `else` —— 辦公。加了 cat > 1.0 的
-   * 公共類別之後，若那個 else 沒有變成 else if，公共建築會**靜靜地**掉進
-   * 辦公的窗格分支：一座警局長出玻璃帷幕的辦公窗格，而不會有任何東西報錯。
+   * The facade chain's last branch — office — is an unconditional `else` unless it is made an
+   * `else if`. With civic categories at cat > 1.0 added, an unconditional else drops civic
+   * buildings **silently** into the office window branch: a police station grows curtain-wall
+   * office panes with nothing reported.
    */
   it('should NOT fall through to the office branch', () => {
     for (const k of CIVIC_KEYS) {
@@ -205,7 +211,7 @@ describe('公共建築的立面類別', () => {
     const wall = BUILDING_FRAG.slice(BUILDING_FRAG.indexOf('=== WALL'));
     const officeAt = wall.indexOf('---- OFFICE');
     expect(officeAt, '找不到辦公分支').toBeGreaterThan(-1);
-    // 辦公之後還有分支 → 它不能再是無條件的 else
+    // Branches follow office, so it can no longer be an unconditional else.
     const afterOffice = wall.slice(officeAt);
     expect(afterOffice, '辦公之後沒有公共分支').toContain('---- CIVIC');
     const guard = wall.slice(officeAt).split('\n')[1]!;
@@ -219,14 +225,15 @@ describe('公共建築的立面類別', () => {
   });
 
   it('should give every civic category its own roof palette', () => {
-    // 沒有色票會落到 FALLBACK_ROOF —— 四種公共建築的屋頂會一模一樣的中灰。
+    // With no palette they fall to FALLBACK_ROOF, and all four civic types get identical mid-grey
+    // roofs.
     for (const k of CIVIC_KEYS) {
       expect(roofPaletteFor(k), `類別 ${k} 沒有自己的屋頂色票`)
         .not.toBe(roofPaletteFor(-1));
     }
   });
 
-  /** 這一條就是 BUG-238 本身 —— 做完了夜裡還是全黑的話它要轉紅。 */
+  /** This case is BUG-238 itself: if everything is still dark at night when it is done, it turns red. */
   it('should light something at night in every civic branch', () => {
     const wall = BUILDING_FRAG.slice(BUILDING_FRAG.indexOf('=== WALL'));
     for (const marker of ['---- CIVIC', '---- UTILITY', '---- TRANSIT']) {
@@ -240,17 +247,18 @@ describe('公共建築的立面類別', () => {
         .toContain('windowMask');
       expect(branch, `${marker} 沒有 isLitWindow —— 夜裡一扇燈都不會亮`)
         .toContain('isLitWindow');
-      // 公共建築的閘門是「有沒有電」，不是住戶比例 —— 見下面那一組測試。
+      // A civic building's gate is whether it has power, not an occupancy ratio. See the group of
+      // cases below.
       expect(branch, `${marker} 的亮燈沒有看有沒有電`).toContain('powered');
     }
   });
 });
 
 /**
- * 把立面鏈切成每個類別一段。
+ * Splits the facade chain into one section per category.
  *
- * 切點是 `// ---- NAME ----` —— 那個註解由 `FACADE_COMMENT` 產生，所以它與
- * 分支是同一份資料，不是另外維護的標記表。
+ * The split points are `// ---- NAME ----`, a comment generated by `FACADE_COMMENT`, so it is
+ * the same data as the branches rather than a separately maintained marker table.
  */
 function facadeBranches(): Array<[string, string]> {
   const wall = BUILDING_FRAG.slice(BUILDING_FRAG.indexOf('=== WALL'));
@@ -263,25 +271,29 @@ function facadeBranches(): Array<[string, string]> {
 
 describe('每個算出來的遮罩都要有去處', () => {
   it('should split the chain into one branch per category', () => {
-    // 切不出來的話下面那條會在零個分支上通過 —— 空迴圈永遠是綠的。
+    // Without a successful split, the case below passes over zero branches, and an empty loop is
+    // always green.
     expect(facadeBranches().length).toBe(sortedFacadeKeys().length);
   });
 
   /**
-   * BUG-230a 的形狀：算好了遮罩、設了顏色，卻忘了寫 `windowMask =`。
-   * 那一塊玻璃白天沒有天空反射、夜裡永遠不亮，而且不會有任何東西報錯。
+   * The shape of BUG-230a: the mask is computed and a colour set, but `windowMask =` is never
+   * written. That glass gets no sky reflection by day, never lights at night, and nothing
+   * reports it.
    *
-   * 規則：分支裡宣告的每一個 `float ...Mask`，要嘛進 `windowMask`，要嘛被
-   * 明確地從別的遮罩裡扣掉 —— 住宅低密度的 `doorMask` 走的是後者，因為門是
-   * 實心的，不該當成玻璃。「算了但兩者都不是」就是 BUG-230a。
+   * The rule: every `float ...Mask` declared in a branch either feeds `windowMask` or is
+   * explicitly subtracted from another mask. Low-density residential's `doorMask` takes the
+   * second route, because a door is solid and should not count as glass. Computed and neither
+   * is BUG-230a.
    */
   it('should feed every mask it computes into windowMask, or explicitly exclude it', () => {
     let checked = 0;
     for (const [name, branch] of facadeBranches()) {
       for (const m of branch.matchAll(/float (\w+Mask)\s*=/g)) {
         const mask = m[1]!;
-        // 模板字面值裡的 `\s` 就是 `s` —— 用 RegExp 組字串時反斜線必須寫兩個，
-        // 而寫錯只表現成「這條測試永遠通過」。所以改成先跳脫再組。
+        // In a template literal `\s` is just `s`: building a RegExp from a string needs the
+        // backslash doubled, and getting it wrong only shows up as "this case always passes".
+        // Hence escaping before composing.
         const feeds = new RegExp(String.raw`windowMask\s*=\s*${mask}\b`).test(branch);
         const excluded = new RegExp(String.raw`\*=\s*1\.0\s*-\s*${mask}\b`).test(branch);
         expect(feeds || excluded,
@@ -289,20 +301,23 @@ describe('每個算出來的遮罩都要有去處', () => {
         checked++;
       }
     }
-    // 一個遮罩都沒檢查到就表示正規表示式與 GLSL 的寫法對不上了。
+    // Checking no masks at all means the regular expression no longer matches how the GLSL is
+    // written.
     expect(checked, '沒有掃到任何遮罩宣告 —— 正規表示式失效了').toBeGreaterThan(5);
   });
 });
 
 /**
- * 公共建築的夜間燈光語意與分區建築**不同**。
+ * Civic buildings' night lighting means something **different** from zoned buildings'.
  *
- * 住宅與辦公樓是「住戶比例決定多少扇窗會亮」—— 半空的樓不該整排亮。
- * 公共建築不是住的，所以「多少人住在裡面」對它們沒有意義：變暗的原因是
- * **停電**。`aOccupancy` 在公共建築上載的因此是「有沒有電」。
+ * For residential and office towers, the occupancy ratio decides how many windows light: a
+ * half-empty tower should not light every row. Nobody lives in a civic building, so "how many
+ * people are inside" means nothing for it; what darkens it is **a power cut**. So `aOccupancy`
+ * on a civic building carries whether it has power.
  *
- * 但有電也不是**全亮**：整棟全亮看起來像一張發光的板子，不像一棟建築。
- * 所以照住戶比例 85% 的住宅來 —— 有的開有的關，而且哪幾扇亮會隨時間換。
+ * Powered is still not **fully** lit: a whole building lit reads as a glowing slab rather than a
+ * building. So it follows residential at 85% occupancy — some on, some off, and which ones
+ * change over time.
  */
 describe('公共建築有電才亮，而且不是全亮', () => {
   const POWERED = ['---- CIVIC', '---- UTILITY', '---- TRANSIT'];
@@ -316,7 +331,8 @@ describe('公共建築有電才亮，而且不是全亮', () => {
   }
 
   it('should not grade the lit windows by occupancy', () => {
-    // `mix(a, b, occ)` 就是「住戶比例決定亮多少」—— 那是住宅的規則。
+    // `mix(a, b, occ)` is "the occupancy ratio decides how much lights", which is the
+    // residential rule.
     for (const marker of POWERED) {
       const branch = branchOf(marker);
       expect(branch, `${marker} 還在用住戶比例調亮燈門檻`)
@@ -325,7 +341,7 @@ describe('公共建築有電才亮，而且不是全亮', () => {
   });
 
   it('should leave some windows dark instead of lighting them all', () => {
-    // 整棟全亮看起來像一張發光的板子。
+    // A whole building lit reads as a glowing slab.
     for (const marker of POWERED) {
       const branch = branchOf(marker);
       expect(branch, `${marker} 是整棟全亮 —— 沒有暗的窗`).toContain('civicDark');
@@ -333,13 +349,14 @@ describe('公共建築有電才亮，而且不是全亮', () => {
   });
 
   /**
-   * 暗掉的比例要**看得出來**。
+   * The dark fraction has to be **visible**.
    *
-   * 第一版寫了 0.15（85% 亮），而畫面上看不出有的開有的關 —— 85% 亮仍然
-   * 像一張發光的板子。要的是住宅那條規則在住戶比例 85% 時的樣子：
-   * `mix(0.95, 0.4, 0.85)` ≈ 0.48，也就是大約一半亮。
+   * At 0.15 — 85% lit — nothing on screen reads as some on and some off; 85% lit is still a
+   * glowing slab. What is wanted is what the residential rule looks like at 85% occupancy:
+   * `mix(0.95, 0.4, 0.85)` ~ 0.48, roughly half lit.
    *
-   * 這條測試釘住那個區間：太低會變回全亮，太高會讓建築整棟看起來像沒電。
+   * This case pins that range: lower returns to fully lit, higher makes the whole building look
+   * unpowered.
    */
   it('should keep the dark fraction in a range you can actually see', () => {
     const wall = BUILDING_FRAG.slice(BUILDING_FRAG.indexOf('=== WALL'));
@@ -351,8 +368,8 @@ describe('公共建築有電才亮，而且不是全亮', () => {
   });
 
   it('should match what the residential rule gives at 85% occupancy', () => {
-    // 對齊的是「住戶比例 85% 的住宅」。住宅高密度是
-    // `mix(0.95, 0.4, occ)` —— 這裡的值要對得上，否則註解在說謊。
+    // Aligned with residential at 85% occupancy. High-density residential is
+    // `mix(0.95, 0.4, occ)`, and the value here has to match it or the comment is lying.
     const wall = BUILDING_FRAG.slice(BUILDING_FRAG.indexOf('=== WALL'));
     const dark = Number(wall.match(/float civicDark = ([0-9.]+);/)![1]);
     const residentialAt85 = 0.95 + (0.4 - 0.95) * 0.85;
@@ -360,8 +377,8 @@ describe('公共建築有電才亮，而且不是全亮', () => {
   });
 
   it('should make which windows are lit change over time', () => {
-    // 「開開關關的效果」靠的是 epoch：每隔一段時間重擲一次哪幾扇亮。
-    // 少了它，暗的那幾扇會永遠是同樣那幾扇 —— 那是一張靜止的貼圖。
+    // The on-and-off effect comes from the epoch: which windows light is redrawn every so often.
+    // Without it the dark ones are always the same ones, which is a still texture.
     for (const marker of POWERED) {
       const branch = branchOf(marker);
       expect(branch, `${marker} 的亮窗不會隨時間換`).toMatch(/[eE]poch/);
@@ -370,7 +387,8 @@ describe('公共建築有電才亮，而且不是全亮', () => {
   });
 
   it('should define the dark fraction once, in the shared preamble', () => {
-    // 三個分支各寫一個 0.15 的話，調亮度要記得改三個地方。
+    // With 0.15 written into each of the three branches, changing the brightness means
+    // remembering three places.
     const wall = BUILDING_FRAG.slice(BUILDING_FRAG.indexOf('=== WALL'));
     const decl = wall.indexOf('float civicDark');
     expect(decl, '找不到 civicDark 的宣告').toBeGreaterThan(-1);
@@ -381,7 +399,7 @@ describe('公共建築有電才亮，而且不是全亮', () => {
   });
 
   it('should still go dark without power', () => {
-    // 有電才亮。少了這個判斷，停電的建築在夜裡照樣燈火通明。
+    // Lit only with power. Without the test, an unpowered building blazes all night.
     for (const marker of POWERED) {
       const branch = branchOf(marker);
       expect(branch, `${marker} 沒有看有沒有電`).toContain('powered');
@@ -390,8 +408,8 @@ describe('公共建築有電才亮，而且不是全亮', () => {
   });
 
   it('should define powered from occupancy in the shared preamble', () => {
-    // `occ` 的定義只有一份（`float occ = vOccupancy < 0.01 ? -1.0 : ...`），
-    // 所以 powered 也該只有一份 —— 三個分支各寫一次的話，改了一個就漂了。
+    // `occ` is defined once (`float occ = vOccupancy < 0.01 ? -1.0 : ...`), so powered should be
+    // too: written once per branch, changing one leaves the others behind.
     const wall = BUILDING_FRAG.slice(BUILDING_FRAG.indexOf('=== WALL'));
     const decl = wall.indexOf('bool powered');
     expect(decl, '找不到 powered 的宣告').toBeGreaterThan(-1);

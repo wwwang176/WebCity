@@ -23,28 +23,27 @@ import {
 } from '../index';
 
 /**
- * 公共建築的量體與貼片組裝。
+ * Assembly of civic buildings' masses and decals.
  *
- * 圖元（`frustum` / `cylinder` / `shapeOf`）全部沿用 `buildings/massing`，
- * 這裡只換護欄與貼片的產生方式。各寫一份圖元的下場這個專案已經示範過
- * （BUG-231 的地板顏色兩份、BUG-231 之後才收斂）。
+ * The primitives (`frustum`, `cylinder`, `shapeOf`) all come from `buildings/massing`; only the
+ * guards and the way decals are produced differ here. A second copy of the primitives is the
+ * mistake behind BUG-231, where the floor colour existed twice.
  */
 
 /**
- * `mergeGeometries`，但失敗時**丟例外**而不是回傳 null。
+ * `mergeGeometries`, but it **throws** on failure instead of returning null.
  *
- * three.js 的 `mergeGeometries` 在屬性集合不一致時只印一行 `console.error`
- * 然後回傳 null —— 不丟例外。所以原本那個 `mergeGeometries(parts)!` 是在對
- * TypeScript 說謊，而 null 會一路傳到 `new THREE.Mesh(geo, mat)` 才炸，
- * 離現場很遠。
+ * three.js's `mergeGeometries` prints one `console.error` and returns null when the attribute
+ * sets disagree; it does not throw. So `mergeGeometries(parts)!` lies to TypeScript, and the
+ * null travels all the way to `new THREE.Mesh(geo, mat)` before failing, far from the scene.
  *
- * 它真的發生過：機場把**飛機**（`position,normal,color`）與公車
- * （`position,normal,color,uv`）停在同一塊地上，合併回傳 null，而每一條測試
- * 都是綠的 —— 資料表測的是「不得丟例外」，而它真的沒丟。只有在瀏覽器裡開起來
- * 才看得到。
+ * It happens in practice: an airport parks an **aircraft** (`position,normal,color`) and a bus
+ * (`position,normal,color,uv`) on one plot, the merge returns null, and every test stays green,
+ * because the data table checks that nothing throws and nothing does. Only opening it in a
+ * browser shows it.
  *
- * 訊息裡列出每一份的屬性集合：光說「合併失敗」的話，下一個人要自己去找是哪
- * 一份不一樣。
+ * The message lists each input's attribute set: "merge failed" alone leaves the next person to
+ * find which one differs.
  */
 export function mergeOrThrow(
   parts: THREE.BufferGeometry[], what: string,
@@ -57,7 +56,7 @@ export function mergeOrThrow(
   );
 }
 
-/** 空的但**有頂點色**的幾何。少了頂點色，shader 會把它當成 partType 0。 */
+/** An empty geometry that still **carries vertex colours**. Without them the shader reads it as partType 0. */
 function emptyTagged(part: number): THREE.BufferGeometry {
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(0), 3));
@@ -67,10 +66,11 @@ function emptyTagged(part: number): THREE.BufferGeometry {
 }
 
 /**
- * 把建築色攤到每個頂點上（`aBldgColor`）。
+ * Spreads the building colour across every vertex (`aBldgColor`).
  *
- * 逐**量體**寫而不是最後整份寫：醫院的紅十字、大學的金頂是單獨一塊量體的
- * 顏色，而合併之後就分不出誰是誰了。與 `tagPart` 完全同一個道理。
+ * Written per **mass** rather than once over the merged result: a hospital's red cross and a
+ * university's gold dome are one mass's colour, and after merging they cannot be told apart.
+ * Exactly the same reasoning as `tagPart`.
  */
 function tagColor(geo: THREE.BufferGeometry, c: CivicColor): void {
   const count = geo.getAttribute('position').count;
@@ -83,7 +83,7 @@ function tagColor(geo: THREE.BufferGeometry, c: CivicColor): void {
   geo.setAttribute('aBldgColor', new THREE.BufferAttribute(arr, 3));
 }
 
-/** 離佔地中心的最大距離，逐軸。非置中的量體會單邊外凸，寬度看不出來。 */
+/** The maximum distance from the plot's centre, per axis. An off-centre mass bulges on one side without its width showing it. */
 function extentOf(v: Volume): { x: number; z: number } {
   return {
     x: Math.max(Math.abs(v.x - v.w / 2), Math.abs(v.x + v.w / 2)),
@@ -92,17 +92,19 @@ function extentOf(v: Volume): { x: number; z: number } {
 }
 
 /**
- * 量體越出佔地就丟例外。
+ * Throws when a mass leaves the plot.
  *
- * 與分區版 `assemble()` 的護欄是**不同的東西**：那邊擋的是行人包絡線
- * （格內的概念，門節點放在它外側，越過就是行人穿牆 BUG-221）。公共建築
- * 佔好幾格，包絡線不適用 —— 它要擋的是「壓到鄰格的建築或馬路」。
+ * A **different guard** from the zoned `assemble()`'s: that one bounds the pedestrian envelope,
+ * an in-cell concept whose door nodes sit outside it and which pedestrians cross by walking
+ * through walls (BUG-221). Civic buildings occupy several cells, where the envelope does not
+ * apply; what has to be kept out is a neighbouring cell's building or road.
  *
- * 逐軸量而不是取單一半徑：2×3 的醫院在 z 方向有 3 格可用、x 方向只有 2 格。
- * 取單一半徑的話，不是浪費掉長邊就是讓短邊溢出。
+ * Measured per axis rather than as a single radius: a 2x3 hospital has 3 cells along z and only
+ * 2 along x, and a single radius either wastes the long side or lets the short one overflow.
  *
- * 量離中心的最大距離而不是包圍盒寬度：偏心的量體會單邊外凸，而寬度看不出來
- * —— 那是 BUG-222 的形狀。
+ * Measured as the maximum distance from the centre rather than a bounding box width: an
+ * off-centre mass bulges on one side without its width showing it, which is the shape of
+ * BUG-222.
  */
 function assertInside(volumes: readonly Volume[], footprint: Footprint, inset: number): void {
   const limX = footprint.w / 2 - inset;
@@ -119,7 +121,7 @@ function assertInside(volumes: readonly Volume[], footprint: Footprint, inset: n
   }
 }
 
-/** 公共建築的量體轉幾何。越出佔地時丟例外。 */
+/** Turns a civic building's masses into geometry. Throws when anything leaves the plot. */
 export function assembleCivic(
   volumes: readonly CivicVolume[], footprint: Footprint, baseColor: CivicColor,
 ): THREE.BufferGeometry {
@@ -129,15 +131,16 @@ export function assembleCivic(
   for (const v of volumes) {
     for (const g of shapeOf(v)) {
       tagPart(g, partOf(v));
-      // **在 tagPart 之後。** `tagPart` 會重建整份 color 屬性（三個通道一起
-      // 歸零），所以順序反過來的話明度會被靜靜抹掉。
+      // **After tagPart.** `tagPart` rebuilds the whole colour attribute, zeroing all three
+      // channels, so in the other order the brightness is silently erased.
       if (v.shade !== undefined) setGroundShade(g, v.shade);
       tagColor(g, v.color ?? baseColor);
       parts.push(g);
     }
   }
-  // 公園可能完全沒有量體（只有貼片與樹）。空陣列丟給 mergeGeometries 會回傳
-  // null，而 null 一路傳到 `new THREE.Mesh` 才炸 —— 離現場很遠。
+  // A park can have no masses at all, only decals and trees. An empty array makes
+  // mergeGeometries return null, and the null travels to `new THREE.Mesh` before failing, far
+  // from the scene.
   if (parts.length === 0) return emptyTagged(PART_WALL);
   return mergeOrThrow(parts, '量體');
 }
@@ -146,10 +149,10 @@ const layerY = (d: CivicDecal) =>
   (d.layer === 'mark' ? GROUND_LAYERS.MARKING : GROUND_LAYERS.DECAL);
 
 /**
- * 貼片轉向之後的軸對齊包絡線，寫成零高度的量體給 `assertInside` 吃。
+ * A rotated decal's axis-aligned envelope, expressed as a zero-height mass for `assertInside`.
  *
- * 一個 w × d 的矩形轉 θ 之後的包絡線是
- * （w|cosθ| + d|sinθ|）×（w|sinθ| + d|cosθ|）—— 中心不變。
+ * A w x d rectangle turned by theta has the envelope
+ * (w|cos theta| + d|sin theta|) x (w|sin theta| + d|cos theta|), with the centre unchanged.
  */
 function turnedBounds(d: CivicDecal): Volume {
   const c = Math.abs(Math.cos(d.rotationY ?? 0));
@@ -162,7 +165,7 @@ function turnedBounds(d: CivicDecal): Volume {
   };
 }
 
-/** 兩塊貼片的水平交集面積。共邊（接觸）回傳 0。 */
+/** The horizontal intersection area of two decals. Sharing an edge returns 0. */
 function overlapArea(a: CivicDecal, b: CivicDecal): number {
   const ox = Math.min(a.x + a.w / 2, b.x + b.w / 2) - Math.max(a.x - a.w / 2, b.x - b.w / 2);
   const oz = Math.min(a.z + a.d / 2, b.z + b.d / 2) - Math.max(a.z - a.d / 2, b.z - b.d / 2);
@@ -170,10 +173,10 @@ function overlapArea(a: CivicDecal, b: CivicDecal): number {
 }
 
 /**
- * 貼片轉幾何。
+ * Turns decals into geometry.
  *
- * 貼片**不吃 `CIVIC_INSET`** —— 它是平的鋪面，鋪到格子邊界是對的：人行道
- * 本來就一路鋪到路邊。但它仍然不得越出佔地。
+ * Decals **take no `CIVIC_INSET`**: they are flat paving, and paving to the cell boundary is
+ * correct, since a sidewalk runs all the way to the kerb. They still may not leave the plot.
  */
 export function assembleDecals(
   decals: readonly CivicDecal[], footprint: Footprint,
@@ -187,13 +190,15 @@ export function assembleDecals(
     }
   }
 
-  // 借量體的護欄：把貼片當成零高度的量體，護欄的算術完全一樣。
-  // 轉過的標線要用**轉向之後**的包絡線 —— 用原本的長寬檢查的話，一條沿 x
-  // 剛好放得下的線轉 90 度之後會伸進隔壁的格子而沒有人擋。
+  // Reuses the mass guard by treating a decal as a zero-height mass; the arithmetic is
+  // identical. A rotated marking is checked against its **rotated** envelope: checked against
+  // its original width and depth, a line that just fits along x reaches into the next cell once
+  // turned 90 degrees, with nothing stopping it.
   assertInside(decals.map(turnedBounds), footprint, 0);
 
-  // 底層彼此不得重疊。標線層可以疊在鋪面上，也可以彼此疊（停車格線畫在
-  // 入口踏板上）—— 因為它們高度不同，或本來就是設計成疊的。
+  // Base layers must not overlap each other. Marking layers may sit over paving and over each
+  // other — parking bay lines drawn across an entrance tread — because they are at different
+  // heights, or are meant to stack.
   const base = decals.filter(d => (d.layer ?? 'base') === 'base');
   for (let i = 0; i < base.length; i++) {
     for (let j = i + 1; j < base.length; j++) {
@@ -209,14 +214,16 @@ export function assembleDecals(
 
   const parts = decals.map((d) => {
     const geo = new THREE.PlaneGeometry(d.w, d.d);
-    geo.rotateX(-Math.PI / 2);   // 朝上。材質是 FrontSide，朝下就完全看不到。
-    // **轉在平移之前** —— 反過來的話它會繞原點轉，整條跑道會甩到別的地方去。
+    geo.rotateX(-Math.PI / 2);   // Face up. The material is FrontSide, so face down is entirely invisible.
+    // **Rotate before translating**: the other way round it turns about the origin and the whole
+    // runway swings somewhere else.
     if (d.rotationY) geo.rotateY(d.rotationY);
     geo.translate(d.x, layerY(d), d.z);
     tagPart(geo, d.lawn ? PART_FOLIAGE : d.water ? PART_WATER : PART_GROUND);
     setGroundShade(geo, d.shade);
-    // 貼片的顏色由 PART_GROUND / PART_FOLIAGE 的分支決定，不吃 aBldgColor。
-    // 仍然要寫：屬性缺席時 WebGL 一律餵 0，而 `isFloor` 分支會讀到它。
+    // A decal's colour comes from the PART_GROUND / PART_FOLIAGE branches, not from
+    // aBldgColor. It is written anyway: WebGL feeds 0 for a missing attribute, and the `isFloor`
+    // branch reads it.
     tagColor(geo, CIVIC_DEFAULT_COLOR);
     return geo;
   });
@@ -226,14 +233,15 @@ export function assembleDecals(
 }
 
 /**
- * 共用矮物件轉幾何。
+ * Turns shared low props into geometry.
  *
- * 自己一層，不與 `assembleCivic` 的產物合併 —— 這些圖元用 `THREE` 的圓錐、
- * 球、環（索引、帶 uv），量體是 `shapeOf` 的稜台（非索引、無 uv），
- * `mergeGeometries` 要求屬性集合一致，兩者併不起來。
+ * Its own layer, never merged with `assembleCivic`'s output: these primitives use THREE's
+ * cones, spheres and toruses (indexed, with uvs) while masses are `shapeOf` frusta
+ * (non-indexed, no uvs), and `mergeGeometries` requires matching attribute sets.
  *
- * 護欄與量體同一條：越出佔地就丟例外。範圍取自 `propExtent`，它逐軸回報
- * 半寬 —— 少報的話東西會伸出去壓到鄰格。
+ * The guard is the same as for masses: leaving the plot throws. The extents come from
+ * `propExtent`, which reports half-widths per axis; under-reported, something reaches out over
+ * a neighbouring cell.
  */
 export function assembleFixtures(
   fixtures: readonly PropSpec[], footprint: Footprint,
@@ -253,10 +261,10 @@ export function assembleFixtures(
 }
 
 /**
- * 車種 → `VEHICLE_CONFIG` 的鍵。
+ * Vehicle kind to its `VEHICLE_CONFIG` key.
  *
- * 兩邊的命名不一樣（`policeCar` 對 `police_car`），所以需要這張表 —— 但它
- * 只是改名，顏色仍然由 `VEHICLE_CONFIG` 說了算。
+ * The two naming schemes differ (`policeCar` versus `police_car`), hence this table. It only
+ * renames; the colour is still `VEHICLE_CONFIG`'s to decide.
  */
 const VEHICLE_CONFIG_KEY: Record<CivicVehicleKind, string> = {
   car: 'car',
@@ -272,12 +280,13 @@ const VEHICLE_CONFIG_KEY: Record<CivicVehicleKind, string> = {
 };
 
 /**
- * `VEHICLE_CONFIG.color === −1` 的車種停著時用的定色。
+ * Fixed colours for parked vehicles whose `VEHICLE_CONFIG.color === -1`.
  *
- * 那個 −1 的意思是「開在路上時逐台從色盤隨機挑」，而隨機需要一個 vehicle id
- * —— 停著的車沒有。公共建築又不做變體（三間警局必須長得一樣），所以這裡給
- * 定值。淺色是刻意的：這幾種在公共建築上的角色是**工作車輛**（機場的地勤車、
- * 廠區的貨車），而工作車輛就是淺色的。
+ * That -1 means "pick from a palette per vehicle while driving", and picking needs a vehicle id,
+ * which a parked vehicle has none of. Civic buildings have no variants either — three police
+ * stations have to look alike — so a fixed value is given here. Pale is deliberate: these kinds
+ * play the role of **work vehicles** on a civic plot (an airport's ground crew, a plant's
+ * trucks), and work vehicles are pale.
  */
 const PARKED_TINT: Partial<Record<CivicVehicleKind, number>> = {
   car: 0xb0bec5,
@@ -287,13 +296,14 @@ const PARKED_TINT: Partial<Record<CivicVehicleKind, number>> = {
 };
 
 /**
- * 停著的車該是什麼顏色。
+ * What colour a parked vehicle should be.
  *
- * **停著的車與開在路上的同型車必須同色。** 這件事原本是壞的：車輛幾何把
- * 車身的頂點色寫成 (1, 1, 1)，真正的顏色是 `VehicleRenderer` 用
- * `setColorAt` 的逐實例色乘上去的 —— 而 `assembleVehicles` 產出的是普通
- * `Mesh`，沒有逐實例色。於是停在消防局門口的消防車是**白的**，而街上跑的
- * 是紅的。畫面上那台「不夠暗紅」的消防車其實根本沒有顏色。
+ * **A parked vehicle and a driving one of the same type have to share a colour.** Vehicle
+ * geometry writes the body's vertex colour as (1, 1, 1) and the real colour is multiplied in by
+ * `VehicleRenderer`'s per-instance `setColorAt`, while `assembleVehicles` produces a plain
+ * `Mesh` with no per-instance colour. Without this, the fire engine outside a fire station is
+ * **white** while the one on the street is red — what looks like a fire engine that is not quite
+ * dark enough has in fact no colour at all.
  */
 export function civicVehicleTint(kind: CivicVehicleKind): number {
   const cfg = VEHICLE_CONFIG[VEHICLE_CONFIG_KEY[kind]];
@@ -301,7 +311,7 @@ export function civicVehicleTint(kind: CivicVehicleKind): number {
   return PARKED_TINT[kind] ?? 0xbdbdbd;
 }
 
-/** 把顏色乘進頂點色 —— 與 `VehicleRenderer` 的逐實例色是同一個運算。 */
+/** Multiplies a colour into the vertex colours, the same operation as `VehicleRenderer`'s per-instance colour. */
 function tintVehicle(geo: THREE.BufferGeometry, hex: number): void {
   const r = ((hex >> 16) & 0xff) / 255;
   const g = ((hex >> 8) & 0xff) / 255;
@@ -316,28 +326,25 @@ function tintVehicle(geo: THREE.BufferGeometry, hex: number): void {
 }
 
 /**
- * 車種 → 幾何。
+ * An aircraft's vertical tail colour.
  *
- * 這張表是唯一的對應，寫死在別處的話就會出現「停著的救護車其實是廂型車」
- * 這種只有一個人看得出來的錯。
- */
-/**
- * 飛機的垂直尾翼顏色。
- *
- * `VehicleRenderer` 給每一台飛機從 `AIRLINE_TAIL_COLORS` 挑一個尾翼色 ——
- * 那需要一個 vehicle id，而停著的飛機沒有。所以這裡給定值，理由與
- * `PARKED_TINT` 相同。深藍是最不會與淺色機身撞在一起的一個。
+ * `VehicleRenderer` picks a tail colour per aircraft from `AIRLINE_TAIL_COLORS`, which needs a
+ * vehicle id that a parked aircraft has none of. So a fixed value is given here, for the same
+ * reason as `PARKED_TINT`. Deep blue is the one least likely to collide with a pale fuselage.
  */
 export const PARKED_TAIL_TINT = 0x1e5aa8;
 
 /**
- * 車種 → 幾何的**每一塊**，以及那一塊自己的顏色。
+ * Vehicle kind to **each piece** of its geometry, and that piece's own colour. This table is the
+ * only such mapping; written a second time elsewhere it produces a parked ambulance that is
+ * really a van, a mistake only one person ever notices.
  *
- * 回傳陣列而不是單一幾何，是因為飛機不只一塊：`VehicleRenderer` 把機身與
- * **垂直尾翼**畫成兩個 instanced mesh，好讓尾翼有自己的塗裝色。只取機身的話
- * 停在停機坪上的飛機沒有尾翼 —— 而那是一眼就看得到的。
+ * It returns an array rather than a single geometry because an aircraft is more than one piece:
+ * `VehicleRenderer` draws the fuselage and the **vertical tail** as two instanced meshes so the
+ * tail can carry its own livery colour. Taking the fuselage alone leaves an aircraft parked on
+ * an apron with no tail, which is visible at a glance.
  *
- * `tint` 是這一塊自己的顏色；沒有的話吃整台車的顏色。
+ * `tint` is that piece's own colour; without one it takes the whole vehicle's.
  */
 const VEHICLE_PARTS: Record<
   CivicVehicleKind, () => Array<{ geo: THREE.BufferGeometry; tint?: number }>
@@ -358,26 +365,28 @@ const VEHICLE_PARTS: Record<
 };
 
 /**
- * 一台車的每一塊，已經上好色、放在原點。
+ * Every piece of one vehicle, coloured and placed at the origin.
  *
- * 抽出來是為了讓展示區的**飛行中**飛機也走同一條路：它要的是一台上好色的
- * 飛機，但不要停放位置、也不要佔地護欄。各做一份的話，天上飛的與停著的
- * 塗裝會不一樣 —— 而那正是這一整批一直在避免的事。
+ * Extracted so the showcase's **in-flight** aircraft takes the same path: it needs a coloured
+ * aircraft without a parking position and without the plot guard. Built separately, the livery
+ * in the air and the livery on the ground would differ, which is what this whole batch exists to
+ * avoid.
  */
 export function vehiclePieces(
   kind: CivicVehicleKind, tint?: number,
 ): THREE.BufferGeometry[] {
   return VEHICLE_PARTS[kind]().map(({ geo, tint: partTint }) => {
-    // 車種之間的屬性集合本來就不一致：八種地面車帶 `uv`，飛機沒有。
-    // 車輛材質（`MeshLambertMaterial` + 頂點色）不取樣任何貼圖，所以 uv 是
-    // 純粹的死重 —— 一律丟掉，而不是替飛機補一份假的。
+    // Attribute sets differ between kinds: the eight ground vehicles carry `uv` and aircraft do
+    // not. The vehicle material (`MeshLambertMaterial` plus vertex colours) samples no texture,
+    // so uvs are pure dead weight — dropped from all of them, rather than fabricated for
+    // aircraft.
     geo.deleteAttribute('uv');
     tintVehicle(geo, partTint ?? tint ?? civicVehicleTint(kind));
     return geo;
   });
 }
 
-/** 一台上好色的完整車輛，合併成一份幾何、放在原點。 */
+/** One complete coloured vehicle, merged into a single geometry at the origin. */
 export function civicVehicleGeometry(
   kind: CivicVehicleKind, tint?: number,
 ): THREE.BufferGeometry {
@@ -385,17 +394,19 @@ export function civicVehicleGeometry(
 }
 
 /**
- * 停放的車輛轉幾何。
+ * Turns parked vehicles into geometry.
  *
- * **不 `tagPart`、不 `tagColor`。** 車輛的 `color` 屬性裝的是真正的 RGB，
- * 蓋掉的話車身的白藍會變成零件標籤。它們走的是車輛材質，不是建築 shader。
+ * **No `tagPart` and no `tagColor`.** A vehicle's `color` attribute holds real RGB, and
+ * overwriting it turns a body's white and blue into part tags. They use the vehicle material,
+ * not the building shader.
  *
- * 護欄與量體同一條，範圍量的是**旋轉之後**的包圍盒 —— 車轉了 90 度之後
- * 佔的方向就換了，用原本的長寬檢查會放行一台其實伸出去的車。
+ * The guard is the same as for masses, measured against the **rotated** bounding box: a vehicle
+ * turned 90 degrees occupies a different direction, and checked against its original width and
+ * depth one that actually reaches out would pass.
  *
- * 註：`computeBoundingBox()` 寫在旋轉之前或之後其實都對 —— three.js 的
- * `applyMatrix4` 在 `boundingBox` 已存在時會自己重算。這一行的位置不承重，
- * 承重的是「拿來檢查的是旋轉後的那個 box」。
+ * Note: `computeBoundingBox()` is correct before or after the rotation — three.js's
+ * `applyMatrix4` recomputes it when a `boundingBox` already exists. What matters is that the box
+ * being checked is the rotated one, not where this line sits.
  */
 export function assembleVehicles(
   vehicles: readonly CivicVehicle[], footprint: Footprint,
@@ -427,8 +438,8 @@ export function assembleVehicles(
   if (parts.length === 0) {
     const empty = new THREE.BufferGeometry();
     empty.setAttribute('position', new THREE.BufferAttribute(new Float32Array(0), 3));
-    // 材質吃頂點色，所以空幾何也要有 color —— 少了它 mergeGeometries 之後
-    // 的屬性集合會與有車的情況不一致。
+    // The material reads vertex colours, so even an empty geometry carries `color`; without it
+    // the attribute set after mergeGeometries would differ from the case with vehicles.
     empty.setAttribute('color', new THREE.BufferAttribute(new Float32Array(0), 3));
     return empty;
   }

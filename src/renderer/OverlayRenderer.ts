@@ -21,13 +21,13 @@ export enum OverlayType {
   COMMUTE = 'commute',
 }
 
-/** 圖層上的一個分區名稱標籤。 */
+/** One district name label on the overlay. */
 export interface DistrictLabel {
   name: string;
-  /** 分區的中心格。 */
+  /** The district's centre cell. */
   x: number;
   y: number;
-  /** 這一區的圖層數值（1–100）—— 標籤的底色用它，跟腳下的色塊對得起來。 */
+  /** This district's overlay value (1-100). The label's background uses it so it matches the patch beneath. */
   value: number;
 }
 
@@ -52,16 +52,17 @@ export class OverlayRenderer {
   private readonly _reusableColor = new THREE.Color();
 
   /**
-   * 地面覆蓋層的繪製順序。
+   * Render order of the ground overlay.
    *
-   * 建築材質是 `transparent: true`，所以建築、地面貼片與覆蓋層全在同一個透明
-   * 批次裡，而 three.js 對透明物件是按**物件中心點**到鏡頭的距離排序 —— 覆蓋層
-   * 是一整張蓋滿全圖的單一 mesh，中心點只有一個，所以鏡頭一轉前後關係就整批
-   * 翻面：地面貼片一下被半透明色塊蓋掉、一下又冒出來。
+   * The building material is `transparent: true`, so buildings, ground decals and the overlay
+   * all share one transparent batch, and three.js sorts transparent objects by the distance from
+   * the camera to an **object's centre**. The overlay is a single mesh covering the whole map
+   * with one centre, so turning the camera flips the whole ordering at once: ground decals are
+   * covered by the translucent patches one moment and reappear the next.
    *
-   * 排在地面細節（預設 0）之前，貼片就畫在色塊上面，玩家同時看得到「這一格的
-   * 數值」與「這裡有什麼」。靠的是材質不寫深度 —— 寫了的話後面畫的貼片會被
-   * 深度測試擋掉。
+   * Ordered before ground detail (default 0), decals draw on top of the patches and the player
+   * sees both this cell's value and what stands on it. That relies on the material not writing
+   * depth; writing it, the later decals would be rejected by the depth test.
    */
   private static readonly GROUND_RENDER_ORDER = -1;
 
@@ -82,31 +83,37 @@ export class OverlayRenderer {
 
     if (type === OverlayType.NONE) return;
 
-    // 尺寸由 `updateLabelScale` 給 —— 建完先套一次，不然第一幀之前是零大小。
+    // The size comes from `updateLabelScale`; it is applied once after building, or the labels
+    // are zero-sized until the first frame.
     if (labels?.length) this.buildLabels(scene, labels);
 
     const w = grid.width;
     const h = grid.height;
-    // 一格一個頂點，頂點落在格子**中心**上。
+    // One vertex per cell, landing on the cell's **centre**.
     //
-    // 顏色是逐頂點給的，所以頂點在哪裡，那個顏色就出現在哪裡。原本鋪的是
-    // `PlaneGeometry(w, h, w, h)` —— (w+1)×(h+1) 個頂點落在格子的**角**上
-    // （世界座標 `i-0.5`），卻塞進格 (i,j) 的顏色，於是整張色場往 −x、−z 各偏
-    // 半格，在等角視角下看起來就是整片往西北挪了半格。
+    // Colours are given per vertex, so a colour appears wherever its vertex is.
+    // `PlaneGeometry(w, h, w, h)` puts (w+1)x(h+1) vertices on the cells' **corners** (world
+    // coordinate `i-0.5`) while carrying cell (i,j)'s colour, shifting the whole colour field
+    // half a cell along -x and -z, which in an isometric view reads as the entire overlay moved
+    // half a cell to the north-west.
     //
-    // 少一段就讓頂點正好落在 0..w-1 的整數上，跟建築、游標、分區外框同一套座標。
-    // 代價是最外圈半格沒有色塊 —— 色塊鋪到邊界格的中心線為止。四邊對稱，而往
-    // 東南推半格的另一種修法會讓半格懸在地形外面（地形只鋪到 w-0.5）。
+    // One segment fewer puts the vertices exactly on the integers 0..w-1, the same coordinates
+    // buildings, the cursor and district outlines use. The cost is half a cell with no patch
+    // around the outside: the patches reach the boundary cells' centre lines. That is symmetric
+    // on all four sides, while pushing half a cell south-east instead would leave half a cell
+    // hanging off the terrain, which only reaches w-0.5.
     const geometry = new THREE.PlaneGeometry(w - 1, h - 1, w - 1, h - 1);
     geometry.rotateX(-Math.PI / 2);
 
-    // 頂點色帶第四個分量。three.js 看到 itemSize 4 的 color 屬性就會啟用逐頂點
-    // 透明度；只有 RGB 的話材質就只剩一個統一的 `opacity`，於是**值為 0 的格子
-    // 也照樣被塗**成 `getColor(type, 0)`，整張地圖蓋一層均勻的色。
+    // The vertex colours carry a fourth component. three.js enables per-vertex alpha when it
+    // sees a colour attribute with itemSize 4; with RGB only, the material has a single uniform
+    // `opacity` and **cells whose value is 0 are painted too**, in `getColor(type, 0)`, laying a
+    // uniform wash over the whole map.
     //
-    // 濃度是二元的，不隨數值等比縮放：多數圖層的數值是分類而非強度 —— 缺電是
-    // 15、供電不足是 50、正常是 100。等比縮放會讓最該看到的紅色警告淡到幾乎
-    // 不見，而「一切正常」反而最顯眼。
+    // The alpha is binary rather than proportional to the value: most overlays' values are
+    // categories rather than intensities — no power is 15, undersupplied is 50, healthy is 100.
+    // Scaled proportionally, the red warnings that most need seeing fade to almost nothing while
+    // "everything is fine" is the most prominent thing on screen.
     const colors = new Float32Array(w * h * 4);
 
     for (let j = 0; j < h; j++) {
@@ -194,10 +201,11 @@ export class OverlayRenderer {
   }
 
   /**
-   * 一個圖層數值（0–100）在這張圖層上的顏色。
+   * An overlay value's (0-100) colour on this overlay.
    *
-   * 給地面**以外**的東西用 —— 建築壓在色塊上，只看得到屋頂的街廓要拿同一個顏色
-   * 才說得出腳下那一格是什麼。顏色不能兩邊各算一次:改了一邊另一邊就不一樣。
+   * For everything **other than** the ground: buildings stand on the patches, and a block that
+   * shows only rooftops needs the same colour to say what the cell beneath it is. The colour must
+   * not be computed on both sides, or changing one leaves the other behind.
    */
   colorFor(type: OverlayType, value: number): number {
     return this.getColor(type, Math.min(1, Math.max(0, value / 100))).getHex();
@@ -209,9 +217,10 @@ export class OverlayRenderer {
     switch (type) {
       case OverlayType.TRAFFIC:
         return c.setHSL(0.33 - value * 0.33, 0.8, 0.5); // Green to red
-      // 通勤時間：綠（走得到、搭得到）→ 紅（超過這條線就會想換工作）。
-      // 刻度是絕對值不是相對最大值 —— 相對刻度會讓一座通勤全都很好的城市裡
-      // 最慢的那一格照樣被畫成紅色，紅色必須永遠代表「這裡的人真的過得不好」。
+      // Commute time: green (walkable, reachable by transit) to red (past this line people
+      // start looking for another job). The scale is absolute rather than relative to the
+      // maximum: a relative scale would redden the slowest cell even in a city with uniformly
+      // good commutes, and red has to always mean these residents are genuinely badly off.
       case OverlayType.COMMUTE:
         return c.setHSL(0.33 - value * 0.33, 0.75, 0.45);
       case OverlayType.LAND_VALUE:
@@ -245,9 +254,10 @@ export class OverlayRenderer {
         return c.setRGB(0.1, value, 0.2);
       case OverlayType.GARBAGE:
         return c.setRGB(value * 0.5, value * 0.4, 0.1);
-      // 分區的數值是身分不是強度 —— builder 給每個分區一個 20–99 的雜湊值，
-      // 這裡把它當色相用。分區數量沒有上限，用色相環才分得開相鄰的兩區；
-      // 換成明度或單一色相的深淺，第三個分區就跟第一個看起來一樣了。
+      // A district's value is an identity rather than an intensity: the builder gives each
+      // district a value in 20-99 and this uses it as a hue. There is no cap on the number of
+      // districts, and only a hue wheel keeps two neighbours apart; with brightness or shades of
+      // one hue, the third district already looks like the first.
       case OverlayType.DISTRICT:
         return c.setHSL(value, DISTRICT_COLOR.saturation, DISTRICT_COLOR.lightness);
       default:
@@ -256,16 +266,18 @@ export class OverlayRenderer {
   }
 
   /**
-   * 名稱標籤。
+   * The name labels.
    *
-   * 用 sprite 而不是 DOM:sprite 跟著場景走，開關圖層時跟色塊一起生一起滅，不必
-   * 每一幀把世界座標投影回螢幕。
+   * Sprites rather than DOM: a sprite lives in the scene, is created and destroyed with the
+   * patches as the overlay opens and closes, and needs no per-frame projection of world
+   * coordinates back to the screen.
    */
   private buildLabels(scene: THREE.Scene, labels: DistrictLabel[]): void {
     for (const label of labels) {
       const sprite = makeLabelSprite(label);
-      // 疊在色塊上方一點，不然會被地面 z-fight 吃掉。
-      // 格子中心落在整數上（建築、游標、分區外框都是），不是 +0.5 的角上。
+      // Slightly above the patches, or the ground z-fights it away. Cell centres land on
+      // integers, as they do for buildings, the cursor and district outlines, rather than on the
+      // +0.5 corners.
       sprite.position.set(label.x, LABEL_HEIGHT, label.y);
       sprite.renderOrder = LABEL_RENDER_ORDER;
       scene.add(sprite);
@@ -274,11 +286,12 @@ export class OverlayRenderer {
   }
 
   /**
-   * 讓標籤在螢幕上維持固定大小。
+   * Keeps labels at a fixed size on screen.
    *
-   * 這是正交相機，縮放做在可視範圍上（`camera.top - camera.bottom`），所以世界裡
-   * 固定大小的東西在螢幕上會隨著拉近而變大。分區名稱不該這樣 —— 它是地圖上的
-   * 標示，不是場景裡的物件。世界尺度因此要跟可視範圍等比。
+   * This is an orthographic camera, whose zoom acts on the visible range
+   * (`camera.top - camera.bottom`), so something of fixed size in the world grows on screen as
+   * the camera closes in. A district name should not: it is a map annotation, not an object in
+   * the scene. So its world size scales with the visible range.
    */
   updateLabelScale(camera: THREE.OrthographicCamera): void {
     if (this.labelSprites.length === 0) return;
@@ -314,43 +327,49 @@ export class OverlayRenderer {
 }
 
 
-/** 標籤浮在地面上方的高度。低於色塊的話會被地面吃掉。 */
+/** How far a label floats above the ground. Below the patches, the ground swallows it. */
 const LABEL_HEIGHT = 1.2;
 
 /**
- * 標籤畫在整座城市之後。
+ * Labels draw after the whole city.
  *
- * 材質已經是 `depthTest: false`，但那只保證它不會被**先畫**的東西擋住 —— 擋不住
- * **後畫**的東西塗回來。而建築的材質是 `transparent: true`，跟標籤同一條佇列，
- * `renderOrder` 又都是 0，於是先後由 three.js 的深度排序決定。
+ * The material is already `depthTest: false`, but that only guarantees nothing drawn **earlier**
+ * covers it; it does not stop something drawn **later** painting over it. The building material
+ * is `transparent: true`, so it shares the label's queue, and with both at `renderOrder` 0 the
+ * order falls to three.js's depth sort.
  *
- * 那個排序用的是**物件原點**的視空間深度，不是它實際佔的範圍:整座城市是一個
- * `InstancedMesh`，原點留在世界原點（地圖西北角），所以它排在「西北角那麼遠」的
- * 位置;基礎設施則是各自 `position` 在自己那一格的 Group，照真實位置排。兩者都會
- * 在某些相機角度排到標籤後面，地圖越大、離原點越遠的標籤越容易中（BUG-315）。
+ * That sort uses an **object's origin** in view space rather than the range it occupies. The
+ * whole city is one `InstancedMesh` whose origin stays at the world origin, the map's
+ * north-west corner, so it sorts as far away as that corner; infrastructure is a Group per cell
+ * with its own `position` and sorts by its real location. Both end up behind labels at some
+ * camera angles, and the larger the map and the further a label from the origin, the more likely
+ * it is (BUG-315).
  *
- * 900 是刻意留在 `BuildingRenderer` 的斷水斷電警示（999）之下 —— 那些圖示小，
- * 被半透明的名牌蓋住會比名牌被樓蓋住更糟。
+ * 900 deliberately stays below `BuildingRenderer`'s no-power and no-water warnings at 999: those
+ * icons are small, and a translucent name plate covering one is worse than a building covering
+ * the name plate.
  */
 const LABEL_RENDER_ORDER = 900;
 
 /**
- * 標籤在**參考可視範圍**下的世界高度（格）。
+ * A label's world height, in cells, at the **reference visible range**.
  *
- * 只是個基準:`updateLabelScale` 會照目前的可視範圍等比換算，讓標籤在螢幕上的大小
- * 固定。分區名稱是地圖上的標示，不是場景裡的物件 —— 拉近看城市細節時，名稱跟著
- * 放大只會擋住你正要看的東西。
+ * Only a baseline: `updateLabelScale` rescales it against the current visible range so the label
+ * keeps a fixed size on screen. A district name is a map annotation, not an object in the scene
+ * — closing in on the city's detail, a name that grows with it only covers what you came to look
+ * at.
  */
 const LABEL_WORLD_HEIGHT = 0.95;
 
-/** `LABEL_WORLD_HEIGHT` 是在這個可視範圍下量的。跟 `SCENE.FRUSTUM_SIZE` 是同一個數。 */
+/** The visible range `LABEL_WORLD_HEIGHT` was measured at. The same number as `SCENE.FRUSTUM_SIZE`. */
 const LABEL_REFERENCE_FRUSTUM = 60;
 
 /**
- * 把名字畫成一張貼圖。
+ * Draws a name into a texture.
  *
- * 底色用該分區的圖層顏色，字用白色加深色描邊 —— 色相環轉一圈總有幾個顏色會讓
- * 純白的字看不清楚。
+ * The background takes the district's overlay colour and the text is white with a dark outline:
+ * somewhere around the hue wheel there are always colours that leave plain white text
+ * illegible.
  */
 function makeLabelSprite(label: DistrictLabel): THREE.Sprite {
   const pad = 12;
@@ -382,12 +401,14 @@ function makeLabelSprite(label: DistrictLabel): THREE.Sprite {
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
-    // 整張貼圖再壓一次透明度:名稱是疊在地圖上的標示，蓋掉底下的地形就本末倒置。
-    // 字仍然帶深色描邊，淡下去之後才不會糊在底色裡。
+    // The whole texture is faded once more: a name is an annotation laid over the map, and
+    // hiding the terrain beneath it defeats the point. The text keeps its dark outline so it does
+    // not blur into the background once faded.
     map: texture, transparent: true, depthTest: false, opacity: 0.8,
   }));
-  // 寬度照貼圖比例 —— 名字長就寬一點，字不會被壓扁。實際尺寸由
-  // `updateLabelScale` 決定，它才知道現在的可視範圍。
+  // The width follows the texture's aspect, so a longer name is wider and the text is not
+  // squashed. The actual size comes from `updateLabelScale`, which knows the current visible
+  // range.
   sprite.userData.aspect = canvas.width / canvas.height;
   return sprite;
 }
