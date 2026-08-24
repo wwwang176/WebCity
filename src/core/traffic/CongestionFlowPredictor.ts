@@ -25,9 +25,10 @@ export interface CongestionFlowDeps {
  * Uses CommuteCache's routeIndex with reference counts — O(routes × avg path length), zero A*.
  * Flow is normalized by lane count at each cell.
  *
- * 「這條路徑經過哪些格子」交給 `PathCellCache` —— 那個答案只跟路徑有關，而路徑是
- * 共用且不可變的。原本每次重算都從邊重建一次 Set:玩家存檔實測每 60 tick 走過
- * 4 505 318 條邊，去填一張只有 314 個鍵的圖（BUG-327）。
+ * Which cells a path passes through is delegated to `PathCellCache`: that answer depends only
+ * on the path, and paths are shared and immutable. Rebuilding the Set from the edges on every
+ * recompute walked 4,505,318 edges every 60 ticks to fill a map with 314 keys, measured on a
+ * player save (BUG-327).
  *
  * @param commuteCache - The shared commute path cache
  * @param cellCache - Per-path cell lists, shared across recomputes

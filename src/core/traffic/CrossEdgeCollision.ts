@@ -15,14 +15,16 @@ export const CROSS_EDGE = {
  * Uses vehicle body dimensions (length × width) scaled by AABB_SCALE
  * to detect cross-edge merge conflicts at intersections.
  *
- * @param siblings — 終點連接點跟 `me` 相同的那些車（含 `me` 自己）。
+ * @param siblings vehicles whose end connection point matches `me`'s, including `me` itself.
  *
- * 傳進來的是**已經照終點分好的一組**，不是附近所有的車。這段程式唯一在意的關係
- * 就是「會不會匯進同一個點」，而那是查得出來的分組;原本用逐格的空間雜湊撈半徑
- * 2.0 內的所有車再一台一台丟掉，12 365 人的存檔實測每個 tick 68.6ms —— 撈回來的
- * 有九成以上第一個條件就被刷掉。
+ * What is passed in is **a group already partitioned by end point**, not every nearby vehicle.
+ * The only relationship this code cares about is whether two vehicles merge into the same
+ * point, and that is a lookupable grouping. Pulling every vehicle within radius 2.0 from a
+ * per-cell spatial hash and discarding them one by one measured 68.6ms per tick on a
+ * 12,365-citizen save, with over nine tenths failing the first condition.
  *
- * 半徑仍然要判，只是改成在迴圈裡算距離:一台同終點但還在兩格外的車不算擋路。
+ * The radius still applies, as a distance computed inside the loop: a vehicle sharing an end
+ * point but still two cells away is not blocking.
  *
  * Returns Infinity if no cross-edge blocker is found.
  */
@@ -39,9 +41,10 @@ export function findCrossEdgeGap(
     if (other.vid === me.vid) continue;
     // Skip vehicles on the same edge (already handled by findGapAhead)
     if (other.edgeId === me.edgeId) continue;
-    // 分組本身就是照終點分的，但直接餵進來的呼叫者不一定守這件事。
+    // The grouping is by end point already, but a caller feeding entries in directly need not
+    // honour that.
     if (other.toId !== me.toId) continue;
-    // 太遠的不算擋路。原本是空間雜湊的查詢半徑，語意一樣。
+    // Too far away to block. Same meaning as the spatial hash's query radius.
     {
       const ddx = other.x - me.x;
       const ddy = other.y - me.y;

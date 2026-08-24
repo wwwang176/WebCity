@@ -600,10 +600,10 @@ describe('acceleration and braking model', () => {
 
     // Advance both — place vehicles on second edge to compare.
     //
-    // 起始速度從上限算，不要寫死一個數字：寫死的話，整體速度一調（`EDGE_SPEED`
-    // 減半時就發生了），這個數字會變成**高於**兩台車的上限，於是兩台都在
-    // 減速、都被 DECEL 壓成同一個值，轉彎的折扣完全看不出來，而這條測試會紅在
-    // 一個與轉彎無關的理由上。
+    // The starting speed is derived from the cap rather than written as a literal. A literal
+    // ends up **above** both vehicles' caps whenever the overall speed is lowered (as happened
+    // when `EDGE_SPEED` was halved), so both decelerate, DECEL clamps them to the same value,
+    // the turn discount becomes invisible, and this test fails for a reason unrelated to turns.
     const cruise = TRAFFIC.EDGE_SPEED * v1.speedMultiplier;
     v1.edgeIndex = 1; v1.edgeProgress = 0; v1.currentSpeed = cruise;
     v2.edgeIndex = 1; v2.edgeProgress = 0; v2.currentSpeed = cruise;

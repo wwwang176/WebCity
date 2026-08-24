@@ -2,20 +2,24 @@ import type { CommuteCache } from './CommuteCache';
 import type { PathCellCache } from './PathCellCache';
 
 /**
- * 把壅塞流量圖的重算攤到好幾個 tick 上。
+ * Spreads the congestion flow field's recomputation over several ticks.
  *
- * 流量圖每 60 tick 才換一次，卻是一次算完的。玩家存檔實測（人口 12 351）:快取
- * 「路徑經過哪些格子」之後仍然要 60ms 落在單一個 tick 上，而速度 1 的一個 tick 只有
- * 250ms，算繪還跟它搶同一個執行緒（BUG-327）。
+ * The flow field is only replaced every 60 ticks but is computed in one go. Measured on a
+ * 12,351-citizen save, even with "which cells a path passes through" cached it takes 60ms in a
+ * single tick, against 250ms available per tick at speed 1, with rendering competing for the
+ * same thread (BUG-327).
  *
- * 結果既然本來就落後 60 個 tick，攤開來算不會讓它更舊 —— 但**不能讓別人讀到做到
- * 一半的表**。半張表說的是「只有這幾條路上有人，其他都是空的」，那比上一輪的舊資料
- * 還糟。所以累加做在自己的一張紙上，掃完才整張交出去。
+ * Since the result already lags 60 ticks, spreading it does not make it any staler — but
+ * **nobody may read a half-built table**. A half-built table claims only those roads carry
+ * anyone and everything else is empty, which is worse than the previous sweep's data.
+ * Accumulation therefore happens on its own sheet and the whole thing is published only once
+ * the sweep completes.
  *
- * 名單在開掃時拍下來。掃到一半路線被增刪都不影響手上這份 —— 消失的那些
- * `forRouteKey` 會跳過，新來的等下一輪。路網整個改掉（`roadGeneration` 跳號，
- * `routeIndex` 被清空）時這一輪直接作廢:半舊半新拼出來的表是假的，寧可讓上一輪的
- * 舊表多留 60 個 tick。
+ * The key list is taken at the start of a sweep. Routes added or removed mid-sweep do not
+ * affect it: `forRouteKey` skips the ones that vanished, and new ones wait for the next sweep.
+ * A full road-network change (`roadGeneration` bumps and `routeIndex` is cleared) abandons the
+ * sweep: a table stitched from old and new data is false, and keeping the previous sweep's
+ * table another 60 ticks is preferable.
  */
 export class CongestionFlowSweep {
   private keys: string[] = [];
@@ -25,13 +29,13 @@ export class CongestionFlowSweep {
   private acc = new Map<string, number>();
   private refTotal = 0;
 
-  /** 這一輪還在掃。 */
+  /** Whether a sweep is in progress. */
   get inProgress(): boolean { return this.active; }
 
-  /** 這一輪總共要掃幾條路線。呼叫端用它決定一個 tick 掃多少。 */
+  /** How many routes this sweep covers. Callers use it to size a tick's batch. */
   get size(): number { return this.keys.length; }
 
-  /** 開始新的一輪。上一輪沒掃完的話直接丟掉。 */
+  /** Starts a new sweep, discarding any unfinished one. */
   begin(cache: CommuteCache): void {
     cache.routeKeysWithRiders(this.keys);
     this.cursor = 0;
@@ -42,11 +46,12 @@ export class CongestionFlowSweep {
   }
 
   /**
-   * 掃下一批。這一輪還沒掃完（或根本沒在掃）回 `null`。
+   * Processes the next batch. Returns `null` while the sweep is unfinished, or when none is
+   * running.
    *
-   * @param keysPerTick 這個 tick 最多處理幾條路線
-   * @param getLaneCount 車道數只在交件時除一次 —— 每批各除一次的話，一條路線分兩批
-   *   掃到的格子會被除兩次
+   * @param keysPerTick the most routes this tick may process
+   * @param getLaneCount lane division happens once, at publication. Dividing per batch would
+   *   divide a cell twice when one route's cells span two batches
    */
   step(
     cache: CommuteCache,

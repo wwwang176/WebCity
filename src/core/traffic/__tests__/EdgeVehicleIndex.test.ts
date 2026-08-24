@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { EdgeVehicleIndex, NO_ENTRY } from '../EdgeVehicleIndex';
 
-/** 收一批車，回一個查得動的索引。 */
+/** Takes a batch of vehicles and returns a queryable index. */
 function indexOf(rows: Array<[string, number, number, number, boolean]>) {
   const ix = new EdgeVehicleIndex();
   ix.begin();
@@ -45,8 +45,9 @@ describe('逐邊的車輛索引', () => {
   });
 
   it('should not leak last frame into this one', () => {
-    // 這是池化那一版被撤掉的原因:殘留的欄位不會讓任何測試變紅，而失敗模式是
-    // 跟車距離靜靜地算錯。這裡用「上一幀滿載、這一幀只有一台」把它釘住。
+    // Why pooling entries was dropped: a stale field turns no test red and the failure mode is
+    // a silently wrong following distance. Pinned here with a full previous frame and a single
+    // vehicle in this one.
     const ix = new EdgeVehicleIndex();
     ix.begin();
     for (let i = 0; i < 10; i++) ix.add('e1', 100 + i, i, 0.2, true);
@@ -83,7 +84,8 @@ describe('逐邊的車輛索引', () => {
   });
 
   it('should still be right after growing mid-frame', () => {
-    // 擴容會換掉底層的 buffer。散佈階段若讀到舊的那一份，資料就會半新半舊。
+    // Growing replaces the backing buffers. A scatter pass reading the old ones leaves half the
+    // data stale.
     const rows: Array<[string, number, number, number, boolean]> = [];
     for (let i = 0; i < 300; i++) rows.push(['e1', i, i, 0.11, i === 299]);
     const ix = indexOf(rows);
@@ -96,7 +98,8 @@ describe('逐邊的車輛索引', () => {
   });
 
   it('should keep a slot for an edge across frames', () => {
-    // 槽號表跨幀重用是刻意的 —— 路網不變的話字串鍵也不變，每幀重建等於白做工。
+    // Reusing slot numbers across frames is deliberate: the string keys do not change while the
+    // road network does not, so rebuilding the table each frame is wasted work.
     const ix = new EdgeVehicleIndex();
     ix.begin(); ix.add('e1', 1, 0.5, 0.11, false);    ix.begin(); ix.add('e1', 2, 0.6, 0.12, true);
     expect(ix.entriesOf('e1')).toEqual([{ vid: 2, progress: 0.6, halfLen: 0.12, queueing: true }]);
@@ -105,7 +108,8 @@ describe('逐邊的車輛索引', () => {
 
 describe('同一幀之內改索引', () => {
   it('should let a vehicle change edge', () => {
-    // 車走到下一條邊時要當場搬過去，後面的車才看得到它現在在哪。
+    // A vehicle crossing onto the next edge moves across immediately, so followers see where it
+    // now is.
     const ix = new EdgeVehicleIndex();
     ix.begin();
     const a = ix.add('e1', 1, 0.5, 0.11, false);
@@ -120,7 +124,7 @@ describe('同一幀之內改索引', () => {
     const ix = new EdgeVehicleIndex();
     ix.begin();
     ix.add('e1', 1, 0.1, 0.11, false);
-    const head = ix.add('e1', 2, 0.2, 0.11, false);   // 後進的在最前面
+    const head = ix.add('e1', 2, 0.2, 0.11, false);   // the last added sits at the head
     ix.moveTo(head, 'e2');
 
     expect(ix.entriesOf('e1').map(e => e.vid)).toEqual([1]);
@@ -149,13 +153,14 @@ describe('同一幀之內改索引', () => {
   });
 
   it('should leave the list walkable after removing the one in front', () => {
-    // 摘掉一筆時，它後面那一筆的 prev 也要修。不修的話那一筆之後再被摘走，
-    // 會照著過期的 prev 走，於是**這條邊的頭指標沒有更新** —— 已經開走的車
-    // 還掛在原本那條邊上，後車對著一台不存在的車煞車。
+    // Unhooking an entry must also fix the `prev` of the one behind it. Left stale, unhooking
+    // that one follows the outdated `prev` and **never updates the edge's head pointer**: a
+    // vehicle that has driven off stays listed on its old edge and followers brake for a
+    // vehicle that is not there.
     const ix = new EdgeVehicleIndex();
     ix.begin();
     const first = ix.add('e1', 1, 0.1, 0.11, false);
-    const second = ix.add('e1', 2, 0.2, 0.11, false);   // 後進的在最前面
+    const second = ix.add('e1', 2, 0.2, 0.11, false);   // the last added sits at the head
     ix.moveTo(second, 'e2');
     ix.moveTo(first, 'e2');
 

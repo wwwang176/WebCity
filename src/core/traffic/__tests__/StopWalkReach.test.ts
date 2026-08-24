@@ -3,11 +3,13 @@ import { SidewalkStopReach } from '../StopWalkReach';
 import { cityWithMainRoad } from './gridCityFixture';
 
 /**
- * 站牌走得到哪些格子 —— 沿著人行道量，不是畫一個菱形。
+ * Which cells a stop can be walked to, measured along the sidewalk graph rather than as a
+ * diamond.
  *
- * 行人只在路口過馬路，所以馬路對面的那一格在步行上其實很遠：得走到最近的路口、
- * 過去、再走回來。用曼哈頓距離量的話它只有兩格，於是模擬會把住戶配給對面的站牌，
- * 行人到了現場才發現得繞一大圈 —— 繞路不是走錯，是被派錯。
+ * Pedestrians only cross at junctions, so the cell across the road is a long walk: to the
+ * nearest junction, across, and back. By Manhattan distance it is two tiles, so the simulation
+ * assigns households to the stop opposite and the pedestrian has to loop around — the detour
+ * is a dispatch error, not a pathfinding one.
  */
 
 const RANGE = 5;
@@ -23,8 +25,8 @@ describe('站牌的步行涵蓋範圍', () => {
   });
 
   it('should not reach the cell directly across the road', () => {
-    // 路口在 x=8 與 x=16，站牌在 x=12 —— 過馬路要先走 4 格到路口，
-    // 過去，再走 4 格回來，遠遠超過 5 格的步行上限。
+    // Junctions at x=8 and x=16 with the stop at x=12: crossing means 4 tiles to a junction,
+    // across, and 4 back, well beyond the 5-tile walk limit.
     const { graph } = cityWithMainRoad(8);
     const reach = new SidewalkStopReach(graph);
     const cells = reach.cellsWithin(12, 11, RANGE);
@@ -36,8 +38,8 @@ describe('站牌的步行涵蓋範圍', () => {
   });
 
   it('should reach across when the stop sits next to an intersection', () => {
-    // 同一條路，站牌改蓋在路口旁邊 —— 對面就真的走得到了。
-    // 這是「站牌該蓋在哪」變成一個有意義的決定的地方。
+    // Same road, but with the stop beside a junction the far side really is walkable. This is
+    // where stop placement becomes a decision that matters.
     const { graph } = cityWithMainRoad(8);
     const reach = new SidewalkStopReach(graph);
     const cells = reach.cellsWithin(9, 11, RANGE);
@@ -73,14 +75,15 @@ describe('步行涵蓋範圍的快取', () => {
   });
 
   it('should recompute after the graph is rebuilt', () => {
-    // 圖換了世代，舊答案就不能再用 —— 這是「忘了呼叫失效」時的安全網：
-    // 這裡刻意不呼叫 invalidateNear，只把圖重建掉。
+    // A new graph generation makes old answers unusable. This is the safety net for a
+    // forgotten invalidation: invalidateNear is deliberately not called, only the graph is
+    // rebuilt.
     const city = cityWithMainRoad(0);
     const reach = new SidewalkStopReach(city.graph);
     const before = reach.cellsWithin(12, 11, RANGE);
     expect(before.has('12,9'), '一條沒有岔路的直路，對面本來就走不到').toBe(false);
 
-    city.rebuildWith(5); // 玩家補上一排岔路，路口變近了
+    city.rebuildWith(5); // the player adds side roads and the junctions get closer
 
     const after = reach.cellsWithin(12, 11, RANGE);
     expect(after, '圖已經換了，快取還在回答舊答案').not.toBe(before);
@@ -100,8 +103,9 @@ describe('步行涵蓋範圍的快取', () => {
   });
 
   it('should not trust a cached answer after an unannounced graph update', () => {
-    // 不是每個動圖的人都會通知這裡 —— `applyBuildingChange` 就是一個：建築長出來
-    // 或被拆掉時它直接呼叫 updateCells，對這份快取一無所知。世代是這種情況的安全網。
+    // Not everyone who mutates the graph notifies this cache. `applyBuildingChange` is one:
+    // it calls updateCells directly when a building appears or is demolished and knows nothing
+    // about this cache. The generation is the safety net for that.
     const city = cityWithMainRoad(8);
     const reach = new SidewalkStopReach(city.graph);
     const before = reach.cellsWithin(12, 11, RANGE);
@@ -115,8 +119,9 @@ describe('步行涵蓋範圍的快取', () => {
   });
 
   it('should keep distant stops through an incremental graph update', () => {
-    // 精準失效與安全網會打架：增量更新一樣會推進世代，若不在 invalidateNear
-    // 裡把世代對齊，下一次查詢會被安全網整批丟掉，精準失效等於白做。
+    // Precise invalidation and the safety net conflict: an incremental update also advances the
+    // generation, and without aligning it inside invalidateNear the next query is discarded
+    // wholesale by the safety net, wasting the precise invalidation.
     const city = cityWithMainRoad(8);
     const reach = new SidewalkStopReach(city.graph);
     const far = reach.cellsWithin(2, 11, RANGE);
@@ -130,8 +135,8 @@ describe('步行涵蓋範圍的快取', () => {
 
 describe('站牌沒有接上人行道', () => {
   it('should serve nobody when the stop is not in the graph at all', () => {
-    // 刻意不退回「找最近的節點」：那會讓「站牌沒進圖」靜靜地被蓋掉，
-    // 而站牌漏進圖正是這一輪要修的問題之一。
+    // Deliberately no fallback to "find the nearest node", which would quietly paper over a
+    // stop missing from the graph.
     const { graph } = cityWithMainRoad(8);
     const reach = new SidewalkStopReach(graph);
     expect(reach.cellsWithin(999, 999, RANGE).size).toBe(0);

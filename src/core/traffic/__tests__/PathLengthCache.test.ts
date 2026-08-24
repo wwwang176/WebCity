@@ -4,12 +4,14 @@ import type { LaneEdge } from '../LaneGraph';
 
 
 /**
- * 「這台車總共走了多遠」每幀每台車都要算一次（車輛要由前往後處理，那是排序的鍵）。
- * 原本每次都從路徑開頭重加一次前面所有邊的長度 —— 12 288 人的存檔實測，每幀為了
- * 排序掃過 14 438 條邊。
+ * "How far has this vehicle travelled" is computed once per vehicle per frame — it is the sort
+ * key for processing vehicles front to back. Re-summing the preceding edge lengths from the
+ * start of the path each time walked 14,438 edges per frame just to sort, measured on a
+ * 12,288-population save.
  *
- * 前綴和只跟路徑有關，跟車無關。而通勤路線是共用的:`CommuteCache` 的路線池把
- * 同一個陣列交給每個走這條路的人，所以走同一條路的幾百台車共用同一份。
+ * The prefix sums depend only on the path, not the vehicle, and commute routes are shared:
+ * `CommuteCache`'s route pool hands the same array to every citizen on that trip, so hundreds
+ * of vehicles on one route share a single copy.
  */
 
 function path(lengths: number[]): LaneEdge[] {
@@ -27,7 +29,7 @@ function path(lengths: number[]): LaneEdge[] {
   }));
 }
 
-/** 原本的算法。快取要跟它給一樣的答案。 */
+/** The direct summation. The cache must give the same answer. */
 function naive(p: readonly LaneEdge[], edgeIndex: number, edgeProgress: number): number {
   let total = 0;
   for (let i = 0; i < edgeIndex && i < p.length; i++) total += p[i]!.length;
@@ -47,19 +49,21 @@ describe('走了多遠', () => {
   });
 
   it('should survive an edgeIndex past the end of the path', () => {
-    // 車開到路徑盡頭時 `edgeIndex` 會停在 length，抵達的判斷還會再讀一次。
+    // A vehicle reaching the end of its path leaves `edgeIndex` at the path length, and the
+    // arrival check reads it once more.
     const cache = new PathLengthCache();
     const p = path([1.0, 2.0]);
     expect(cache.totalProgress(p, 99, 0), '超出範圍的 edgeIndex 算爆了')
       .toBeCloseTo(3.0, 10);
-    // 進度不是 0 的時候照樣加上去 —— 註解說「當成走完整條」容易讀成「無視進度」。
+    // A non-zero progress is still added on top.
     expect(cache.totalProgress(p, 99, 0.5), '超出範圍時把進度吃掉了')
       .toBeCloseTo(naive(p, 99, 0.5), 10);
   });
 
   it('should read each edge length only once per path', () => {
-    // 「第二次答案一樣」即使每次都重加一遍也會過。真正要守的是**不再重算** ——
-    // 那是這個類別存在的唯一理由。用 getter 數 `length` 被讀了幾次。
+    // "The second call agrees" passes even when everything is re-summed each time. What has to
+    // hold is that **nothing is recomputed**, the sole reason this class exists. A getter counts
+    // how often `length` is read.
     const cache = new PathLengthCache();
     const raw = path([1.0, 0.7, 1.3]);
     let reads = 0;
@@ -74,7 +78,7 @@ describe('走了多遠', () => {
     const afterFirst = reads;
     expect(afterFirst, '第一次就該把整條路徑掃過一遍').toBe(counted.length);
 
-    // 同一條路徑再問幾次 —— 換不同的車、不同的位置，都不該再讀。
+    // The same path asked again for other vehicles at other positions must read nothing more.
     cache.totalProgress(counted, 1, 0.2);
     cache.totalProgress(counted, 2, 0.9);
     cache.totalProgress(counted, 3, 0);
@@ -82,7 +86,8 @@ describe('走了多遠', () => {
   });
 
   it('should give the same answer on the second call', () => {
-    // 第一次算、之後查表。查到的必須跟算出來的一樣 —— 不然車會照著錯的順序處理。
+    // Computed once, looked up thereafter. A lookup differing from the computation would
+    // process vehicles in the wrong order.
     const cache = new PathLengthCache();
     const p = path([1.0, 0.7, 1.3]);
     const first = cache.totalProgress(p, 2, 0.4);

@@ -3,13 +3,14 @@ import { TrafficSimulation } from '../TrafficSimulation';
 import type { LaneEdge } from '../LaneGraph';
 
 /**
- * 每幀重建的那張「哪台車在哪條邊上的哪裡」是跟車判斷的唯一依據。它每幀都是重新
- * 配置的，所以現在這件事成立得很自然 —— 這一條守的是**以後**:曾經試過把那些項目
- * 池化重用（每幀省下幾百個短命物件），漏更新一個欄位前車就會在資料上凍結在舊位置，
- * 後車停在一台早就開走的車後面。
+ * The per-frame "which vehicle is where on which edge" table is the sole basis for car
+ * following. It is reallocated every frame, so freshness currently holds by construction; this
+ * test guards **future** implementations. Pooling those entries to save hundreds of short-lived
+ * objects per frame freezes a leader at its old position in the data if one field is missed,
+ * and followers stop behind a vehicle that has long since driven away.
  *
- * 那次沒有留下來:`vid` 忘了更新的話沒有任何測試會紅，而代價只有整幀的 8.6%。
- * 這一條至少讓「位置凍結」那種寫法紅得出來。
+ * Pooling was not kept: forgetting to update `vid` turns no test red, for 8.6% of a frame. This
+ * test at least makes the frozen-position variant fail.
  */
 
 function straight(n: number): LaneEdge[] {
@@ -32,7 +33,7 @@ describe('跟車讀到的是這一幀的位置', () => {
     const sim = new TrafficSimulation();
     const route = straight(20);
 
-    // 車型與速度差異是隨機的 —— 釘死，失敗才重現得出來。
+    // Body type and speed variation are random; pinning them makes a failure reproducible.
     const pin = <T extends { length: number; speedMultiplier: number; stallTime: number }>(v: T): T => {
       v.length = 0.22; v.speedMultiplier = 1; v.stallTime = 0;
       return v;
@@ -44,8 +45,9 @@ describe('跟車讀到的是這一幀的位置', () => {
 
     for (let f = 0; f < 240; f++) sim.advanceEdgeVehicles(1 / 60);
 
-    // 前車一路開走，後車就該跟著走完好幾條邊。位置資料如果凍結在第一幀，後車會
-    // 卡在那台幻影車後面 —— 大約 0.2 格的地方，連第一條邊都出不去。
+    // The leader keeps driving away, so the follower should cover several edges. With positions
+    // frozen at the first frame it sticks behind the phantom, around 0.2 cells in, never
+    // leaving the first edge.
     expect(follower.edgeIndex, '停在一台其實早就開走的車後面')
       .toBeGreaterThan(2);
     expect(leader.edgeIndex, '前車自己也沒動 —— 這個案例失去意義')

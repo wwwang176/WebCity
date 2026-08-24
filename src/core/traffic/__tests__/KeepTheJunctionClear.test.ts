@@ -8,10 +8,12 @@ import { LaneGraph, isIntersectionCell, type LaneEdge } from '../LaneGraph';
 import { EdgeVehicleIndex, type EdgeVehicleView } from '../EdgeVehicleIndex';
 
 /**
- * fixture 用的殼:維持 `Map` 的寫法，底下建的是真的 `EdgeVehicleIndex`。
+ * A shell for fixtures: keeps a `Map`-shaped API while building a real `EdgeVehicleIndex`
+ * underneath.
  *
- * 正式路徑走 `begin()` / `add()` / `finish()`（每幀重建，不配物件）。這裡包一層是
- * 為了讓斷言講「這條邊上有誰」，而不是講 CSR 的索引算術。
+ * Production goes through `begin()` / `add()` / `finish()` (rebuilt per frame, no allocation).
+ * This wrapper lets assertions talk about who is on an edge rather than about index
+ * arithmetic.
  */
 class TestIndex extends EdgeVehicleIndex {
   private started = false;
@@ -28,24 +30,25 @@ class TestIndex extends EdgeVehicleIndex {
 import { STOP_LINE_OFFSET, findBlockedJunctionDistance } from '../VehicleLookahead';
 
 /**
- * 不要把車停在路口裡。
+ * Do not leave a vehicle stopped inside a junction.
  *
- * 跟車的規則只問「前面那台的屁股在哪裡」，所以前車停在路口另一頭的時候，後車會
- * 一路貼上去停在路口正中央 —— 綠燈換到對向，對向前面卡著一台不會動的車，整個
- * 十字就鎖死了。
+ * Car-following only asks where the vehicle ahead's rear is, so when that vehicle stops just
+ * past the junction its follower creeps right up and stops in the middle of the box. The next
+ * green hands the cross direction a junction with a stationary vehicle in it and the whole
+ * crossroads locks up.
  *
- * 正確的判斷是**進去之前先問出得來嗎**:車身中心要能越過路口的另一邊，否則就停
- * 在停止線前等。
+ * The right question is **can I get out before entering**: the vehicle's centre must be able
+ * to clear the far side, otherwise it waits at the stop line.
  *
- * 用中心而不是車尾，是刻意留一點餘裕:真人開車本來就會把車頭探出去一點，而且
- * 這樣車流看起來順得多。代價有上限 —— 最多半個車身留在路口裡（0.11 格，約 1.3
- * 公尺，路口寬的一成）。
+ * The centre rather than the rear leaves deliberate slack: real drivers nose in, and the
+ * traffic looks far smoother. The cost is bounded — at most half a body stays inside (0.11
+ * cells, about 1.3 metres, a tenth of the junction's width).
  */
 
-const J = 10;   // 路口那一段在 edgePath 裡的索引
+const J = 10;   // index of the junction edge within edgePath
 const RED_AT = 13;
 
-/** 一條直線的車道路徑，每一段長 1，第 `junctionAt` 段標成路口。 */
+/** A straight lane path of unit-length edges, with edge `junctionAt` marked as a junction. */
 function path(n: number, junctionAt = -1): LaneEdge[] {
   const edges: LaneEdge[] = [];
   for (let i = 0; i < n; i++) {
@@ -67,24 +70,25 @@ function path(n: number, junctionAt = -1): LaneEdge[] {
   return edges;
 }
 
-/** 車身中心走了多遠（每段長 1，所以就是 index + progress）。 */
+/** How far the centre has travelled. Edges are unit length, so index + progress. */
 function centre(v: { edgeIndex: number; edgeProgress: number }): number {
   return v.edgeIndex + v.edgeProgress;
 }
 
-/** 車身有沒有壓在 [from, to] 這一段上。 */
+/** Whether the body overlaps the span [from, to]. */
 function overlaps(v: { edgeIndex: number; edgeProgress: number; length: number }, from: number, to: number): boolean {
   const c = centre(v);
   return c + v.length / 2 > from && c - v.length / 2 < to;
 }
 
-/** 排一列車，塞到 `RED_AT` 的紅燈前面回堵，回傳模擬與車隊。 */
+/** Queues a line of vehicles up behind the red light at `RED_AT`, returning the simulation and
+ *  the queue. */
 function gridlock(junctionAt: number) {
   const sim = new TrafficSimulation();
   const cars = [];
   for (let i = 0; i < 20; i++) {
     const v = sim.addVehicleOnEdges(path(40, junctionAt));
-    // 排隊本來就不動，別讓它被判定停滯而退場。
+    // Queueing means not moving, so do not let the stall detector despawn them.
     v.stallTime = -1e6;
     v.speedMultiplier = 1;
     cars.push(v);
@@ -96,8 +100,9 @@ function gridlock(junctionAt: number) {
 
 describe('路口要淨空', () => {
   it('should let at most a nose into the junction when the queue beyond is full', () => {
-    // 放行的條件是**車身中心**過得了出口，所以留在路口裡的絕不會超過半個車身。
-    // 這是上限不是平均:整台車停在路口裡（中心還沒過出口）就會被抓到。
+    // Entry is allowed when the **centre** can clear the exit, so at most half a body stays
+    // inside. This is a bound, not an average: a whole vehicle inside the junction (centre not
+    // past the exit) is caught.
     const { cars } = gridlock(J);
     for (const v of cars) {
       if (!overlaps(v, J, J + 1)) continue;
@@ -107,8 +112,9 @@ describe('路口要淨空', () => {
   });
 
   it('should still pack the queue tight where there is no junction', () => {
-    // 反向對照。上一條可以靠「每台車都提早一格停」滿足 —— 那會讓所有路段的
-    // 排隊長度暴增一倍。沒有路口的地方要照舊貼著前車停。
+    // The control for the test above, which "every vehicle stops a cell early" would also
+    // satisfy while doubling queue lengths everywhere. Where there is no junction, vehicles
+    // must still stop right behind the one ahead.
     const { cars } = gridlock(-1);
     const stopped = cars.filter(v => v.edgeIndex < RED_AT).sort((a, b) => centre(b) - centre(a));
     expect(stopped.length, '沒有車在排隊，這條測不出東西').toBeGreaterThan(3);
@@ -121,11 +127,12 @@ describe('路口要淨空', () => {
   });
 
   it('should wait exactly at the stop line, not tailgate up to the box', () => {
-    // 排頭那台停在停止線上 —— 跟紅燈用的是同一條線。
+    // The head of the queue stops at the stop line, the same line a red light uses.
     //
-    // 只斷言「車頭沒進路口」是不夠的:貼著前車停的時候，排頭離路口也只差
-    // 0.19（前車的半個車身加上 MIN_GAP），照樣通過。真正的差別在於它讓開的是
-    // **整個路口**，所以要釘的是那條線本身。
+    // Asserting only that the nose is outside the junction is not enough: stopping right
+    // behind the vehicle ahead also leaves the head 0.19 short (the leader's half-body plus
+    // MIN_GAP) and would pass. The real difference is that it keeps **the whole junction**
+    // clear, so the line itself is what must be pinned.
     const { cars } = gridlock(J);
     const waiting = cars.filter(v => centre(v) + v.length / 2 <= J).sort((a, b) => centre(b) - centre(a));
     expect(waiting.length, '路口前面沒有車在等，這條測不出東西').toBeGreaterThan(0);
@@ -135,7 +142,7 @@ describe('路口要淨空', () => {
   });
 
   it('should drive straight through a junction that is clear', () => {
-    // 這是「乾脆都不要進路口」的反向對照。
+    // The control against "just never enter a junction".
     const sim = new TrafficSimulation();
     const v = sim.addVehicleOnEdges(path(20, J));
     v.speedMultiplier = 1;
@@ -144,7 +151,7 @@ describe('路口要淨空', () => {
   });
 
   it('should release the queue once the far side clears', () => {
-    // 停在停止線前的車必須在對面空出來之後自己開走，不能鎖死。
+    // A vehicle held at the stop line must move off once the far side clears, not deadlock.
     const { sim, cars } = gridlock(J);
     const before = cars.filter(v => centre(v) > J).length;
     for (let t = 0; t < 30 / 0.02; t++) sim.advanceEdgeVehicles(0.02, () => true);
@@ -154,21 +161,24 @@ describe('路口要淨空', () => {
 });
 
 describe('進去之前的那一問', () => {
-  // 車隊測試量得到「有沒有人停在路口裡」，但量不到**差幾公分**:判斷的邊界差
-  // 只有一個車身長，剛好被排隊的間距蓋過去。這裡直接餵數字。
+  // The queue tests can measure whether anyone stopped inside a junction, but not by how many
+  // centimetres: the decision boundary is one body length wide and is masked by the queue
+  // spacing. These feed the numbers in directly.
   const CAR = { id: 1, length: 0.22, edgeIndex: 0, edgeProgress: 0 };
-  const ROUTE = path(6, 1);   // 路口是第 1 段，所以車身中心到路口是 [1, 2]
+  const ROUTE = path(6, 1);   // edge 1 is the junction, so the centre's span across it is [1, 2]
   const ENTER = 1, EXIT = 2, HALF = CAR.length / 2;
   const MIN_GAP = TRAFFIC.MIN_GAP;
 
   /**
-   * 在車身中心**前方** `d` 處擺一台車，問這台車能不能進路口。
+   * Places a vehicle `d` **ahead of** the centre and asks whether this vehicle may enter the
+   * junction.
    *
-   * 位置要相對於 `car` 算 —— 從路徑起點算的話，測「已經在路口裡」那一條會把
-   * 阻擋者擺到車子後面去，於是掃描找不到人，判斷就空轉了。
+   * The position is relative to `car`: measured from the path start, the "already inside the
+   * junction" case would put the blocker behind the vehicle, the scan would find nobody, and
+   * the check would be vacuous.
    */
   function ask(d: number, queueing: boolean, route = ROUTE, car = CAR): number {
-    const at = car.edgeIndex + car.edgeProgress + d;   // 每段長 1，索引即距離
+    const at = car.edgeIndex + car.edgeProgress + d;   // unit-length edges, so index is distance
     const ei = Math.floor(at);
     const index = new TestIndex([
       [route[ei]!.id, [{ vid: 2, progress: at - ei, halfLen: HALF, queueing }]],
@@ -176,11 +186,11 @@ describe('進去之前的那一問', () => {
     return findBlockedJunctionDistance(car, route, index, d - HALF * 2, MIN_GAP);
   }
 
-  /** 要讓我的中心能走到 `r`，前面那台車得擺在多遠。 */
+  /** How far ahead the blocking vehicle must sit for this centre to be able to reach `r`. */
   const distFor = (r: number) => r + HALF * 2 + MIN_GAP;
 
-  // 邊界要釘在 `exit` 上，而且要靠得比半個車身近 —— 判斷寫成 `exit ± 半車身`
-  // 時，離得遠的距離會給出同樣的答案，測不出東西。
+  // The boundary is pinned at `exit` and closer than half a body: with the rule written as
+  // `exit +- halfLen`, a larger offset gives the same answer and tests nothing.
   const NEAR = 0.05;   // < HALF
 
   it('should let the car in when its midpoint can clear the junction', () => {
@@ -188,23 +198,26 @@ describe('進去之前的那一問', () => {
   });
 
   it('should keep it out when it cannot even get its midpoint across', () => {
-    // 中心都過不去就是整台車卡在路口裡。
+    // A centre that cannot clear means the whole vehicle is stuck in the junction.
     expect(ask(distFor(EXIT - NEAR), true)).toBeCloseTo(ENTER - HALF - STOP_LINE_OFFSET, 9);
   });
 
   it('should ignore a car that is still moving', () => {
-    // 這是規則原本最大的毛病:`findGapAhead` 不分排隊還是行進，於是「前方兩格內
-    // 有車」就擋人 —— 而兩格是正常車距。
+    // The rule's biggest flaw without this: `findGapAhead` does not distinguish queueing from
+    // moving, so any vehicle within two cells blocks — and two cells is a normal following
+    // distance.
     expect(ask(distFor(EXIT - NEAR), false), '被一台還在開的車擋住了').toBe(Infinity);
   });
 
   it('should never brake a car that is already inside the box', () => {
-    // 已經進去了就只能開出去。在裡面煞停正是這條規則要防的畫面。
+    // Once inside there is nothing to do but drive out. Braking inside is exactly what this
+    // rule exists to prevent.
     expect(ask(distFor(0.2), true, ROUTE, { ...CAR, edgeIndex: 1, edgeProgress: 0.5 })).toBe(Infinity);
   });
 
   it('should not look at all when the road ahead is empty', () => {
-    // 自由車流是絕大多數的情況，要在第一行就回頭 —— 這是這條規則不花錢的原因。
+    // Free-flowing traffic is the overwhelming majority and must return on the first line,
+    // which is why this rule costs nothing.
     const empty = new TestIndex();
     expect(findBlockedJunctionDistance(CAR, ROUTE, empty, Infinity, MIN_GAP)).toBe(Infinity);
     expect(ask(distFor(0.5), true, path(6, -1))).toBe(Infinity);
@@ -212,20 +225,21 @@ describe('進去之前的那一問', () => {
 });
 
 
-/** 每 `every` 段一個路口的路線。 */
+/** A route with a junction every `every` edges. */
 function pathEvery(n: number, every: number): LaneEdge[] {
   const edges = path(n, -1);
   if (every > 0) for (let i = every; i < n; i += every) edges[i]!.insideJunction = true;
   return edges;
 }
 
-/** 一隊等速行進的車，跑 `seconds` 秒之後總共走了多遠。 */
+/** Total distance covered by a stream of constant-speed vehicles after `seconds`. */
 function distanceCovered(every: number, seconds: number): number {
   const sim = new TrafficSimulation();
   const cars = [];
   for (let i = 0; i < 24; i++) {
     const v = sim.addVehicleOnEdges(pathEvery(200, every));
-    // addVehicleOnEdges 會隨機挑車型與速度倍率，這裡要的是可重現的一列。
+    // addVehicleOnEdges picks a random body type and speed multiplier; this needs a
+    // reproducible stream.
     v.length = 0.22; v.width = 0.09;
     v.speedMultiplier = 1;
     v.stallTime = 0;
@@ -238,9 +252,9 @@ function distanceCovered(every: number, seconds: number): number {
 
 describe('路口不該拖慢正常車流', () => {
   it('should not cost a moving stream any distance at all', () => {
-    // 兩格的車距是**正常車距**，不是塞車。原本的規則不分停著還是在開，於是
-    // 這一列車每經過一個路口就煞一次 —— 使用者看到的「右轉車也在停止線上等」
-    // 主要就是這個。
+    // A two-cell following distance is **normal**, not congestion. A rule that does not
+    // distinguish stopped from moving brakes this stream at every junction, which is mostly
+    // what "even right-turning vehicles wait at the stop line" looked like.
     const withJunctions = distanceCovered(4, 20);
     const plain = distanceCovered(0, 20);
     expect(withJunctions / plain, `有路口跑了 ${withJunctions.toFixed(1)}，沒路口 ${plain.toFixed(1)}`)
@@ -248,29 +262,31 @@ describe('路口不該拖慢正常車流', () => {
   });
 
   it('fixture sanity: the stream really does pass junctions, packed close', () => {
-    // 上面那條可以靠「車距大到規則永遠不觸發」或「路上根本沒有路口」空轉。
+    // The test above would be vacuous with a following distance so large the rule never fires,
+    // or with no junctions on the route at all.
     const route = pathEvery(200, 4);
     expect(route.filter(e => e.insideJunction).length, '路線上沒有路口').toBeGreaterThan(10);
-    // 車距 2 格 —— 小於原本規則要求的淨空（exit + 半車身，約 2.1 格）。
+    // A two-cell gap, below the clearance the stricter rule demands (exit plus half a body,
+    // about 2.1 cells).
     expect(2 - 0.22, '車距大到原本的規則也不會觸發，這條測不出東西').toBeLessThan(2.11);
   });
 });
 
 /**
- * 一張同時有十字、T 字、L 彎、直路與六線道的地圖。
+ * A map containing a crossroads, a T junction, an L bend, straight road and a six-lane road.
  *
- * 六線道是為了生出 `lane_change` 邊 —— 那也是穿過路口的一種走法，漏標的話車
- * 可以靠換道停在路口裡。
+ * The six-lane road exists to produce `lane_change` edges, which are another way of traversing
+ * a junction: unmarked, a vehicle can stop inside one by changing lanes.
  */
 function mixedCity() {
   const grid = new Grid(24, 24);
   const rb = new RoadBuilder(grid);
-  rb.buildRoad({ x: 2, y: 5 }, { x: 14, y: 5 }, RoadType.TWO_LANE, 1e6);   // 主街
-  rb.buildRoad({ x: 5, y: 2 }, { x: 5, y: 9 }, RoadType.TWO_LANE, 1e6);    // 十字 @ 5,5
-  rb.buildRoad({ x: 9, y: 5 }, { x: 9, y: 9 }, RoadType.TWO_LANE, 1e6);    // T 字 @ 9,5
-  rb.buildRoad({ x: 14, y: 5 }, { x: 14, y: 9 }, RoadType.TWO_LANE, 1e6);  // L 彎 @ 14,5
+  rb.buildRoad({ x: 2, y: 5 }, { x: 14, y: 5 }, RoadType.TWO_LANE, 1e6);   // main street
+  rb.buildRoad({ x: 5, y: 2 }, { x: 5, y: 9 }, RoadType.TWO_LANE, 1e6);    // crossroads at 5,5
+  rb.buildRoad({ x: 9, y: 5 }, { x: 9, y: 9 }, RoadType.TWO_LANE, 1e6);    // T junction at 9,5
+  rb.buildRoad({ x: 14, y: 5 }, { x: 14, y: 9 }, RoadType.TWO_LANE, 1e6);  // L bend at 14,5
   rb.buildRoad({ x: 2, y: 15 }, { x: 12, y: 15 }, RoadType.SIX_LANE, 1e6);
-  rb.buildRoad({ x: 7, y: 12 }, { x: 7, y: 18 }, RoadType.SIX_LANE, 1e6);  // 六線道十字 @ 7,15
+  rb.buildRoad({ x: 7, y: 12 }, { x: 7, y: 18 }, RoadType.SIX_LANE, 1e6);  // six-lane crossroads at 7,15
 
   const lookup = UnifiedRoadLookup.fromGrid(grid);
   const graph = new LaneGraph();
@@ -278,7 +294,7 @@ function mixedCity() {
   return { graph, lookup };
 }
 
-/** 這一段是不是「留在同一格裡」—— 是的話回傳那一格。 */
+/** Whether this edge stays within one cell, returning that cell if so. */
 function stayInsideCell(e: LaneEdge): string | null {
   if (e.viaCellKey) return e.viaCellKey;
   return e.from.cellKey === e.to.cellKey ? e.from.cellKey : null;
@@ -286,9 +302,10 @@ function stayInsideCell(e: LaneEdge): string | null {
 
 describe('哪一段算在路口裡', () => {
   it('should mark exactly the edges that traverse a 3+ way cell', () => {
-    // 完整刻畫，不是抽樣:每一段都比對一次。只驗「哪一格被標到」是不夠的 ——
-    // 十字路口同時有 within-cell、cross-intersection turn 與 lane_change 三種邊，
-    // 漏掉其中一種時被標到的格子集合完全一樣。
+    // A full characterisation rather than a sample: every edge is checked. Checking only which
+    // cells got marked is not enough — a crossroads carries within-cell, cross-intersection
+    // turn and lane_change edges at once, and missing one of them leaves the set of marked
+    // cells identical.
     const { graph, lookup } = mixedCity();
     for (const e of graph.getAllEdges()) {
       const owner = stayInsideCell(e);
@@ -299,7 +316,7 @@ describe('哪一段算在路口裡', () => {
   });
 
   it('fixture sanity: really has all four kinds of edge to classify', () => {
-    // 上面那條可以靠「地圖上根本沒有路口」或「沒有換道邊」空轉。
+    // The test above would be vacuous with no junctions on the map, or no lane-change edges.
     const { graph } = mixedCity();
     const marked = graph.getAllEdges().filter(e => e.insideJunction);
     const counts = (list: LaneEdge[]) => new Set(list.map(e => e.type));
@@ -308,7 +325,8 @@ describe('哪一段算在路口裡', () => {
   });
 
   it('should not mark an L bend', () => {
-    // 彎道也是「換方向」，但只有兩個方向 —— 沒有橫向車流會被擋住，照舊可以排隊。
+    // A bend also changes direction, but with only two directions there is no cross traffic to
+    // block, so queueing there is fine.
     const { graph } = mixedCity();
     const bend = graph.getAllEdges().filter(e => stayInsideCell(e) === '14,5');
     expect(bend.length, '(14,5) 那個彎沒有任何邊，這條測不出東西').toBeGreaterThan(0);

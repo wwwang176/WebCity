@@ -1,12 +1,13 @@
 /**
- * 號誌表的鍵摺成一個數字。
+ * The traffic-light table's key folded into a single number.
  *
- * `canPass` 是**逐車逐幀**被叫的 —— 4 萬人存檔實測 `parsePosKeyUnsafe` 佔主執行緒
- * 4.4% 的自身時間，其中 35.5% 來自 `canAdvanceThrough → canPass` 這條路:呼叫端把
- * 字串鍵拆成數字，`canPass` 再用 `toPosKey` 把它拼回字串去查表。一來一回，每幀
- * 每台車各一次。
+ * `canPass` is called **per vehicle per frame**. Measured on a 40k-citizen save,
+ * `parsePosKeyUnsafe` took 4.4% of main-thread self time, 35.5% of it from the
+ * `canAdvanceThrough -> canPass` path: the caller splits a string key into numbers and
+ * `canPass` reassembles it with `toPosKey` to look the table up. There and back, once per
+ * vehicle per frame.
  *
- * 座標留在 SMI 範圍內（y < 8192），Map 的鍵就不會被裝箱。
+ * Keeping coordinates in the SMI range (y < 8192) keeps the Map's keys unboxed.
  */
 const LIGHT_KEY_STRIDE = 8192;
 function lightKey(x: number, y: number): number {
@@ -28,18 +29,20 @@ export interface TrafficLight {
   phaseDuration: number; // seconds per phase (varies by intersection size)
   clearing: boolean; // true during all-red clearance period
   /**
-   * 這一格的路型。
+   * The road tier of this cell.
    *
-   * 渲染端要拿它算路緣在哪 —— 燈桿站在人行道上，而人行道的位置只由路寬決定
-   * （四車道的路緣在 0.425、六車道在 0.475）。少了這個欄位，渲染端只能用一個
-   * 常數，那個常數對任何一種路都是錯的。
+   * The renderer needs it to locate the kerb: the pole stands on the pavement, and the
+   * pavement's position is determined solely by road width (0.425 for four lanes, 0.475 for
+   * six). Without this field the renderer can only use one constant, which is wrong for every
+   * road type.
    */
   roadType: number;
   /**
-   * 這一格接了哪幾個方向（`RoadDirection` 的位元）。
+   * Which directions this cell connects, as `RoadDirection` bits.
    *
-   * 號誌從**三向**路口起就會設，而渲染端逐個進入方向立一支 —— 少了這個欄位，
-   * T 字路口會有一支立在草地上，管著一條不存在的路。
+   * Lights are installed from **three-way** junctions upwards and the renderer erects one pole
+   * per incoming direction. Without this field a T junction gets a pole standing on grass,
+   * controlling a road that does not exist.
    */
   roadFlags: number;
 }
@@ -47,10 +50,11 @@ export interface TrafficLight {
 /**
  * Traffic light configuration
  *
- * 秒數是**實際秒數**，而車速是格／秒 —— 兩者沒有任何連結，所以車速一改，路口
- * 的通行量就會無聲地跟著變（`EDGE_SPEED` 減半時，一次綠燈從 14 台掉到 7 台）。
- * 真正要維持的是**放行台數**，驗收釘的也是那個，不是秒數本身
- * （`JunctionThroughput.test.ts`）。
+ * The durations are **real seconds** while vehicle speed is cells per second. The two are
+ * unconnected, so changing vehicle speed silently changes junction throughput (halving
+ * `EDGE_SPEED` drops one green phase from 14 vehicles to 7). What must be preserved is the
+ * **number of vehicles released**, and that is what acceptance pins rather than the durations
+ * themselves (`JunctionThroughput.test.ts`).
  */
 export const TRAFFIC_LIGHT = {
   /** Default seconds per phase (standard intersection) */
@@ -209,8 +213,8 @@ export function syncTrafficLightsWithGrid(
     if (!existing) {
       tls.addLight(x, y, duration, cell.roadType, cell.roadFlags);
     } else {
-      // 就地改而不是重建：重建會把相位與計時器歸零，路口拓寬或補上一條路時
-      // 所有方向會同時跳一下。
+      // Updated in place rather than rebuilt: rebuilding resets the phase and timer, so every
+      // direction jumps at once when the junction is widened or gains an arm.
       if (existing.phaseDuration !== duration) existing.phaseDuration = duration;
       if (existing.roadType !== cell.roadType) existing.roadType = cell.roadType;
       if (existing.roadFlags !== cell.roadFlags) existing.roadFlags = cell.roadFlags;

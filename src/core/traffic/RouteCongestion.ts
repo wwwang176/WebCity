@@ -1,46 +1,53 @@
 /**
- * 路上塞不塞,從**需求**算出來。
+ * Congestion, derived from **demand**.
  *
- * 輸入是 `computeCongestionFlow` 產生的逐格流量圖:每一格上有多少人的通勤路線經過,
- * 除以那一格的車道數。它跟畫面上生成了幾台車無關 —— 車輛實體有數量上限、會被生成點
- * 檢查擋掉,那是演繹,不是模擬。
+ * The input is the per-cell flow field produced by `computeCongestionFlow`: how many
+ * citizens' commute routes pass through each cell, divided by that cell's lane count. It is
+ * unrelated to how many vehicles are on screen, since vehicle instances are capped and
+ * refused by the spawn check — they are a dramatisation, not the simulation.
  *
- * 這裡把流量換成 0（暢通）到 1（塞死）的擁擠程度,並提供兩種問法:
- * - `routeCongestion`：**這一趟**沿途有多擠。有路線可問的地方都該用這個。
- * - `cityCongestion`：整個路網的平均負載。給問不到路線的地方當退路。
+ * This module turns flow into a congestion level from 0 (clear) to 1 (gridlocked) and offers
+ * two questions:
+ * - `routeCongestion`: how congested **this trip's** route is. Use it wherever a route is
+ *   available.
+ * - `cityCongestion`: the network's average load, as the fallback where no route can be asked.
  */
 
 /**
- * 一格車道上有多少人的通勤路線經過,就算塞滿。
+ * Commute routes per lane cell at which it counts as saturated.
  *
- * **這是遊戲平衡的旋鈕,不是物理常數。** 跟 `CONGESTION_EXPONENT` 一起校準:讓
- * 12 280 人的參考城市（60×60 地圖、284 格道路）逐人的通勤擁擠度中位數落在 0.55
- * 左右 —— 明顯有負擔但還不到癱瘓,而且上面還有空間可以再惡化。
+ * **A balance knob, not a physical constant.** Calibrated together with
+ * `CONGESTION_EXPONENT` so that the 12,280-citizen reference city (60x60 map, 284 road cells)
+ * has a median per-citizen commute congestion around 0.55: clearly burdened but not
+ * paralysed, with room left to get worse.
  *
- * 它是**絕對值**而不是跟人口綁定的比例,這是刻意的:同樣一條路,住的人愈多就該愈塞。
- * 綁人口的話城市長大不會變塞,那條回饋線等於沒接。
+ * It is an **absolute** value rather than a share of population, deliberately: the same road
+ * should get more congested as more people live on it. Tied to population, a growing city
+ * would never get more congested and that feedback loop would be disconnected.
  */
 export const FLOW_PER_LANE_SATURATED = 9000;
 
 /**
- * 擁擠度隨流量上升的陡度。
+ * How steeply congestion rises with flow.
  *
- * 空的路上多一台車沒感覺;快滿的路上多一台車,整條隊伍卡住。線性（指數 1）把這兩件事
- * 當成一樣重,結果是玩家花錢打通一個快爆的路口,回饋跟拓寬一條本來就順的路差不多。
+ * One more vehicle on an empty road is imperceptible; one more on a nearly full road stalls
+ * the whole queue. Linear (exponent 1) treats the two as equal, so clearing a nearly
+ * saturated junction rewards the player about as much as widening a road that already flows.
  *
- * 參考城市上實測「把最塞的一成格子車道加倍」:
+ * Measured on the reference city by doubling the lanes of the most congested tenth of cells:
  *
- * | | 線性 | 四次方 |
+ * | | linear | fourth power |
  * |---|---|---|
- * | 通勤擁擠度中位數 | 0.553 → 0.405 | 0.553 → **0.233** |
- * | 開車時間 | ×1.55 → ×1.41（快 9%） | ×1.55 → **×1.23（快 21%）** |
+ * | median commute congestion | 0.553 -> 0.405 | 0.553 -> **0.233** |
+ * | driving time | x1.55 -> x1.41 (9% faster) | x1.55 -> **x1.23 (21% faster)** |
  *
- * 兩者的起點校準成一樣,所以差的是**反應**不是水位。四次方也是交通工程裡描述
- * 路段行駛時間隨流量上升的常見形狀。
+ * Both were calibrated to the same starting point, so what differs is the **response**, not
+ * the level. A fourth power is also the usual shape in traffic engineering for how link
+ * travel time rises with flow.
  */
 export const CONGESTION_EXPONENT = 4;
 
-/** 一格有多擠。0 = 空的,1 = 塞死。 */
+/** How congested one cell is. 0 = empty, 1 = gridlocked. */
 export function cellCongestion(flowPerLane: number): number {
   if (!(flowPerLane > 0)) return 0;
   const load = flowPerLane / FLOW_PER_LANE_SATURATED;
@@ -48,12 +55,14 @@ export function cellCongestion(flowPerLane: number): number {
 }
 
 /**
- * 這一趟沿途有多擠 —— 經過的每一格的平均。
+ * How congested a trip's route is: the mean over the cells it passes through.
  *
- * 用平均而不是最塞的那一格:一趟通勤只卡在一個路口,跟整條路都在爬,不是同一件事,
- * 而開車時間是沿路累積的。取最大值會讓所有經過市中心的人都變成一樣糟。
+ * A mean rather than the worst cell: a commute stuck at one junction and a commute crawling
+ * the whole way are different things, and driving time accumulates along the route. Taking
+ * the maximum would make everyone passing through the centre equally badly off.
  *
- * 路線上沒有任何格子時回傳 `null` —— 呼叫端自己決定要退回什麼,這裡不假裝知道。
+ * Returns `null` when the route has no cells; the caller decides what to fall back to rather
+ * than this pretending to know.
  */
 export function routeCongestion(
   cells: Iterable<string>,
@@ -69,11 +78,12 @@ export function routeCongestion(
 }
 
 /**
- * 整個路網的平均負載。
+ * The network's average load.
  *
- * 分母是**全城道路格數**,不是「現在有車經過的格數」—— 空路也要算進去,那才是
- * 「蓋了路有沒有用」得以反映出來的地方。舊的算法只看有車的格子,結果城市愈大
- * 分母愈跟著漲,數字永遠貼在上限。
+ * The denominator is the **city's road cell count**, not the cells currently carrying
+ * traffic: empty roads count too, and that is where building a road shows up as having
+ * helped. Counting only cells with traffic makes the denominator grow with the city and pins
+ * the number at its ceiling.
  */
 export function cityCongestion(
   flowMap: ReadonlyMap<string, number>,

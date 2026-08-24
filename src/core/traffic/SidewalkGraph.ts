@@ -5,9 +5,8 @@
  * and connects them with sidewalk, crosswalk, level_crossing, building_access
  * and building_wall edges.
  *
- * 站牌沒有自己的節點種類：它在這張圖裡就是一棟 1×1 建築，四個門節點靠
- * building_access 接上路邊。`transit_stop` / `transit_access` 這兩種曾經宣告在
- * 型別裡（連這段註解都寫著會產生），但沒有一行程式碼建立過它們 —— 已移除。
+ * A transit stop has no node type of its own: in this graph it is a 1x1 building whose four
+ * door nodes connect to the kerb through building_access edges.
  */
 
 import { RoadType, RoadDirection, countRoadDirections, ROAD_WIDTHS } from '../road/types';
@@ -18,7 +17,7 @@ import { toPosKey, parsePosKeyUnsafe, CARDINAL_DIRECTIONS, euclideanDistance } f
 // Matches RoadRenderer.ts
 export const SIDEWALK_WIDTH = 0.14;
 
-/** 路寬的家在 `core/road/types`。這裡轉出去，既有的 import 不必動。 */
+/** Road widths live in `core/road/types`; re-exported here so existing imports keep working. */
 export { ROAD_WIDTHS };
 
 /** Crosswalk offset from intersection center (matches RoadRenderer cwOffset) */
@@ -30,8 +29,9 @@ const NODE_X_OFFSET = CW_OFFSET;
 /**
  * Building wall distance from cell center.
  *
- * 由 MAX_BUILDING_WIDTH_M 推導，而不是自己寫一個數字：渲染層的基地寬度表
- * 用的是同一個上限，兩邊各自寫死會在建築變寬時讓行人走進牆裡。
+ * Derived from MAX_BUILDING_WIDTH_M rather than written as its own number: the renderer's
+ * footprint table uses the same bound, and two independent literals would let pedestrians walk
+ * into walls as soon as buildings got wider.
  */
 export const BUILDING_HALF_SIZE = MAX_BUILDING_WIDTH_M / METRES_PER_CELL / 2;
 
@@ -144,7 +144,7 @@ export class SidewalkGraph {
   private nodes = new Map<string, SidewalkNode>();
   private adjacency = new Map<string, SidewalkEdge[]>();
   private cellNodes = new Map<string, string[]>();
-  /** 所有還活著的邊 id，隨增刪維護 —— 見 getEdgeIds。 */
+  /** Every live edge id, maintained as edges are added and removed; see getEdgeIds. */
   private readonly edgeIds = new Set<string>();
   private generation = 0;
 
@@ -298,9 +298,10 @@ export class SidewalkGraph {
   /**
    * Every live edge id.
    *
-   * 隨著邊的增刪一起維護，而不是每次呼叫掃一遍鄰接表。呼叫端是行人的退休掃描，
-   * 而它跑在每一次道路編輯上：60×60 全鋪滿約十萬條邊，掃一遍要 12 ms —— 在
-   * `updateCells` 只花 0.3 ms 的旁邊，等於整個增量重建都白做了。
+   * Maintained as edges are added and removed rather than scanning the adjacency table per
+   * call. The caller is the pedestrian retirement sweep, which runs on every road edit: a
+   * fully paved 60x60 map has about a hundred thousand edges and one scan takes 12ms, which
+   * next to `updateCells`'s 0.3ms would waste the entire incremental rebuild.
    */
   getEdgeIds(): ReadonlySet<string> {
     return this.edgeIds;
@@ -789,15 +790,16 @@ export class SidewalkGraph {
       const edges = this.adjacency.get(nodeId) ?? [];
       for (const edge of edges) {
         this.edgeIds.delete(edge.id);
-        // 反向那一條由對面持有，也得刪掉。
+        // The reverse edge is held by the other side and must be removed too.
         //
-        // 原本是拿 `${to.id}→${nodeId}` 組出反向 id 去比對，但 id 裡還含有邊的
-        // 種類與兩端的路寬（BUG-159、BUG-160 先後折進去的），所以那個 findIndex
-        // 一次都沒有命中過 —— 對面手上永遠留著一條指向已刪節點的邊，A* 走得過去，
-        // 行人於是走在已經不存在的人行道上。
+        // Matching it by rebuilding the id as `${to.id}->${nodeId}` never hits: the id also
+        // encodes the edge kind and both ends' road widths (folded in by BUG-159 and
+        // BUG-160). The other side would keep an edge pointing at a deleted node, A* would
+        // walk it, and pedestrians would walk on a pavement that no longer exists.
         //
-        // 改成直接看終點是誰。同一對節點之間可能有不只一條邊（斑馬線與平交道就
-        // 會重疊在同一對上），指向被刪節點的通通要走，所以是迴圈不是 findIndex。
+        // Matching on the destination node instead. A pair of nodes can carry more than one
+        // edge (a crosswalk and a level crossing overlap on the same pair), and every edge
+        // pointing at the deleted node must go, so this is a loop rather than a findIndex.
         const otherEdges = this.adjacency.get(edge.to.id);
         if (otherEdges) {
           for (let i = otherEdges.length - 1; i >= 0; i--) {

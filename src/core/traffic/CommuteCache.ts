@@ -32,16 +32,17 @@ export class CommuteCache {
   private routeIndex = new Map<string, LaneEdge[][]>();
 
   /**
-   * 這一代路網裡，算過而且**確定沒有路**的通勤路線。
+   * Commute routes computed in this road generation and **known to have no path**.
    *
-   * 「還沒算出來」與「算出來是沒有路」是兩個不同的答案，而舊版只記得住前者:
-   * worker 回空陣列時結果被丟掉，於是那條路線的重試計數一路長上去，超過額度
-   * 之後每一輪都在主執行緒重算一次同一條算不出來的路。41k 存檔實測 3 362 條
-   * 這樣的路線、白算 9 838 次同步 A*，其中成功 0 次（BUG-369）。
+   * "Not computed yet" and "computed, and there is no path" are different answers. Recording
+   * only the first means the worker's empty array is discarded, the route's retry counter
+   * climbs past its quota, and every subsequent sweep recomputes the same impossible route on
+   * the main thread. Measured on a 41k save: 3,362 such routes and 9,838 wasted synchronous A*
+   * runs, 0 of them successful (BUG-369).
    *
-   * 跟 `routeIndex` 同一個生命週期，所以放在同一個地方清:`findLanePathVariants`
-   * 對同一份 lane graph 是決定性的，路網不動就不會有新答案;路網一動
-   * `bumpGeneration()` 兩份一起作廢。
+   * Same lifecycle as `routeIndex`, so it is cleared in the same place:
+   * `findLanePathVariants` is deterministic for a given lane graph, so an unchanged network
+   * yields no new answer, and `bumpGeneration()` invalidates both together.
    */
   private unroutable = new Set<string>();
 
@@ -77,7 +78,7 @@ export class CommuteCache {
     this.unroutable.clear();
   }
 
-  /** 這一代路網裡，這條路線算過而且沒有路。 */
+  /** Whether this route was computed in this road generation and has no path. */
   markUnroutable(routeKey: string): void {
     this.unroutable.add(routeKey);
   }
@@ -179,8 +180,8 @@ export class CommuteCache {
 
     // Build routeCellIndex from ALL variants (different variants may use different cells)
     if (variants.length > 0) {
-      // 存進來一條真的路，就不會再有人說它走不通 —— 兩份記錄講相反的話是最難
-      // 查的一種壞法，所以只留一個寫入點決定答案。
+      // Storing a real route clears any unroutable mark. Two records contradicting each other
+      // is the hardest kind of breakage to trace, so one write point decides the answer.
       this.unroutable.delete(routeKey);
       const cells = this.reusableCellSet;
       cells.clear();
@@ -295,10 +296,11 @@ export class CommuteCache {
   }
 
   /**
-   * 目前有人走的路線 key，填進呼叫端給的陣列（不配置新陣列）。
+   * The keys of routes currently carrying riders, filled into the caller's array without
+   * allocating.
    *
-   * 給跨 tick 分次掃的呼叫端用:掃到一半路線被增刪都不影響手上這份名單，
-   * 而 `forRouteKey` 會把已經消失的那些跳過。
+   * For callers sweeping across ticks: routes added or removed mid-sweep do not affect the list
+   * in hand, and `forRouteKey` skips the ones that have gone.
    */
   routeKeysWithRiders(out: string[]): string[] {
     out.length = 0;
@@ -309,9 +311,10 @@ export class CommuteCache {
   }
 
   /**
-   * 這一條路線的每個變體，以及各自分到的人數。
+   * Each variant of this route and the number of riders assigned to it.
    *
-   * 路線已經不在了（被 `invalidateCell` 清掉、或沒人走了）就不呼叫 callback。
+   * The callback is not invoked when the route is gone — cleared by `invalidateCell`, or left
+   * with no riders.
    */
   forRouteKey(routeKey: string, callback: (path: LaneEdge[], refCount: number) => void): void {
     const variants = this.routeIndex.get(routeKey);

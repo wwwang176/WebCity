@@ -136,8 +136,9 @@ describe('the buffer carries what the rule needs', () => {
 
 describe('the worker leaves plain bends alone, like the main thread does', () => {
   it('should carry the junction flag on every edge', () => {
-    // 直接守住 buffer 那一格。旗標沒寫進去的話，worker 會以為全世界都是彎道，
-    // 連路口都不再站位 —— 而下面那條行為測試看不出差別（它本來就期待不換道）。
+    // Guards the buffer field directly. Without the flag written the worker treats everything
+    // as a bend and stops positioning at junctions too, which the behavioural test below cannot
+    // show — it already expects no lane change.
     const cross = workerSetup(crossroads(RoadType.FOUR_LANE), RoadType.FOUR_LANE);
     const flat = workerSetup(bend(RoadType.FOUR_LANE), RoadType.FOUR_LANE);
     const anyFlagged = (w: ReturnType<typeof workerSetup>) => {
@@ -151,10 +152,11 @@ describe('the worker leaves plain bends alone, like the main thread does', () =>
   });
 
   it('should not move over for a bend the way it does for a junction', () => {
-    // 起始車道要釘死，否則多起點 A* 會直接從理想車道出發，換不換道看不出來。
+    // The starting lane has to be pinned, or multi-origin A* simply departs from the ideal lane
+    // and whether it changes lane is invisible.
     const roadType = RoadType.FOUR_LANE;
     const { mapping, reader, astar } = workerSetup(bend(roadType), roadType);
-    const starts = exitsInLane(mapping, toPosKey(5, 0), 0);   // 內側出發
+    const starts = exitsInLane(mapping, toPosKey(5, 0), 0);   // departing from the inner lane
     const { ends } = endpoints(mapping, toPosKey(5, 0), toPosKey(0, 5));
     expect(starts.length, '找不到內側車道的起點').toBeGreaterThan(0);
 

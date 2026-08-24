@@ -6,16 +6,17 @@ import { PathCellCache } from '../PathCellCache';
 import { makeCellEdge } from '../../../../tests/helpers/makeLaneEdge';
 
 /**
- * 壅塞流量圖每 60 tick 重算一次。快取「路徑經過哪些格子」之後仍然要 60ms，全部落在
- * 單一個 tick 上 —— 速度 1 的一個 tick 只有 250ms，而算繪跟它搶同一個執行緒
- * （BUG-327）。
+ * The congestion flow field is recomputed every 60 ticks. Even with "which cells a path passes
+ * through" cached it takes 60ms, all in a single tick, against 250ms available per tick at
+ * speed 1 with rendering competing for the same thread (BUG-327).
  *
- * 這件事沒有理由一次做完:結果本來就每 60 tick 才換一次。分次掃的重點是**不能讓
- * 別人讀到做到一半的表** —— 半張表代表「這些路上有人，其他路都是空的」，那比舊資料
- * 還糟。所以做在另一張紙上，掃完才整張換掉。
+ * There is no reason to do it in one go: the result is only replaced every 60 ticks anyway.
+ * What matters about sweeping is that **nobody may read a half-built table** — a half-built
+ * table claims those roads carry traffic and everything else is empty, which is worse than
+ * stale data. So it accumulates on a separate sheet and is swapped in whole.
  */
 
-/** 一條沿 +x、經過 `cells` 的路線，被 `riders` 個人走。 */
+/** A route along +x through `cells`, taken by `riders` citizens. */
 function addRoute(cache: CommuteCache, cells: string[], riders: number, idBase: number): void {
   const path = cells.slice(0, -1).map((from, i) => makeCellEdge(from, cells[i + 1]!, 0, { length: 1 }));
   const key = `${cells[0]}->${cells[cells.length - 1]}`;
@@ -40,12 +41,13 @@ function populated(): CommuteCache {
 const lanes = () => 1;
 const entries = (m: Map<string, number>) => [...m.entries()].sort();
 
-/** 一次掃完，當作對照組。 */
+/** Computed in one go, as the control. */
 function atomic(cache: CommuteCache): Map<string, number> {
   return computeCongestionFlow(cache, new PathCellCache(), lanes).flowMap;
 }
 
-/** 每次只掃 `perTick` 條，直到掃完為止。回傳 (結果, 用掉幾個 tick)。 */
+/** Sweeps `perTick` routes at a time until it completes, returning the result and the tick
+ *  count. */
 function spread(cache: CommuteCache, perTick: number, maxTicks = 500):
 { flowMap: Map<string, number>; ticks: number; partials: number } {
   const sweep = new CongestionFlowSweep();
@@ -70,8 +72,8 @@ describe('分次掃出壅塞流量圖', () => {
   });
 
   it('should hand back nothing at all until the last route is in', () => {
-    // 半張表說的是「只有這幾條路上有人，其他都空的」—— 拿去做運具選擇，
-    // 比用上一輪的舊資料還糟。
+    // A half-built table claims only those roads carry anyone. Fed to mode choice, that is
+    // worse than the previous sweep's data.
     const cache = populated();
     const sweep = new CongestionFlowSweep();
     const cells = new PathCellCache();
@@ -81,7 +83,8 @@ describe('分次掃出壅塞流量圖', () => {
   });
 
   it('should take one tick per batch, not one per route', () => {
-    // 分次的意義就在這裡。一次掃一條卻在同一個 tick 裡跑完的話，等於沒分。
+    // The whole point of sweeping. Processing one route at a time but finishing within one
+    // tick is no sweep at all.
     const cache = populated();
     expect(spread(cache, 1).ticks, '一次掃一條應該要用掉四個 tick').toBe(4);
     expect(spread(cache, 2).ticks).toBe(2);
@@ -89,13 +92,14 @@ describe('分次掃出壅塞流量圖', () => {
   });
 
   it('should skip a route that disappeared while it was sweeping', () => {
-    // 名單是開掃時拍下來的。市民換工作、路被拆掉，路線都會在掃到一半時消失。
+    // The key list is taken when the sweep starts. Job changes and demolished roads both make
+    // routes vanish mid-sweep.
     const cache = populated();
     const sweep = new CongestionFlowSweep();
     const cells = new PathCellCache();
     sweep.begin(cache);
     sweep.step(cache, cells, 1, lanes);
-    cache.invalidateCell('2,0');   // 掃到一半，經過 2,0 的路線全部作廢
+    cache.invalidateCell('2,0');   // mid-sweep, every route through 2,0 is invalidated
 
     let out = null;
     for (let t = 0; t < 50 && !out; t++) out = sweep.step(cache, cells, 1, lanes);
@@ -104,8 +108,8 @@ describe('分次掃出壅塞流量圖', () => {
   });
 
   it('should throw the sweep away when the road network changed under it', () => {
-    // 路網一改，routeIndex 整個被清掉。半舊半新拼出來的表是假的 ——
-    // 寧可讓上一輪的舊表多留 60 個 tick。
+    // A road change clears routeIndex entirely. A table stitched from old and new data is
+    // false, and keeping the previous sweep's table another 60 ticks is preferable.
     const cache = populated();
     const sweep = new CongestionFlowSweep();
     const cells = new PathCellCache();
@@ -126,8 +130,9 @@ describe('分次掃出壅塞流量圖', () => {
   });
 
   it('should divide flow by the lane count once, at the end', () => {
-    // 兩條路線共用 `2,0`，一次只掃一條 —— 所以那一格會在兩個不同的批次各拿到一份。
-    // 每批各除一次的話，第一批那一份會被除兩次。單一條路線的案例看不出這件事。
+    // Two routes share `2,0` and one route is swept per batch, so that cell receives a
+    // contribution in two different batches. Dividing per batch would divide the first
+    // contribution twice. A single-route case cannot show this.
     const cache = new CommuteCache();
     addRoute(cache, ['1,0', '2,0'], 8, 100);
     addRoute(cache, ['2,0', '3,0'], 8, 200);
@@ -145,15 +150,16 @@ describe('分次掃出壅塞流量圖', () => {
   });
 
   it('should ignore a route that appeared after it started', () => {
-    // 名單是開掃時拍下來的。每批重新拍一次的話，游標會對到不同的名單上 ——
-    // 有的路線被跳過、有的被算兩次，而且靜態的城市完全看不出來。
+    // The key list is taken when the sweep starts. Retaking it per batch would point the
+    // cursor at a different list each time, skipping some routes and counting others twice,
+    // and a static city would show nothing.
     const cache = populated();
     const sweep = new CongestionFlowSweep();
     const cells = new PathCellCache();
     sweep.begin(cache);
     sweep.step(cache, cells, 1, lanes);
 
-    addRoute(cache, ['8,8', '9,8'], 7, 900);   // 開掃之後才出現
+    addRoute(cache, ['8,8', '9,8'], 7, 900);   // appears after the sweep started
     let out = null;
     for (let t = 0; t < 50 && !out; t++) out = sweep.step(cache, cells, 1, lanes);
 

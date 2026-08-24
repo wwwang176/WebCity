@@ -189,10 +189,9 @@ export class ServiceVehicleManager {
 
       const edgePath = this.findEdgePath(startRoad, destPos, laneGraph, roadLookup);
       if (edgePath && edgePath.length > 0) {
-        // 車位被佔著就這一趟不出勤 —— 追蹤清單不能記一台不存在的車，
-        // 那會讓這個設施永遠以為自己已經派滿了。
-        // 車位被佔著就這一趟不出勤 —— 追蹤清單不能記一台不存在的車，
-        // 那會讓這個設施永遠以為自己已經派滿了。
+        // An occupied spot means no dispatch this time. The tracking list must not record a
+        // vehicle that does not exist, or this facility believes forever that its fleet is
+        // fully deployed.
         const vehicle = traffic.spawnServiceVehicle(edgePath, type);
         if (vehicle) this.tracked.push({ vehicleId: vehicle.id, serviceType: type });
       }

@@ -3,20 +3,22 @@ import { TrafficSimulation } from '../TrafficSimulation';
 import type { LaneEdge } from '../LaneGraph';
 
 /**
- * 車輛每幀由前往後處理，而且每台車走完之後會把自己的新位置與「有沒有在減速」寫回
- * 逐邊索引（`advanceEdgeVehicles` 迴圈最後那一段）。所以後車讀到的是前車**這一幀
- * 剛算好的**狀態，不是上一幀的。
+ * Vehicles are processed front to back each frame, and each one writes its new position and
+ * whether it is braking back into the per-edge index at the end of its turn (the tail of the
+ * `advanceEdgeVehicles` loop). A follower therefore reads the leader's state **as computed this
+ * frame**, not last frame's.
  *
- * 這件事原本沒有測試守得住:把排序整個反過來，全套測試沒有一個紅 —— 而實測同一份
- * 存檔跑一幀，842 台車有 547 台的位置與速度會不一樣。
+ * Reversing the sort order turns no test red, yet one frame on the same save moves 547 of 842
+ * vehicles to different positions and speeds.
  *
- * 差別在第一幀最明顯:那時候所有車的 `braking` 都還是 false，前車要到自己被處理的
- * 那一刻才會變成 true。順序對的話，後車看得到那個 true，就不會跟著擠進路口。
+ * The difference is clearest on the first frame: every vehicle's `braking` is still false then,
+ * and a leader's only becomes true when it is processed. With the right order the follower sees
+ * that true and does not push into the junction behind it.
  */
 
 const JUNCTION_AT = 3;
 
-/** 一條直線車道，每段長 1，第 `JUNCTION_AT` 段是路口。 */
+/** A straight lane of unit-length segments, with segment `JUNCTION_AT` inside a junction. */
 function path(n: number): LaneEdge[] {
   return Array.from({ length: n }, (_, i) => ({
     id: `e${i}`,
@@ -38,34 +40,37 @@ describe('由前往後處理', () => {
     const sim = new TrafficSimulation();
     const route = path(10);
 
-    // 後車先建立，前車後建立 —— 這樣「沒有排序」時陣列就是由後往前，順序這件事
-    // 才不會被建立順序矇混過去。
+    // The follower is created first and the leader second, so an unsorted array runs back to
+    // front and creation order cannot stand in for the sort.
     const follower = sim.addVehicleOnEdges(route);
     follower.length = 0.22;
 
-    // 前車停在路口出口的正後方，被紅燈擋著 —— 它這一幀會第一次算出「我在減速」。
+    // The leader waits just past the junction exit, held by a red light, and computes "I am
+    // braking" for the first time this frame.
     const leader = sim.addVehicleOnEdges(route);
     leader.length = 0.22;
     leader.edgeIndex = JUNCTION_AT + 1;
-    leader.edgeProgress = 0;      // 還沒進去，紅燈才擋得住它
+    leader.edgeProgress = 0;      // not yet in, so the red light can hold it
     leader.speedMultiplier = 1;
     leader.stallTime = -1e6;
 
-    // 後車還在路口前面。它要不要進路口，取決於前車是不是在排隊。
+    // The follower is still short of the junction. Whether it enters depends on the leader
+    // queueing.
     follower.edgeIndex = JUNCTION_AT - 1;
-    follower.edgeProgress = 0.7;  // 停止線就在前面 0.3 格
+    follower.edgeProgress = 0.7;  // the stop line is 0.3 cells ahead
     follower.currentSpeed = 3;
     follower.speedMultiplier = 1;
     follower.stallTime = -1e6;
 
-    // 兩台的 braking 都還是 false —— 前車要到被處理時才會變 true。
+    // Both still have braking false: the leader's becomes true only when it is processed.
     expect(leader.braking, '前置條件:前車還沒被判定在減速').toBe(false);
 
     const red = (_from: string, next: string) => next !== `${JUNCTION_AT + 2},0`;
     sim.advanceEdgeVehicles(0.2, red);
 
     expect(leader.braking, '前車這一幀沒有被判定在減速 —— 這個案例失去意義').toBe(true);
-    // 前車在排隊而且出不去，所以後車必須停在停止線前，不能把車身留在路口裡。
+    // The leader is queueing and cannot clear, so the follower must stop before the stop line
+    // rather than leave its body inside the junction.
     const centre = follower.edgeIndex + follower.edgeProgress;
     expect(centre, '後車讀到的是前車上一幀的狀態，跟著擠進了路口')
       .toBeLessThan(JUNCTION_AT);

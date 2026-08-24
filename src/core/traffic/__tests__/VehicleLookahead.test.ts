@@ -4,10 +4,11 @@ import type { LaneEdge, ConnectionPoint } from '../LaneGraph';
 import { EdgeVehicleIndex, type EdgeVehicleView } from '../EdgeVehicleIndex';
 
 /**
- * fixture 用的殼:維持 `Map` 的寫法，底下建的是真的 `EdgeVehicleIndex`。
+ * A fixture shell keeping a `Map`-like surface over a real `EdgeVehicleIndex`.
  *
- * 正式路徑走 `begin()` / `add()` / `finish()`（每幀重建，不配物件）。這裡包一層是
- * 為了讓斷言講「這條邊上有誰」，而不是講 CSR 的索引算術。
+ * The production path uses `begin()` / `add()` / `finish()` (rebuilt per frame, no allocation).
+ * This wrapper lets the assertions talk about who is on an edge rather than about CSR index
+ * arithmetic.
  */
 class TestIndex extends EdgeVehicleIndex {
   private started = false;
@@ -111,17 +112,19 @@ describe('findGapAhead', () => {
 
 describe('findGapAhead 的提前收工', () => {
   /**
-   * 找的是**最近**的那一台。找到之後，再往前的邊上不可能有更近的 —— 除非那台車
-   * 比較長:空隙扣的是兩台車的半個車身，公車的車身是小客車的兩倍多。
+   * The search is for the **nearest** vehicle. Once one is found, no edge further along can
+   * hold a nearer one — unless that vehicle is longer: a gap subtracts half a body from both
+   * vehicles, and a bus body is more than twice a car's.
    *
-   * 所以提前收工的門檻要用路上最長的那台算。用眼前這台的長度算的話，一台停在
-   * 更後面的公車會被跳過，而它留下的空隙其實更小 —— 車就這樣開進公車尾巴。
+   * The early-exit threshold is therefore computed from the longest vehicle on the road. Using
+   * this vehicle's own length skips a bus standing further along whose gap is actually smaller,
+   * and the vehicle drives into the back of it.
    */
   it('should still find a longer vehicle further along that leaves a smaller gap', () => {
     const edges = [makeEdge('e1', 'A', 'B', 1.0), makeEdge('e2', 'B', 'C', 1.0)];
     const idx = new TestIndex([
-      ['e1', [{ vid: 2, progress: 0.9, halfLen: 0.11, queueing: false }]],   // 小客車:空隙 0.68
-      ['e2', [{ vid: 3, progress: 0.0, halfLen: 0.30, queueing: false }]],   // 公車:空隙 0.59
+      ['e1', [{ vid: 2, progress: 0.9, halfLen: 0.11, queueing: false }]],   // a car, gap 0.68
+      ['e2', [{ vid: 3, progress: 0.0, halfLen: 0.30, queueing: false }]],   // a bus, gap 0.59
     ]);
     const v = makeVehicle({ id: 1 });
 
@@ -130,7 +133,8 @@ describe('findGapAhead 的提前收工', () => {
   });
 
   it('should agree with the exhaustive scan', () => {
-    // 提前收工不能改變答案。不給最長車身時不收工 —— 兩個結果要一樣。
+    // The early exit must not change the answer. Omitting the longest body disables it, and
+    // both results must match.
     const edges = [
       makeEdge('e1', 'A', 'B', 1.0), makeEdge('e2', 'B', 'C', 1.0),
       makeEdge('e3', 'C', 'D', 1.0), makeEdge('e4', 'D', 'E', 1.0),

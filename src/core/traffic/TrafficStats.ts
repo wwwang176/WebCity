@@ -6,14 +6,16 @@
 /** Pre-computed traffic data needed for stats (DIP). */
 export interface TrafficStatsContext {
   /**
-   * 有多少居民正在開車通勤 —— 不是路上的車輛總數。
+   * How many residents are driving to work, not the total number of vehicles on the road.
    *
-   * 路上還有過境車流、貨運與服務車輛，那三種跟居民的運具選擇無關。面板拿這張卡
-   * 判斷政策有沒有把人趕上大眾運輸，混進去的話居民真的改搭公車了也看不出來。
+   * The road also carries through traffic, freight and service vehicles, none of which reflect
+   * a resident's mode choice. The panel uses this card to judge whether a policy moved people
+   * onto transit, and mixing the others in hides a real switch to the bus.
    */
   commuteVehicleCount: number;
   topCongested: { segment: string; density: number }[];
-  /** 居民開車通勤的平均路程。與 `commuteVehicleCount` 同一個母體。 */
+  /** Average distance residents drive to work, over the same population as
+   *  `commuteVehicleCount`. */
   commuteAvgPathLength: number;
   roadTileCount: number;
 }

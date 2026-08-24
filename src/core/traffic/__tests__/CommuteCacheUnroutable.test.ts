@@ -3,16 +3,17 @@ import { CommuteCache } from '../CommuteCache';
 import type { LaneEdge } from '../LaneGraph';
 
 /**
- * 「這條通勤路線沒有路」也是一個答案，而且跟「還沒算出來」不一樣。
+ * "This commute has no route" is an answer too, and a different one from "not computed yet".
  *
- * 舊版沒有地方記它:worker 回傳空陣列時 `onResult` 直接 return，於是重試計數
- * 一路長上去，超過額度之後每一輪都在主執行緒重算一次同一條算不出來的路。
- * 41k 存檔實測 3 362 條這樣的路線、白算 9 838 次同步 A*，成功 0 次（BUG-369）。
+ * With nowhere to record it, `onResult` returns immediately on a worker's empty array, the
+ * retry counter climbs, and past its quota every round recomputes the same impossible route
+ * synchronously on the main thread. Measured on a 41k save: 3,362 such routes and 9,838 wasted
+ * synchronous A* runs, none of them successful (BUG-369).
  *
- * 它跟 `routeIndex` 同一個生命週期 —— 路網一動，兩份都不算數了。
+ * It shares `routeIndex`'s lifetime: a road change invalidates both.
  */
 
-/** 一條假的車道邊，只要能被 `collectEdgeCells` 走過就好。 */
+/** A stub lane edge, only required to be walkable by `collectEdgeCells`. */
 function edge(cellKey: string): LaneEdge {
   const pt = (id: string) => ({
     id, position: { x: 0, y: 0 }, tangent: { tx: 1, ty: 0 },
@@ -35,7 +36,7 @@ describe('走不通的通勤路線', () => {
   });
 
   it('should forget it when the road network changes', () => {
-    // 蓋一條新路就可能接通。忘不掉的話，那條通勤永遠不會再被算一次。
+    // A new road may connect them. Without forgetting, that commute is never computed again.
     const cc = new CommuteCache();
     cc.markUnroutable('1,1->9,9');
 
@@ -45,7 +46,8 @@ describe('走不通的通勤路線', () => {
   });
 
   it('should forget it when the route turns out to have a path after all', () => {
-    // 兩份記錄講相反的話是最難查的一種壞法。存進路線就代表那條路存在。
+    // Two records contradicting each other is the hardest kind of breakage to trace. Storing a
+    // route means that route exists.
     const cc = new CommuteCache();
     cc.markUnroutable('1,1->9,9');
 
@@ -56,7 +58,7 @@ describe('走不通的通勤路線', () => {
   });
 
   it('should keep the mark when an empty variant list is stored', () => {
-    // 空的變體清單不是「有路」。它是同一件事換個講法。
+    // An empty variant list is not "has a route"; it is the same statement in other words.
     const cc = new CommuteCache();
     cc.markUnroutable('1,1->9,9');
 

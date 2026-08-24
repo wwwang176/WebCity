@@ -3,27 +3,29 @@ import { SidewalkGraph, type GridLookup } from '../SidewalkGraph';
 import { RoadType, RoadDirection } from '../../road/types';
 
 /**
- * 圖裡不該有指向已經不存在的節點的邊。
+ * The graph must contain no edge pointing at a node that no longer exists.
  *
- * 邊是雙向存的：`a→b` 放在 a 的鄰接串列、`b→a` 放在 b 的。刪掉 b 的時候，a 手上
- * 那一條也得刪 —— 否則 A* 照樣走得過去，行人走在已經不存在的人行道上。
+ * Edges are stored in both directions: `a->b` in a's adjacency list and `b->a` in b's. Deleting
+ * b must delete a's copy too, otherwise A* still walks it and pedestrians walk on a pavement
+ * that no longer exists.
  *
- * 這件事一直沒發生：反向邊是拿 `${to.id}→${nodeId}` 去比對的，而真正的邊 id 是
- * `${type}|${roadTypes}:${from}→${to}`（BUG-159 與 BUG-160 先後把種類與路寬折進
- * id 裡），兩者永遠對不上，`findIndex` 一次都沒有命中過。
+ * Matching the reverse edge by rebuilding `${to.id}->${nodeId}` never hits, because a real edge
+ * id is `${type}|${roadTypes}:${from}->${to}` (BUG-159 and BUG-160 folded the kind and the road
+ * widths into it), so the `findIndex` matches nothing.
  *
- * 平常看不出來，是因為 `updateCells` 會把改動格子的四個鄰居整批砍掉重建，順手把
- * 那些殘邊一起帶走。但它重建的範圍是「改動格 + 一圈」，殘邊的持有者卻可能在兩格
- * 之外 —— 那一圈之外的鄰接串列從來沒有被清過。
+ * It is normally invisible because `updateCells` razes and rebuilds the changed cell's four
+ * neighbours, taking those stale edges with it. But its rebuild covers the changed cell plus
+ * one ring, while the holder of a stale edge can be two cells away, and adjacency lists beyond
+ * that ring are never cleared.
  */
 
 interface Cell { roadType: number; roadFlags: number; buildingId: number }
 
 function eastWestRoad(): {
   graph: SidewalkGraph;
-  /** 在 (x, y) 蓋一條路，然後只重算那一格。 */
+  /** Builds a road at (x, y) and recomputes only that cell. */
   buildRoadAt(x: number, y: number): void;
-  /** 整張圖重建一次，可以指定這一次不要納入哪些格子。 */
+  /** Rebuilds the whole graph, optionally excluding some cells from this pass. */
   rebuildAll(exclude?: string[]): void;
 } {
   const cells = new Map<string, Cell>();
@@ -64,7 +66,7 @@ function eastWestRoad(): {
   };
 }
 
-/** 指向已經不在圖裡的節點的邊。 */
+/** Edges pointing at nodes no longer in the graph. */
 function danglingEdges(graph: SidewalkGraph): string[] {
   const out: string[] = [];
   for (const node of graph.getAllNodes()) {
@@ -82,9 +84,9 @@ describe('人行道圖的殘邊', () => {
   });
 
   it('should leave no dangling edge when a node disappears', () => {
-    // 在 (7,9) 蓋一條路 → (7,10) 北側多了一條路，那一側的人行道節點因此消失。
-    // 重算範圍是 (7,9) 加一圈，蓋不到兩格外的 (6,10) —— 它手上那條指向
-    // (7,10):NW 的邊沒有人清。
+    // Building a road at (7,9) puts a road on (7,10)'s north side, so that side's sidewalk
+    // node disappears. The recompute covers (7,9) plus one ring and does not reach (6,10) two
+    // cells away, whose edge pointing at (7,10):NW is left uncleaned.
     const city = eastWestRoad();
     city.buildRoadAt(7, 9);
 
@@ -95,7 +97,8 @@ describe('人行道圖的殘邊', () => {
   });
 
   it('should not report edge ids that no longer exist', () => {
-    // 退休掃描拿這份 id 判斷「這條路還在不在」。留著死 id，該退休的行人不會退休。
+    // The retirement sweep uses these ids to decide whether a route still exists. A dead id
+    // left in means pedestrians who should retire do not.
     const city = eastWestRoad();
     city.buildRoadAt(7, 9);
 
@@ -108,11 +111,13 @@ describe('人行道圖的殘邊', () => {
   });
 
   it('should still match after a full rebuild', () => {
-    // id 集合是隨增刪維護的，全量重建必須把它一起歸零 —— 否則上一代的 id 會留著，
-    // 退休掃描會認為那些已經不存在的路還在。
+    // The id set is maintained incrementally, so a full rebuild must reset it too; otherwise
+    // the previous generation's ids remain and the retirement sweep believes roads that no
+    // longer exist are still there.
     const city = eastWestRoad();
     city.buildRoadAt(7, 9);
-    // 重建成一份比較小的圖 —— 重建成同一份佈局的話 id 剛好一樣，看不出有沒有清。
+    // Rebuild into a smaller graph: rebuilding the same layout produces identical ids and
+    // shows nothing about whether it was cleared.
     city.rebuildAll(['9,10', '8,10']);
 
     const live = city.graph.getEdgeIds();

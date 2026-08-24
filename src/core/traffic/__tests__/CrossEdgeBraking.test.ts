@@ -3,15 +3,15 @@ import { TrafficSimulation } from '../TrafficSimulation';
 import type { LaneEdge } from '../LaneGraph';
 
 /**
- * 兩條車道匯進同一個點時，後到的那一台要讓。
+ * When two lanes merge into one point, the later arrival yields.
  *
- * `findCrossEdgeGap` 有一整組單元測試，但那些都是直接餵它格點物件 —— 沒有一個
- * 走過 `advanceEdgeVehicles`。中間那一段（把每台車的位置與終點整理成可查的形狀）
- * 壞掉的話，匯流偵測會安靜地全部回傳「前面沒車」，兩台車直接穿過彼此，而現有的
- * 測試一個都不會紅。
+ * `findCrossEdgeGap` has its own unit tests, but they feed it point objects directly and none
+ * goes through `advanceEdgeVehicles`. If the layer in between — turning each vehicle's position
+ * and destination into a queryable shape — breaks, merge detection silently answers "nothing
+ * ahead" every time and the two vehicles pass through each other, with no existing test failing.
  */
 
-/** 一條從 (fx,fy) 到 (1,0) 的車道邊。`toId` 相同代表兩條邊匯進同一個點。 */
+/** A lane edge from (fx,fy) to (1,0). A shared `toId` means the edges merge into one point. */
 function edgeInto(id: string, fx: number, fy: number, toId: string): LaneEdge {
   return {
     id,
@@ -28,15 +28,15 @@ function edgeInto(id: string, fx: number, fy: number, toId: string): LaneEdge {
 }
 
 /**
- * 讓一台車從 (0,0) 往東走一幀，回傳它走了多遠。
- * `withSibling` 為真時，前方 0.5 格處有一台走另一條邊、但匯進同一個點的車。
+ * Advances one vehicle east from (0,0) for a frame and returns how far it got.
+ * With `withSibling`, a vehicle on another edge merging into the same point sits 0.5 ahead.
  */
 function advanceOnce(withSibling: boolean): number {
   const sim = new TrafficSimulation();
   const mine = sim.addVehicleOnEdges([edgeInto('eA', 0, 0, 'MERGE')]);
   if (withSibling) {
     const other = sim.addVehicleOnEdges([edgeInto('eB', 0, 0, 'MERGE')]);
-    other.edgeProgress = 0.5;   // 更靠近匯流點 —— 它先過，我讓
+    other.edgeProgress = 0.5;   // nearer the merge point, so it goes first and we yield
   }
   const before = mine.edgeProgress;
   sim.advanceEdgeVehicles(1);
@@ -53,7 +53,8 @@ describe('匯進同一個點的兩台車', () => {
   });
 
   it('should not brake for a sibling heading somewhere else', () => {
-    // 反向對照:位置一樣近，但終點不同 —— 那是兩條互不相干的車道，不該互相讓。
+    // The control: equally close but a different destination, so the lanes are unrelated and
+    // neither yields.
     const sim = new TrafficSimulation();
     const mine = sim.addVehicleOnEdges([edgeInto('eA', 0, 0, 'MERGE')]);
     const other = sim.addVehicleOnEdges([edgeInto('eB', 0, 0, 'SOMEWHERE_ELSE')]);

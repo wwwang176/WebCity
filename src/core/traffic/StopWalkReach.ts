@@ -1,25 +1,30 @@
 import type { SidewalkGraph } from './SidewalkGraph';
 
 /**
- * 從一個站牌走得到哪些格子，各要走多遠。
+ * Which cells are walkable from a stop, and how far each is.
  *
- * 這是「大眾運輸涵蓋範圍」的定義來源。它沿著人行道量，而不是在地圖上畫一個菱形
- * —— 差別在馬路：行人只在路口過馬路，所以對街那一格在步行上其實很遠。用直線距離
- * 量的話它只有兩格，模擬會把住戶配給對街的站牌，行人到了現場才發現得繞到路口，
- * 於是畫面上出現一個繞大圈的人。繞路不是走錯，是被派錯。
+ * This defines transit coverage. It measures along the sidewalk graph rather than drawing a
+ * diamond on the map, and the difference is roads: pedestrians only cross at junctions, so a
+ * cell across the street is a long walk. By straight-line distance it is two tiles, and the
+ * simulation assigns households to the stop opposite, sends a pedestrian, and they have to
+ * detour to a junction — the visible long way round is a dispatch error, not a pathfinding
+ * one.
  *
- * 附帶的效果是隔著河、隔著整排建築的格子也一併不算了 —— 直線距離同樣看不見那些。
+ * It also excludes cells across a river or behind a row of buildings, which straight-line
+ * distance likewise cannot see.
  */
 export interface StopReach {
-  /** 從 (x, y) 這個站牌走 `maxDist` 之內到得了的格子 → 步行距離。 */
+  /** Cells reachable from the stop at (x, y) within `maxDist`, mapped to their walk distance. */
   cellsWithin(x: number, y: number, maxDist: number): ReadonlyMap<string, number>;
 }
 
 /**
- * 從站牌走到某一格要幾格。走不到、或超過 `maxDist`，回 `Infinity`。
+ * Walk distance in tiles from a stop to a cell. `Infinity` when unreachable or beyond
+ * `maxDist`.
  *
- * 挑站牌的地方都該用這一支，而不是各自算距離 —— 「走得到」只能有一個定義，
- * 否則評分認為他搭不到、派車卻把他派過去，兩邊會靜靜地不一致。
+ * Every stop-picking site uses this rather than computing its own distance: reachability can
+ * have only one definition, otherwise scoring concludes a citizen cannot reach a stop while
+ * dispatch sends them there anyway.
  */
 export function walkDistanceToStop(
   reach: StopReach,
@@ -33,11 +38,12 @@ export function walkDistanceToStop(
 const EMPTY: ReadonlyMap<string, number> = new Map();
 
 /**
- * 人行道圖上的有界 Dijkstra，每站一份、算過就留著。
+ * A bounded Dijkstra over the sidewalk graph, one per stop, retained once computed.
  *
- * 快取是必要的而不是優化：重算的觸發條件（`isTransferGraphDirty`）對「玩家調整
- * 路線班次」也成立，而那跟人行道一點關係都沒有。沒有快取的話按一次 +/− 就要把
- * 全城站牌重走一遍。
+ * The cache is necessary rather than an optimisation: the rebuild trigger
+ * (`isTransferGraphDirty`) also fires when the player changes a route's vehicle count, which
+ * has nothing to do with sidewalks. Without it, one click of +/- rewalks every stop in the
+ * city.
  */
 export class SidewalkStopReach implements StopReach {
   private readonly cache = new Map<string, ReadonlyMap<string, number>>();
@@ -58,13 +64,15 @@ export class SidewalkStopReach implements StopReach {
   }
 
   /**
-   * 丟掉可能被這幾格影響到的站牌。
+   * Drops the stops these cells could have affected.
    *
-   * 只有離改動夠近的站牌需要重算：一條路徑的長度不會短於它兩端的直線距離，所以
-   * 直線距離超過 `radius` 的格子，步行距離一定也超過，不可能落在涵蓋範圍裡。
+   * Only stops close enough to the change need recomputing: a path is never shorter than the
+   * straight line between its ends, so a cell further than `radius` in a straight line is
+   * further on foot too and cannot fall inside the coverage.
    *
-   * 呼叫這個就等於宣告「圖的變動我已經處理過了」，所以順手把世代對齊 —— 不對齊
-   * 的話下一次查詢會被安全網當成全圖換過而整批丟掉，精準失效就白做了。
+   * Calling this declares that the graph change has been handled, so it aligns the generation
+   * as well. Without that, the next query is treated by the safety net as a whole-graph
+   * replacement and discards everything, wasting the precise invalidation.
    */
   invalidateNear(changedCells: Iterable<string>, radius: number): void {
     this.syncedVersion = this.graph.version;
@@ -91,7 +99,7 @@ export class SidewalkStopReach implements StopReach {
     }
   }
 
-  /** 記了幾個站牌（測試與除錯用）。 */
+  /** Number of cached stops, for tests and debugging. */
   get size(): number { return this.cache.size; }
 
   private dropEverythingIfGraphMoved(): void {
@@ -103,9 +111,9 @@ export class SidewalkStopReach implements StopReach {
   private walkOutwards(x: number, y: number, maxDist: number): ReadonlyMap<string, number> {
     const cellKey = `${x},${y}`;
     const seeds = this.graph.getNodesInCell(cellKey);
-    // 站牌在圖裡沒有節點 = 它沒有接上任何人行道，服務不到任何人。
-    // 刻意不退回「找最近的節點」：那會讓「站牌沒進圖」這種錯誤靜靜地被蓋掉，
-    // 而它正是這一輪要修的問題之一。
+    // A stop with no node in the graph is connected to no sidewalk and serves nobody.
+    // Deliberately no fallback to "find the nearest node", which would quietly paper over a
+    // stop missing from the graph.
     if (seeds.length === 0) return EMPTY;
 
     const dist = new Map<string, number>();

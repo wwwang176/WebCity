@@ -14,10 +14,11 @@ function entry(
 }
 
 /**
- * 匯進同一個點的那一組車。
+ * The group of vehicles merging into one point.
  *
- * 真正的呼叫端傳的是照 `toId` 分好的組;這裡照樣把終點不同的也放進來，因為函式
- * 自己還留著那道判斷 —— 分組壞掉的時候，那道判斷是最後一層。
+ * The production caller passes groups already partitioned by `toId`. These cases still include
+ * entries with other destinations, because the function keeps that check itself and it is the
+ * last line of defence when the partitioning breaks.
  */
 function group(entries: SpatialEntry[]): SpatialEntry[] {
   return entries;

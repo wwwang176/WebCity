@@ -2,11 +2,12 @@ import { describe, it, expect } from 'vitest';
 import { getCongestionRate, getSpeedMultiplier, CONGESTION } from '../Congestion';
 
 /**
- * 這裡原本還有一組 `TrafficSimulation.getCongestionLevel` 的案例 —— 那支是拿
- * 「畫面上有幾台車」算全城壅塞的，已經整支移除:車輛實體有數量上限、會被生成點
- * 檢查擋掉，那是演繹不是模擬，而且實測在任何有規模的城市都貼死在上限（BUG-326）。
+ * Congestion is derived from demand; see `RouteCongestion.ts` and its tests.
  *
- * 現在的壅塞從需求算，見 `RouteCongestion.ts` 與它的測試。
+ * `TrafficSimulation.getCongestionLevel` computed city-wide congestion from the vehicles on
+ * screen and no longer exists: vehicle entities are capped in number and refused by the spawn
+ * clearance check, making them a presentation of the simulation rather than the simulation
+ * itself, and the figure pinned to its ceiling in any city of size (BUG-326).
  */
 
 describe('Congestion', () => {

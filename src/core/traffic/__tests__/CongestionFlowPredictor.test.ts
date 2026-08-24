@@ -84,8 +84,9 @@ describe('CongestionFlowPredictor', () => {
     });
 
     it('should build the map from what the cell cache says', () => {
-      // 這條測試守的是「流量圖真的是照快取給的格子累加的」。改回每次自己從邊
-      // 重建一份 Set 的話，輸出一模一樣 —— 沒有任何看結果的斷言會紅。
+      // Pins that the flow map really accumulates over the cells the cache hands back. Going
+      // back to rebuilding a Set from the edges each time produces identical output, so no
+      // result-checking assertion would fail.
       class Poisoned extends PathCellCache {
         override cellsOf(): readonly string[] { return ['poison,0']; }
       }
@@ -103,9 +104,9 @@ describe('CongestionFlowPredictor', () => {
     });
 
     it('should weight each cell by how many people use the route', () => {
-      // 流量圖問的是「有多少人的通勤路線經過這一格」。每條路線都算一個人的話，
-      // 一條沒人走的巷子跟一條全城都在走的幹道會一樣塞 —— 而現有的斷言只看
-      // `flowMap.has(...)`，那個改動一個都不會紅。
+      // The flow map asks how many citizens' commutes cross a cell. Counting one per route
+      // makes an empty side street as congested as an arterial the whole city uses, and the
+      // assertions that only check `flowMap.has(...)` would not catch it.
       const busy = new CommuteCache();
       const quiet = new CommuteCache();
       const path = [makeEdge('0,0', '1,0')];
@@ -126,8 +127,8 @@ describe('CongestionFlowPredictor', () => {
     });
 
     it('should give the same answer on a second pass', () => {
-      // 快取是跨次數共用的。第二次拿到髒掉的內容（例如被就地改過）的話，
-      // 玩家會看到壅塞圖每 15 秒抖一下。
+      // The cache is shared across passes. A second pass reading dirtied content — mutated in
+      // place, say — makes the congestion overlay flicker every 15 seconds.
       const cache = new CommuteCache();
       const path = [makeEdge('1,1', '2,1'), makeEdge('2,1', '3,1')];
       cache.setRouteVariants('1,1->3,1', [path]);

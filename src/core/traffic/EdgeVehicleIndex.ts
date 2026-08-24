@@ -1,33 +1,38 @@
 /**
- * 「這條邊上有哪些車」—— 每幀重建的逐邊索引。
+ * Which vehicles are on each edge: a per-edge index rebuilt every frame.
  *
- * ## 為什麼不是 `Map<string, EdgeEntry[]>`
+ * ## Why not `Map<string, EdgeEntry[]>`
  *
- * 舊版每幀為**每一台車**配一個 `{ vid, progress, halfLen, queueing }` 物件。
- * 4 萬人的存檔路上有 1 829 台車，而 `advanceEdgeVehicles` 是被算繪迴圈驅動的
- * （不是模擬 tick），所以那是每秒十萬個短命物件。實測某些幀有 16.4% 的自身時間
- * 花在垃圾回收上。
+ * That allocates a `{ vid, progress, halfLen, queueing }` object per **vehicle** per frame. A
+ * 40k-citizen save has 1,829 vehicles on the road, and `advanceEdgeVehicles` is driven by the
+ * render loop rather than the simulation tick, so that is a hundred thousand short-lived
+ * objects per second. Some frames measured 16.4% of their self time in garbage collection.
  *
- * 池化重用試過一次，被撤掉了:`vid` 忘了更新的話沒有任何測試會紅，而失敗模式是
- * 跟車距離**靜靜地**算錯。這一版沒有那個失敗模式 —— 根本沒有物件可以忘記更新，
- * 五個欄位是五條平行的 typed array，每幀從頭覆寫。
+ * Pooling and reuse was tried and reverted: forgetting to update `vid` turns no test red, and
+ * the failure mode is car-following distances **silently** wrong. This version has no such
+ * failure mode, because there is no object to forget to update — the five fields are five
+ * parallel typed arrays, overwritten from scratch each frame.
  *
- * ## 為什麼是串列而不是 CSR
+ * ## Why linked lists rather than CSR
  *
- * 索引在**同一幀之內會被改**:車走到下一條邊時要從舊邊移到新邊，位置與煞車狀態
- * 也要當場更新，後面的車才看得到前車這一幀剛算好的值（`FrontToBackOrder.test.ts`
- * 釘著這件事:842 台車有 547 台的結果會因為順序而不同）。CSR 是排好的，搬一筆就
- * 要重排。逐槽一條雙向串列讓插入、移除、換邊都是 O(1)。
+ * The index is **mutated within a frame**: a vehicle reaching the next edge moves from the old
+ * edge to the new one, and its position and braking state update on the spot so following
+ * vehicles see the value computed for the leader this same frame
+ * (`FrontToBackOrder.test.ts` pins this: 547 of 842 vehicles get a different result depending
+ * on the order). CSR is sorted, and moving one entry means re-sorting. A doubly linked list
+ * per slot makes insert, remove and move-edge all O(1).
  *
- * 走訪順序因此是後進先出，不是插入順序。**沒有呼叫端依賴順序** —— 兩個消費者
- * 都在整段裡取極小值，或在命中時回一個與命中者無關的固定值。
+ * Traversal order is therefore last-in-first-out rather than insertion order. **No caller
+ * depends on the order**: both consumers take a minimum over the whole run, or return a fixed
+ * value on a hit that does not depend on which entry hit.
  *
- * ## 用法
+ * ## Usage
  *
- * `begin()` → `add()` × N（記下回傳的筆號）→ 走訪與 `setProgress` / `moveTo`。
+ * `begin()`, then `add()` N times (keeping the returned entry numbers), then traversal with
+ * `setProgress` / `moveTo`.
  */
 
-/** 一台車在某條邊上的樣子，唯讀。給測試與偵錯用。 */
+/** A read-only view of one vehicle on one edge, for tests and debugging. */
 export interface EdgeVehicleView {
   vid: number;
   progress: number;
@@ -41,26 +46,27 @@ export interface EdgeVehicleView {
   queueing: boolean;
 }
 
-/** 空的串列尾端。 */
+/** The end of a list. */
 export const NO_ENTRY = -1;
 
 export class EdgeVehicleIndex {
   /**
-   * edgeId → 槽號。跨幀重複使用。
+   * edgeId to slot number, reused across frames.
    *
-   * **沒有清空的方法，也不需要。** 邊的 id 是 `cellKey:dir:lane` 完全決定的
-   * （`LaneGraph`），重建路網會產生一模一樣的 id —— 所以這張表的上限只取決於
-   * 地圖裝得下幾條車道邊，不會隨編輯次數成長。
+   * **There is no way to clear it, and none is needed.** An edge id is fully determined by
+   * `cellKey:dir:lane` (`LaneGraph`), so rebuilding the road network produces identical ids.
+   * The table's size is bounded by how many lane edges fit on the map and does not grow with
+   * the number of edits.
    */
   private slotOfEdge = new Map<string, number>();
   private slotCount = 0;
 
-  /** 槽 → 第一筆，`NO_ENTRY` = 這條邊上沒有車。 */
+  /** Slot to first entry; `NO_ENTRY` means no vehicle on that edge. */
   private head = new Int32Array(0);
 
   private next = new Int32Array(0);
   private prev = new Int32Array(0);
-  /** 筆 → 它現在掛在哪一槽。移除時要用。 */
+  /** Entry to the slot it is currently linked into, needed for removal. */
   private slotAt = new Int32Array(0);
 
   private vid = new Int32Array(0);
@@ -70,13 +76,13 @@ export class EdgeVehicleIndex {
 
   private n = 0;
 
-  /** 開始新的一幀。 */
+  /** Starts a new frame. */
   begin(): void {
     this.n = 0;
     this.head.fill(NO_ENTRY);
   }
 
-  /** @returns 這一筆的筆號。呼叫端要留著它才改得動這一筆。 */
+  /** @returns this entry's number. Callers must keep it to modify the entry later. */
   add(edgeId: string, vid: number, progress: number, halfLen: number, queueing: boolean): number {
     const slot = this.slotFor(edgeId);
     const i = this.n++;
@@ -89,19 +95,19 @@ export class EdgeVehicleIndex {
     return i;
   }
 
-  /** 這一筆的位置與煞車狀態變了（同一條邊）。 */
+  /** This entry's position and braking state changed, on the same edge. */
   setProgress(i: number, progress: number, queueing: boolean): void {
     this.progress[i] = progress;
     this.queueing[i] = queueing ? 1 : 0;
   }
 
-  /** 這一筆換到另一條邊上。 */
+  /** Moves this entry to another edge. */
   moveTo(i: number, edgeId: string): void {
     this.unlink(i);
     this.link(i, this.slotFor(edgeId));
   }
 
-  /** 這條邊上的第一筆，`NO_ENTRY` = 沒有。 */
+  /** The first entry on this edge; `NO_ENTRY` when there is none. */
   firstOf(edgeId: string): number {
     const slot = this.slotOfEdge.get(edgeId);
     return slot === undefined ? NO_ENTRY : this.head[slot]!;
@@ -114,13 +120,14 @@ export class EdgeVehicleIndex {
   halfLenAt(i: number): number { return this.halfLen[i]!; }
   queueingAt(i: number): boolean { return this.queueing[i] === 1; }
 
-  /** 這一幀總共幾筆。 */
+  /** How many entries this frame holds. */
   get size(): number { return this.n; }
 
   /**
-   * 這條邊上的車，攤成物件。
+   * The vehicles on this edge, materialised as objects.
    *
-   * **只給測試與偵錯用** —— 每呼叫一次就配一批物件，正是這個類別存在的理由要避免的。
+   * **For tests and debugging only**: each call allocates a batch of objects, which is exactly
+   * what this class exists to avoid.
    */
   entriesOf(edgeId: string): EdgeVehicleView[] {
     const out: EdgeVehicleView[] = [];

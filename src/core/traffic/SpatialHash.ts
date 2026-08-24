@@ -16,8 +16,9 @@ export interface SpatialEntry {
  * Simple 2D spatial hash grid for fast proximity queries.
  * Used to find nearby vehicles across different lane edges.
  *
- * 泛型是因為它只讀 `x` / `y` —— 跟車用的格點帶著車身與車頭方向，生成點檢查用的
- * 只需要位置與方向，兩者共用這一份格子邏輯而不必共用欄位。
+ * Generic because it only reads `x` and `y`. Car-following entries carry body dimensions and a
+ * heading while spawn-check entries need only position and heading, so the two share this cell
+ * logic without sharing fields.
  *
  * Zero-alloc after warm-up: clear() retains allocated cell arrays,
  * queryNearbyInto() writes into a caller-provided reusable array.
@@ -70,10 +71,11 @@ export class SpatialHash<T extends { x: number; y: number }> {
   }
 
   /**
-   * 索引裡總共有幾筆。
+   * How many entries the index holds.
    *
-   * 給測試用的:每幀重建的索引如果忘了 `clear()`，行為上看不出來（比距離時讀的是
-   * 物件當下的座標，而物件是重用的），只有筆數會一直長上去。
+   * For tests: a per-frame index that forgets to `clear()` is behaviourally invisible, because
+   * distance comparisons read the objects' current coordinates and the objects are reused.
+   * Only the entry count keeps growing.
    */
   size(): number {
     let n = 0;

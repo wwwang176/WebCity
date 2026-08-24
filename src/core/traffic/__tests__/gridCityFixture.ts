@@ -2,20 +2,22 @@ import { SidewalkGraph, type GridLookup } from '../SidewalkGraph';
 import { RoadType, RoadDirection } from '../../road/types';
 
 /**
- * 一條東西向主幹道（y=10），每 `spacing` 格一條南北向道路（`spacing = 0` 代表
- * 完全沒有岔路）。其餘格子全部是建築，這樣才有門節點可以當起訖點。
+ * One east-west arterial at y=10 with a north-south road every `spacing` cells
+ * (`spacing = 0` means no side roads at all). Every other cell is a building, so there are
+ * door nodes to use as origins and destinations.
  *
- * 給「行人只在路口過馬路」相關的測試共用 —— 過馬路要繞多遠完全由路口間距決定，
- * 用同一份佈局，各個測試檔談的才是同一件事。
+ * Shared by the tests about pedestrians only crossing at junctions: how far a crossing
+ * detours is entirely determined by junction spacing, and one layout keeps every test file
+ * talking about the same thing.
  */
 
 interface Cell { roadType: number; roadFlags: number; buildingId: number }
 
 export interface GridCity {
   graph: SidewalkGraph;
-  /** 換一個岔路間距，重建同一張圖（同一個 SidewalkGraph 實例）。 */
+  /** Rebuilds the same graph instance with a different side-road spacing. */
   rebuildWith(spacing: number): void;
-  /** 只重算這幾格（增量），不動其餘部分。 */
+  /** Recomputes only these cells, leaving the rest untouched. */
   updateAt(cellKeys: string[]): void;
 }
 

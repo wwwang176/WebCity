@@ -226,11 +226,11 @@ describe('syncTrafficLightsWithGrid', () => {
 });
 
 /**
- * 號誌要帶著自己那一格的路寬。
+ * A signal carries the road width of the cell it stands on.
  *
- * 渲染端得知道路緣在哪才放得下燈桿，而路緣的位置只由 `roadType` 決定：
- * 四車道 0.425、六車道 0.475。`TrafficLight` 不帶這個欄位的話，渲染端只能
- * 用一個常數 —— 那正是燈桿站在柏油路上的原因。
+ * The renderer needs the kerb position to place the pole, and that position is determined
+ * solely by `roadType`: 0.425 for four lanes, 0.475 for six. Without the field on
+ * `TrafficLight` the renderer can only use a constant, which puts the pole on the asphalt.
  */
 describe('號誌帶的路寬', () => {
   function majorCross(grid: Grid, x: number, y: number, roadType: number): void {
@@ -253,8 +253,9 @@ describe('號誌帶的路寬', () => {
   });
 
   it('should follow the road when it is upgraded under an existing signal', () => {
-    // 拓寬道路不會重建號誌（`syncTrafficLightsWithGrid` 只在不存在時 addLight），
-    // 所以既有的那一盞必須跟著改 —— 不然燈桿會留在舊路緣的位置上。
+    // Widening a road does not rebuild the signal (`syncTrafficLightsWithGrid` calls addLight
+    // only when none exists), so the existing one must be updated in place or the pole stays at
+    // the old kerb.
     const grid = new Grid(10, 10);
     majorCross(grid, 5, 5, RoadType.FOUR_LANE);
     const sys = new TrafficLightSystem();
@@ -271,10 +272,10 @@ describe('號誌帶的路寬', () => {
 });
 
 /**
- * 號誌也要帶著自己那一格接了哪幾個方向。
+ * A signal also carries which directions its cell connects.
  *
- * 三向路口起就會設號誌（`dirs >= 3`），而渲染端要知道哪一邊沒有路，否則會在
- * 草地上立一支管著不存在的路的號誌。
+ * Signals appear from three-way junctions upwards (`dirs >= 3`), and the renderer needs to know
+ * which side has no road, or it plants a signal on the grass governing a road that is not there.
  */
 describe('號誌帶的路口形狀', () => {
   const NS_E = RoadDirection.NORTH | RoadDirection.SOUTH | RoadDirection.EAST;

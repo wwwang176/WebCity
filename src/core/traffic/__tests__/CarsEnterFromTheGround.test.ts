@@ -11,29 +11,32 @@ import { findLanePath, findBuildingAccessPoints } from '../LaneGraphPathfinder';
 import { parseLevelFromKey } from '../../grid/GridHelpers';
 
 /**
- * 建築的車庫開在地面上。
+ * A building's driveway opens onto the ground.
  *
- * 高架橋沒有出入口 —— 橋面與底下的地面之間沒有任何連結，上下橋只能走匝道。
- * 但是建築找附近道路的時候是 `getAllKeysAtPosition`，那個方法回的是**所有樓層**，
- * 於是一棟緊鄰高架的房子會直接掛到橋面上的車道點，車就從屋頂飛上橋開走。
+ * An elevated road has no access points: there is no link between the deck and the ground
+ * below it, and the only way up or down is a ramp. But a building looks for nearby roads with
+ * `getAllKeysAtPosition`, which returns **every level**, so a house beside an elevated road
+ * attaches directly to a lane point on the deck and its vehicles fly off the roof onto the
+ * bridge.
  *
- * 這裡釘的是「起點與終點只能是地面」。橋還是要能開 —— 差別在於車必須從地面上橋，
- * 走匝道。
+ * What is pinned here is that origins and destinations can only be on the ground. The bridge
+ * must still be usable; the difference is that vehicles reach it from the ground, via a ramp.
  */
 
 const EAST = RoadDirection.EAST;
 const WEST = RoadDirection.WEST;
 
 /**
- * 兩條地面街道，中間七格沒有路，只有一座高架橋跨過去，兩端各一個匝道。
+ * Two ground streets with a seven-cell gap between them, spanned only by an elevated bridge
+ * with a ramp at each end.
  *
- *   y=3  地面 x=1..3            斷開 x=4..10            地面 x=11..13
- *   y=3  高架 level 1  x=3(匝道) x=4..10  x=11(匝道)
+ *   y=3  ground   x=1..3          gap x=4..10          ground x=11..13
+ *   y=3  level 1  x=3 (ramp)  x=4..10  x=11 (ramp)
  *
- * 三種位置各有一棟房子：
- *   (2,2)  地面與匝道都碰得到  —— 車該從地面出發
- *   (7,2)  只碰得到橋面        —— 不該有車
- *   (12,2) 只碰得到地面        —— 終點
+ * One house at each of three positions:
+ *   (2,2)  reaches both the ground and the ramp — vehicles must start on the ground
+ *   (7,2)  reaches only the deck              — must have no vehicles
+ *   (12,2) reaches only the ground            — the destination
  */
 function bridgedCity() {
   const grid = new Grid(20, 20);
@@ -66,14 +69,16 @@ const SHOP_ACROSS_THE_GAP = { x: 12, y: 2 };
 
 describe('車子從地面上路', () => {
   it('should give a house next to the bridge and nothing else no car at all', () => {
-    // (7,2) 兩格內只有橋面。以前這裡拿得到一條完整的路 —— 車從二樓的空中出發。
+    // Within two cells of (7,2) there is only the deck. Without the rule this returns a
+    // complete route and a vehicle sets off in mid-air on the first floor.
     const { graph, lookup } = bridgedCity();
     expect(findLanePath(graph, lookup, HOUSE_UNDER_THE_BRIDGE, SHOP_ACROSS_THE_GAP))
       .toBeNull();
   });
 
   it('should still let a car reach the far side over the bridge', () => {
-    // 反向對照。上一條可以靠「高架完全不給走」滿足，那會讓橋變成裝飾品。
+    // The control for the test above, which "never allow elevated roads at all" would also
+    // satisfy, turning the bridge into decoration.
     const { graph, lookup } = bridgedCity();
     const path = findLanePath(graph, lookup, HOUSE_ON_THE_GROUND, SHOP_ACROSS_THE_GAP);
     expect(path, '地面的房子連對岸都到不了 —— 橋被整個封死了').not.toBeNull();
@@ -82,16 +87,17 @@ describe('車子從地面上路', () => {
   });
 
   it('should start that car on the ground, not on the ramp deck', () => {
-    // (2,2) 同時碰得到地面的 (1..3,3) 與匝道的 (3,3,1)。多起點 A* 是照成本挑的，
-    // 匝道那個起點離終點更近，所以以前贏的是它 —— 車直接出現在匝道上。
+    // (2,2) reaches both the ground cells (1..3,3) and the ramp at (3,3,1). Multi-origin A*
+    // picks by cost, and the ramp origin is closer to the destination, so it wins and the
+    // vehicle appears on the ramp.
     const { graph, lookup } = bridgedCity();
     const path = findLanePath(graph, lookup, HOUSE_ON_THE_GROUND, SHOP_ACROSS_THE_GAP)!;
     expect(parseLevelFromKey(path[0]!.from.cellKey), '車從高架上出發').toBe(0);
   });
 
   it('should offer only ground cells as a building`s way onto the road', () => {
-    // 直接測共用的那一支 —— 主執行緒的 findLanePath 與 worker 的
-    // collectPointIndices 都走它，規則只有這一份。
+    // Tests the shared function directly: the main thread's findLanePath and the worker's
+    // collectPointIndices both go through it, and the rule exists only there.
     const { graph, lookup } = bridgedCity();
     for (const type of ['entry', 'exit'] as const) {
       const pts = findBuildingAccessPoints(graph, HOUSE_ON_THE_GROUND.x, HOUSE_ON_THE_GROUND.y, lookup, type);
@@ -103,9 +109,10 @@ describe('車子從地面上路', () => {
   });
 });
 /**
- * 一棟房子兩格內能開上哪些格。
+ * Which cells a house can drive onto within two cells.
  *
- * 這是三條規則共用的觀測點:高架不算（BUG-312）、匝道不算、路口不算。
+ * The shared observation point for three rules: elevated roads do not count (BUG-312), ramps
+ * do not count, junctions do not count.
  */
 function accessCells(graph: LaneGraph, lookup: UnifiedRoadLookup, bx: number, by: number): string[] {
   return [...new Set(
@@ -121,11 +128,12 @@ function graphOf(grid: Grid, em = new ElevationManager()) {
 }
 
 /**
- * 匝道底下的地面格。
+ * The ground cell beneath a ramp.
  *
- * 建高架時 `RAMP_OVER_ROAD` 擋著，不能把匝道蓋在既有的地面路上 —— 但**反過來
- * 沒人擋**:先蓋匝道，再從它底下畫一條地面路，成立。於是那一格同時有地面道路
- * 與一段從地面爬到二樓的斜坡，房子就掛上去了。
+ * `RAMP_OVER_ROAD` prevents building a ramp over an existing ground road, but **nothing
+ * prevents the reverse**: build the ramp first and then draw a ground road underneath it. That
+ * cell then carries both a ground road and a slope climbing to the first floor, and a house
+ * attaches to it.
  */
 function rampWithARoadUnderIt() {
   const grid = new Grid(24, 24);
@@ -141,8 +149,9 @@ function rampWithARoadUnderIt() {
 
 describe('斜坡不是出入口', () => {
   it('fixture sanity: the ground under a ramp really can carry a road', () => {
-    // 這一整組建立在「地面路畫得到匝道底下」之上。哪天那個方向也被擋掉，
-    // 這條會先紅，提醒下面兩條已經測不到東西了。
+    // This whole group rests on a ground road being drawable under a ramp. If that direction is
+    // ever blocked too, this turns red first and signals that the two tests below have stopped
+    // testing anything.
     const { grid, em, rampX } = rampWithARoadUnderIt();
     expect(em.get(rampX, 10, 1)?.isRamp, '沒有匝道').toBe(true);
     expect(grid.getCell(rampX, 10)?.roadType, '匝道底下沒有地面路').toBeGreaterThan(0);
@@ -155,14 +164,14 @@ describe('斜坡不是出入口', () => {
   });
 
   it('should still offer the plain street next door', () => {
-    // 反向對照:上一條可以靠「這棟房子根本沒有出口」滿足。
+    // The control: the test above would also be satisfied by the house having no exit at all.
     const { graph, lookup, rampX } = rampWithARoadUnderIt();
     expect(accessCells(graph, lookup, rampX + 1, 8), '整棟房子都沒有出口了')
       .toContain(`${rampX - 1},10`);
   });
 });
 
-/** 十字路口 @ (5,5)，四個方向都是普通街道。 */
+/** A crossroads at (5,5) with an ordinary street in each of the four directions. */
 function crossroads() {
   const grid = new Grid(20, 20);
   const rb = new RoadBuilder(grid);
@@ -178,20 +187,21 @@ describe('路口不是出入口', () => {
   });
 
   it('should not let a building open onto the middle of a junction', () => {
-    // 沒有人的車庫開在十字路口正中央。
+    // Nobody's driveway opens onto the middle of a crossroads.
     const { graph, lookup } = crossroads();
     expect(accessCells(graph, lookup, 6, 6), '車從路口正中央出現').not.toContain('5,5');
   });
 
   it('should still offer the streets around it', () => {
-    // 反向對照。路口旁邊的房子照樣要有車 —— 它從隔壁那一段街道上路。
+    // The control: a house beside a junction must still have vehicles, entering from the
+    // street segment next to it.
     const { graph, lookup } = crossroads();
     const cells = accessCells(graph, lookup, 6, 6);
     expect(cells, '路口旁邊的房子完全沒有出口了').toContain('6,5');
     expect(cells).toContain('5,6');
   });
 });
-/** 一條多車道的直街，加一條垂直的街讓路線有轉彎。 */
+/** A straight multi-lane street, plus a perpendicular one so routes include a turn. */
 function twoLaneEachWay(type = RoadType.FOUR_LANE) {
   const grid = new Grid(30, 20);
   const rb = new RoadBuilder(grid);
@@ -201,8 +211,9 @@ function twoLaneEachWay(type = RoadType.FOUR_LANE) {
 
 describe('車從靠建築那一側上路', () => {
   it('should offer only the outermost lane of each cell', () => {
-    // 車庫開在路邊，車頭出來就是最外側那條 —— 它不會憑空出現在內線。
-    // 車道由行進方向往右編號，所以最外側是編號最大的那條。
+    // A driveway opens onto the kerb, so a vehicle emerges into the outermost lane and cannot
+    // appear in an inner one. Lanes are numbered rightwards from the direction of travel, so
+    // the outermost is the highest-numbered.
     const { graph, lookup, lanes } = twoLaneEachWay();
     for (const type of ['entry', 'exit'] as const) {
       const pts = findBuildingAccessPoints(graph, 10, 6, lookup, type);
@@ -214,12 +225,12 @@ describe('車從靠建築那一側上路', () => {
   });
 
   it('fixture sanity: the road really has more than one lane each way', () => {
-    // 單車道的路上「最外側」就是唯一一條，上面那條會空轉。
+    // On a single-lane road the outermost is the only one, and the test above is vacuous.
     expect(twoLaneEachWay().lanes).toBeGreaterThan(1);
   });
 
   it('should start and end a whole trip on the outermost lane', () => {
-    // 端到端。中段愛走哪一道都行 —— 這條只釘兩頭。
+    // End to end. The middle may use any lane; this pins only the two ends.
     const { graph, lookup, lanes } = twoLaneEachWay();
     const path = findLanePath(graph, lookup, { x: 5, y: 6 }, { x: 23, y: 6 });
     expect(path, '找不到路線').not.toBeNull();
@@ -228,7 +239,8 @@ describe('車從靠建築那一側上路', () => {
   });
 
   it('should still leave one-lane roads alone', () => {
-    // 反向對照:單車道的路上最外側就是 lane 0，不能因此變成沒有出入口。
+    // The control: on a single-lane road the outermost is lane 0, which must not leave it with
+    // no access points.
     const { graph, lookup, lanes } = twoLaneEachWay(RoadType.TWO_LANE);
     expect(lanes).toBe(1);
     const pts = findBuildingAccessPoints(graph, 10, 6, lookup, 'exit');

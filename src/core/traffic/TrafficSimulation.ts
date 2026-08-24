@@ -32,29 +32,34 @@ export interface Vehicle {
   currentSpeed: number;  // current speed in world-units/sec (used for gradual accel/decel)
   stallTime: number;  // accumulated seconds at zero movement; despawned when exceeding threshold
   /**
-   * 上一幀有沒有被前方的東西煞住（跟車、紅燈、路口）。
+   * Whether something ahead (a vehicle, a red light, a junction) braked this vehicle last
+   * frame.
    *
-   * 「路口出不出得去」問的是前面那台車**會不會在我穿越路口的期間停下來**。用
-   * 「它現在停了沒」判斷太晚 —— 車隊是往後長的，等它真的停住，我已經進去了。
-   * 用速度門檻又會被路型綁架:轉彎與低速限道路的巡航速度本來就低。
+   * "Can I clear the junction" asks whether the vehicle ahead **will stop while I am crossing
+   * it**. Checking whether it has already stopped is too late: queues grow backwards, and by
+   * the time it really stops I am already inside. A speed threshold is captured by road
+   * geometry instead, since turns and low-limit roads have low cruising speeds anyway.
    *
-   * 「它正在為前方的東西減速」與這兩者都無關，而且正是車隊在形成的訊號。
+   * "It is decelerating for something ahead" is independent of both, and is exactly the
+   * signal that a queue is forming.
    */
   braking: boolean;
   /**
-   * 這一幀的排序鍵:沿著自己的路徑走了多遠。
+   * This frame's sort key: how far along its own path the vehicle has travelled.
    *
-   * 只在 `advanceEdgeVehicles` 的排序期間有意義，每幀重寫一次 —— 不要當成車輛
-   * 狀態去讀。放在車上是因為比較器每比一次就要讀兩個值，改用 Map 的話一幀要查
-   * 上萬次（871 台車約 8 500 次比較）。
+   * Meaningful only during the sort inside `advanceEdgeVehicles` and rewritten every frame;
+   * not to be read as vehicle state. Stored on the vehicle because the comparator reads two
+   * values per comparison, and a Map would mean tens of thousands of lookups per frame (871
+   * vehicles is about 8,500 comparisons).
    */
   sortKey: number;
   /**
-   * 這台車這一幀在 `EdgeVehicleIndex` 裡的筆號。
+   * This vehicle's entry number in `EdgeVehicleIndex` for this frame.
    *
-   * 與 `sortKey` 一樣是**每幀重寫的暫存**，不是車輛狀態 —— 只在
-   * `advanceEdgeVehicles` 之內有意義。放在車上而不是查表，是因為索引在同一幀之內
-   * 會被改（車換邊、位置更新），而查表一幀要查上萬次。
+   * Like `sortKey`, **per-frame scratch** rather than vehicle state, meaningful only inside
+   * `advanceEdgeVehicles`. Stored on the vehicle rather than looked up because the index is
+   * mutated within the frame (vehicles change edge, positions update) and a lookup table would
+   * mean tens of thousands of queries per frame.
    */
   edgeEntry?: number;
   citizenId?: number;  // present only for commute vehicles (prevents duplicate spawning)
@@ -83,35 +88,41 @@ export const VEHICLE_DIMS = [
 /** Fixed truck dimensions for freight vehicles. */
 export const TRUCK_DIMS = { length: 0.45, width: 0.125 };
 
-/** 公車的車身。路上最長的一種。 */
+/** Bus body dimensions. The longest vehicle on the road. */
 export const BUS_DIMS = { length: 0.60, width: 0.125 };
 
-/**
- * 生成點多近算被佔著。世界單位，一格 = 1。
- *
- * 兩個方向分開量，而且不看佔位那台車實際多長多寬 —— 差別在畫面上看不出來，
- * 而少掉逐台查尺寸讓這件事變成純粹的距離比較。
- *
- * 兩個數字都有上下界，不能隨便調（見 NoStackedSpawns 的斷言）:
- * - `ALONG` 要比最長的車身長，否則兩台車中心只差半個車身也會各自生成 —— 就是穿模。
- * - `ACROSS` 要比最窄的車道間距小。最窄的是單行道兩車道:0.55 / 2 / 2 = 0.1375。
- *   比它大的話隔壁車道永遠有車擋著，路上的車會少一大截。
- *
- * 這兩條界線之間塞不下一個「單一半徑」——車身 0.26 就已經比車道間距 0.1375 寬了。
- * 所以是兩個數字而不是一個。
- */
-/** 生成點索引的格子大小（世界單位）。一格路面 = 1，跟地圖對齊最好查。 */
+/** Cell size of the spawn-point index, in world units. One road cell is 1, which aligns with
+ *  the map and makes lookups cheapest. */
 const SPAWN_INDEX_CELL_SIZE = 1.0;
 
+/**
+ * How close counts as a spawn point being occupied, in world units where one cell is 1.
+ *
+ * The two axes are measured separately, and the occupying vehicle's actual dimensions are
+ * ignored: the difference is invisible on screen, and dropping the per-vehicle size lookup
+ * makes this a plain distance comparison.
+ *
+ * Both numbers are bounded and cannot be retuned freely (see the assertions in
+ * NoStackedSpawns):
+ * - `ALONG` must exceed the longest body, otherwise two vehicles half a body apart each spawn
+ *   and clip through each other.
+ * - `ACROSS` must be below the narrowest lane spacing, which is a two-lane one-way road at
+ *   0.55 / 2 / 2 = 0.1375. Above that, the neighbouring lane always blocks and the road
+ *   carries far fewer vehicles.
+ *
+ * No single radius fits between those bounds: a 0.26 body is already wider than the 0.1375
+ * lane spacing. Hence two numbers rather than one.
+ */
 export const SPAWN_CLEARANCE = {
   ALONG: 0.3,
   ACROSS: 0.10,
 } as const;
 
 /**
- * 生成點檢查用的格點:位置與車頭方向。
+ * The grid entry used for spawn checks: a position and a heading.
  *
- * 不帶車身尺寸 —— 餘裕是常數（`SPAWN_CLEARANCE`），不看對方多大。
+ * It carries no body dimensions, because the clearance is a constant (`SPAWN_CLEARANCE`) and
+ * does not depend on the other vehicle's size.
  */
 interface SpawnSlot { x: number; y: number; hx: number; hy: number }
 
@@ -126,12 +137,13 @@ export const TRAFFIC = {
   /**
    * Edge vehicle speed in world-units per second
    *
-   * 車輛是裝飾性的，移動與模擬時鐘脫鉤 —— 一格 12 公尺，所以 3.5 格／秒 換算
-   * 約 150 km/h，而路上標的是 50。那個倍率是刻意的：照時鐘算的話 1x 之下一個
-   * 遊戲日只有 6 秒（24 tick × 250 ms），車會慢到看不出在動。
+   * Vehicles are cosmetic and their movement is decoupled from the simulation clock. A cell
+   * is 12 metres, so 3.5 cells/second is about 150 km/h against a posted limit of 50. That
+   * multiplier is deliberate: on the clock, a game day at 1x lasts 6 seconds (24 ticks x
+   * 250ms) and vehicles would be too slow to see moving.
    *
-   * 整體快慢調這裡，不要動 `ROAD_CONFIGS` 的 `speedLimit` —— 速限同時是路徑
-   * 規劃的成本權重，動了它會連帶改變車流的選路。
+   * Tune overall speed here rather than `ROAD_CONFIGS`'s `speedLimit`: the limit is also the
+   * cost weight for path planning, and changing it changes which routes traffic takes.
    */
   EDGE_SPEED: 3.5,
   /** Speed limit that maps to base speed */
@@ -148,7 +160,6 @@ export const TRAFFIC = {
   DECEL: 12.0,
 } as const;
 
-/** Get the number of directional lanes for a road type (lanes going one way). */
 /** Get speed limit for a grid cell identified by "x,y" key. Returns default 50 for non-road cells. */
 type RoadTypeCell = { roadType: number } | null;
 
@@ -202,19 +213,21 @@ export class TrafficSimulation {
   /** Per-cell vehicle count, rebuilt every advanceEdgeVehicles call. */
   private cellDensity = new Map<string, number>();
   /**
-   * 生成點附近有哪些車。跟 `cellDensity` 同一個生命週期:每次 `advanceEdgeVehicles`
-   * 在**清掉抵達的車之後**重建，新車生成時當場補一筆。
+   * Which vehicles are near each spawn point. Same lifecycle as `cellDensity`: rebuilt in
+   * every `advanceEdgeVehicles` call **after arrived vehicles are removed**, with a new entry
+   * added on the spot when a vehicle spawns.
    *
-   * 存在的理由是效能。原本每要放一台車就掃過路上**所有**車，12 334 人的存檔實測
-   * 每 tick 約 394 次生成嘗試 × 890 台車 ≈ 35 萬次距離計算，49ms —— 速度 1 的
-   * 一個 tick 只有 250ms（BUG-323）。
+   * It exists for performance. Scanning **all** vehicles for each placement measured, on a
+   * 12,334-citizen save, about 394 spawn attempts per tick x 890 vehicles = 350,000 distance
+   * computations at 49ms, against 250ms available per tick at speed 1 (BUG-323).
    *
-   * 為什麼不共用跟車那一份 `spatialHash`:那一份在每幀的處理**開始時**就建好，
-   * 到了清車之後還留著已經抵達的車。生成點正好就是別人的目的地，用那一份會把
-   * 剛剛抵達、其實已經不存在的車當成佔位的。
+   * It does not share the car-following `spatialHash`, which is built at the **start** of each
+   * frame's processing and still contains arrived vehicles after the removal pass. A spawn
+   * point is precisely somebody else's destination, so that hash would treat a vehicle that
+   * just arrived and no longer exists as occupying it.
    */
   private spawnHash = new SpatialHash<SpawnSlot>(SPAWN_INDEX_CELL_SIZE);
-  /** `spawnHash` 的物件池 —— 每幀重建，不要每幀重新配置。 */
+  /** Object pool for `spawnHash`, rebuilt each frame rather than reallocated. */
   private spawnSlots: SpawnSlot[] = [];
   private spawnSlotCount = 0;
   /** Predicted congestion flow (path count per cell), set by SimulationLoop periodically. */
@@ -222,39 +235,40 @@ export class TrafficSimulation {
   /** Reusable scratch array for active vehicles (avoids per-frame allocation). */
   private activeVehicleScratch: Vehicle[] = [];
   /**
-   * 這一幀每條邊上有哪些車。
+   * Which vehicles are on each edge this frame.
    *
-   * 平行的 typed array，不是逐車一個物件 —— 1 829 台車 × 每秒 60 幀是每秒十萬個
-   * 短命物件，實測某些幀有 16.4% 的自身時間在垃圾回收上。細節見 `EdgeVehicleIndex`。
+   * Parallel typed arrays rather than one object per vehicle: 1,829 vehicles at 60 frames per
+   * second is a hundred thousand short-lived objects per second, and some frames measured
+   * 16.4% of their self time in garbage collection. See `EdgeVehicleIndex` for details.
    */
   private edgeIndexMap = new EdgeVehicleIndex();
-  /** Reusable per-frame sort key store (see advanceEdgeVehicles). */
-  /** Reusable spatial hash for cross-edge collision detection. */
   /**
-   * 每個匯流點上有哪些車 —— key 是那條邊終點連接點的 id。
+   * Which vehicles converge on each merge point, keyed by the id of the edge's end connection
+   * point.
    *
-   * `findCrossEdgeGap` 唯一在意的關係就是「會不會匯進同一個點」。原本是逐格的
-   * 空間雜湊，撈半徑 2.0 內的所有車再一台一台丟掉，撈回來的九成以上第一個條件
-   * 就被刷掉（12 365 人的存檔實測 68.6ms/tick）。照終點分組就是直接問對的問題。
+   * The only relationship `findCrossEdgeGap` cares about is whether two vehicles merge into
+   * the same point. A per-cell spatial hash pulls every vehicle within radius 2.0 and discards
+   * them one by one, with over nine tenths failing the first condition (measured at 68.6ms per
+   * tick on a 12,365-citizen save). Grouping by end point asks the right question directly.
    *
-   * 陣列每幀清空重用，不重新配置。
+   * The arrays are cleared and reused each frame rather than reallocated.
    */
   private mergeGroups = new Map<string, SpatialEntry[]>();
-  /** 沒有同伴時回傳的空陣列 —— 免得每次都配一個新的。 */
+  /** The empty array returned when there are no siblings, so no allocation per call. */
   private static readonly NO_SIBLINGS: readonly SpatialEntry[] = [];
   /** Reusable array for spatial entries (object pool — grows to high-water mark). */
   private spatialEntries: SpatialEntry[] = [];
   /** Reusable vid → SpatialEntry map (cleared each frame). */
   private vidToSpatialMap = new Map<number, SpatialEntry>();
-  /** Reusable scratch array for queryNearbyInto (avoids per-call allocation). */
   /** Reusable output objects for per-vehicle position/heading (avoid per-call allocation). */
   private readonly _posOut = { x: 0, y: 0 };
   private readonly _tanOut = { x: 0, y: 0 };
   private readonly _headingOut = { hx: 0, hy: 0 };
   private readonly _spawnTan2 = { x: 0, y: 0 };
-  /** 路徑前綴和 —— 排序用的「走了多遠」每幀每台車都要問一次。 */
+  /** Prefix sums along a path: the sort key's "distance travelled" is asked once per vehicle
+   *  per frame. */
   private readonly pathLengths = new PathLengthCache();
-  /** `queryNearbyInto` 的收件陣列 —— 每次呼叫重用，不要每次配置。 */
+  /** Collection array for `queryNearbyInto`, reused per call rather than allocated. */
   private readonly spawnNearbyScratch: SpawnSlot[] = [];
 
 
@@ -288,8 +302,9 @@ export class TrafficSimulation {
     if (startCell) {
       this.cellDensity.set(startCell, (this.cellDensity.get(startCell) ?? 0) + 1);
     }
-    // 同一個 tick 裡接著要出門的人，看得到這台剛放下去的車。索引要等下一幀才重建，
-    // 中間這一段沒補的話，同一個生成點會連續放出好幾台疊在一起。
+    // Citizens leaving later in the same tick can see the vehicle just placed. The index is
+    // only rebuilt next frame, and without this entry the same spawn point emits several
+    // vehicles stacked on top of each other.
     this.indexSpawnSlot(vehicle);
     return vehicle;
   }
@@ -370,7 +385,8 @@ export class TrafficSimulation {
     const tl = Math.sqrt(this._spawnTan.x * this._spawnTan.x + this._spawnTan.y * this._spawnTan.y) || 1;
     const hx = this._spawnTan.x / tl, hy = this._spawnTan.y / tl;
 
-    // 只問附近那幾格。半徑取兩個餘裕的較大者 —— 圓形先粗篩，方向的判斷在下面。
+    // Query only the nearby cells, using the larger of the two clearances as the radius: the
+    // circle is a coarse filter and the oriented test is below.
     const near = this.spawnNearbyScratch;
     this.spawnHash.queryNearbyInto(
       this._spawnPos.x, this._spawnPos.y, SPAWN_CLEARANCE.ALONG, near,
@@ -384,7 +400,7 @@ export class TrafficSimulation {
     return false;
   }
 
-  /** 把一台車現在的位置與車頭方向寫進生成點索引。 */
+  /** Records a vehicle's current position and heading in the spawn-point index. */
   private indexSpawnSlot(v: Vehicle): void {
     const idx = Math.min(v.edgeIndex, v.edgePath.length - 1);
     const edge = v.edgePath[idx];
@@ -516,15 +532,16 @@ export class TrafficSimulation {
   }
 
   /**
-   * 路上有幾台是居民在開車通勤。
+   * How many vehicles on the road are residents driving to work.
    *
-   * 路上的車有四種來源，只有這一種是居民選出來的:過境車流的量是 `人口 ÷ 100`，
-   * 貨運看工業產能，服務車輛是派工，三種都不看運具選擇。面板要回答「政策有沒有
-   * 把人趕上大眾運輸」就只能問這一種 —— 加總的話居民真的改搭公車了，數字還是會
-   * 被另外三種撐住。
+   * Road traffic has four sources and only this one reflects a resident's choice: through
+   * traffic is `population / 100`, freight follows industrial output, and service vehicles are
+   * dispatched — none of the three consults mode choice. A panel answering "did the policy
+   * move people onto transit" can only ask this one; a total would stay propped up by the
+   * other three even after residents really did switch to the bus.
    *
-   * 車流上限走的是 `getVehicleCount()`（全部），跟這支無關 —— 上限管的是畫面上
-   * 能跑幾台，不是統計。
+   * The vehicle cap uses `getVehicleCount()` (all of them) and is unrelated: the cap limits
+   * how many can run on screen, not what is reported.
    */
   getCommuteVehicleCount(): number {
     let count = 0;
@@ -568,10 +585,11 @@ export class TrafficSimulation {
     return vehicle;
   }
 
-  // ── 從建築出發 ──
+  // ── Setting off from a building ──
   //
-  // 生成點被佔著就這一趟不出門。`addXxx` 是「放一台車在這裡」，這三支是「有人
-  // 開車出門了」—— 遊戲裡所有自動生成的車都走這裡。
+  // An occupied spawn point means the trip does not happen. `addXxx` places a vehicle at a
+  // given spot; these three mean somebody drove off, and every automatically generated vehicle
+  // in the game goes through them.
 
   /** A citizen sets off. Null when a vehicle is already standing on the spot. */
   spawnVehicleOnEdges(edgePath: LaneEdge[], citizenId?: number): Vehicle | null {
@@ -634,19 +652,23 @@ export class TrafficSimulation {
     // Reuse persistent Map (clear instead of re-allocate each frame).
     const edgeIndex = this.edgeIndexMap;
     edgeIndex.begin();
-    // 跟車查詢提前收工要用「路上最長的那台車」當門檻（見 `findGapAhead`）。
+    // The car-following query's early exit needs the longest vehicle on the road as its
+    // threshold (see `findGapAhead`).
     //
-    // 這是**這一幀路上實際的**最大值，不是照車身表寫死的常數 —— 常數等於一條
-    // 沒有東西強制得了的前提:`Vehicle.length` 與 `traffic.vehicles` 都是公開可改的，
-    // 有人放進一台比表上更長的車，查詢就會安靜地跳過它。逐幀算沒有這個前提，
-    // 代價是這個本來就要跑的迴圈裡多一次比較。
+    // This is the **actual maximum on the road this frame**, not a constant from the body
+    // dimensions table. A constant would be an assumption nothing enforces: `Vehicle.length`
+    // and `traffic.vehicles` are both publicly mutable, and a vehicle longer than the table
+    // says would be silently skipped by the query. Computing it per frame carries no such
+    // assumption, at the cost of one comparison in a loop that runs anyway.
     let maxHalfLen = 0;
     for (const v of edgeVehicles) {
-      // 先作廢上一幀的筆號:被跳過的車留著舊筆號的話，更新段會拿它去改別台車
-      // 這一幀的那一筆。**沒有測試守得住這一行** —— 今天走不到（三處換
-      // `edgePath` 的地方都同時把 `edgeIndex` 歸零），而且就算走到也會自癒
-      // （受害者自己處理到最後會把自己那一筆寫回去，而覆寫者一定排在它前面）。
-      // 留著是為了讓這個不變式是**這裡看得到的**，不是散在四個檔案裡的約定。
+      // Invalidate last frame's entry number first: a skipped vehicle keeping its old number
+      // lets the update pass use it to modify another vehicle's entry this frame. **No test
+      // covers this line**: it is unreachable today (all three sites that replace `edgePath`
+      // also zero `edgeIndex`), and even if reached it would self-heal, because the victim
+      // writes its own entry back when processed and the overwriter always sorts ahead of it.
+      // It is kept so the invariant is **visible here** rather than being a convention spread
+      // across four files.
       v.edgeEntry = NO_ENTRY;
       if (v.arrived) continue;
       const ep = v.edgePath;
@@ -654,8 +676,9 @@ export class TrafficSimulation {
       if (!edge) continue;
       const halfLen = v.length / 2;
       if (halfLen > maxHalfLen) maxHalfLen = halfLen;
-      // 筆號記在車上 —— 這一幀晚一點要就地改它的位置或搬到下一條邊，而查表
-      // 一幀要查上萬次（`sortKey` 放在車上也是同一個理由）。
+      // The entry number lives on the vehicle: later this frame its position is updated in
+      // place or it moves to the next edge, and a lookup table would mean tens of thousands of
+      // queries per frame (the same reason `sortKey` lives there).
       v.edgeEntry = edgeIndex.add(edge.id, v.id, v.edgeProgress, halfLen, v.braking);
     }
 
@@ -717,7 +740,8 @@ export class TrafficSimulation {
       // Bus dwelling: count down timer, skip movement
       if (v.busState?.dwelling) {
         v.busState.dwellTimer -= dtSeconds;
-        // 停靠中的公車就是擋在那裡，別讓後車以為它馬上會走。
+        // A dwelling bus is simply in the way; vehicles behind must not assume it is about to
+        // move.
         v.braking = true;
         if (v.busState.dwellTimer <= 0) {
           const bs = v.busState;
@@ -771,7 +795,8 @@ export class TrafficSimulation {
       const junctionStop = findBlockedJunctionDistance(v, ep, edgeIndex, gap, MIN_GAP);
       const obstacle = Math.min(gapRoom, effectiveRedLight, junctionStop);
 
-      // 前後車是由前往後處理的，所以後車這一幀讀到的是剛算好的值。
+      // Vehicles are processed front to back, so a follower reads the value computed for the
+      // leader this same frame.
       v.braking = obstacle < BRAKE_DISTANCE;
 
       let targetSpeed: number;
@@ -861,8 +886,9 @@ export class TrafficSimulation {
       const newEdge = ep[v.edgeIndex];
       const entry = v.edgeEntry;
       if (entry !== undefined && entry >= 0) {
-        // 換邊只是把這一筆從一條串列摘下來掛到另一條上，半車身不變 ——
-        // 它早就算進 `maxHalfLen` 了（上面那個建表迴圈走過每一台）。
+        // Changing edge only unlinks this entry from one list and links it into another; the
+        // half-length is unchanged and already counted in `maxHalfLen`, since the index-build
+        // loop above visited every vehicle.
         if (oldEdge && newEdge && oldEdge.id !== newEdge.id) edgeIndex.moveTo(entry, newEdge.id);
         edgeIndex.setProgress(entry, v.edgeProgress, v.braking);
       }
@@ -986,22 +1012,25 @@ export class TrafficSimulation {
   }
 
   /**
-   * 逐格的預測流量，還是 null 就是還沒算過。
+   * The per-cell predicted flow; null means it has not been computed yet.
    *
-   * 這是**需求**算出來的:每一格上有多少人的通勤路線經過，除以車道數。塞不塞跟畫面上
-   * 生成了幾台車無關 —— 車輛實體有數量上限、會被生成點檢查擋掉，那是演繹（BUG-326）。
+   * Derived from **demand**: how many citizens' commute routes pass through each cell, divided
+   * by the lane count. Congestion is unrelated to how many vehicles are on screen, since
+   * vehicle instances are capped and refused by the spawn check — they are a dramatisation
+   * (BUG-326).
    */
   getPredictedFlow(): ReadonlyMap<string, number> | null {
     return this.predictedFlow;
   }
 
   /**
-   * 居民開車通勤平均跑多遠。
+   * How far residents drive to work on average.
    *
-   * 跟 `getCommuteVehicleCount()` 是同一組數字的兩面 —— 一個說有多少人在開車，一個
-   * 說他們開多遠，兩張卡片要講同一個城市。混進過境車流的話會各自說不同的故事:
-   * 過境車是從地圖邊緣穿到某棟建築，路程本來就比一般通勤長，少少幾台就能把平均
-   * 拉走。
+   * Two sides of the same figure as `getCommuteVehicleCount()`: one says how many are
+   * driving, the other how far they drive, and the two panel cards must describe the same
+   * city. Mixing in through traffic makes them tell different stories: a through vehicle runs
+   * from the map edge to a building and is inherently longer than a commute, so a handful of
+   * them moves the average.
    */
   getCommuteAveragePathLength(): number {
     let totalLen = 0;

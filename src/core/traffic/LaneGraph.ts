@@ -128,8 +128,9 @@ export function isIntersectionCell(roadFlags: number): boolean {
 /**
  * Lane geometry rendering constants
  *
- * 車道寬不在這裡 —— 它隨路型變，見 `road/types` 的 `getLaneWidth`。原本是這裡
- * 一個寫死的 0.18，與路寬各算各的，結果六車道的最外側車道有一部分在路面外。
+ * Lane width is not here: it varies by road tier, see `getLaneWidth` in `road/types`. A
+ * hardcoded 0.18 here, computed independently of road width, put part of a six-lane road's
+ * outermost lane off the carriageway.
  */
 export const LANE_GEOMETRY = {
   /** Number of samples for Bezier length approximation */
@@ -285,7 +286,8 @@ export class LaneGraph {
     //   perpendicular "right" of travel direction = lateral offset
     //   This separates opposing traffic and multi-lane same-direction traffic.
     //
-    // 車道寬隨路型變 —— 六車道要在同樣的半幅路面裡塞三條，所以每條比四車道窄。
+    // Lane width varies by road type: a six-lane road fits three lanes into the same half
+    // width, so each is narrower than a four-lane road's.
     const LANE_WIDTH = getLaneWidth(cell.roadType);
 
     for (const { dir, flag } of DIR_FLAGS) {

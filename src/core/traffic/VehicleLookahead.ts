@@ -20,15 +20,17 @@ export interface LookaheadVehicle {
  * Find the gap distance to the nearest vehicle ahead on the same edge path.
  * Returns Infinity if no vehicle is found within LOOKAHEAD_DISTANCE.
  *
- * @param maxHalfLen 路上最長那台車的半個車身。給了就會提前收工:找到一台之後，
- * 再往前的邊上不可能有更近的。
+ * @param maxHalfLen half the length of the longest vehicle on the road. Supplying it enables
+ * an early exit: once a vehicle is found, no edge further ahead can hold a nearer one.
  *
- * 為什麼要「最長的那台」而不是眼前這台:空隙扣的是兩台車的半個車身，公車的車身
- * 是小客車的兩倍多，所以一台停在更後面的公車留下的空隙可能反而更小。用小的數字
- * 當門檻會把它跳過去，車就開進公車尾巴。
+ * It has to be the longest vehicle rather than the one in front: a gap subtracts both
+ * vehicles' half-lengths, and a bus is more than twice a car's length, so a bus further back
+ * can leave a smaller gap. A smaller threshold skips it and the vehicle drives into the bus's
+ * rear.
  *
- * 不給就不收工，整條掃完 —— 掃 5 格的路徑平均會走 10.3 條邊（12 288 人的存檔實測），
- * 而車流稠密時通常第一、二條邊上就有車了。
+ * Without it there is no early exit and the whole path is scanned. A 5-tile lookahead walks
+ * 10.3 edges on average (measured on a 12,288-citizen save), while in dense traffic a vehicle
+ * is usually found on the first or second edge.
  */
 export function findGapAhead(
   v: LookaheadVehicle,
@@ -63,7 +65,7 @@ export function findGapAhead(
 
     distAhead += edgeRemain;
     if (distAhead > LOOKAHEAD_DISTANCE) break;
-    // 下一條邊上最樂觀的那台車也擋不到已經找到的這台。
+    // Even the most optimistic vehicle on the next edge cannot beat the one already found.
     if (gap <= distAhead - myHalfLen - maxHalfLen) break;
   }
 
@@ -113,7 +115,7 @@ export function findBlockedJunctionDistance(
 
   const halfLen = v.length / 2;
 
-  // 1. 前方第一個路口在哪裡。純走訪，不查表。
+  // 1. Where the first junction ahead is. Pure traversal, no lookups.
   let dist = 0;
   let enter = -1;
   let exit = 0;
@@ -130,21 +132,22 @@ export function findBlockedJunctionDistance(
     }
   }
 
-  if (enter <= 0) return Infinity;  // 前方沒有路口，或者車已經在路口裡了 —— 只能開出去
+  if (enter <= 0) return Infinity;  // no junction ahead, or already inside one and can only drive out
 
-  // 車身中心要走到這裡才算過了路口。
+  // The centre must reach here to have cleared the junction.
   const needed = exit;
-  // 連車流裡最近的那台都擋不到，就不必再查是誰了。
+  // If even the nearest vehicle in traffic cannot block it, there is no need to find out who.
   if (gap - minGap >= needed) return Infinity;
 
-  // 2. 只有**正在排隊**的車算佔用。
+  // 2. Only vehicles **currently queueing** count as occupying the box.
   //
-  // 用 findGapAhead 的距離（不分動靜）判斷的話，兩格的正常車距就會讓每一台車
-  // 在每一個路口前煞一次 —— 實測整條路的通過量掉一成，而那時候路上根本沒有
-  // 塞車。
+  // Judging by `findGapAhead`'s distance, which does not distinguish moving from stopped,
+  // makes a normal two-tile following distance brake every vehicle at every junction —
+  // measured as a tenth of the corridor's throughput lost while no congestion existed at all.
   //
-  // 而「它現在停了沒」又太晚:車隊是往後長的，等前車真的停住，後車已經進了
-  // 路口，然後就困在裡面。所以看的是**它正在為前方的東西減速**。
+  // Checking whether a vehicle has already stopped is too late: queues grow backwards, and by
+  // the time the leader really stops the follower is inside the junction and trapped. What is
+  // read is therefore that it is decelerating for something ahead.
   let d = 0;
   for (let ei = v.edgeIndex; ei < edgePath.length; ei++) {
     const edge = edgePath[ei]!;
@@ -160,13 +163,14 @@ export function findBlockedJunctionDistance(
       } else {
         at = d + eProgress;
       }
-      // 這台排隊中的車讓我的中心最多只能走到這裡。
+      // This queueing vehicle limits how far this centre may advance.
       if (at - halfLen - edgeIndex.halfLenAt(i) - minGap < needed) {
         return Math.max(0, enter - halfLen - STOP_LINE_OFFSET);
       }
     }
     d += edge.length - (ei === v.edgeIndex ? v.edgeProgress : 0);
-    // 後面每一台的 `at` 都不小於 d，而 e.halfLen >= 0 —— 再遠就擋不到了。
+    // Every vehicle beyond this has `at` no smaller than d, and e.halfLen >= 0, so nothing
+    // further can block.
     if (d - halfLen - minGap >= needed) break;
   }
 

@@ -4,14 +4,16 @@ import { TRAFFIC_LIGHT } from '../TrafficLights';
 import type { LaneEdge } from '../LaneGraph';
 
 /**
- * 一次綠燈放得掉多少車。
+ * How many vehicles one green clears.
  *
- * 號誌的秒數是**實際秒數**，而車速是格／秒 —— 兩者沒有任何連結。車速減半時
- * 綠燈期間車走的距離就減半，能通過的台數跟著砍半（實測 4 秒綠燈從 14 台掉到
- * 7 台），路口的通行量無聲地少了一半。
+ * Signal phases are in **real seconds** while vehicle speed is in cells per second, with no
+ * link between them. Halving the speed halves the distance covered during a green and halves
+ * the vehicles that get through (measured: a 4-second green went from 14 to 7), silently
+ * halving junction throughput.
  *
- * 所以這裡釘的是**通行量**，不是秒數。秒數與車速任何一邊單獨被動，這一組就會紅。
- * 拿「秒數 × 車速」之類的算式比對是沒有用的：那會跟著兩邊一起動。
+ * This group therefore pins **throughput**, not durations, so moving either the phase length or
+ * the speed alone turns it red. Comparing against something like "duration x speed" would move
+ * with both.
  */
 
 function path(n: number): LaneEdge[] {
@@ -33,20 +35,21 @@ function path(n: number): LaneEdge[] {
   return edges;
 }
 
-/** 排滿一列車等紅燈，綠燈 `green` 秒之後有幾台越過停止線。 */
+/** Queues vehicles at a red light and returns how many cross the stop line during `green`
+ *  seconds. */
 function clearedPerGreen(green: number): number {
   const sim = new TrafficSimulation();
   const cars = [];
   for (let i = 0; i < 40; i++) {
     const v = sim.addVehicleOnEdges(path(60));
-    // 排隊本來就不動，別讓它被判定停滯而退場。
+    // A queue does not move by definition; keep it from being retired as stalled.
     v.stallTime = -1e6;
     v.speedMultiplier = 1;
     cars.push(v);
   }
   const STOP_LINE = 10;
   const red = (_from: string, next: string) => next !== `${STOP_LINE},0`;
-  // 先讓車隊完全排定
+  // Let the queue settle completely first.
   for (let t = 0; t < 20 / 0.02; t++) sim.advanceEdgeVehicles(0.02, red);
 
   const before = cars.filter(v => v.edgeIndex >= STOP_LINE).length;
@@ -56,7 +59,7 @@ function clearedPerGreen(green: number): number {
 
 describe('路口的通行量', () => {
   it('should clear a queue worth of cars on a standard green', () => {
-    // 下界是寫死的：車速減半而秒數沒跟著改時，這裡量到的是 7。
+    // The bound is a literal: with the speed halved and the durations unchanged this measured 7.
     expect(clearedPerGreen(TRAFFIC_LIGHT.PHASE_DURATION), '一次綠燈放行的車太少')
       .toBeGreaterThanOrEqual(12);
   });
@@ -67,8 +70,9 @@ describe('路口的通行量', () => {
   });
 
   it('should not buy throughput with an unreasonable wait', () => {
-    // 通行量也可以靠把綠燈拉到一分鐘換來 —— 那會讓對向在 1x 之下等到以為
-    // 號誌壞了。紅燈的長度就是對向的綠燈加上全紅清道時間。
+    // Throughput can also be bought with a minute-long green, which leaves the cross direction
+    // waiting long enough at 1x to read as a broken signal. A red lasts the opposing green plus
+    // the all-red clearance.
     const worstWait = TRAFFIC_LIGHT.PHASE_DURATION_LARGE + TRAFFIC_LIGHT.CLEARANCE_DURATION;
     expect(worstWait, '紅燈長到會讓人以為號誌壞了').toBeLessThanOrEqual(20);
   });

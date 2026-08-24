@@ -54,7 +54,7 @@ function cityWith(type: RoadType, roads: Road[]) {
  *
  * Every case below uses a real junction. An L-bend has no through traffic —
  * every lane rounds the bend concentrically and no two paths cross — so the
- * preference does not apply there at all (see `只有路口才需要站位` below).
+ * preference does not apply there at all (see the bend group below).
  */
 const CROSSROADS_CITY: Road[] = [
   { from: { x: 5, y: 0 }, to: { x: 5, y: 10 } },
@@ -210,12 +210,14 @@ describe('the preference is a preference, not a rule', () => {
 
 describe('只有路口才需要站位', () => {
   /**
-   * 轉向車道的理由是「轉彎的弧線會切過旁邊的直行車道」。彎道沒有直行車道 ——
-   * 兩個方向的格子只生得出轉彎邊，而且產生器連的是 lane L → lane L，各車道的
-   * 弧是同心的、永遠不相交。規則在那裡買不到任何東西，只換來一次換道。
+   * The reason for turn lanes is that a turning arc cuts across the through lane beside it. A
+   * bend has no through lane: a two-direction cell only produces turn edges, and the generator
+   * connects lane L to lane L, so the arcs are concentric and never intersect. The rule buys
+   * nothing there and costs a lane change.
    *
-   * 原本 `idealTurnLaneInt` 只算進出方向的外積，從不看那一格有幾個方向，所以
-   * 一條 S 型的路每個右彎都要「先切到外側、再切回內側」，一個彎兩次換道。
+   * Deciding the ideal lane from the cross product of the in and out directions alone, without
+   * looking at how many directions the cell has, makes every right bend on an S-shaped road
+   * demand a move out and back — two lane changes per bend.
    */
   it('should charge nothing at a plain bend, whatever lane the car is in', () => {
     const { graph } = cityWith(RoadType.FOUR_LANE, BEND_CITY);
@@ -230,7 +232,8 @@ describe('只有路口才需要站位', () => {
   });
 
   it('fixture sanity: the bend really is a bend and the crossroads really a junction', () => {
-    // 兩張圖如果都被判成同一種，上面那條跟下面那些會有一邊空轉。
+    // If both fixtures classify the same way, either the test above or the ones below are
+    // vacuous.
     const bend = cityWith(RoadType.FOUR_LANE, BEND_CITY);
     const cross = cityWith(RoadType.FOUR_LANE, CROSSROADS_CITY);
     expect(isIntersectionCell(bend.lookup.getCellByKey('5,5')!.roadFlags), '彎道被當成路口')
@@ -240,14 +243,15 @@ describe('只有路口才需要站位', () => {
   });
 
   it('should need no more lane changes than a dead straight road', () => {
-    // 使用者回報的畫面:S 型多車道路上，車在每個右彎前切出去、彎完切回來。
-    // 實測改之前是 5 次換道。
+    // On a multi-lane S-shaped road a vehicle moved out before every right bend and back
+    // afterwards: 5 lane changes measured.
     //
-    // 但不能直接斷言 0 或 1 —— 起訖點釘在建築旁的外側車道，而 LANE_SPEED_DECAY
-    // 仍讓內側便宜 5%，所以「上路靠內側、下車前靠回外側」這兩次是這條規則管不到
-    // 的（那是另一個還沒做的決定）。
+    // Asserting 0 or 1 outright will not do. Origin and destination are pinned to the outer
+    // lane beside a building while LANE_SPEED_DECAY still makes inner lanes 5% cheaper, so
+    // "move in on departure, move back out before arrival" is outside this rule's scope.
     //
-    // 跟同樣長的直路比，那兩次就在兩邊互相抵銷，剩下的差額**只可能是彎道造成的**。
+    // Comparing against an equally long straight road cancels those two on both sides, so the
+    // remaining difference **can only come from the bends**.
     const changesOn = (roads: Road[], from: Pos, to: Pos) => {
       const { graph, lookup } = cityWith(RoadType.FOUR_LANE, roads);
       const path = findLanePath(graph, lookup, from, to);
