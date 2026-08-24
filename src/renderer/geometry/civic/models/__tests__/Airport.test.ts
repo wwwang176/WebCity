@@ -28,13 +28,13 @@ const PLANS = [
   ['大型機場', airportLargePlan, 'airport_l', 'LARGE', 9, 6],
 ] as const;
 
-/** 一塊軸對齊矩形蓋不蓋得到某個點。 */
+/** Whether an axis-aligned rectangle covers a point. */
 interface Box { x: number; z: number; w: number; d: number }
 
 const covers = (d: Box, p: Vec2) =>
   Math.abs(p.x - d.x) <= d.w / 2 + 1e-9 && Math.abs(p.z - d.z) <= d.d / 2 + 1e-9;
 
-/** 一台車（或一架飛機）擺在某個位置時佔的矩形，由**實際的幾何**量出來。 */
+/** The rectangle a vehicle (or an aircraft) occupies at a position, measured from the **actual geometry**. */
 function boxOf(v: Parameters<typeof assembleVehicles>[0][number]) {
   const geo = assembleVehicles([v], { w: 99, h: 99 });
   geo.computeBoundingBox();
@@ -47,25 +47,26 @@ function boxOf(v: Parameters<typeof assembleVehicles>[0][number]) {
 }
 
 /**
- * 一架停在機位上的飛機佔的矩形。機頭朝航廈（−z），所以長邊沿 z。
+ * The rectangle an aircraft at a gate occupies. Its nose faces the terminal (-z), so the long
+ * side runs along z.
  *
- * 手寫一份尺寸表的話，哪天有人把機身改長，每一條用到它的檢查都會繼續拿
- * 舊的數字算。
+ * With a hand-written dimension table, lengthening the fuselage would leave every check that
+ * uses it working from the old numbers.
  */
 const standBox = (g: Vec2) =>
   boxOf({ kind: 'airplane', x: g.x, z: g.z, rotationY: Math.PI / 2 });
 
-/** 掃描的切片寬（格）。0.04 ≈ 0.5 m —— 比空橋窄，切得開機頭與機翼。 */
+/** Scan slice width, in cells. 0.04 is about 0.5 m: narrower than a jet bridge, and fine enough to separate nose from wing. */
 const SLICE = 0.04;
 
 /**
- * 一架停在機位上的飛機，**逐 z 切片**的 x 範圍。
+ * A parked aircraft's x range **per z slice**.
  *
- * 包圍盒在這一棟上不夠用：飛機的包圍盒是 10.8 × 11.7 m 的一個方框，而機頭
- * 那一段其實只有 1.4 m 寬的機身 —— 兩側都是空的。空橋要停在機頭**旁邊**，
- * 用包圍盒判斷的話它會被誤判成插進飛機裡。
+ * A bounding box is not enough here: an aircraft's box is 10.8 x 11.7 m, while the nose section
+ * is a fuselage only 1.4 m wide with empty space on both sides. A jet bridge stops **beside** the
+ * nose, and judged by the box it would read as entering the aircraft.
  *
- * 掃的是實際幾何的頂點，不是一份手寫的輪廓表。
+ * It scans the actual geometry's vertices rather than a hand-written outline table.
  */
 function planeProfile(g: Vec2): Map<number, { x0: number; x1: number }> {
   const geo = assembleVehicles(
@@ -82,7 +83,7 @@ function planeProfile(g: Vec2): Map<number, { x0: number; x1: number }> {
   return out;
 }
 
-/** 一塊矩形有沒有碰到那架飛機的**實際**輪廓。 */
+/** Whether a rectangle touches that aircraft's **actual** outline. */
 function hitsPlane(box: Box, g: Vec2): boolean {
   const bx0 = box.x - box.w / 2;
   const bx1 = box.x + box.w / 2;
@@ -95,9 +96,9 @@ function hitsPlane(box: Box, g: Vec2): boolean {
 }
 
 /**
- * 飛機在地面上會經過的每一個航點。
+ * Every waypoint an aircraft passes on the ground.
  *
- * `approachStart` / `climbEnd` 不算 —— 那兩個在天上，而且遠在佔地之外。
+ * `approachStart` and `climbEnd` do not count: both are in the air and far outside the plot.
  */
 function groundWaypoints(size: AirportSize): Array<{ name: string; p: Vec2 }> {
   const out: Array<{ name: string; p: Vec2 }> = [];
@@ -119,11 +120,12 @@ function groundWaypoints(size: AirportSize): Array<{ name: string; p: Vec2 }> {
 }
 
 /**
- * 三座機場。共通的驗收在 `CivicPlans.test.ts` 的資料表裡。
+ * The three airports. Their shared acceptance checks live in the table in `CivicPlans.test.ts`.
  *
- * 這一組測試最重要的一件事是**裝飾幾何與 `AirplaneAnimator` 的航路表對得上**
- * （BUG-239）。第一版兩邊各自畫了一座機場：動畫的跑道在前側 z = +1.20，
- * 貼片的跑道帶在後側 —— 接起來的那一刻飛機會沿著航廈的屋頂降落。
+ * The most important thing this group guards is that **the decorative geometry agrees with
+ * `AirplaneAnimator`'s path table** (BUG-239). Drawn separately, the two describe different
+ * airports: the animation's runway at the front, z = +1.20, and the decals' runway band at the
+ * back — and the moment they meet, aircraft land along the terminal's roof.
  */
 describe.each(PLANS)('%s', (_label, plan, type, size, w, h) => {
   it('should match its declared footprint', () => {
@@ -133,7 +135,8 @@ describe.each(PLANS)('%s', (_label, plan, type, size, w, h) => {
   });
 
   it('should tile the whole plot with paving, edge to edge', () => {
-    // 中間漏一條的話那裡是一塊裸地，而 `assembleDecals` 只擋重疊、不擋空隙。
+    // A missing band in the middle leaves bare ground, and `assembleDecals` guards overlaps but
+    // not gaps.
     const b = bands(plan);
     expect(b[0]!.z - b[0]!.d / 2, '後緣沒有鋪到底').toBeCloseTo(-h / 2, 9);
     expect(b[b.length - 1]!.z + b[b.length - 1]!.d / 2, '前緣沒有鋪到底')
@@ -148,13 +151,13 @@ describe.each(PLANS)('%s', (_label, plan, type, size, w, h) => {
     }
   });
 
-  // ── 與航路表對得上（BUG-239） ──────────────────────────────
+  // ── Agreement with the path table (BUG-239) ───────────────
 
   /**
-   * 飛機走過的每一寸地都要是**鋪面**。
+   * Every inch of ground an aircraft drives over has to be **paved**.
    *
-   * 這是 BUG-239 的直接敘述。第一版的小型機場，`threshold`（z = +1.20）落在
-   * 裝飾幾何的航廈帶裡 —— 飛機沿著屋頂降落。
+   * This states BUG-239 directly: on the small airport, `threshold` at z = +1.20 falls inside the
+   * decorative geometry's terminal band, and the aircraft lands along the roof.
    */
   it('should pave every point the aeroplane drives over', () => {
     for (const { name, p } of groundWaypoints(size)) {
@@ -166,9 +169,10 @@ describe.each(PLANS)('%s', (_label, plan, type, size, w, h) => {
   });
 
   /**
-   * 而且不准有東西擋在上面。
+   * And nothing may stand on that path.
    *
-   * 航廈、塔台、空橋、停著的飛機 —— 任何一個蓋在航點上，動畫飛機就會穿過它。
+   * Terminal, tower, jet bridge, parked aircraft: anything covering a waypoint is something the
+   * animated aircraft drives through.
    */
   it('should keep every building and parked vehicle off the flight path', () => {
     const blockers: Array<{ what: string; v: CivicVolume }> = [
@@ -178,17 +182,18 @@ describe.each(PLANS)('%s', (_label, plan, type, size, w, h) => {
     ];
     for (const { name, p } of groundWaypoints(size)) {
       for (const { what, v } of blockers) {
-        // 空橋**必須**伸到機位旁邊，所以它只要不蓋住機位中心就好。
+        // A jet bridge **has to** reach beside the gate, so it only has to keep off the gate's
+        // centre.
         expect(covers(v, p), `${what} 蓋在 ${name} 上`).toBe(false);
       }
     }
   });
 
   /**
-   * 停在停機位上的靜態飛機會被動畫飛機停在身上。
+   * A static aircraft on a working gate has an animated one park on top of it.
    *
-   * `AirplaneAnimator` 停泊 5 秒，而它只避開**其他動畫飛機**佔用的機位
-   * —— `CivicPlan.vehicles` 裡的不在那個集合裡。
+   * `AirplaneAnimator` holds for 5 seconds and only avoids gates occupied by **other animated
+   * aircraft**; anything in `CivicPlan.vehicles` is not in that set.
    */
   it('should never park a static aeroplane on a working gate or taxiway', () => {
     const CLEAR = 0.45;
@@ -197,7 +202,7 @@ describe.each(PLANS)('%s', (_label, plan, type, size, w, h) => {
       for (const g of allGates(size)) {
         expect(covers(box, g), `${v.kind} 停在機位 (${g.x}, ${g.z}) 上`).toBe(false);
       }
-      // 縱向滑行道那兩條帶也不能停。
+      // The two longitudinal taxiway bands are off limits too.
       const clearOfTaxi = Math.abs(Math.abs(box.x) - taxiwayX(size))
         >= box.w / 2 + CLEAR - 1e-9;
       const behindApron = box.z + box.d / 2 < apronLaneZ(size);
@@ -206,8 +211,8 @@ describe.each(PLANS)('%s', (_label, plan, type, size, w, h) => {
   });
 
   it('should draw the runway where the flight path says it is', () => {
-    // 跑道中線是航路表的 `threshold.z`。畫在別的地方的話，飛機會落在
-    // 一條沒有標線的柏油上，而旁邊有一條沒有飛機的跑道。
+    // The runway centreline is the path table's `threshold.z`. Drawn anywhere else, aircraft land
+    // on unmarked asphalt while an empty runway sits beside them.
     for (const c of runwayCentrelines(size)) {
       const centre = marks(plan).filter(d =>
         Math.abs(d.z - c) < 1e-9 && d.w > d.d);
@@ -220,7 +225,8 @@ describe.each(PLANS)('%s', (_label, plan, type, size, w, h) => {
   });
 
   it('should draw the taxiway centreline along the route the aeroplane takes', () => {
-    // 縱向滑行道在 ±taxiwayX，從橫向聯絡道接到最遠的那條跑道。
+    // The longitudinal taxiways sit at +/-taxiwayX, running from the cross taxiway to the
+    // furthest runway.
     const tx = taxiwayX(size);
     const lane = apronLaneZ(size);
     const far = Math.max(...runwayCentrelines(size));
@@ -240,11 +246,13 @@ describe.each(PLANS)('%s', (_label, plan, type, size, w, h) => {
   });
 
   it('should hold aircraft short of every runway', () => {
-    // 每一條跑道前都要有等待線 —— 大型機場有兩條，只畫一條的話另一條沒有。
+    // Every runway needs a holding position before it: the large airport has two, and drawing one
+    // leaves the other without.
     const tx = taxiwayX(size);
     for (const c of runwayCentrelines(size)) {
-      // `d.w > d.d` 才是**橫**的等待線 —— 少了它，沿著同一個 x 走的縱向
-      // 滑行道中線也會被算進來（它的中心 z 剛好也落在這個區間）。
+      // `d.w > d.d` is what makes a holding position **transverse**; without it, the
+      // longitudinal taxiway centreline at the same x counts too, since its centre z also falls
+      // in this range.
       const hold = marks(plan).filter(d =>
         Math.abs(Math.abs(d.x) - tx) < 1e-9 && d.w > d.d
         && d.z > c - 0.7 && d.z < c);
@@ -264,21 +272,22 @@ describe.each(PLANS)('%s', (_label, plan, type, size, w, h) => {
   });
 
   it('should bridge exactly the gates the flight paths use', () => {
-    // 大型機場的兩條航路共用中間那個機位。直接串起來的話它會出現兩次，
-    // 而「每個機位一條空橋」就會多畫一條疊在一起的。
+    // The large airport's two paths share the middle gate. Concatenated directly it appears
+    // twice, and "one jet bridge per gate" draws a second bridge on top of the first.
     const bridges = plan.props.filter(v => v.tag === 'jetBridge');
     expect(bridges.length, '空橋數與機位數對不上').toBe(allGates(size).length);
   });
 
   /**
-   * 停機坪上的三樣東西不准互相卡到：飛機、空橋、地勤車。
+   * The three things on an apron must not foul each other: aircraft, jet bridges, ground vehicles.
    *
-   * 空橋、工程車與停妥的飛機會互相卡到。三者原本
-   * 全部擠在航廈牆與機位之間那條 0.7 m 的縫裡 —— 而每一條既有的驗收都是綠的，
-   * 因為沒有任何一條在問「它們彼此會不會撞在一起」。
+   * All three crowded into the 0.7 m gap between the terminal wall and the gate line pass every
+   * existing acceptance check, because none of them asks whether the three collide with each
+   * other.
    *
-   * 飛機的佔地用**實際的幾何**算：手寫一份尺寸表的話，哪天有人把機身改長，
-   * 這條檢查會繼續拿舊的數字算。
+   * An aircraft's footprint is computed from the **actual geometry**: with a hand-written
+   * dimension table, lengthening the fuselage would leave this check working from the old
+   * numbers.
    */
   it('should keep the aeroplanes, the jet bridges and the ground crew apart', () => {
     const hits = (a: Box, b: Box) =>
@@ -292,8 +301,9 @@ describe.each(PLANS)('%s', (_label, plan, type, size, w, h) => {
     const crew = plan.vehicles.filter(v => v.tag === 'groundCrew')
       .map(v => ({ what: `地勤 ${v.kind}`, box: boxOf(v) }));
 
-    // 飛機用**實際輪廓**比，不用包圍盒：空橋刻意停在機頭旁邊那條空的地方，
-    // 而那塊地在包圍盒裡是「飛機」。
+    // Aircraft are compared against their **actual outline** rather than a bounding box: a jet
+    // bridge deliberately stops in the empty space beside the nose, and inside the box that space
+    // counts as aircraft.
     for (const a of bridges) {
       for (const g of gates) {
         expect(hitsPlane(a.box, g), `${a.what} 卡到機位 ${g.x} 的飛機`).toBe(false);
@@ -308,8 +318,8 @@ describe.each(PLANS)('%s', (_label, plan, type, size, w, h) => {
   });
 
   it('should tuck the jet bridges and the ground crew against the terminal wall', () => {
-    // 它們唯一站得住的地方是航廈牆與機尾之間那條縫。跑到縫外面的話，
-    // 不是插進航廈就是擋在飛機滑進來的路上。
+    // The only place they hold up is the gap between the terminal wall and the tail. Outside it
+    // they either enter the terminal or block the aircraft taxiing in.
     const layout = airportLayout(size, h);
     const gateZ = allGates(size)[0]!.z;
     for (const v of plan.props.filter(x => x.tag === 'jetBridge')) {
@@ -323,13 +333,15 @@ describe.each(PLANS)('%s', (_label, plan, type, size, w, h) => {
   });
 
   /**
-   * 空橋是一條**臂**：一端接航廈，一端停在機頭前。
+   * A jet bridge is an **arm**: one end joins the terminal, the other stops in front of the nose.
    *
-   * 空橋要從建築延伸出來，接到機頭附近。兩端都要驗，因為前兩版各錯一端：第一版插進機身，第二版擺在機位旁邊
-   * 那條縫裡 —— 與航廈、與飛機都沒有接觸，看起來是停機坪上飄著的一塊板。
+   * Both ends are checked, because each can be wrong on its own: reaching into the fuselage at
+   * one end, or sitting in the gap beside the gate touching **neither** the terminal nor the
+   * aircraft, reading as a slab floating over the apron.
    *
-   * 機頭的位置由**實際的幾何**算，不是拿模型檔裡的常數再抄一次：
-   * `airport.ts` 的 `PLANE_NOSE` 抄錯了或機身改長了，這條就會紅。
+   * The nose's position is computed from the **actual geometry** rather than copying the model
+   * file's constant again: a mistyped `PLANE_NOSE` in `airport.ts`, or a lengthened fuselage,
+   * turns this red.
    */
   it('should reach from the terminal wall down the aeroplane port side', () => {
     const term = tagged(plan, 'terminal')[0]!;
@@ -341,11 +353,12 @@ describe.each(PLANS)('%s', (_label, plan, type, size, w, h) => {
       expect(b!.z - b!.d / 2, '空橋的根部沒有接在航廈的牆上')
         .toBeCloseTo(wall, 9);
 
-      // 要在飛機的左舷（看起來像在機頭旁邊）。飛機停妥時機頭朝 −z，
-      // 所以左舷是 −x。
+      // On the aircraft's port side, so it reads as reaching alongside the nose. A parked
+      // aircraft faces -z, so port is -x.
       expect(b!.x, '空橋不在飛機的左舷').toBeLessThan(g.x);
-      // 而且要**開過機頭**：停在機頭前面的話它擋在飛機滑進來的路上，
-      // 讀起來也是「頂著機頭」而不是「靠在機身旁邊」。
+      // And it runs **past the nose**: stopped in front of it, the bridge blocks the aircraft
+      // taxiing in and reads as pressing against the nose rather than lying alongside the
+      // fuselage.
       const nose = standBox(g).z0;
       const tip = b!.z + b!.d / 2;
       expect(tip, '空橋停在機頭前面，沒有沿著機身走').toBeGreaterThan(nose);
@@ -355,7 +368,7 @@ describe.each(PLANS)('%s', (_label, plan, type, size, w, h) => {
   });
 
   it('should keep the bridge slender enough to read as a bridge', () => {
-    // 長度 ×2、寬度 ÷1.5：一條又短又寬的臂讀起來是雨遮。
+    // Twice as long and two thirds as wide: a short broad arm reads as a canopy.
     for (const b of plan.props.filter(v => v.tag === 'jetBridge')) {
       expect(m(b.d), `空橋只有 ${m(b.d).toFixed(1)} m 長`).toBeGreaterThan(5);
       expect(m(b.w), `空橋有 ${m(b.w).toFixed(1)} m 寬 —— 那是一座天橋`)
@@ -364,7 +377,7 @@ describe.each(PLANS)('%s', (_label, plan, type, size, w, h) => {
   });
 
   it('should stand each jet bridge on a leg', () => {
-    // 橋面在 1 m 高。少了腳，它是一塊浮在停機坪上的板子。
+    // The deck is 1 m up. Without a leg it is a slab floating over the apron.
     const legs = plan.props.filter(v => v.tag === 'jetBridgeLeg');
     expect(legs.length, '空橋沒有腳').toBe(allGates(size).length);
     for (const leg of legs) {
@@ -377,15 +390,16 @@ describe.each(PLANS)('%s', (_label, plan, type, size, w, h) => {
     }
   });
 
-  // ── 夜間語彙 ──────────────────────────────────────────────
+  // ── Night vocabulary ──────────────────────────────────────
 
   /**
-   * 空橋要接得到機身的門。
+   * A jet bridge has to reach the fuselage door.
    *
-   * 它原本掛在 `overhead` 層，而那一層的規則是「要高過 2.2 m 的行人淨空」
-   * —— 於是空橋停在 4.6 m，遠遠飄在 1.44 m 高的機身上方。空橋接的是飛機，
-   * 不是路人。門高從**實際的飛機幾何**量，不寫死數字：哪天有人把飛機改高，
-   * 寫死的那個數字會繼續指向舊的高度。
+   * In the `overhead` layer, whose rule is to clear 2.2 m of pedestrian headroom, a jet bridge
+   * sits at 4.6 m, far above a 1.44 m fuselage. A jet bridge reaches an aircraft, not a
+   * pedestrian. The door height is measured from the **actual aircraft geometry** rather than
+   * hard-coded: a hard-coded number would keep pointing at the old height after the aircraft is
+   * made taller.
    */
   it('should meet the aeroplane door, not float above it', () => {
     const plane = buildAirplaneGeometry();
@@ -401,8 +415,8 @@ describe.each(PLANS)('%s', (_label, plan, type, size, w, h) => {
   });
 
   it('should park light-coloured ground vehicles by the terminal', () => {
-    // 航廈附近要有一些淺色的工作車輛。深色的地勤車在深色的
-    // 柏油上看不出來，而地勤車實際上就是淺色的。
+    // The terminal needs a few pale work vehicles nearby. A dark ground vehicle disappears
+    // against dark asphalt, and real ground crew vehicles are pale anyway.
     const service = plan.vehicles.filter(v => v.tag === 'groundCrew');
     expect(service.length, '航廈附近沒有工作車輛').toBeGreaterThanOrEqual(2);
     for (const v of service) {
@@ -463,7 +477,7 @@ describe.each(PLANS)('%s', (_label, plan, type, size, w, h) => {
   });
 
   it('should keep the greenery on the landside, behind the terminal', () => {
-    // 停機坪那一側是飛機在走的。種在那裡的樹會被輾過去。
+    // The apron side is where aircraft move. A tree planted there gets run over.
     const termFront = tagged(plan, 'terminal')[0]!;
     for (const f of plan.fixtures) {
       if (f.kind !== 'tree' && f.kind !== 'shrub' && f.kind !== 'hedge') continue;
@@ -496,8 +510,8 @@ describe('三座機場之間', () => {
   });
 
   it('should give the large airport two runways, as its flight paths do', () => {
-    // 大型機場的動畫端有兩條平行航路。只畫一條跑道的話，走 B 路徑的飛機會
-    // 落在柏油以外的地方。
+    // The large airport's animation side has two parallel paths. With one runway drawn, aircraft
+    // on path B land off the asphalt.
     expect(runwayCentrelines('LARGE').length).toBe(2);
     const dark = airportLargePlan.decals.filter(d =>
       (d.layer ?? 'base') === 'base' && d.shade < 0.2);

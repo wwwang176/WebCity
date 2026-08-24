@@ -18,14 +18,16 @@ const isLamp = (p: number) =>
 const partOf = (v: Volume) => v.part ?? 0;
 
 /**
- * 開口容器：內部是**空的**，所以裝在裡面的東西不算被埋起來。
+ * Open containers: their interiors are **empty**, so their contents do not count as buried.
  *
- * `tub` 與 `basin` 是水槽（裝水面），`stack` 是煙囪（管口凹到接近底部，
- * 裡面塞著一片深色的槽底）。這三個形狀的內容物看得到 —— 那正是它們存在的
- * 理由 —— 而重疊檢查量的是包圍盒，它不知道容器是空的。
+ * `tub` and `basin` are vessels holding a water surface, and `stack` is a chimney whose mouth is
+ * recessed nearly to the bottom with a dark floor inside. All three exist precisely so their
+ * contents are visible, while the overlap check measures bounding boxes and does not know the
+ * container is hollow.
  *
- * 內容物在容器裡的**幾何**是否正確由各自的形狀測試顧（`MassingGeometry` 的
- * tub / basin / stack，以及 `Utility.test.ts` 的水位與管口底色）。
+ * Whether the contents' **geometry** inside the container is right is guarded by each shape's own
+ * tests (`MassingGeometry`'s tub / basin / stack, and `Utility.test.ts` on water level and mouth
+ * colour).
  */
 const OPEN_VESSEL: Record<string, number> = {
   tub: TUB.DEPTH, basin: TUB.DEPTH, stack: STACK.DEPTH, cooling: COOL.DEPTH,
@@ -34,7 +36,8 @@ const OPEN_VESSEL: Record<string, number> = {
 function contains(vessel: Volume, inner: Volume): boolean {
   const depth = OPEN_VESSEL[vessel.shape ?? ''];
   if (depth === undefined) return false;
-  // 空腔只有頂上那一段。低於槽底的東西是真的被埋起來了 —— 那一段是實心的。
+  // The cavity is only the top section. Anything below the floor really is buried, since that
+  // part is solid.
   const cavity = vessel.y1 - depth * (vessel.y1 - vessel.y0);
   return Math.abs(inner.x - vessel.x) + inner.w / 2 <= vessel.w / 2 + 1e-9
     && Math.abs(inner.z - vessel.z) + inner.d / 2 <= vessel.d / 2 + 1e-9
@@ -43,13 +46,12 @@ function contains(vessel: Volume, inner: Volume): boolean {
 }
 
 /**
- * 這一條守的是「資料表測試在空表上是綠的」。
+ * This guards against a table-driven suite being green on an empty table.
  *
- * `describe.each([])` 會整組**跳過**，不是失敗 —— 所以下面所有的驗收在還沒
- * 有任何 plan 的時候都不會跑，而測試報告看起來一切正常。
+ * `describe.each([])` **skips** the whole group rather than failing, so with no plans at all none
+ * of the checks below run and the report looks entirely healthy.
  *
- * 批 1 之前它本來就該是紅的（那是 TDD 的紅），批 1 之後它守著「不要不小心
- * 把整張表清空」。
+ * It guards against the table being emptied by accident.
  */
 describe('公共建築的資料表驗收', () => {
   it('should have at least one plan registered', () => {
@@ -67,7 +69,8 @@ describe.each(civicTypesDone())('%s 的 plan', (type) => {
   const all = [...plan.massing, ...plan.props, ...plan.overhead];
 
   it('should match the footprint declared in InfraConfig', () => {
-    // 對不上就是幾何與遊戲規則各說各話 —— 建築不是壓到鄰格，就是縮在角落。
+    // A mismatch means the geometry and the game rules disagree: the building either overruns a
+    // neighbouring cell or huddles in a corner.
     expect(plan.footprint).toEqual({ w: cfg.width, h: cfg.height });
   });
 
@@ -77,9 +80,10 @@ describe.each(civicTypesDone())('%s 的 plan', (type) => {
   });
 
   it('should build every layer without leaving the footprint', () => {
-    // 六層全部要列。漏掉哪一層，那一層的越界就沒有人擋 —— 車輛就漏過一次：
-    // 一台停在邊界上的消防車有 6.7 m 長，轉了 90 度之後伸出去半格是很容易
-    // 寫出來的錯，而畫面上它只是「有點壓到隔壁」。
+    // All six layers are listed. A missing layer leaves its overruns unguarded — vehicles were
+    // missed once: a 6.7 m fire engine parked on the boundary reaching half a cell out after a 90
+    // degree rotation is easy to write, and on screen it only reads as slightly overrunning the
+    // next cell.
     expect(() => assembleCivic(plan.massing, plan.footprint, plan.color)).not.toThrow();
     expect(() => assembleCivic(plan.props, plan.footprint, plan.color)).not.toThrow();
     expect(() => assembleCivic(plan.overhead, plan.footprint, plan.color)).not.toThrow();
@@ -89,16 +93,19 @@ describe.each(civicTypesDone())('%s 的 plan', (type) => {
   });
 
   it('should not bury one massing volume inside another', () => {
-    // 重疊的量體會產生看不見的內部面 —— 白吃三角形，而且畫面上完全看不出來。
+    // Overlapping masses create invisible interior faces: triangles spent for nothing, showing up
+    // nowhere on screen.
     //
-    // 用立方公尺的容差而不是嚴格的 0：`M()` 是除以 12，所以「這一塊的右緣」
-    // 與「下一塊的左緣」是同一個實數的兩個不同算式，浮點下相差約 1e-17。
-    // 共邊本來就該是 0，但那個 0 在浮點裡拿不到。1 立方公厘不是「埋起來」。
+    // The tolerance is in cubic metres rather than a strict 0: `M()` divides by 12, so "this
+    // piece's right edge" and "the next piece's left edge" are two different expressions for one
+    // real number, about 1e-17 apart in floating point. Sharing an edge should be exactly 0, and
+    // that 0 is not reachable in floating point. One cubic millimetre is not buried.
     for (let i = 0; i < plan.massing.length; i++) {
       for (let j = i + 1; j < plan.massing.length; j++) {
         const a = plan.massing[i]!;
         const b = plan.massing[j]!;
-        // 一個裝在開口容器裡的話，重疊的是容器的空腔而不是實體。
+        // If one sits inside an open container, the overlap is with the cavity, not with solid
+        // material.
         if (contains(a, b) || contains(b, a)) continue;
         const m3 = overlapOf(a, b) * METRES_PER_CELL ** 3;
         expect(m3, `${type}：${a.tag ?? i} 與 ${b.tag ?? j} 重疊 ${m3.toFixed(3)} m3`)
@@ -108,14 +115,15 @@ describe.each(civicTypesDone())('%s 的 plan', (type) => {
   });
 
   /**
-   * 車要停在鋪面上。
+   * Vehicles park on something paved.
    *
-   * 停在草地上的車是一眼就看得到的錯，而它在其他每一條驗收裡都合法：沒有
-   * 越界、沒有重疊、沒有超支。用**旋轉之後**的實際幾何算中心 —— 手寫一份
-   * 車輛尺寸表的話，哪天有人把消防車改長，這條檢查會繼續拿舊的數字算。
+   * A vehicle parked on grass is visible at a glance and legal under every other check here: no
+   * overrun, no overlap, no budget exceeded. The centre is computed from the **rotated** actual
+   * geometry; with a hand-written dimension table, lengthening the fire engine would leave this
+   * check working from the old numbers.
    *
-   * 檢查中心而不是整台車：一顆輪子壓到鋪面邊緣是正常的，車**停在**草地上
-   * 才是錯的。
+   * It checks the centre rather than the whole vehicle: one wheel over the edge of the paving is
+   * normal, and a vehicle **parked** on grass is the mistake.
    */
   it('should park every vehicle on something paved', () => {
     const hard = plan.decals.filter(d => (d.layer ?? 'base') === 'base' && !d.lawn);
@@ -132,17 +140,19 @@ describe.each(civicTypesDone())('%s 的 plan', (type) => {
   });
 
   /**
-   * 而且不准卡進任何東西。
+   * And no vehicle may be embedded in anything.
    *
-   * 垃圾場的車擠進垃圾堆、汙水廠的卡車擠進汙水槽 —— 兩件是同一個洞：**沒有任何一條驗收在問「這台車停的位置有沒有別的東西」**。
-   * 「停在鋪面上」那條只看車的中心點落在哪塊貼片上 —— 一台整個埋進土丘裡的
-   * 垃圾車，中心點確實好端端地在鋪面上。
+   * A landfill's truck inside the waste mound and a sewage plant's truck inside a basin are one
+   * hole: **no check asks whether anything else occupies the spot a vehicle parks on**. The
+   * "parked on paving" case only asks which decal the vehicle's centre lands on, and a refuse
+   * truck buried entirely in a mound has its centre sitting quite properly on paving.
    *
-   * 車的佔地用**實際的幾何**算（旋轉之後的包圍盒）：手寫一份車輛尺寸表的話，
-   * 哪天有人把卡車改長，這條檢查會繼續拿舊的數字算。
+   * A vehicle's footprint is computed from the **actual geometry**, the rotated bounding box:
+   * with a hand-written dimension table, lengthening the truck would leave this check working
+   * from the old numbers.
    *
-   * `overhead` 不算 —— 雨棚本來就是給車停在底下的。樹也不算：樹冠在 6 m 高，
-   * 車停在樹下是對的。
+   * `overhead` does not count — a canopy is there for vehicles to park under. Nor do trees: a
+   * crown at 6 m is something a vehicle correctly parks beneath.
    */
   it('should park every vehicle in the clear', () => {
     const span = (a0: number, a1: number, b0: number, b1: number) =>
@@ -180,32 +190,33 @@ describe.each(civicTypesDone())('%s 的 plan', (type) => {
   });
 
   /**
-   * 共用圖元也不准長在量體裡。
+   * Shared primitives may not grow inside a mass either.
    *
-   * 「車不准卡進東西」那條抓的是車，而路燈、樹、管架、圍籬走的是另一層
-   * （`fixtures`）—— 同一個錯在那一層完全沒有人擋。一支從廠房的牆裡長出來的
-   * 路燈與一台停在土丘裡的垃圾車是同一件事。
+   * The "no vehicle embedded in anything" case catches vehicles, while lamps, trees, pipe racks
+   * and fences live in another layer (`fixtures`) where the same mistake is unguarded. A lamp
+   * growing out of a plant's wall and a refuse truck parked inside a mound are the same thing.
    *
-   * 三條例外，每一條都是「那樣才對」而不是「先放過」：
+   * Three exceptions, each of them correct rather than a temporary pass:
    *
-   * - **離地的量體不算。** 樹冠伸到 11 m 高的屋簷底下、花圃站在 20 m 高的
-   *   塔頂帽子下面 —— 那些在平面上重疊，在空間裡差了十幾公尺。
-   * - **`PART_GROUND` 的量體不算。** 月台、碼頭平台、停機坪甲板是給人站的
-   *   鋪面：站在上面的路燈是對的。
-   * - **點狀圖元只比中心。** 樹的 `propExtent` 回報的是**樹冠**半徑，而樹幹
-   *   才是它佔的地。線狀的（管架、綠籬、單車架）則整條都要比 —— 一條穿牆
-   *   而過的管架，中心可能好端端地在牆外。
+   * - **Raised masses do not count.** A crown reaching under an 11 m eave, or a flower bed
+   *   standing beneath a cap 20 m up: those overlap in plan and are metres apart in space.
+   * - **`PART_GROUND` masses do not count.** Platforms, quay decks and aprons are paving for
+   *   people to stand on, and a lamp standing on one is correct.
+   * - **Point primitives are compared by centre only.** A tree's `propExtent` reports the
+   *   **crown** radius while its trunk is what it occupies. Linear ones — pipe racks, hedges,
+   *   bike racks — are compared along their whole length, since a pipe rack running through a
+   *   wall can have its centre sitting quite properly outside it.
    */
   it('should not grow a fixture inside a building', () => {
     const span = (a0: number, a1: number, b0: number, b1: number) =>
       Math.min(a1, b1) - Math.max(a0, b0) > 1e-9;
-    /** 這些是「一根站在地上的東西」，佔地就是它自己那一點。 */
+    /** These stand on the ground as a single upright, occupying only their own point. */
     const POINTY = new Set(['tree', 'shrub', 'topiary', 'flowerBed', 'lamp',
       'bin', 'bollard', 'hydrant', 'mailbox', 'drum']);
     const GROUND_LEVEL = 0.5 / METRES_PER_CELL;
 
     for (const f of plan.fixtures) {
-      // 圍籬沿著佔地邊界跑一整條，本來就會經過牆邊。
+      // A fence runs the whole plot boundary and passes walls by design.
       if (f.kind === 'fence') continue;
       const e = POINTY.has(f.kind) ? { x: 0, z: 0 } : propExtent(f);
       for (const [i, v] of [...plan.massing, ...plan.props].entries()) {
@@ -219,18 +230,19 @@ describe.each(civicTypesDone())('%s 的 plan', (type) => {
   });
 
   it('should not paint a marking in grass', () => {
-    // `lawn` 走的是 `PART_FOLIAGE` 分支 —— 它整個不看 `shade`。所以一條標成
-    // `lawn` 的標線是**綠色的**，而 `shade: 1.0`（白漆）還好端端寫在那裡。
-    // 兩個欄位互相矛盾而沒有人報錯，是這個資料結構最安靜的失敗方式。
+    // `lawn` takes the `PART_FOLIAGE` branch, which ignores `shade` entirely. So a marking tagged
+    // `lawn` is **green** while `shade: 1.0`, white paint, still sits there in the data. Two
+    // fields contradicting each other with nothing reported is this structure's quietest failure
+    // mode.
     for (const d of plan.decals.filter(x => x.layer === 'mark')) {
       expect(d.lawn, `${type} 有一條長在草裡的標線 —— 它會是綠的`).toBeFalsy();
     }
   });
 
   it('should keep the overhead layer above head height', () => {
-    // 雨棚、月台頂、招牌都住在這一層，而它們全部要高過行人。2.2 m 是
-    // `OVERHEAD_CLEARANCE`。低於它的東西在等角視角下看起來沒事，走近才發現
-    // 它切過人的頭。
+    // Canopies, platform roofs and signage all live in this layer and all have to clear a
+    // pedestrian. 2.2 m is `OVERHEAD_CLEARANCE`. Anything lower looks fine in an isometric view
+    // and turns out, up close, to cut through people's heads.
     for (const v of plan.overhead) {
       const h = v.y0 * METRES_PER_CELL;
       expect(h, `${type} 的 ${v.tag ?? '懸挑'} 只有 ${h.toFixed(1)} m 高 —— 會打到人`)
@@ -238,11 +250,11 @@ describe.each(civicTypesDone())('%s 的 plan', (type) => {
     }
   });
 
-  /** 這一條就是 BUG-238 本身 —— 做完了夜裡還是全黑的話它要轉紅。 */
+  /** This case is BUG-238 itself: if everything is still dark at night when it is done, it turns red. */
   it('should light something at night', () => {
-    // 兩個來源都要看：自訂量體標 PART_LAMP 的，以及共用圖元裡的路燈
-    // （`geometry/props` 的 `lamp`，它的燈頭本來就是 PART_LAMP）。
-    // 只看其中一邊的話，一棟全部改用共用路燈的建築會被誤判成「沒有燈」。
+    // Both sources count: custom masses tagged PART_LAMP, and the shared primitive lamp
+    // (`geometry/props`'s `lamp`, whose head is PART_LAMP already). Checking one alone, a building
+    // that switched entirely to shared lamps would read as having none.
     const custom = all.filter(v => isLamp(partOf(v))).length;
     const shared = plan.fixtures.filter(f => f.kind === 'lamp').length;
     expect(custom + shared, `${type} 一盞燈都沒有 —— 夜裡它會是一塊黑`)
@@ -250,8 +262,8 @@ describe.each(civicTypesDone())('%s 的 plan', (type) => {
   });
 
   it('should not tag a whole lamp post as glowing', () => {
-    // 整支標成發光的話，夜裡會看到一根從地上亮到頂的柱子（BUG-230 的教訓）。
-    // 燈頭是 PART_LAMP，燈桿是 PART_DETAIL。
+    // Tagging the whole thing as glowing gives a post lit from the ground to the top at night
+    // (the lesson of BUG-230). The head is PART_LAMP and the pole is PART_DETAIL.
     for (const v of all.filter(x => isLamp(partOf(x)))) {
       const h = (v.y1 - v.y0) * METRES_PER_CELL;
       expect(h, `${type} 有一個 ${h.toFixed(1)} m 高的發光體 —— 那是燈桿不是燈頭`)
@@ -260,8 +272,8 @@ describe.each(civicTypesDone())('%s 的 plan', (type) => {
   });
 
   it('should sit on the ground', () => {
-    // 最低的量體要貼地。整棟浮空 0.6 m 是 BUG-224 的形狀，而它在等角視角下
-    // 只表現為「陰影怪怪的」。
+    // The lowest mass sits on the ground. A whole building floating 0.6 m up is the shape of
+    // BUG-224, and in an isometric view it reads only as "the shadow looks odd".
     const lowest = Math.min(...plan.massing.map(v => v.y0));
     expect(lowest, `${type} 的量體整批離地`).toBeLessThanOrEqual(1e-6);
   });
@@ -284,8 +296,9 @@ describe.each(civicTypesDone())('%s 的 plan', (type) => {
   });
 
   it('should give the shader a usable seed', () => {
-    // aSeed.x 是樓層節奏，shader 端是 mix(MIN, MAX, aSeed.x) —— 超出 [0,1]
-    // 會外插出不存在的樓高，而立面窗格與量體的樓板線就對不上了。
+    // aSeed.x is the floor rhythm, which the shader reads as mix(MIN, MAX, aSeed.x). Outside
+    // [0,1] it extrapolates to a storey height that does not exist, and the facade's window panes
+    // stop lining up with the mass's floor lines.
     for (const [i, s] of plan.seed.entries()) {
       expect(s, `${type} 的 seed[${i}] 不在 [0,1]`).toBeGreaterThanOrEqual(0);
       expect(s).toBeLessThanOrEqual(1);

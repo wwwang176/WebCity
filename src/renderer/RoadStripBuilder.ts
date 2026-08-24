@@ -11,7 +11,7 @@ import {
 import { SIDEWALK_WIDTH, CW_OFFSET } from '../core/traffic/SidewalkGraph';
 import { STOP_LINE_OFFSET } from '../core/traffic/VehicleLookahead';
 
-/** 路寬的家在 `core/road/types`。這裡轉出去，既有的 import 不必動。 */
+/** Road widths live in `core/road/types`. Re-exported here so existing imports do not change. */
 export { ROAD_WIDTHS };
 
 export interface RoadCell {
@@ -26,7 +26,7 @@ export interface Strip {
   z: number;
   sx: number;
   sz: number;
-  /** 繞 Y 軸轉幾弧度。直路是 0，只有彎道的圓弧段會用到。 */
+  /** Rotation about the Y axis in radians. 0 on straight road; only bend arc segments use it. */
   rotY: number;
   roadType: number;
   srcX: number;
@@ -38,7 +38,7 @@ export interface SidewalkStrip {
   z: number;
   sx: number;
   sz: number;
-  /** 繞 Y 軸轉幾弧度。直路是 0，只有彎道的圓弧段會用到。 */
+  /** Rotation about the Y axis in radians. 0 on straight road; only bend arc segments use it. */
   rotY: number;
   srcX: number;
   srcY: number;
@@ -101,28 +101,30 @@ function countBits(n: number): number {
 }
 
 /**
- * 九十度彎用幾段折線逼近四分之一圓。
+ * How many straight segments approximate the quarter circle of a 90 degree bend.
  *
- * 五段每段 18°，外緣的凹陷（矢高）是 R×(1−cos9°) ≈ 0.012 格 —— 比路緣本身還窄，
- * 眼睛看不出來。再多段就只是白花實例數:路面與路緣都是共用一池預留的實例，
- * `RoadInstanceTracker` 滿了會靜靜地整格跳過。
+ * Five segments of 18 degrees each leave an outer-edge sagitta of R x (1 - cos 9 degrees), about
+ * 0.012 cells — narrower than the kerb itself and invisible to the eye. More segments only spend
+ * instances: road surface and kerbs draw from one shared reserved pool, and a full
+ * `RoadInstanceTracker` silently skips the whole cell.
  */
 export const BEND_ARC_SEGMENTS = 5;
 
 /**
- * 路緣要更細。
+ * Kerbs need finer segmentation.
  *
- * 每一段是直的長方形貼著圓弧，所以**兩端的角**會凸到圓外面，凸出量是
- * `R×(1/cos(θ/2)−1)`。路緣的半徑比路面大（0.94 對 0.8），而它自己只有 0.14 寬 ——
- * 五段的話凸出 0.012，接近路緣寬的一成，接在直路那條筆直的路緣上就是一圈看得見的
- * 扇貝邊。十段把它壓到 0.003。
+ * Each segment is a straight rectangle following the arc, so **its two ends** bulge outside the
+ * circle by `R x (1/cos(theta/2) - 1)`. A kerb's radius is larger than the road surface's (0.94
+ * against 0.8) while the kerb itself is only 0.14 wide: at five segments the bulge is 0.012,
+ * close to a tenth of the kerb's width, and meeting the straight kerb of a straight road it
+ * reads as a visible scalloped edge. Ten segments bring it down to 0.003.
  *
- * 柏油不需要這麼多段:它凸出的部分被路緣蓋住。段數分開才不會白花實例 —— 兩邊都是
- * 從同一池預留的實例拿的。
+ * Asphalt does not need this many: its bulge is covered by the kerb. Separate counts avoid
+ * spending instances for nothing, since both draw from the same reserved pool.
  */
 export const BEND_KERB_SEGMENTS = 10;
 
-/** 剛好兩個方向且不是對開的一組 —— 也就是 L 形彎。 */
+/** Exactly two directions that are not opposite each other: an L bend. */
 function isLBend(flags: number): boolean {
   if (countBits(flags) !== 2) return false;
   const hasN = (flags & RoadDirection.NORTH) !== 0;
@@ -133,25 +135,29 @@ function isLBend(flags: number): boolean {
 }
 
 /**
- * 沿著彎道鋪一圈等寬的帶子。
+ * Lays a constant-width band around a bend.
  *
- * 每一段是一個貼著圓弧的**直的**長方形。直的長方形蓋不滿彎的環面，所以要補 ——
- * 而缺口全部在**內側**，補的方向因此是單邊的:
+ * Each segment is a **straight** rectangle following the arc. A straight rectangle cannot fill a
+ * curved annulus, so it has to be extended — and every gap is on the **inside**, which makes the
+ * extension one-sided:
  *
- * - 一段負責 θ 的角度。它兩端在半徑方向只夠到 `(R−w/2)·cos(θ/2)`，比環面的內緣
- *   還淺 —— 隔壁那一段對稱地也只夠到同一個地方，於是**兩段都蓋不到**那個角落。
- *   外側相反:δ=0 時剛好夠到 `R+w/2`，兩端還更遠。
- * - 所以外緣就放在 `R+w/2`（一分不多），內緣往內退到蓋得滿為止，長方形的中心
- *   因此不在 R 上而是略微偏內。
- * - 長度量到**外緣**的交點，不是中線的。用中線算的話外緣會張開一個楔形的洞 ——
- *   中線是整條帶子上唯一沒有縫的線，而那正是原本那條測試唯一檢查的地方。
+ * - One segment covers theta of arc. Its ends reach only `(R - w/2) * cos(theta/2)` in the
+ *   radial direction, short of the annulus's inner edge, and the neighbouring segment reaches
+ *   the same place symmetrically, so **neither covers** that corner. Outside it is the reverse:
+ *   at delta = 0 it reaches exactly `R + w/2`, and its ends reach further still.
+ * - So the outer edge sits at `R + w/2` exactly, the inner edge retreats inward until the band
+ *   is covered, and the rectangle's centre therefore sits slightly inside R rather than on it.
+ * - The length is measured to the **outer** edge's intersection, not the centre line's. Measured
+ *   at the centre line, the outer edge opens a wedge-shaped hole, and the centre line is the one
+ *   line along the whole band that never has a gap.
  *
- * 結果:外側輪廓完全準確，多出來的部分朝內，藏在隔壁那條帶子底下（路緣往內咬進
- * 柏油 0.01 格，反而把殘留的接縫蓋掉）。
+ * The result: the outer contour is exact, the excess points inward, and it hides under the
+ * neighbouring band (the kerb bites 0.01 cells into the asphalt, covering any residual seam).
  *
- * 幾何與 `emitLBendDashes` 同一套 —— 彎心在格子的角上，角度 0 指向進入的那一邊，
- * π/2 指向離開的那一邊。虛線與雙黃線早就繞著這個圓心畫了，路面跟上之後線才會
- * 落在柏油正中間。
+ * The geometry matches `emitLBendDashes`: the bend's centre is on the cell's corner, angle 0
+ * points at the entering side and pi/2 at the leaving side. Dashes and double yellow lines are
+ * already drawn about that centre, and only with the road surface following them do the lines
+ * land in the middle of the asphalt.
  */
 function arcBand(
   r: RoadCell, radius: number, width: number, segments: number,
@@ -178,7 +184,7 @@ function arcBand(
       z: r.y + cornerZ + dirZ * mid * sinA,
       sx: halfW * 2,
       sz: halfLen * 2,
-      // 切線方向。與 `emitLBendDashes` 的算法一致。
+      // Tangent direction, computed the same way as in `emitLBendDashes`.
       rotY: Math.atan2(-dirX * sinA, dirZ * cosA),
     });
   }
@@ -230,8 +236,9 @@ export function buildRoadStrips(
       horizW = ROAD_WIDTHS[(nE ?? nW)?.roadType ?? r.roadType] ?? ownW;
     }
 
-    // 彎道的柏油走圓弧。半徑 0.5 = 彎心到路心線，帶寬就是路寬 —— 兩端剛好接上
-    // 北邊界與東邊界（各在 ±半幅之內），跟鄰格對得起來。
+    // A bend's asphalt follows the arc. Radius 0.5 is the bend centre to the road's centre line,
+    // and the band width is the road width, so both ends meet the north and east boundaries
+    // within half a width and line up with the neighbouring cells.
     if (isLBend(r.roadFlags)) {
       for (const seg of arcBand(r, 0.5, ownW, BEND_ARC_SEGMENTS)) {
         strips.push({ ...seg, roadType: r.roadType, srcX: r.x, srcY: r.y });
@@ -302,12 +309,12 @@ export function buildSidewalkStrips(cells: RoadCell[]): SidewalkStrip[] {
       horizW = (hasE || hasW) ? (ROAD_WIDTHS[(nE ?? nW)?.roadType ?? r.roadType] ?? ownW) : ownW;
     }
 
-    // 彎道只有外側需要路緣 —— 內側兩邊都是路。
+    // A bend needs a kerb on the outside only; both inner sides are road.
     //
-    // 半徑取到**柏油外緣**，不是外緣再加半條路緣。直路的路緣是騎在柏油邊上的
-    // （`x = ±vHalf`），內半條壓在路面那塊板子底下看不見，所以露出來的只有
-    // `SIDEWALK_WIDTH/2`。整條擺到柏油外面的話，彎道的路緣會**看起來寬一倍**，
-    // 而且每一種路寬都一樣寬一倍。
+    // The radius reaches the **asphalt's outer edge**, not that edge plus half a kerb. A straight
+    // road's kerb straddles the asphalt edge (`x = +/-vHalf`) with its inner half hidden under
+    // the road slab, so only `SIDEWALK_WIDTH/2` shows. Placed entirely outside the asphalt, a
+    // bend's kerb would **look twice as wide**, and equally twice as wide at every road width.
     if (isLBend(r.roadFlags)) {
       const radius = 0.5 + ownW / 2;
       for (const seg of arcBand(r, radius, SIDEWALK_WIDTH, BEND_KERB_SEGMENTS)) {
@@ -334,21 +341,22 @@ export function buildSidewalkStrips(cells: RoadCell[]): SidewalkStrip[] {
   return strips;
 }
 
-/** 一條虛線在直路上分成幾段。L 形彎是 3 段，所以直路是上限。 */
+/** How many dashes one divider is split into on a straight road. An L bend uses 3, so the straight case is the maximum. */
 const DASHES_PER_DIVIDER = 4;
 
-/** 這種路的單向車道之間有幾條虛線（左右兩側合計）。只有一條車道時是中心虛線。 */
+/** How many dividers run between one direction's lanes on this road type, both sides combined. With one lane it is the centre dash. */
 function dividerCount(roadType: number): number {
   const lanes = roadType === RoadType.ONE_WAY ? 1 : getLaneCount(roadType);
   return lanes === 1 ? 1 : 2 * (lanes - 1);
 }
 
 /**
- * 一格最多畫幾條車道虛線。
+ * The maximum number of lane dashes one cell draws.
  *
- * 兩個 renderer 的 `InstancedMesh` 容量以它為準。**算出來而不是寫死**：
- * `RoadInstanceTracker` 放不下時回傳 −1，呼叫端就整格跳過 —— 超出的虛線是
- * 靜靜地消失，不會報錯。六車道從一格 8 條變成 16 條時就撞上了原本的 14。
+ * Both renderers size their `InstancedMesh` from it. **Computed rather than hard-coded**: a full
+ * `RoadInstanceTracker` returns -1 and the caller skips the whole cell, so dashes beyond the
+ * limit vanish silently with nothing reported. Six-lane roads going from 8 dashes per cell to 16
+ * ran straight into a hard-coded 14.
  */
 export const MAX_LANE_MARKINGS_PER_CELL = DASHES_PER_DIVIDER * Math.max(
   ...Object.keys(ROAD_WIDTHS).map(t => dividerCount(Number(t))),
@@ -358,10 +366,11 @@ export interface LampPosition {
   x: number;
   z: number;
   /**
-   * 光往哪一邊灑。局部 +Z 轉過這個角度之後指向路面。
+   * Which way the light falls. Local +Z rotated by this angle points at the road surface.
    *
-   * 地面的路燈是一整圈光暈，因為它四周都是地。高架的燈站在橋面邊緣，整圈的話
-   * 有一半會灑到橋外的空中 —— 所以那邊畫的是半圓，而半圓往哪邊開就靠這個角度。
+   * A ground-level lamp casts a full ring of glow, because there is ground all around it. An
+   * elevated lamp stands at the deck's edge, where half of a full ring would fall into open air
+   * beyond the bridge, so that one draws a half circle, and this angle is what points it.
    */
   rotY: number;
   srcX: number;
@@ -369,14 +378,16 @@ export interface LampPosition {
 }
 
 /**
- * 路燈站在哪。
+ * Where street lamps stand.
  *
- * 兩個 renderer（地面與高架）本來各寫一份一模一樣的內嵌邏輯 —— 而彎道要改的正是
- * 這段，改一邊就會漂走。搬到這裡順便可以測。
+ * Both renderers, ground level and elevated, would otherwise carry identical inline copies of
+ * this logic — and bends are exactly what changes here, so one copy would drift. Here it is also
+ * testable.
  *
- * 直路:每一個沒有路的方向擺一盞，位置在那一側路緣的正中央。
- * 彎道:兩盞都擺在**外側的圓弧上**。照直路的規則擺的話，燈會落在南邊界與西邊界的
- * 中點，離彎心 1.003 —— 而路緣只到 0.87，燈整個站到草地上去。
+ * Straight road: one lamp per direction without road, at the centre of that side's kerb.
+ * Bend: both lamps sit **on the outer arc**. Placed by the straight-road rule they land at the
+ * midpoints of the south and west boundaries, 1.003 from the bend's centre, while the kerb only
+ * reaches 0.87, leaving the lamps standing on grass.
  */
 export function buildLampPositions(cells: RoadCell[]): LampPosition[] {
   const lamps: LampPosition[] = [];
@@ -390,8 +401,8 @@ export function buildLampPositions(cells: RoadCell[]): LampPosition[] {
       const hasE = (r.roadFlags & RoadDirection.EAST) !== 0;
       const { dirX, dirZ, cornerX, cornerZ } = getLBendParams(hasN, hasE);
       const radius = 0.5 + half;
-      // 四分之一圓上的 1/4 與 3/4 處。直路是一側一盞，彎道的外側只有一條弧，
-      // 擺兩盞才不會讓轉角變暗。
+      // At 1/4 and 3/4 along the quarter circle. A straight road takes one lamp per side, while a
+      // bend has only one outer arc, and two lamps keep the corner from going dark.
       for (const t of [0.25, 0.75]) {
         const a = t * (Math.PI / 2);
         const ux = dirX * Math.cos(a);
@@ -399,7 +410,7 @@ export function buildLampPositions(cells: RoadCell[]): LampPosition[] {
         lamps.push({
           x: r.x + cornerX + radius * ux,
           z: r.y + cornerZ + radius * uz,
-          // 內側是彎心的方向，不是某一個座標軸。
+          // Inward means toward the bend's centre, not along a coordinate axis.
           rotY: Math.atan2(-ux, -uz),
           srcX: r.x, srcY: r.y,
         });
@@ -411,7 +422,8 @@ export function buildLampPositions(cells: RoadCell[]): LampPosition[] {
     const hasS = (r.roadFlags & RoadDirection.SOUTH) !== 0;
     const hasE = (r.roadFlags & RoadDirection.EAST) !== 0;
     const hasW = (r.roadFlags & RoadDirection.WEST) !== 0;
-    // rotY 一律指回格子中心 —— 燈在哪一側，光就往哪一側的反方向灑。
+    // rotY always points back at the cell's centre: whichever side a lamp stands on, its light
+    // falls the opposite way.
     if (!hasN) lamps.push({ x: r.x, z: r.y - half, rotY: 0, srcX: r.x, srcY: r.y });
     if (!hasS) lamps.push({ x: r.x, z: r.y + half, rotY: Math.PI, srcX: r.x, srcY: r.y });
     if (!hasW) lamps.push({ x: r.x - half, z: r.y, rotY: Math.PI / 2, srcX: r.x, srcY: r.y });
@@ -442,14 +454,16 @@ export function buildLaneMarkingData(cells: RoadCell[]): LaneMarking[] {
     const hasE = (r.roadFlags & RoadDirection.EAST) !== 0;
     const hasW = (r.roadFlags & RoadDirection.WEST) !== 0;
 
-    // 虛線畫在相鄰兩條車道之間，位置從 `getLaneWidth` 來 —— 與車道圖同一個
-    // 來源。原本是 `路寬/4` 且不管幾車道都只畫一條：四車道剛好對上（兩條車道
-    // 時 `w/4` 正好等於車道寬），六車道則是一條虛線配三排車，而且那條線不在
-    // 任何兩排車之間。
+    // Dashes are drawn between adjacent lanes at positions from `getLaneWidth`, the same source
+    // the lane graph uses. `road width / 4` with one dash regardless of lane count happens to
+    // line up on four-lane roads, where `w/4` equals the lane width at two lanes per direction,
+    // and gives a six-lane road one dash for three rows of traffic, with that dash between no two
+    // rows at all.
     //
-    // 單行道除外。它所有車道同向，但 `LaneGraph` 把車全排在中心線右側，只用到
-    // 半邊路面 —— 車道位置本身還沒對，虛線跟著它畫只會把錯的地方畫出來。維持
-    // 原本的中心虛線，等錨點修好再說（TODO.md）。
+    // One-way roads are excepted. All their lanes run the same way, but `LaneGraph` packs the
+    // vehicles to the right of the centre line, using half the road surface: the lane positions
+    // themselves are not right yet, and drawing dashes from them only draws the wrong place. The
+    // centre dash stays until the anchors are fixed (TODO.md).
     const laneWidth = getLaneWidth(r.roadType);
     const offsets = dividerCount(r.roadType) === 1
       ? [0]
