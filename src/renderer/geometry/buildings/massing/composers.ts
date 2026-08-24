@@ -5,37 +5,41 @@ import type { Dimensions } from './dimensions';
 import type { Rng } from './rng';
 
 /**
- * 量體組合器 —— 把一組尺寸攤成一串盒子。
+ * Massing composers: they expand a set of dimensions into a run of boxes.
  *
- * 原型不是每個都手寫一份幾何，而是「組合器 + 參數」。二十幾個原型手寫會是
- * 二十幾份幾乎一樣的座標算術，而其中任何一份算錯都只表現為「某個變體看起來
- * 怪怪的」。
+ * A prototype is a composer plus parameters rather than its own hand-written geometry. Two dozen
+ * prototypes written by hand would be two dozen nearly identical pieces of coordinate arithmetic,
+ * and any one of them getting it wrong shows up only as "one variant looks odd".
  *
- * 每個組合器守三條不變式（`MassingComposers.test.ts` 逐條檢查）：
- *   1. 所有量體落在 `dims` 給的基地內 —— 基地已經確認過不越過行人包絡線
- *   2. 兩兩不重疊 —— 重疊會產生看不見的內部面
- *   3. 最高點正好等於 `dims.height` —— 高度由 `dimensions` 決定
+ * Every composer holds three invariants, checked one by one in `MassingComposers.test.ts`:
+ *   1. every mass falls within the footprint `dims` gives, which has already been confirmed not
+ *      to cross the pedestrian envelope
+ *   2. no two masses overlap, since an overlap creates invisible interior faces
+ *   3. the highest point equals `dims.height` exactly, since height is `dimensions`' to decide
  */
 export type Composer = (dims: Dimensions, rng: Rng) => Volume[];
 
-/** 單一量體。最簡單的那一個，也是所有退化情形的退路。 */
+/** A single mass. The simplest one, and the fallback for every degenerate case. */
 export function single(dims: Dimensions): Volume[] {
   return [{ x: 0, z: 0, w: dims.w, d: dims.d, y0: 0, y1: dims.height }];
 }
 
 /**
- * 主屋 + 偏屋。車庫、工具間、廠區的辦公角都是這個形狀。
+ * A main block plus a wing. Garages, tool sheds and an industrial site's office corner all take
+ * this shape.
  *
- * 偏屋靠 +x 且靠前（+z）—— 車庫開在前院那一側才合理。
+ * The wing sits toward +x and toward the front (+z): a garage only makes sense on the front yard
+ * side.
  */
 export function mainPlusWing(wingFrac: number, wingHeightFrac: number): Composer {
   return (dims, rng) => {
     const wingW = dims.w * wingFrac;
     const mainW = dims.w - wingW;
     const wingD = dims.d * (0.55 + 0.25 * rng());
-    // 下限是**半層樓**而不是一層樓：建築本身只有一層時，「至少一層樓」會讓
-    // 偏屋與主屋等高 —— 整個組合器退化成一個方盒，輪廓與 single 完全相同。
-    // 1.6 m 高的側棟是儲藏間，完全合理。
+    // The floor is **half a storey** rather than a full one: on a single-storey building, "at
+    // least one storey" makes the wing level with the main block and the whole composer degenerates
+    // into a box whose silhouette matches single's. A 1.6 m side structure is a store room and is
+    // entirely reasonable.
     const wingH = Math.min(
       dims.height - 1e-6,
       Math.max(dims.floorHeight * 0.5, dims.height * wingHeightFrac),
@@ -51,9 +55,11 @@ export function mainPlusWing(wingFrac: number, wingHeightFrac: number): Composer
 }
 
 /**
- * L 形平面。長翼沿北緣、短翼沿西緣，兩者在西北角相接。
+ * An L-shaped plan: the long wing along the north edge, the short one along the west, meeting at
+ * the north-west corner.
  *
- * 這是最強的不對稱形狀：重心明顯偏離包圍盒中心，所以四向旋轉真的是四種面貌。
+ * The strongest asymmetric shape available: its centroid sits clearly off the bounding box's
+ * centre, so four rotations really do give four faces.
  */
 export function lShape(armFrac: number): Composer {
   return (dims) => {
@@ -71,10 +77,11 @@ export function lShape(armFrac: number): Composer {
 }
 
 /**
- * 裙樓 + 塔身。`offsetFrac` 為 0 時塔身置中（對稱），接近 1 時塔身推到裙樓
- * 邊緣（不對稱）—— 同一個組合器因此涵蓋兩種面貌。
+ * A podium plus a tower. At `offsetFrac` 0 the tower is centred and symmetric; near 1 it is
+ * pushed to the podium's edge and asymmetric, so one composer covers both faces.
  *
- * 樓層不足兩層時退回單一量體：一層樓的裙樓會把塔身壓成零高。
+ * Below two storeys it falls back to a single mass: a one-storey podium leaves the tower zero
+ * height.
  */
 export function podiumTower(
   podiumFloors: number, towerFrac: number, offsetFrac: number,
@@ -94,17 +101,19 @@ export function podiumTower(
 }
 
 /**
- * 圓塔。整棟一根圓柱，沒有裙樓。
+ * A round tower: one cylinder for the whole building, with no podium.
  *
- * 這是階段 2C-1 弄丟的 `makeComHighV2`（八角柱身 + 圓盤簷）。`assemble` 的
- * 圓柱是 8 段，所以它實際上是八角柱 —— 與原本那一版一樣。
+ * `assemble`'s cylinder is 8-sided, so it is really an octagonal prism, matching the earlier
+ * `makeComHighV2` of an octagonal shaft plus a disc eave.
  *
- * **寬深取短邊而不是各自吃 `dims.w` / `dims.d`**：兩者是分別抖動的，直接用
- * 會得到橢圓柱，而圓形之所以是特色正因為它是圓的。取短邊也順便保證它不會
- * 越過行人包絡線。
+ * **Width and depth take the shorter side rather than `dims.w` and `dims.d` separately**: the two
+ * are jittered independently, and using both directly gives an elliptical cylinder, while being
+ * round is the whole point of the shape. Taking the shorter side also guarantees it does not
+ * cross the pedestrian envelope.
  *
- * 它是完全旋轉對稱的 —— 四向旋轉在它身上生不出任何變化，所以在原型表裡
- * 必須排在最後，不能占掉不對稱變體的配額（見 `prototypes.ts` 的表頭）。
+ * It is fully rotationally symmetric, so four rotations produce no variation at all on it, and in
+ * the prototype table it has to come last and must not take an asymmetric variant's slot (see the
+ * header in `prototypes.ts`).
  */
 export function roundTower(diameterFrac: number): Composer {
   return (dims) => {
@@ -112,9 +121,10 @@ export function roundTower(diameterFrac: number): Composer {
     const capH = dims.floorHeight * 0.12;
     return [
       { x: 0, z: 0, w: t, d: t, y0: 0, y1: dims.height - capH, shape: 'cylinder' },
-      // 略微外挑的圓盤簷。放在量體裡而不是交給屋頂形式 —— `roofFor` 是按
-      // variantIndex 分層的，圓塔目前落在 `flat`（不產生任何屋頂量體），
-      // 靠屋頂那條路它永遠拿不到簷板。這片簷是原本 makeComHighV2 的 cap。
+      // A slightly projecting disc eave. It is a mass rather than a roof form: `roofFor` is
+      // layered by variantIndex and the round tower currently falls on `flat`, which produces no
+      // roof mass at all, so through the roof path it would never get an eave. This is the cap
+      // from the earlier makeComHighV2.
       {
         x: 0, z: 0, w: t * 1.06, d: t * 1.06,
         y0: dims.height - capH, y1: dims.height,
@@ -124,7 +134,7 @@ export function roundTower(diameterFrac: number): Composer {
   };
 }
 
-/** 逐層退縮。對稱，但輪廓與單一量體明顯不同。 */
+/** Stepped setbacks. Symmetric, but with a silhouette clearly different from a single mass. */
 export function setback(steps: number): Composer {
   return (dims) => {
     if (dims.floors < 2) return single(dims);
@@ -145,9 +155,10 @@ export function setback(steps: number): Composer {
 }
 
 /**
- * U 形：兩翼加一道背牆，中央留槽。
+ * A U shape: two wings plus a back wall, leaving a notch in the middle.
  *
- * 重心對稱，但中央的槽在俯視高度圖裡是實心的 0 —— 輪廓與其他組合器都不同。
+ * Its centroid is symmetric, but the notch reads as a solid 0 in a plan height map, giving it a
+ * silhouette unlike any other composer's.
  */
 export function notch(notchFrac: number): Composer {
   return (dims) => {
@@ -169,8 +180,8 @@ export function notch(notchFrac: number): Composer {
 }
 
 /**
- * 雙塔加低矮連接體。兩座塔**刻意不等高** —— 等高的雙塔是對稱的，
- * 旋轉又變回無操作。
+ * Twin towers with a low link between them. The two are **deliberately unequal in height**: equal
+ * towers are symmetric and rotation becomes a no-op again.
  */
 export function twin(gapFrac: number): Composer {
   return (dims) => {
@@ -181,7 +192,8 @@ export function twin(gapFrac: number): Composer {
     return [
       { x: -dims.w / 2 + towerW / 2, z: 0, w: towerW, d: dims.d, y0: 0, y1: dims.height },
       {
-        // 兩座塔差三成高。差太少的話重心幾乎不偏，旋轉又變回無操作。
+        // The towers differ by 30% in height. Any less and the centroid barely shifts, and
+        // rotation is a no-op again.
         x: dims.w / 2 - towerW / 2, z: 0, w: towerW, d: dims.d,
         y0: 0, y1: dims.height * 0.68,
       },
@@ -193,18 +205,19 @@ export function twin(gapFrac: number): Composer {
   };
 }
 
-/** 立管露在屋脊之上的最小高度，一層樓的 15%。低於這個就只是「屋頂上有個包」。 */
+/** The minimum a stack rises above the ridge: 15% of a storey. Below that it is a bump on the roof. */
 const STACK_REVEAL = 0.15;
 
 /**
- * 廠房頂面的高度。
+ * The shed's top surface height.
  *
- * 三個限制夾出來的：
- *   下限 0.35 層樓 —— 再低就不是廠房了
- *   上限 `height − 屋脊 − 露出量` —— 立管必須看得見地高過屋脊。一層樓的
- *          建築配 0.62 的比例會讓屋脊爬到 1.07 × 高度，把煙囪整根埋掉，
- *          而工業的高度表裡一層樓的變體很常見（容差是 ±3.1 m）
- *   目標 `height × frac`
+ * Clamped between three limits:
+ *   a floor of 0.35 storeys, below which it is no longer a shed
+ *   a ceiling of `height - ridge - reveal`, because the stack has to rise visibly above the
+ *          ridge. On a single-storey building a fraction of 0.62 sends the ridge to 1.07 times
+ *          the height and buries the stack entirely, and single-storey variants are common in
+ *          the industrial height table, whose tolerance is +/-3.1 m
+ *   a target of `height * frac`
  */
 function shedTop(dims: Dimensions, frac: number): number {
   const cap = dims.height - dims.floorHeight * (ROOF_PITCH_FRAC + STACK_REVEAL);
@@ -215,15 +228,17 @@ function shedTop(dims: Dimensions, frac: number): number {
 }
 
 /**
- * 廠房 + 落地立管（煙囪、筒倉、水塔）。
+ * A shed plus a ground-standing stack: chimney, silo or water tower.
  *
- * 工業的等級階梯**不**表現在高度上 —— 現代廠房幾乎都是單層挑高、鋪滿基地，
- * 多層工廠很少見（見 `TARGET_HEIGHTS_M` 的註解）。所以目標高度由立管去達成，
- * 廠房本體只佔其中一部分：一個 9 m 高的煙囪配 5.6 m 的廠房，遠比一個 9 m 的
- * 方盒像工廠。
+ * Industry's level ladder does **not** show in height — modern plants are almost all
+ * single-storey with high ceilings, covering the plot, and multi-storey factories are rare (see
+ * the note on `TARGET_HEIGHTS_M`). So the stack reaches the target height and the shed itself
+ * takes only part of it: a 9 m stack beside a 5.6 m shed reads far more like a factory than a 9 m
+ * box.
  *
- * 立管標 `PART_DETAIL` 而不是 `PART_WALL`：工業的立面 shader 會在牆上畫浪板
- * 與一整排大捲門，而煙囪上不該有捲門。
+ * The stack takes `PART_DETAIL` rather than `PART_WALL`: the industrial facade shader draws
+ * corrugated cladding and a row of large roller doors on walls, and a chimney should have no
+ * roller doors.
  */
 export function shedWithStack(
   bayFrac: number, shedFrac: number, shape: 'box' | 'cylinder',
@@ -235,8 +250,8 @@ export function shedWithStack(
     return [
       { x: -dims.w / 2 + shedW / 2, z: 0, w: shedW, d: dims.d, y0: 0, y1: shedTop(dims, shedFrac) },
       {
-        // 立管靠基地的一端而不是正中央 —— 正中央的話整個組合器又對稱了，
-        // 四向旋轉的四倍變化就白給。
+        // The stack sits at one end of the plot rather than at the centre: centred, the whole
+        // composer is symmetric again and the four rotations give nothing.
         x: dims.w / 2 - bayW / 2,
         z: (dims.d / 2 - stackD / 2) * (rng() < 0.5 ? 0.85 : -0.85),
         w: bayW, d: stackD, y0: 0, y1: dims.height,
@@ -247,17 +262,19 @@ export function shedWithStack(
 }
 
 /**
- * 廠房 + 一排筒倉。
+ * A shed plus a row of silos.
  *
- * 這一個是對稱的，而且刻意如此 —— 工業的不對稱來源已經有偏屋、兩跨、L 形與
- * 立管四個，再多一個只是重複；一整排等高的筒倉本來就是對稱的東西。
+ * This one is symmetric, deliberately: industry already has four sources of asymmetry — the wing,
+ * the split span, the L, and the stack — and a fifth only repeats them, while a row of equal silos
+ * is a symmetric thing by nature.
  */
 export function siloRow(count: number, bayFrac: number, shedFrac: number): Composer {
   return (dims) => {
     const bayD = dims.d * bayFrac;
     const shedD = dims.d - bayD;
     const pitch = dims.w / count;
-    // 0.82 而不是 1：筒倉之間要有縫，貼在一起在俯視輪廓上就是一道實心的牆。
+    // 0.82 rather than 1: the silos need gaps between them; touching, they are one solid wall in
+    // plan.
     const dia = Math.min(bayD, pitch * 0.82);
     const out: Volume[] = [{
       x: 0, z: -dims.d / 2 + shedD / 2,
@@ -267,7 +284,8 @@ export function siloRow(count: number, bayFrac: number, shedFrac: number): Compo
       out.push({
         x: -dims.w / 2 + pitch * (i + 0.5), z: dims.d / 2 - bayD / 2,
         w: dia, d: dia, y0: 0,
-        // 至少一支達到目標高度，其餘矮一截 —— 一排等高的筒倉像一道柵欄。
+        // At least one reaches the target height and the rest fall short: a row of equal silos
+        // reads as a fence.
         y1: i % 2 === 0 ? dims.height : dims.height * 0.78,
         shape: 'cylinder', part: PART_DETAIL,
       });
@@ -276,7 +294,7 @@ export function siloRow(count: number, bayFrac: number, shedFrac: number): Compo
   };
 }
 
-/** 高低兩跨。工業的廠房與商業的前店後棟都是這個形狀。 */
+/** Two spans of differing height. An industrial shed and a commercial shop-with-block behind both take this shape. */
 export function splitSpan(tallFrac: number): Composer {
   return (dims) => {
     const tallW = dims.w * tallFrac;
@@ -285,7 +303,7 @@ export function splitSpan(tallFrac: number): Composer {
       { x: -dims.w / 2 + tallW / 2, z: 0, w: tallW, d: dims.d, y0: 0, y1: dims.height },
       {
         x: dims.w / 2 - lowW / 2, z: 0, w: lowW, d: dims.d,
-        // 下限半層樓，理由同 mainPlusWing。
+        // A floor of half a storey, for the same reason as in mainPlusWing.
         y0: 0,
         y1: Math.min(dims.height - 1e-6, Math.max(dims.floorHeight * 0.5, dims.height * 0.62)),
       },

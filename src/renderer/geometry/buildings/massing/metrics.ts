@@ -1,132 +1,140 @@
 import { MAX_BUILDING_WIDTH_M, METRES_PER_CELL } from '../../../../core/grid/constants';
 
 /**
- * 量體生成器與地面物件層共用的純量常數。
+ * Scalar constants shared by the massing generators and the ground-prop layer.
  *
- * 這個模組**不 import 任何本套件內的東西**，那是它存在的理由：`propBands` 要量
- * `massing` 產出的量體，而 `massing` 要用 `SHOPFRONT_CEILING` —— 常數留在
- * `propBands` 裡就是一個 import 循環。
+ * This module **imports nothing from within the package**, which is why it exists: `propBands`
+ * measures the masses `massing` produces while `massing` needs `SHOPFRONT_CEILING`, and leaving
+ * the constants in `propBands` is an import cycle.
  */
 
-/** 公尺 → 格。1 格 = 12 m。 */
+/** Metres to cells. 1 cell = 12 m. */
 export function M(metres: number): number {
   return metres / METRES_PER_CELL;
 }
 
 /**
- * 行人包絡線半寬。
+ * Half-width of the pedestrian envelope.
  *
- * `SidewalkGraph` 的門節點放在這裡外側，所以建築越過它就是行人走進牆裡
- * （BUG-221）。實體是 `MAX_BUILDING_WIDTH_M`，這裡只換算單位 —— 自己寫一個
- * 數字就會漂移，而漂移不會有任何東西報錯。
+ * `SidewalkGraph`'s door nodes sit outside it, so a building crossing it means pedestrians walk
+ * into walls (BUG-221). The value is `MAX_BUILDING_WIDTH_M` and this only converts units; a
+ * number written here would drift, and drift reports nothing.
  */
 export const HALF_ENVELOPE = MAX_BUILDING_WIDTH_M / METRES_PER_CELL / 2;
 
-/** 格子邊界。再過去就是鄰居家或馬路。 */
+/** The cell boundary. Past it is a neighbour's plot or the road. */
 export const CELL_EDGE = 0.5;
 
-/** 行人頭頂淨空 2.2 m。低於它的懸挑物會打到人。 */
+/** 2.2 m of pedestrian headroom. Anything overhanging below it hits people. */
 export const OVERHEAD_CLEARANCE = M(2.2);
 
 /**
- * 立面 shader 的樓層高度範圍（格）。2.64 m 到 3.6 m。
+ * The facade shader's storey height range, in cells: 2.64 m to 3.6 m.
  *
- * 實體在這裡而不是 GLSL 裡：量體的樓層數要用它，而幾何與 shader 對不上的話，
- * 雨遮會掛在窗戶中間 —— 那種錯不會有任何東西報錯。
+ * The value lives here rather than in the GLSL because the massing's floor count needs it, and
+ * with geometry and shader disagreeing a canopy hangs across the middle of a window, which
+ * nothing reports.
  */
 export const FLOOR_HEIGHT_UNITS = { MIN: 0.22, MAX: 0.30 } as const;
 
 /**
- * 一樓樓板線 —— 掛在店面上的東西不得高過它。
+ * The first-floor line: nothing attached to a shopfront may rise above it.
  *
- * 取**最低**的樓高：每一棟的樓高由變體決定，懸挑物的幾何是整桶共用的一份，
- * 不知道自己掛在哪一個變體上。取最低值才保證永遠不會越過一樓。
+ * It takes the **lowest** storey height. Each building's storey height comes from its variant,
+ * while an overhang's geometry is one copy shared across the bucket and does not know which
+ * variant it hangs on. Only the lowest value guarantees it never crosses the first floor.
  */
 export const SHOPFRONT_CEILING = FLOOR_HEIGHT_UNITS.MIN;
 
 /**
- * 斜屋頂的高度佔一層樓的比例。
+ * A pitched roof's height as a fraction of one storey.
  *
- * 壓在半層樓以內，否則建築的總高度就不是「樓層數 × 樓高」，等級階梯會漂掉。
+ * Kept within half a storey, or a building's total height stops being floor count times storey
+ * height and the level ladder drifts.
  *
- * 住在這裡而不是 `roofForms`：組合器要靠它替屋脊留位置 —— 工業的煙囪必須
- * 露在屋脊之上，而組合器算高度時屋頂還不存在。兩邊各寫一份 0.45 的話，
- * 改了屋頂之後煙囪會被埋掉，而那不會有任何東西報錯。
+ * It lives here rather than in `roofForms` because the composers need it to leave room for the
+ * ridge: an industrial stack has to rise above the ridge, and when a composer computes heights
+ * the roof does not exist yet. Written as 0.45 on both sides, a change to the roof buries the
+ * stack with nothing reporting it.
  */
 export const ROOF_PITCH_FRAC = 0.45;
 
 /**
- * 開口容器的比例：`tub`（圓槽）與 `basin`（方池）共用一組。
+ * Open containers' proportions, shared by `tub` (round) and `basin` (rectangular).
  *
- * 這組數字必須是共用的，因為**放水面的是量體資料、挖槽的是幾何** —— 兩邊
- * 各寫一份的話，水面會浮在槽緣上或沉到槽底之下，而兩者都不會報錯：多的那一段
- * 藏在實心的池壁裡，看起來只是「水位不太對」。
+ * These numbers have to be shared, because **the mass data places the water surface while the
+ * geometry hollows the vessel**. Written on both sides, the surface floats above the rim or sinks
+ * below the floor, and neither reports anything: the excess hides inside the solid wall and reads
+ * only as a slightly wrong water level.
  */
 export const TUB = {
-  /** 內壁佔宣告寬度的幾成。剩下的一成六是池壁的厚度（兩側各 8%）。 */
+  /** The inner wall as a fraction of the declared width. The remaining 16% is wall thickness, 8% per side. */
   INNER: 0.84,
-  /** 槽緣到槽底的深度，佔全高的比例。 */
+  /** The depth from rim to floor, as a fraction of the total height. */
   DEPTH: 0.28,
 } as const;
 
 /**
- * 煙囪的比例。
+ * A stack's proportions.
  *
- * `DEPTH` 幾乎等於全高：管口的直徑只有塔身的一半，等角視角斜著看進去只看得到
- * 很小的一塊，凹槽淺的時候那一塊仍然亮著，讀起來是頂蓋上的一道陰影而不是
- * 一個洞。深到接近底部，看進去的才全是背光的內壁。
+ * `DEPTH` is almost the full height: the mouth's diameter is half the shaft's, so an oblique
+ * isometric view sees only a small part of it, and a shallow recess leaves that part lit, reading
+ * as a shadow on the cap rather than an opening. Recessed nearly to the bottom, everything
+ * visible inside is shadowed inner wall.
  */
 export const STACK = {
-  /** 管口內緣的半徑，佔宣告寬度的一半的幾成。 */
+  /** The mouth's inner radius, as a fraction of half the declared width. */
   BORE: 0.26,
-  /** 塔身收到頂端剩多少 —— 真實煙囪都是微微收的。 */
+  /** How much of the shaft remains at the top; real stacks taper slightly. */
   COLLAR: 0.44,
-  /** 凹槽深度佔全高的比例。 */
+  /** The recess's depth as a fraction of the total height. */
   DEPTH: 0.86,
 } as const;
 
-/** 冷卻塔的腰在高度的幾成。0.65 ≈ 實際冷卻塔的比例。 */
+/** Where a cooling tower's waist sits, as a fraction of its height. 0.65 is close to a real tower's proportion. */
 const COOL_WAIST = 0.65;
-/** 雙曲線的收斂速度。愈小腰愈細。 */
+/** The hyperbola's rate of convergence. Smaller values give a narrower waist. */
 const COOL_C = 0.85;
 const COOL_RINGS = 6;
-/** 塔口折回去之後的內緣，佔塔頂外緣的幾成。 */
+/** The mouth's inner edge after the profile folds back, as a fraction of the top's outer edge. */
 const COOL_LIP = 0.86;
 
-/** 側面輪廓的半徑：r(t) = √(1 + ((t − waist) / c)²)。 */
+/** The side profile's radius: r(t) = sqrt(1 + ((t - waist) / c)^2). */
 function coolRadius(t: number): number {
   return Math.sqrt(1 + ((t - COOL_WAIST) / COOL_C) ** 2);
 }
 
-/** 最寬的一圈（底座）正規化成半徑 0.5，縮放之後剛好填滿宣告的盒子。 */
+/** The widest ring, the base, is normalised to radius 0.5 so that after scaling it exactly fills the declared box. */
 const COOL_NORM = 0.5 / Math.max(
   ...Array.from({ length: COOL_RINGS + 1 }, (_, i) => coolRadius(i / COOL_RINGS)));
 
 /**
- * 冷卻塔的比例。
+ * A cooling tower's proportions.
  *
- * `RIM` 與 `THROAT` 是**算出來的**而不是抄的：它們由雙曲線與 `COOL_LIP`
- * 決定，而航警燈要站在兩者之間那一圈環上。手寫一組數字的話，哪天腰的參數
- * 一動，燈就會掉進塔口或掛到塔外面 —— 而那不會有任何東西報錯。
+ * `RIM` and `THROAT` are **computed**, not copied: they follow from the hyperbola and `COOL_LIP`,
+ * and the obstruction light stands on the ring between them. With hand-written numbers, changing
+ * the waist drops the light into the mouth or hangs it off the tower, with nothing reporting it.
  */
 export const COOL = {
-  /** 塔口凹槽的深度，佔全高的比例。 */
+  /** The mouth recess's depth as a fraction of the total height. */
   DEPTH: 0.22,
-  /** 塔頂外緣的直徑，佔宣告寬度的幾成。 */
+  /** The top's outer diameter as a fraction of the declared width. */
   RIM: coolRadius(1) * COOL_NORM * 2,
-  /** 塔口的直徑佔比。 */
+  /** The mouth's diameter as a fraction of the same. */
   THROAT: coolRadius(1) * COOL_NORM * COOL_LIP * 2,
 } as const;
 
 /**
- * 冷卻塔的側面輪廓：`[半徑, 高度]`，兩者都已正規化。
+ * A cooling tower's side profile: `[radius, height]`, both normalised.
  *
- * 塔口折進去再往下 —— 這一段修的是俯視時的破口。輪廓走到頂就停的話，上下
- * 都沒有蓋，也就是一根開口的管子；建築材質是 `FrontSide`，視角一高、看得進
- * 塔口的時候，對面的內壁被背面剔除，看到的是穿過去的背景。
+ * The mouth folds inward and runs back down, which is what closes the hole seen from above. A
+ * profile that stops at the top caps neither end and is an open tube; the building material is
+ * `FrontSide`, so as soon as the angle is high enough to see into the mouth, the far inner wall
+ * is back-face culled and the background shows through.
  *
- * 補一片平蓋是錯的答案：真實的冷卻塔頂上就是開的，蓋起來它會變成筒倉。
- * 折回去的這一段法線朝向軸心，所以俯視看到的是**內壁**，而那正是凹槽。
+ * A flat cap is the wrong answer: a real cooling tower is open at the top, and capping it makes
+ * it a silo. The folded-back section's normals point toward the axis, so looking down shows the
+ * **inner wall**, which is what a recess is.
  */
 export function coolingProfile(): Array<[number, number]> {
   const pts: Array<[number, number]> = [];
@@ -142,19 +150,20 @@ export function coolingProfile(): Array<[number, number]> {
 }
 
 /**
- * 貼著地面的東西該放多高（格）。
+ * How high things that hug the ground sit, in cells.
  *
- * 這張表存在的理由是 BUG-224：分區建築原本放在 y = 0.05，那是**路面**的高度，
- * 不是地面的高度，所以每一棟都浮空 0.6 m。這些數字彼此有順序關係（標線要疊在
- * 鋪面上），散在四個檔案裡改一個就會壓到另一個。
+ * This table exists because of BUG-224: zoned buildings sat at y = 0.05, which is the **road**
+ * height rather than the ground height, floating every one of them 0.6 m up. These numbers are
+ * ordered relative to each other — markings stack above paving — and spread across four files,
+ * changing one presses on another.
  */
 export const GROUND_LAYERS = {
-  /** 建築與地面物件的底面。2.4 cm 足以避開與地形共面的 z-fighting。 */
+  /** The underside of buildings and ground props. 2.4 cm is enough to avoid z-fighting with coplanar terrain. */
   BUILDING: 0.002,
-  /** 鋪面貼片。與建築同高，兩者在平面上不重疊。 */
+  /** Paving decals, at the same height as buildings, which they never overlap in plan. */
   DECAL: 0.002,
-  /** 停車格線與入口踏板，疊在鋪面上。 */
+  /** Parking bay lines and entrance treads, stacked above the paving. */
   MARKING: 0.003,
-  /** 夜間的地面光暈，疊在標線上。 */
+  /** The night-time ground glow, stacked above the markings. */
   LIGHT_SPOT: 0.004,
 } as const;
