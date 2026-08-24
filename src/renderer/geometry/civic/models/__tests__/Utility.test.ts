@@ -26,11 +26,11 @@ const PLANS = [
 ] as const;
 
 /**
- * 四座公用設施。共通的驗收在 `CivicPlans.test.ts` 的資料表裡。
+ * The four utilities. Their shared acceptance checks live in the table in `CivicPlans.test.ts`.
  *
- * 它們共用 `FACADE_UTILITY`（鍍鋅浪板色票 + 高窗帶），所以讀起來是同一家族
- * —— 那是刻意的，它們本來就是同一類東西。彼此的差別在**剪影**：
- * 煙囪／圓槽／土丘／方池。
+ * They share `FACADE_UTILITY` (a galvanised corrugated palette plus a high window band) so they
+ * read as one family, which is deliberate — they are one class of thing. They differ in
+ * **silhouette**: stack, round tank, earth mound, rectangular basin.
  */
 describe.each(PLANS)('%s', (_label, plan, type) => {
   it('should use the utility facade and its own colour', () => {
@@ -40,14 +40,15 @@ describe.each(PLANS)('%s', (_label, plan, type) => {
   });
 
   it('should fence the site', () => {
-    // 沒有圍籬的廠區看起來是一堆散落在草地上的設備。三面就夠 ——
-    // 第四面是大門。
+    // An unfenced site reads as equipment scattered over grass. Three sides suffice; the
+    // fourth is the gate.
     expect(plan.fixtures.filter(f => f.kind === 'fence').length, '廠區沒有圍籬')
       .toBeGreaterThanOrEqual(3);
   });
 
   it('should read as industrial, not as a garden', () => {
-    // 工業雜項（管架、油桶、氣瓶、棧板）是「這裡有製程」的訊號。
+    // Industrial clutter — pipe racks, drums, cylinders, pallets — is the signal that a process
+    // runs here.
     const industrial = plan.fixtures.filter(f =>
       f.kind === 'pipeRack' || f.kind === 'drum'
       || f.kind === 'gasBottles' || f.kind === 'palletStack').length;
@@ -55,36 +56,36 @@ describe.each(PLANS)('%s', (_label, plan, type) => {
   });
 
   it('should light the yard with tall masts', () => {
-    // 廠區的地幾乎全是鋪面。沒有高桿燈的話夜裡整片是一塊黑。
+    // These sites are almost entirely paved. Without high masts the whole area is one black
+    // patch at night.
     const masts = plan.fixtures.filter(f => f.kind === 'lamp' && f.heightM >= 5);
     expect(masts.length, '廠區的高桿燈太少').toBeGreaterThanOrEqual(3);
   });
 
   it('should screen itself from the street', () => {
-    // 廠區對外總得有一點遮蔽 —— 而且那是「有人在管理它」的訊號。
+    // A site needs some screening from outside, and it is the signal that someone manages it.
     expect(plan.fixtures.some(f => f.kind === 'hedge'), '沒有對外的綠帶').toBe(true);
     expect(plan.fixtures.filter(f => f.kind === 'tree').length, '一棵樹都沒有')
       .toBeGreaterThanOrEqual(2);
   });
 
   it('should pave the yard rather than grass it', () => {
-    // 草地上的電廠不成立。
+    // A power plant on grass does not hold up.
     const base = plan.decals.filter(d => (d.layer ?? 'base') === 'base');
     expect(base.every(d => !d.lawn), '廠區鋪了草地').toBe(true);
   });
 
   /**
-   * 水面走水的分支，覆土走地面的分支。
+   * Water takes the water branch and earth cover takes the ground branch.
    *
-   * 兩者標成牆的話 `FACADE_UTILITY` 會在它們身上畫一條高窗帶 —— 那是第一版
-   * 這條測試在守的東西，而它把兩者一起塞進 `PART_GROUND`。
+   * Marked as wall, `FACADE_UTILITY` paints a high window band across both.
    *
-   * 截圖之後才看得出那還不夠：地面的色譜是柏油到磚鋪，**全是灰的**，
-   * 所以 `shade: 0.1` 的池水是四個黑洞。`PART_WATER` 就是為這件事加的
-   * （BUG-243），只是當時只用在渡輪碼頭的港池上，而那片水後來拿掉了。
+   * `PART_GROUND` for both is not enough either: the ground ramp runs from asphalt to brick and
+   * is **entirely grey**, so basin water at `shade: 0.1` reads as four black holes.
+   * `PART_WATER` exists for exactly that (BUG-243).
    *
-   * 一槽水**不是**「自己畫一條河」（BUG-244）：河是地形的，而槽裡的水是
-   * 這座廠自己的東西 —— 它就是這一棟在做的事。
+   * A basin of water is **not** drawing a river of one's own (BUG-244): a river belongs to the
+   * terrain, while the water in a basin belongs to this plant — it is what the building does.
    */
   it('should keep every water surface and earth mound out of the wall branch', () => {
     for (const v of plan.massing) {
@@ -98,16 +99,16 @@ describe.each(PLANS)('%s', (_label, plan, type) => {
   });
 
   /**
-   * 煙囪與塔身也不准長窗戶，而且要**畫成清水混凝土**。
+   * A stack or a tower shell grows no windows either, and is **drawn as fair-faced concrete**.
    *
-   * 煙囪不該有窗戶。這是同一個錯的第三種形狀：不標 `part` 就是牆，而
-   * `FACADE_UTILITY` 的牆會在上面畫一條高窗帶 —— 覆土、水面、煙囪、
-   * 冷卻塔全都中過。
+   * A stack has no windows. This is the third shape of the same mistake: without a `part` it is
+   * a wall, and `FACADE_UTILITY`'s wall paints a high window band across it — earth cover,
+   * water, stacks and cooling towers have all been caught by it.
    *
-   * 第一版改成了 `PART_DETAIL`，窗戶是沒了，但那條分支寫死一片偏藍的金屬灰
-   * （`vec3(m, m*1.02, m*1.06)`，m ≈ 0.42–0.58），`vBldgColor` 連讀都沒讀。
-   * 於是冷卻塔 —— 這一棟唯一的辨識剪影 —— 是深灰的，而它應該是混凝土。
-   * `PART_SHELL` 才是照著量體自己的顏色畫的那一條。
+   * `PART_DETAIL` removes the windows but hard-codes a bluish metal grey
+   * (`vec3(m, m*1.02, m*1.06)`, m ~ 0.42-0.58) and never reads `vBldgColor`, leaving the
+   * cooling tower — this building's only recognisable silhouette — dark grey where it should be
+   * concrete. `PART_SHELL` is the branch that draws a mass in its own colour.
    */
   it('should not put windows on a chimney or a tower shell', () => {
     for (const v of plan.massing) {
@@ -118,8 +119,8 @@ describe.each(PLANS)('%s', (_label, plan, type) => {
   });
 
   it('should give every shaded surface an actual shade', () => {
-    // 沒有 `shade` 的話 B 通道是 0 —— 地面那是柏油黑、水面那是最深的深水，
-    // 而不是「我想要的那個顏色」。這個錯完全不會報。
+    // Without `shade` the B channel is 0: asphalt black on the ground branch and the deepest
+    // water on the water branch, rather than the intended colour. Nothing reports it.
     const shaded = plan.massing.filter(v =>
       v.part === PART_GROUND || v.part === PART_WATER);
     for (const v of shaded) {
@@ -128,15 +129,16 @@ describe.each(PLANS)('%s', (_label, plan, type) => {
   });
 
   /**
-   * 水面要**低於槽緣**。
+   * The water surface has to sit **below the rim**.
    *
-   * 前一版的水面貼在池壁的頂上（`y0 === wall.y1`），所以每一座池讀起來是
-   * 一個蓋著藍色蓋子的圓筒，而不是一個裝著水的槽。差別在那一圈**內壁**：
-   * 有它才看得出深度。
+   * Flush with the top of the wall (`y0 === wall.y1`), each basin reads as a cylinder with a
+   * blue lid rather than a vessel holding water. The difference is the ring of **inner wall**:
+   * it is what shows the depth.
    *
-   * 光把 y 調低沒有用 —— 池壁是實心的圓柱／方塊，水面壓到頂面之下就整個
-   * 埋進量體裡了。所以池壁同時改成開口容器（`tub` / `basin`），而這條測試
-   * 守的是兩者要**一起**成立：水面在槽底之上、槽緣之下。
+   * Lowering y alone does not help — a solid cylinder or box buries the water surface inside the
+   * mass as soon as it drops below the top face. So the walls are open containers
+   * (`tub` / `basin`), and this case guards that both hold **together**: the water is above the
+   * floor and below the rim.
    */
   it('should sink the water below the rim of its vessel', () => {
     const waters = plan.massing.filter(v => v.part === PART_WATER);
@@ -151,8 +153,8 @@ describe.each(PLANS)('%s', (_label, plan, type) => {
         .toBeGreaterThanOrEqual(0.3);
       const floor = vessel!.y0 + (1 - TUB.DEPTH) * (vessel!.y1 - vessel!.y0);
       expect(w.y0, `${w.tag} 的水面掉到槽底之下`).toBeGreaterThanOrEqual(floor);
-      // 水面要比內壁寬一點，側面才埋進池壁裡 —— 窄了就是四周留一圈看得穿
-      // 到地面的縫。
+      // The water is slightly wider than the inner wall so its sides bury into it; narrower,
+      // there is a ring of gap around it showing the ground through.
       expect(w.w, `${w.tag} 與池壁之間有一條縫`)
         .toBeGreaterThan(vessel!.w * TUB.INNER);
       expect(w.w, `${w.tag} 漫出池壁外`).toBeLessThan(vessel!.w);
@@ -160,8 +162,8 @@ describe.each(PLANS)('%s', (_label, plan, type) => {
   });
 
   it('should keep the ripple inside the pool', () => {
-    // 水位起伏的振幅比水層本身還厚的話，水面會在池底之下與池壁之上來回
-    // 穿刺 —— 那看起來是水在漏。
+    // With a wave amplitude thicker than the water layer itself, the surface punches through
+    // below the floor and above the wall in turn, which looks like the basin leaking.
     for (const v of plan.massing.filter(v => v.part === PART_WATER)) {
       const thick = m(v.y1 - v.y0);
       expect(WATER_BOB.AMP_M, `${v.tag} 的水層只有 ${thick.toFixed(2)} m 厚`)
@@ -179,14 +181,15 @@ describe('電廠', () => {
   const stacks = tagged(powerPlan, 'stack');
 
   /**
-   * 這一棟的剪影是**一座粗的、有腰的塔**。
+   * This building's silhouette is **one thick, waisted tower**.
    *
-   * 這個形狀換過三輪。兩支圓柱煙囪與旁邊的水廠幾乎同一個剪影（一根柱子加
-   * 一棟房子），而柱子到處都是；兩座冷卻塔的直徑接近 10 m，在 24 m 的地上
-   * 佔掉整個北半，等角視角下是兩坨蓋住廠房的圓桶。
+   * Two cylindrical stacks give almost the same silhouette as the water plant next door — a post
+   * and a shed — and posts are everywhere. Two cooling towers are close to 10 m across and take
+   * the whole north half of a 24 m plot, reading in an isometric view as two drums covering the
+   * hall.
    *
-   * 一座才成立：城市裡沒有第二種建築是**有腰的旋轉體**，所以那個形狀本身
-   * 就是「這是電廠」，而只放一座就留得下整個開關場。
+   * One works: no other building in the city is a **waisted surface of revolution**, so the
+   * shape itself says "power plant", and one leaves room for the whole switchyard.
    */
   it('should raise a single thick waisted stack', () => {
     expect(stacks.length, '煙囪不是一座').toBe(1);
@@ -194,20 +197,22 @@ describe('電廠', () => {
     expect(s.shape, '煙囪不是有腰的 —— 那是一根柱子').toBe('cooling');
     expect(s.w, '煙囪不是正圓').toBeCloseTo(s.d, 9);
     expect(m(s.w), '煙囪不夠粗').toBeGreaterThanOrEqual(10);
-    // 又高又細的話那又變回一根柱子。真實冷卻塔的高徑比在 1.5～2 之間。
+    // Tall and thin, it is a post again. A real cooling tower's height-to-diameter ratio is
+    // between 1.5 and 2.
     expect((s.y1 - s.y0) / s.w, '煙囪太瘦').toBeLessThan(2.2);
-    // 上下界一起釘住高度 —— 只留下限的話調回去不會有任何東西轉紅。
+    // Both bounds pin the height; with only a lower bound, reverting turns nothing red.
     expect(m(s.y1), '煙囪太矮').toBeGreaterThan(15);
     expect(m(s.y1), '煙囪又長回去了').toBeLessThanOrEqual(22);
   });
 
   /**
-   * 塔口要**凹得夠深**，而且裡面是深色的。
+   * The tower mouth has to be **deep enough**, and dark inside.
    *
-   * 深度由幾何顧（見 `MassingGeometry.test.ts` 的 `COOL.DEPTH`），這裡顧的是
-   * **顏色**：塔口內壁跟著塔身走混凝土色的話，那個口再深也是亮的 ——
-   * 內壁的法線是水平的，拿到的光與塔身外側幾乎一樣，而這個引擎沒有環境光
-   * 遮蔽。所以口裡要有一支深色的內襯，從凹槽的底一路到塔口。
+   * Depth is geometry's job (see `COOL.DEPTH` in `MassingGeometry.test.ts`); what this guards is
+   * **colour**. With the mouth's inner wall following the shaft's concrete, the opening is
+   * bright however deep it is: the inner wall's normals are horizontal and catch almost the same
+   * light as the outside, and this engine has no ambient occlusion. So the mouth carries a dark
+   * lining, from the recess's floor up to the rim.
    */
   it('should darken the throat of the stack', () => {
     const s = stacks[0]!;
@@ -218,9 +223,10 @@ describe('電廠', () => {
       .toBe(PART_SHELL);
     expect(Math.max(...lining!.color!), '內襯不夠暗 —— 那個口會讀成一片平的')
       .toBeLessThan(0.2);
-    // 它自己也要是開口的：實心圓柱的頂是一片圓盤，口就只剩那麼深。
+    // The lining is open too: a solid cylinder's top is a disc, and the opening is only that
+    // deep.
     expect(lining!.shape, '內襯是實心的 —— 塔口下面會蓋著一塊板子').toBe('tub');
-    // 塞在塔口裡：比塔口窄，從凹槽的底一路頂到塔口。
+    // Set inside the mouth: narrower than it, running from the recess's floor up to the rim.
     expect(lining!.w, '內襯比塔口還寬 —— 它會從塔身穿出來')
       .toBeLessThan(s.w * COOL.THROAT);
     const bottom = s.y0 + (1 - COOL.DEPTH) * (s.y1 - s.y0);
@@ -231,13 +237,14 @@ describe('電廠', () => {
   });
 
   /**
-   * 開關場：一排電桿，用**黑色的導線**接起來。
+   * The switchyard: a row of poles joined by **black conductors**.
    *
-   * 「電從這裡出去」是電廠一半的內容，而前一版只有三台變壓器加兩座門型
-   * 構架 —— 那是地上的幾個方塊，沒有任何東西在說它們彼此相連。
+   * "Power leaves from here" is half of what a power plant is, and transformers plus gantries
+   * alone are a few boxes on the ground with nothing saying they are connected to each other.
    *
-   * 導線是這一段唯一真正在講話的東西：它把散落的設備串成一條線路，而且
-   * 那條線在等角視角下是**唯一**橫跨整個廠區的元素。
+   * The conductors are the only thing in this section that actually speaks: they string the
+   * scattered equipment into a circuit, and that line is the **only** element spanning the whole
+   * site in an isometric view.
    */
   it('should string black wires between the pylons', () => {
     const pylons = tagged(powerPlan, 'pylon');
@@ -250,7 +257,7 @@ describe('電廠', () => {
     for (const w of wires) {
       expect(w.part, '導線沒有走塗裝外殼 —— 那條路才畫得出黑色').toBe(PART_SHELL);
       expect(Math.max(...w.color!), '導線不是黑的').toBeLessThan(0.15);
-      // 又細又長，而且是水平的。粗的話那是一根樑。
+      // Thin, long and horizontal. Thick, it is a beam.
       const thin = Math.min(m(w.w), m(w.d));
       const long = Math.max(m(w.w), m(w.d));
       expect(thin, `導線粗達 ${thin.toFixed(2)} m`).toBeLessThanOrEqual(0.15);
@@ -261,10 +268,11 @@ describe('電廠', () => {
   });
 
   /**
-   * 導線的兩端要真的**落在桿上**。
+   * Both ends of every conductor have to **land on a pole**.
    *
-   * 浮在空中的線段在其他每一條驗收裡都合法：夠細、夠長、夠黑、夠高。
-   * 而畫面上它是一根憑空開始、憑空結束的黑棒子。
+   * A segment floating in mid-air is legal under every other check here: thin enough, long
+   * enough, black enough, high enough. On screen it is a black rod starting and ending in
+   * nothing.
    */
   it('should land both ends of every wire on something that holds it', () => {
     const holders = [
@@ -285,7 +293,7 @@ describe('電廠', () => {
   });
 
   it('should be the tallest of the four utilities', () => {
-    // 遠景只剩它的煙囪。被水塔蓋過去就白做了。
+    // At range only the stack is left, and anything rising above it wastes that.
     const top = m(topOf(powerPlan.massing));
     for (const [, other] of PLANS.filter(([, p]) => p !== powerPlan)) {
       expect(top, '電廠不是最高的').toBeGreaterThan(m(topOf(other.massing)));
@@ -293,19 +301,20 @@ describe('電廠', () => {
   });
 
   it('should put a warning light on top of each chimney', () => {
-    // 夜裡的電廠就是天上那顆紅點。
+    // At night a power plant is that red point in the sky.
     const beacons = tagged(powerPlan, 'beacon');
     expect(beacons.length, '航警燈不足').toBe(stacks.length);
     for (const b of beacons) {
       expect(b.part).toBe(PART_LAMP);
-      // 認最近的那一支。兩支煙囪同排的話，只比 z 會把兩顆燈都算到第一支頭上
-      // —— 而那條測試會是綠的。
+      // Take the nearest stack. With two in a row, comparing z alone attributes both lights to
+      // the first one, and the case stays green.
       const host = [...stacks].sort((p, q) =>
         Math.hypot(p.x - b.x, p.z - b.z) - Math.hypot(q.x - b.x, q.z - b.z))[0]!;
       expect(b.y0, '航警燈沒有站在煙囪頂上').toBeCloseTo(host.y1, 9);
-      // 站在塔口的**環**上：內緣是塔口（掉進去），外緣是塔頂的外圈
-      // （掛到塔外面去）。塔頂比宣告的寬度窄，所以外界要用 `COOL.RIM`
-      // 而不是 `host.w / 2` —— 後者是底座的半徑，那一圈是空的。
+      // Standing on the mouth's **rim**: inside it the light falls in, outside the top's outer
+      // ring it hangs off the tower. The top is narrower than the declared width, so the outer
+      // bound is `COOL.RIM` rather than `host.w / 2`, which is the base radius, where there is
+      // nothing.
       expect(Math.abs(b.x - host.x) - b.w / 2, '航警燈架在塔口上')
         .toBeGreaterThanOrEqual(host.w * COOL.THROAT / 2);
       expect(Math.abs(b.x - host.x) + b.w / 2, '航警燈掛到塔外面去了')
@@ -314,7 +323,7 @@ describe('電廠', () => {
   });
 
   it('should saw-tooth the turbine hall roof', () => {
-    // 平頂的話廠房與倉庫分不出來。
+    // Flat, the hall is indistinguishable from a warehouse.
     expect(tagged(powerPlan, 'hallRoof')[0]!.shape).toBe('sawtooth');
   });
 
@@ -328,8 +337,8 @@ describe('水廠', () => {
   const walls = tagged(waterPlan, 'tankWall');
 
   it('should lay out round settling tanks, not a row of them', () => {
-    // 圓的是水廠的辨識訊號。排成一列的話讀起來是同一個東西複製幾次 ——
-    // 2×2 才有配置。
+    // Round tanks are the water plant's recognition signal. In a single row they read as one
+    // thing copied several times; 2x2 is a layout.
     expect(walls.length, '沉澱池不到三座').toBeGreaterThanOrEqual(3);
     for (const w of walls) expect(w.shape, '沉澱池不是開口的圓槽').toBe('tub');
     const xs = new Set(walls.map(w => w.x.toFixed(6)));
@@ -346,14 +355,13 @@ describe('水廠', () => {
   });
 
   /**
-   * 這一格裡**沒有水**。
+   * There is **no water** on this cell.
    *
-   * 中間試過一版把河畫進基地（北端一條水面貼片加護岸、取水口、攔汙柵），
-   * 抽水廠蓋在陸地上，不必在基地裡畫河。
+   * A water plant is built on land and does not draw a river into its plot.
    *
-   * 而這與火車站畫假鐵軌是同一個錯：真的水是**地形**畫的
-   * （`TERRAIN_COLORS[WATER]`），這一格自己畫一條，就是兩份各說各話的水
-   * —— 而且它們永遠不會對齊，因為地形的水在哪裡由地圖決定。
+   * It is the same mistake as a train station drawing fake rails: the real water is drawn by the
+   * **terrain** (`TERRAIN_COLORS[WATER]`), and a second version here is two descriptions of the
+   * same thing that never line up, because where terrain water lies is decided by the map.
    */
   it('should not paint a river of its own', () => {
     for (const d of waterPlan.decals) {
@@ -384,17 +392,16 @@ describe('水廠', () => {
   });
 
   /**
-   * 白色的池壁。這一格的辨識訊號是**四個大水桶**。
+   * White tank walls. This cell's recognition signal is **four large water tanks**.
    *
-   * 白色一直畫不出來，而且**資料一直是對的**：前兩版的儲水塔都帶著接近白的
-   * 陣列，測試驗的也正是那個陣列。畫不出來的是 shader —— 牆被
-   * `FACADE_UTILITY` 壓成 0.70～0.90 倍再加一條高窗帶；`PART_GROUND` 的色譜
-   * 上限只到 `vec3(0.60, 0.58, 0.55)` 的磚鋪，`shade: 0.95` 也只是中灰。
-   * 所以這一條驗的是**畫得出來的那條路**：`PART_SHELL` 是唯一照著量體自己的
-   * 顏色畫的分支。
+   * The data can be right and the white still not appear: a wall is compressed by
+   * `FACADE_UTILITY` to 0.70-0.90 and given a high window band, while `PART_GROUND`'s ramp tops
+   * out at brick, `vec3(0.60, 0.58, 0.55)`, so even `shade: 0.95` is mid grey. So this case
+   * checks **the branch that can draw it**: `PART_SHELL` is the only one that follows a mass's
+   * own colour.
    *
-   * 儲水塔本身已經拿掉了 —— 白色移到四座池的池壁上，而那正是「大水桶」的
-   * 全部：白的桶身、藍的水、低於桶緣的水位。
+   * There is no separate water tower. The white sits on the four basins' walls, and that is all
+   * "large water tank" amounts to: a white body, blue water, and a level below the rim.
    */
   it('should paint the tanks white and keep the tower gone', () => {
     expect(tagged(waterPlan, 'tower').length, '高塔還在').toBe(0);
@@ -409,8 +416,9 @@ describe('水廠', () => {
   });
 
   it('should stay a low plant now that the tower is gone', () => {
-    // 高塔拿掉之後最高的是機房的屋脊。上界釘住它 —— 少了這一條，把塔加回去
-    // 不會有任何東西轉紅（四座各不相同那條也照樣是綠的）。
+    // With no tower, the highest point is the plant room's ridge. The upper bound pins it;
+    // without this case, adding a tower back turns nothing red, and the four-are-distinct case
+    // stays green too.
     expect(m(topOf(waterPlan.massing)), '水廠又長出一座塔')
       .toBeLessThanOrEqual(9);
   });
@@ -420,7 +428,8 @@ describe('垃圾場', () => {
   const mounds = tagged(garbagePlan, 'mound');
 
   it('should pile two mounds of different sizes', () => {
-    // 土丘是這一棟的剪影。等大的兩座讀起來是兩個一樣的方塊。
+    // The mounds are this building's silhouette. Two of equal size read as two identical
+    // blocks.
     expect(mounds.length, '土丘不是兩座').toBe(2);
     expect(mounds[0]!.y1).not.toBeCloseTo(mounds[1]!.y1, 3);
     for (const v of mounds) {
@@ -435,13 +444,13 @@ describe('垃圾場', () => {
   });
 
   it('should weigh the trucks on the way in', () => {
-    // 地磅是垃圾場真正的入口儀式。少了它，那道大門只是一個缺口。
+    // The weighbridge is a landfill's real entrance ritual. Without it the gate is just a gap.
     const bridge = garbagePlan.props.find(v => v.tag === 'weighbridge')!;
     const hut = tagged(garbagePlan, 'weighHut')[0]!;
     expect(bridge, '沒有地磅').toBeTruthy();
     expect(hut, '沒有地磅房').toBeTruthy();
     expect(m(bridge.y1 - bridge.y0), '秤台太厚 —— 車開不上去').toBeLessThan(0.4);
-    // 磅房要在秤台旁邊，不是在場區的另一頭。
+    // The weigh hut belongs beside the platform, not at the other end of the site.
     expect(Math.abs(hut.x - bridge.x) + Math.abs(hut.z - bridge.z))
       .toBeLessThan(0.5);
   });
@@ -451,7 +460,8 @@ describe('汙水廠', () => {
   const walls = tagged(sewagePlan, 'basinWall');
 
   it('should line up rectangular aeration basins', () => {
-    // 水廠是一排圓的、這裡是一排方的 —— 那個對比就是兩者的差別。
+    // The water plant is a row of round vessels and this a row of rectangular ones; that
+    // contrast is the difference between them.
     expect(walls.length, '曝氣池不到四座').toBeGreaterThanOrEqual(4);
     for (const w of walls) {
       expect(w.shape, '曝氣池是圓的 —— 那是水廠').toBe('basin');
@@ -465,12 +475,13 @@ describe('汙水廠', () => {
   });
 
   /**
-   * 汙水是**土色**的，自來水是藍的。
+   * Sewage is **earth-coloured** and drinking water is blue.
    *
-   * 前一版只要求「比自來水暗」，而水的色譜當時只有深藍到淺藍兩端 —— 再暗
-   * 也只是很深的藍，那條測試因此永遠是綠的卻換不到土色。色譜補了泥漿那一段
-   * 之後，這條改成問**落在哪一段**：兩座廠必須分別在轉折點的兩側，而那正是
-   * 「兩廠並排時分不分得出來」的實體。
+   * "Darker than drinking water" is not enough: with the water ramp running only from deep to
+   * pale blue, darker is still blue, and the case stays green without producing an earth colour.
+   * With a sludge segment on the ramp, this asks **which segment** each falls in: the two plants
+   * have to land on opposite sides of the turning point, which is what "can you tell them apart
+   * side by side" amounts to.
    */
   it('should make the sewage muddy and the drinking water blue', () => {
     const dirty = tagged(sewagePlan, 'basinWater')[0]!;
@@ -482,7 +493,7 @@ describe('汙水廠', () => {
   });
 
   it('should bridge the basins with a walkway on posts', () => {
-    // 少了走道橋，汙水廠的剪影就只是幾個水坑。
+    // Without the walkway, a sewage plant's silhouette is a few puddles.
     const deck = sewagePlan.props.find(v => v.tag === 'walkway')!;
     const posts = sewagePlan.props.filter(v => v.tag === 'walkwayPost');
     expect(deck, '沒有走道橋').toBeTruthy();
@@ -498,10 +509,11 @@ describe('汙水廠', () => {
 });
 
 /**
- * 四座並排時要分得出來。
+ * The four have to be distinguishable side by side.
  *
- * 它們共用立面與色票家族，所以**剪影**是唯一的差別 —— 而剪影可以用最高點
- * 量出來：四座一樣高的話玩家只能靠顏色分辨，而那四個顏色本來就很接近。
+ * They share a facade and a palette family, so **silhouette** is the only difference, and
+ * silhouette is measurable as a highest point: at equal heights the player can only tell them
+ * apart by colour, and those four colours are close together already.
  */
 describe('四座並排', () => {
   it('should give each utility a different height', () => {

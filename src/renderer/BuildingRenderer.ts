@@ -30,17 +30,19 @@ import { PALETTE } from '../ColorPalette';
 import { ZONE_BLOCKER_COLORS, ACTIONABLE_BLOCKERS, type ZoneBlocker } from '../core/zone/ZoneBlocker';
 import { UTILITY_WARNING_COLORS, type UtilityWarning, type WarnedCell } from '../core/building/BuildingUtilityWarning';
 
-/** 桶的初始容量。滿了就倍增（見 InstancedLayer）。 */
+/** A bucket's initial capacity. It doubles when full (see InstancedLayer). */
 const INITIAL_BUCKET_CAPACITY = 256;
 
 /**
- * 把一份幾何整理成可以合併的樣子：套上世界矩陣、去索引、只留位置與法線。
+ * Prepares one geometry for merging: applies the world matrix, de-indexes, and keeps only
+ * position and normal.
  *
- * `mergeGeometries` 要求每一份的屬性集合**完全相同**，而且索引要嘛全都有、要嘛
- * 全都沒有。城裡的模型並不齊：有的帶 uv、有的不帶，有的是索引幾何、有的不是。
- * 原本只刪掉幾個已知的屬性就丟進去合併，於是只要城裡有一棟基礎設施，合併就回
- * null —— 而那時候真正的建築早就 `visible = false` 了，畫面上什麼都不剩
- * （BUG-270）。白模只要形狀，所以其餘屬性一律不留。
+ * `mergeGeometries` requires every input to carry **exactly the same** attribute set, and either
+ * all indexed or none. The city's models are not uniform: some carry uvs and some do not, some
+ * are indexed and some are not. Removing only a few known attributes before merging makes the
+ * merge return null as soon as the city holds one piece of infrastructure — by which point the
+ * real buildings are already `visible = false`, leaving nothing on screen (BUG-270). A white
+ * model needs only the shape, so every other attribute is dropped.
  */
 function bakeForWhiteModel(src: THREE.BufferGeometry, matrix: THREE.Matrix4): THREE.BufferGeometry {
   const clone = src.clone();
@@ -62,38 +64,43 @@ export class BuildingRenderer {
   // --- Persistent variant meshes (pre-allocated, never disposed until game exit) ---
   private zoneLayer = new InstancedLayer(getBuildingMaterial(), INITIAL_BUCKET_CAPACITY);
   /**
-   * 地面物件層。與量體層平行，但**矩陣只含旋轉與位置** —— 沒有高度縮放
-   * 也沒有基地縮放，所以樹在每個等級都是同一個真實尺寸（BUG-219）。
+   * The ground-prop layer. Parallel to the massing layer, but its **matrix carries only rotation
+   * and position** — no height scaling and no footprint scaling — so a tree is the same real
+   * size at every level (BUG-219).
    */
   private propLayer = new InstancedLayer(getBuildingMaterial(), INITIAL_BUCKET_CAPACITY);
-  /** 地面貼片層：建築腳下的鋪面。完全平，不投影。 */
+  /** The ground decal layer: paving at a building's feet. Perfectly flat, casts no shadow. */
   private decalLayer = new InstancedLayer(getBuildingMaterial(), INITIAL_BUCKET_CAPACITY);
-  /** 懸挑層：雨遮、招牌、卸貨棚。挑到人行道上方，行人從下面走過。 */
+  /** The overhead layer: canopies, signage, loading shelters. They project over the sidewalk and pedestrians pass beneath. */
   private overheadLayer = new InstancedLayer(getBuildingMaterial(), INITIAL_BUCKET_CAPACITY);
 
   /**
-   * 掛在建築上的三層。
+   * The three layers attached to a building.
    *
-   * 三者的實例矩陣完全相同（旋轉 + 位置，不吃任何縮放 —— 那是 BUG-219 的
-   * 修法），差別只有幾何來源、基準高度與是否投影。列成表而不是寫三段幾乎
-   * 一樣的程式碼：加桶、取位、退位、重置、釋放五個地方都要一致，漏掉任何
-   * 一處就會留下孤兒實例，而畫面上只是「某一格的鋪面怪怪的」。
+   * All three take identical instance matrices — rotation plus position, with no scaling of any
+   * kind, which is the fix for BUG-219 — and differ only in geometry source, base height and
+   * whether they cast shadows. A table rather than three nearly identical code paths: adding a
+   * bucket, acquiring a slot, releasing one, resetting and disposing all have to agree, and
+   * missing any one leaves orphan instances that show up only as "the paving on that cell looks
+   * odd".
    */
   private readonly attachments: ReadonlyArray<{
     layer: InstancedLayer;
     variants: (zoneType: number, density: Density, level: number) => GeoBuilder[];
     castShadow: boolean;
     /**
-     * 實例的基準高度。貼片是 0：它的幾何自己帶著絕對高度（鋪面與標線的
-     * 層序必須留在幾何裡），再加一次就會把標線推離鋪面。
+     * The instance's base height. Decals use 0: their geometry carries absolute heights already,
+     * because the layering of paving and markings has to live in the geometry, and adding a base
+     * again would push the markings off the paving.
      */
     baseY: number;
     /**
-     * 牆體是圓的就跳過這一層。
+     * Skip this layer when the walls are round.
      *
-     * 只有懸挑要跳：雨遮與招牌都是平板，貼在圓弧牆上會穿出去或懸空 ——
-     * 與 BUG-226（雨遮貼在假想牆上）同一類，只是這次牆是彎的。矮物件站在
-     * 地上，牆彎不彎與它無關；鋪面更是完全在地面上。
+     * Only the overhead layer needs to: canopies and signage are flat panels and against a curved
+     * wall they either pierce it or float — the same class as BUG-226, where a canopy clung to an
+     * imagined wall, except that here the wall is curved. Low props stand on the ground and do
+     * not care about wall curvature, and paving is entirely on the ground.
      */
     skipWhenRound?: boolean;
   }> = [
@@ -110,7 +117,7 @@ export class BuildingRenderer {
 
   private variantInitialized = false;
 
-  /** 既有測試與內部程式碼從這兩個名字讀狀態。實體在 zoneLayer 裡。 */
+  /** Existing tests and internal code read state through these two names. The values live in zoneLayer. */
   private get variantMeshes(): ReadonlyMap<string, THREE.InstancedMesh> {
     return this.zoneLayer.bucketMap;
   }
@@ -126,7 +133,7 @@ export class BuildingRenderer {
   private infraGroups: THREE.Group[] = [];
   private infraIndex = new Map<string, THREE.Group>();
 
-  /** initVariantMeshes 收到的場景，重配時要用。 */
+  /** The scene handed to initVariantMeshes, needed on reallocation. */
   private scene: THREE.Scene | null = null;
 
   // Light spot system (fake ground glow near buildings at night)
@@ -170,7 +177,7 @@ export class BuildingRenderer {
     for (const zoneType of ZONE_TYPES) {
       const zoneCat = ZONE_CAT[zoneType] ?? 0;
       for (const density of ['LOW', 'HIGH'] as Density[]) {
-        // 只有辦公區兩種密度都有建築；其餘分區各只有一種。
+        // Only the office zone has buildings at both densities; every other zone has one.
         if (!TARGET_HEIGHTS_M[heightKey(zoneType, density)]) continue;
         for (const level of LEVELS) {
           const variants = getMassingVariants(zoneType, density, level);
@@ -196,11 +203,12 @@ export class BuildingRenderer {
   }
 
   /**
-   * 三個附掛層的實例矩陣：只有旋轉與位置。
+   * The three attachment layers' instance matrices: rotation and position only.
    *
-   * 沒有高度縮放也沒有基地縮放 —— 那正是 BUG-219 的修法。庭院跟著房子的
-   * 朝向轉，所以樹籬永遠在同一面，但尺寸是真實的公尺，與等級無關；同一件事
-   * 對鋪面與雨遮也成立（鋪面不會因為基地抖窄而縮水）。
+   * No height scaling and no footprint scaling, which is the fix for BUG-219. A yard turns with
+   * its house so the hedge always faces the same side, but its dimensions are real metres and
+   * independent of level. The same holds for paving and canopies: paving does not shrink because
+   * the footprint jittered narrower.
    */
   private syncAttachments(
     x: number, y: number, zoneType: number, density: Density, level: number,
@@ -231,9 +239,10 @@ export class BuildingRenderer {
       slot.mesh.instanceMatrix.needsUpdate = true;
       if (slot.grew) this._buildingMeshesDirty = true;
 
-      // 新取到的位置可能留著上一個佔用者的值（swap-with-last 會搬資料），
-      // 而招牌的亮暗吃這個值 —— 不清掉的話，剛蓋好的空屋會頂著前一戶的招牌
-      // 亮著。實際比例由 updateOccupancy 在下一次補上。
+      // A newly acquired slot can still hold the previous occupant's value, since swap-with-last
+      // moves data, and signage brightness reads it: uncleared, a freshly built empty house
+      // carries the previous tenant's sign, lit. The real ratio arrives with the next
+      // updateOccupancy.
       const occAttr = slot.mesh.geometry
         .getAttribute('aOccupancy') as THREE.InstancedBufferAttribute | undefined;
       if (occAttr) {
@@ -243,7 +252,7 @@ export class BuildingRenderer {
     }
   }
 
-  /** 三個附掛層一起退位。建築消失時它們沒有理由留下。 */
+  /** Releases all three attachment layers together. With the building gone they have no reason to stay. */
   private releaseAttachments(posKey: string): void {
     for (const a of this.attachments) a.layer.release(posKey);
   }
@@ -263,7 +272,7 @@ export class BuildingRenderer {
       x, y, zoneType, level, seedByte: 0,
       variantCount: variants.length, paletteSize: palette.length,
     });
-    if (!this.scene) return; // 尚未 build，無處可加
+    if (!this.scene) return; // not built yet, nowhere to add it
     const key = bucketKey(zoneType, density, level, app.variantIndex);
     const slot = this.zoneLayer.acquire(this.scene, key, `${x},${y}`);
     if (!slot) return;
@@ -271,7 +280,7 @@ export class BuildingRenderer {
     this.setInstanceData(slot.mesh, slot.idx, x, y, zoneType, density, level, burned, abandoned);
     slot.mesh.instanceMatrix.needsUpdate = true;
     if (slot.mesh.instanceColor) slot.mesh.instanceColor.needsUpdate = true;
-    // 倍增會換掉 mesh 物件，highlight 的快取才需要重建。
+    // Doubling replaces the mesh object, which is why the highlight cache has to be rebuilt.
     if (slot.grew) this._buildingMeshesDirty = true;
 
     this.syncAttachments(x, y, zoneType, density, level);
@@ -301,8 +310,9 @@ export class BuildingRenderer {
     mesh.instanceMatrix.needsUpdate = true;
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
 
-    // 三層的組合都依等級而不同，所以升級必須換桶 —— 只改矩陣的話，L3 的
-    // 房子會配著 L1 的素土院子。一律先退再取，比較等級反而多一份要維護的狀態。
+    // All three layers' contents differ by level, so an upgrade has to change buckets: with only
+    // the matrix updated, an L3 house keeps an L1 bare yard. Always release then acquire;
+    // comparing levels would be one more piece of state to maintain.
     this.releaseAttachments(posKey);
     this.syncAttachments(x, y, zoneType, density, level);
 
@@ -324,9 +334,11 @@ export class BuildingRenderer {
       paletteSize: palette.length,
     });
 
-    // 矩陣只有旋轉與位移。生成器產出的是最終尺寸，所以量體層與三個附掛層
-    // 的矩陣完全一致 —— 那個 scale(±15%, ±10%, ±15%) 是 BUG-219 與 BUG-226
-    // 的共同成因：附掛層的幾何是整桶共用的一份，看不到量體抖了多少。
+    // The matrix holds rotation and translation only. Generators emit final dimensions, so the
+    // massing layer and all three attachment layers take identical matrices. A
+    // scale(+/-15%, +/-10%, +/-15%) was the common cause of BUG-219 and BUG-226: an attachment
+    // layer's geometry is one copy shared across the bucket and cannot see how much the mass
+    // jittered.
     this._matrix.makeRotationY((app.rotationQuarter * Math.PI) / 2);
     this._matrix.setPosition(x, GROUND_LAYERS.BUILDING, y);
     mesh.setMatrixAt(idx, this._matrix);
@@ -348,17 +360,18 @@ export class BuildingRenderer {
     const seedAttr = mesh.geometry.getAttribute('aSeed') as THREE.InstancedBufferAttribute | undefined;
     if (seedAttr) {
       const arr = seedAttr.array as Float32Array;
-      // 樓層節奏由**變體**決定，不是逐格亂數：立面 shader 用它算窗戶橫列的
-      // 間距，而量體的高度是「樓層數 × 樓高」。兩邊各自取值的話，最上面那一排
-      // 窗會被屋頂切掉一半，而那不會有任何東西報錯。
+      // The floor rhythm comes from the **variant**, not from per-cell randomness: the facade
+      // shader computes window row spacing from it while a mass's height is floor count times
+      // storey height. Drawn separately, the top row of windows is cut in half by the roof and
+      // nothing reports it.
       //
-      // 副作用是有意的：同一變體的所有實例共用窗戶節奏與窗寬。同一個設計的
-      // 建築本來就長一樣，變化該來自變體本身。
+      // The side effect is intended: every instance of one variant shares its window rhythm and
+      // window width. Buildings of one design look alike, and variation comes from the variant.
       const fh = floorHeightOf(zoneType, density, level, app.variantIndex);
       arr[idx * 3] = (fh - FLOOR_HEIGHT_UNITS.MIN)
         / (FLOOR_HEIGHT_UNITS.MAX - FLOOR_HEIGHT_UNITS.MIN);
-      arr[idx * 3 + 1] = app.facadeSeed[1];   // 相位仍然逐格
-      arr[idx * 3 + 2] = app.facadeSeed[2];   // 材質偏好仍然逐格
+      arr[idx * 3 + 1] = app.facadeSeed[1];   // phase stays per cell
+      arr[idx * 3 + 2] = app.facadeSeed[2];   // material preference stays per cell
       seedAttr.needsUpdate = true;
     }
 
@@ -375,23 +388,17 @@ export class BuildingRenderer {
   // ─── Incremental infrastructure operations ─────────────────────
 
   /**
-   * 刻意伸到地面以下的基礎設施。
+   * Aligns a whole model group vertically to the ground.
    *
-   * 渡輪碼頭要伸進水裡（水面在 −0.2），把它壓到地面上等於讓碼頭浮在水面。
-   * 這是唯一的例外，所以列舉而不是加旗標欄位。
-   */
-  /**
-   * 把整組模型垂直對齊地面。
+   * Hand-written models placed seventeen types' geometry bottoms at 0.05, which is the **road**
+   * height rather than the ground height, floating them all 0.6 m up (BUG-224, the same cause as
+   * for zoned buildings). `CivicPlan`'s geometry already sits on `GROUND_LAYERS.BUILDING`, so the
+   * offset measured here is 0; it stays because what it guards against is the next model writing
+   * its bottom wrong, and nothing reports that.
    *
-   * 手寫的那一版有十七種的幾何底部寫在 0.05 —— 那是**路面**的高度，不是
-   * 地面的高度，所以它們全部浮空 0.6 m（BUG-224，與分區建築同一個成因）。
-   * `CivicPlan` 的幾何自己就貼著 `GROUND_LAYERS.BUILDING`，所以現在這裡
-   * 量出來的位移是 0；留著是因為它擋的是「下一個模型又把底部寫錯」，
-   * 而那種錯不會有任何東西報。
-   *
-   * **沒有例外。** 渡輪碼頭曾經是唯一伸進水裡的一種，而那一版在基地裡自己
-   * 畫了港池；查過 `isShorePosition` 之後拿掉了 —— 它的定義就是「這一格是
-   * 陸地，而且四鄰有一格是水」。碼頭蓋在陸地上，水在隔壁那一格。
+   * **No exceptions.** A ferry terminal does not reach into the water: `isShorePosition` defines
+   * its cell as land with water on one of the four neighbours, so the quay is built on land and
+   * the water is on the next cell.
    */
   private snapToGround(group: THREE.Group): void {
     const box = new THREE.Box3().setFromObject(group);
@@ -841,17 +848,17 @@ export class BuildingRenderer {
   }
 
   /**
-   * 一棟公共建築的模型。
+   * One civic building's model.
    *
-   * 走 `CivicPlan` —— 與展示區**同一份幾何、同一個 shader**
-   * （`placeCivicPlan`）。這裡原本是十九個手寫的 `buildXxx()`，實心
-   * `BoxGeometry` 加 `MeshLambertMaterial`：沒有窗戶、沒有夜間亮窗、
-   * 沒有自發光，整個檔案裡 `emissive` 出現 0 次（BUG-238）。兩條路各畫各的
-   * 結果是同一棟建築在遊戲裡與展示區長得不一樣。
+   * Built from a `CivicPlan`, the **same geometry and the same shader** the showcase uses
+   * (`placeCivicPlan`). Hand-written `buildXxx()` functions produced solid `BoxGeometry` with
+   * `MeshLambertMaterial`: no windows, no lit windows at night, no emissive anywhere in the file
+   * (BUG-238), and two separate drawing paths left one building looking different in the game and
+   * in the showcase.
    *
-   * 查不到 plan 的種類退回一個素方塊。目前十九種都有 plan，所以那條路走不到
-   * —— 但它比 `undefined` 好：新增一種 `InfraType` 卻忘了畫，畫面上會是一個
-   * 灰盒子而不是一片空地。
+   * A type with no plan falls back to a plain box. All nineteen types have plans, so that path is
+   * unreachable — but it beats `undefined`: adding an `InfraType` without drawing it shows a grey
+   * box rather than empty ground.
    */
   private buildModel(type: InfraType, group: THREE.Group): void {
     const plan = getCivicPlan(type);
@@ -917,18 +924,6 @@ export class BuildingRenderer {
       this.addInfraMesh(scene, domeGeo, domeMat, cx, h + 0.09, cz);
     }
   }
-
-  /**
-   * ── 十九個手寫的 `buildXxx()` 在這裡被刪掉了（約 1 700 行）。 ──
-   *
-   * 它們畫的是實心 `BoxGeometry` 加 `MeshLambertMaterial`：沒有窗戶、
-   * 沒有夜間亮窗、沒有自發光 —— 整段裡 `emissive` 出現 0 次（BUG-238）。
-   * 十九種全部改走 `CivicPlan` 之後這一段一個呼叫點都沒有了。
-   *
-   * 留著「以後可能用得到」是錯的：它們與 plan 各畫各的，而沒有人會去改
-   * 一段跑不到的程式碼 —— 它只會停在被取代的那一天的樣子，然後在某次
-   * 搜尋裡被誤認成現役的畫法。
-   */
 
   // ═══════════════════════════════════════════════════════════════════
 
@@ -1031,9 +1026,10 @@ export class BuildingRenderer {
   /**
    * Update per-instance occupancy attribute from occupancy ratio map.
    *
-   * **四層都要寫**，不只量體層。招牌與燈頭住在懸挑層與矮物件層，而它們的
-   * 亮不亮吃的是同一個 `aOccupancy`（`PART_LAMP`）—— 只寫量體層的話，
-   * 那兩層的值永遠停在 0，招牌與路燈整座城市都是暗的。
+   * **All four layers are written**, not only the massing layer. Signage and lamp heads live in
+   * the overhead and low-prop layers and their brightness reads the same `aOccupancy`
+   * (`PART_LAMP`); writing only the massing layer leaves those two at 0 forever, and every sign
+   * and street lamp in the city stays dark.
    */
   updateOccupancy(ratios: Map<string, number>): void {
     const layers = [this.zoneLayer, ...this.attachments.map(a => a.layer)];
@@ -1069,17 +1065,18 @@ export class BuildingRenderer {
   }
 
   private _focusMode = false;
-  /** 縮到 DETAIL_LOD.HIDE_ABOVE 之外。與 `_focusMode` 各自獨立（見 applyLayerVisibility）。 */
+  /** Zoomed out past DETAIL_LOD.HIDE_ABOVE. Independent of `_focusMode` (see applyLayerVisibility). */
   private _detailHidden = false;
   private _whiteModelMesh: THREE.Mesh | null = null;
 
   /**
-   * 聚焦中的那一種站點不白模化 —— 玩家點進「公車」就是要看公車站在哪，
-   * 把它跟其他建築一起漂白等於把要看的東西藏起來。
+   * The focused stop type is not whited out: a player who selects "bus" wants to see where the
+   * bus stops are, and bleaching them along with everything else hides the very thing they asked
+   * for.
    */
   private _focusExemptType: InfraType | null = null;
 
-  /** 這一組是聚焦中的站點嗎？隱藏與烘白模用的是同一個判斷。 */
+  /** Is this group the focused stop? Hiding and white-model baking share this test. */
   private isFocusExempt(group: THREE.Group): boolean {
     return this._focusExemptType !== null
       && group.userData['infraType'] === this._focusExemptType;
@@ -1126,13 +1123,15 @@ export class BuildingRenderer {
   }
 
   /**
-   * 依鏡頭的縮放決定要不要畫矮物件與懸挑。每幀呼叫，成本是兩個比較。
+   * Decides from camera zoom whether to draw low props and overhangs. Called every frame; the
+   * cost is two comparisons.
    *
-   * `frustumHeight` 是正交鏡頭的視錐高度（`camera.top - camera.bottom`），
-   * 單位是格。門檻與遲滯的理由見 `DETAIL_LOD`。
+   * `frustumHeight` is the orthographic camera's frustum height (`camera.top - camera.bottom`),
+   * in cells. The thresholds and their hysteresis are explained in `DETAIL_LOD`.
    *
-   * 地面貼片不在內：它是平的鋪面，撐住「地面有東西」的觀感，關掉會讓遠景
-   * 整片地變空，工業區那塊柏油也會跟著消失。
+   * Ground decals are not included: they are flat paving holding up the sense that the ground has
+   * something on it, and dropping them empties the ground at range, taking the industrial zone's
+   * asphalt with it.
    */
   updateDetailLOD(frustumHeight: number): void {
     const hidden = detailHidden(frustumHeight, this._detailHidden);
@@ -1142,11 +1141,11 @@ export class BuildingRenderer {
   }
 
   /**
-   * 把兩個獨立的閘門解析成三個附掛層的顯示狀態。
+   * Resolves two independent gates into the three attachment layers' visibility.
    *
-   * 檢視模式與縮放是兩件事，任一方直接設 `visible` 都會踩到對方 ——
-   * 離開白模檢視時把三層設回 true，縮在遠景的鏡頭就會突然長回矮物件，
-   * 而使用者從頭到尾沒有動過滾輪。
+   * View mode and zoom are separate concerns, and either one setting `visible` directly steps on
+   * the other: setting all three back to true on leaving white-model view makes a zoomed-out
+   * camera suddenly grow low props again, with the user never having touched the wheel.
    */
   private applyLayerVisibility(): void {
     this.decalLayer.setVisible(!this._focusMode);
@@ -1161,8 +1160,8 @@ export class BuildingRenderer {
     this._focusMode = enabled;
     const kind = getFocusedStopKind(mode);
     this._focusExemptType = kind ? TRANSPORT_TO_INFRA_TYPE[kind] : null;
-    // 三個附掛層以前完全沒被 setViewMode 碰過，也沒有烘進白模，所以貼片、
-    // 樹與招牌會維持原色浮在白模上面（BUG-232）。
+    // Untouched by setViewMode and not baked into the white model, the three attachment layers
+    // keep their own colours and float above it (BUG-232).
     this.applyLayerVisibility();
 
     if (enabled && scene) {
