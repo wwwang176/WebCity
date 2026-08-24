@@ -6,21 +6,23 @@ import { maxAbsOf, partOf, type Volume } from './volume';
 import { METRES_PER_CELL } from '../../../../core/grid/constants';
 
 /**
- * `massing/` 裡唯一碰 Three.js 的地方。
+ * The only place in `massing/` that touches Three.js.
  *
- * 所有形狀都用同一個 `frustum` 產生，差別只在頂面的尺寸與偏移：盒子的頂面與底面
- * 同大、山牆的頂面是一條線、四坡的頂面是一小塊、單斜的頂面是推到一側的線。
- * 五個形狀寫成五份幾何是五份幾乎一樣的頂點算術，而算錯只表現為
- * 「某個變體的屋頂怪怪的」。
+ * Every shape comes from the same `frustum`, differing only in the top face's size and offset: a
+ * box's top matches its base, a gable's top is a line, a hip's top is a small patch, and a
+ * shed's top is a line pushed to one side. Five shapes as five separate geometries would be five
+ * nearly identical pieces of vertex arithmetic, and getting one wrong shows up only as "one
+ * variant's roof looks odd".
  */
 
-/** 山牆的屋脊寬度佔比。0 會產生退化三角形，所以留一條細邊。 */
+/** The gable ridge's width as a fraction. 0 produces degenerate triangles, so a thin edge is left. */
 const RIDGE = 0.04;
 
 /**
- * 一個底面 w×d、頂面 topW×topD（可偏移）的稜台。
+ * A frustum with a w x d base and a topW x topD top, optionally offset.
  *
- * `y0 === 0` 時省略底面：那兩個三角形永遠貼在地上，看不到。
+ * With `y0 === 0` the base is omitted: those two triangles lie flat on the ground and are never
+ * seen.
  */
 function frustum(
   v: Volume, topW: number, topD: number, offX: number, offZ: number,
@@ -37,10 +39,11 @@ function frustum(
 
   const pos: number[] = [];
   /**
-   * 一個四邊形，四個角**逆時針排列（從該面的外側看）**。
+   * One quad whose four corners run **counter-clockwise seen from outside that face**.
    *
-   * 纏繞方向決定 `computeVertexNormals` 算出來的法線指向哪一側，而建築材質是
-   * `FrontSide` —— 反了就會看到建築的內壁，而且不會有任何東西報錯（BUG-227）。
+   * The winding decides which side `computeVertexNormals` points the normals toward, and the
+   * building material is `FrontSide`: reversed, what shows is the building's inner walls, with
+   * nothing reported (BUG-227).
    */
   const quad = (
     p0: [number, number, number], p1: [number, number, number],
@@ -54,12 +57,13 @@ function frustum(
       [t[j]![0], v.y1, t[j]![1]], [t[i]![0], v.y1, t[i]![1]],
     );
   }
-  // 頂面
+  // Top face
   quad(
     [t[0]![0], v.y1, t[0]![1]], [t[1]![0], v.y1, t[1]![1]],
     [t[2]![0], v.y1, t[2]![1]], [t[3]![0], v.y1, t[3]![1]],
   );
-  // 底面只有離地時才需要 —— 貼在地上的那兩個三角形永遠看不到。
+  // The base is needed only when the mass is off the ground; flat on it those two triangles are
+  // never seen.
   if (v.y0 > 1e-6) {
     quad(
       [b[3]![0], v.y0, b[3]![1]], [b[2]![0], v.y0, b[2]![1]],
@@ -74,24 +78,27 @@ function frustum(
   return geo;
 }
 
-/** 一片鋸齒天窗的跨距：大約 6 m 一道，與真實廠房接近。 */
+/** One sawtooth bay's span: roughly 6 m, close to a real industrial building's. */
 const SAWTOOTH_SPAN = 6 / METRES_PER_CELL;
 
 /**
- * 圓柱的邊數。8 在等角視角下已經讀得出圓，而且**有頂點落在 ±x 與 ±z 上** ——
- * 所以縮放之後它剛好填滿宣告的盒子，量體算出來的牆面位置仍然對得上幾何。
+ * A cylinder's side count. 8 already reads as round in an isometric view and **puts vertices on
+ * +/-x and +/-z**, so after scaling it exactly fills the declared box and the wall positions
+ * computed from the mass still match the geometry.
  */
 const CYLINDER_SIDES = 8;
 
 /**
- * 圓柱：煙囪、筒倉、儲槽。
+ * Cylinders: stacks, silos, tanks.
  *
- * 這是唯一不走 `frustum` 的形狀。用 `THREE.CylinderGeometry` 而不是自己疊三角形，
- * 因為它的纏繞方向本來就是外向的（BUG-227 的教訓）；但它是索引幾何又帶 uv，
- * 跟 `frustum` 的產物合併不起來，所以要先去掉 uv 再攤平。
+ * The one shape that does not go through `frustum`. It uses `THREE.CylinderGeometry` rather than
+ * hand-stacked triangles because its winding is outward already (the lesson of BUG-227), but it
+ * is indexed and carries uvs, which cannot merge with `frustum`'s output, so the uvs are dropped
+ * and it is de-indexed first.
  *
- * 攤平之後重算法線是刻意的：拿到的是平面著色，與其他形狀的低多邊形觀感一致。
- * 順序不能換 —— 非等比縮放會扭曲既有的法線。
+ * Recomputing normals after de-indexing is deliberate: it gives flat shading, consistent with
+ * the other shapes' low-poly look. The order cannot be swapped — non-uniform scaling distorts
+ * existing normals.
  */
 function cylinder(v: Volume): THREE.BufferGeometry {
   const src = new THREE.CylinderGeometry(0.5, 0.5, v.y1 - v.y0, CYLINDER_SIDES);
@@ -105,14 +112,15 @@ function cylinder(v: Volume): THREE.BufferGeometry {
 }
 
 /**
- * 半球：圓頂。
+ * Hemispheres: domes.
  *
- * 與 `cylinder` 同一條路徑（THREE 圖元 → 去 uv → 攤平 → 重算法線 → 縮放），
- * 理由也一樣：`SphereGeometry` 的纏繞方向本來就是外向的，而它帶 uv 又是索引
- * 幾何，不先攤平就與 `frustum` 的產物合併不起來。
+ * The same path as `cylinder` (THREE primitive, drop uvs, de-index, recompute normals, scale)
+ * for the same reasons: `SphereGeometry`'s winding is outward already, and it carries uvs and is
+ * indexed, so it cannot merge with `frustum`'s output without being de-indexed first.
  *
- * 分段數與圓柱同為 8：兩者常常疊在一起（圓頂坐在筒身上），邊數不同的話
- * 接縫會露出來。垂直分 4 段 —— 再少就會讀成一頂斗笠。
+ * The segment count matches the cylinder's 8: the two are often stacked, a dome on a shaft, and
+ * differing side counts leave the seam visible. Four vertical segments — fewer reads as a conical
+ * hat.
  */
 function dome(v: Volume): THREE.BufferGeometry {
   const src = new THREE.SphereGeometry(
@@ -121,7 +129,7 @@ function dome(v: Volume): THREE.BufferGeometry {
   src.deleteAttribute('uv');
   const geo = src.toNonIndexed();
   src.dispose();
-  // 半球的 y ∈ [0, 0.5]，要撐滿宣告的 [y0, y1]。
+  // The hemisphere's y runs 0 to 0.5 and has to fill the declared [y0, y1].
   geo.scale(v.w, (v.y1 - v.y0) * 2, v.d);
   geo.computeVertexNormals();
   geo.translate(v.x, v.y0, v.z);
@@ -129,76 +137,82 @@ function dome(v: Volume): THREE.BufferGeometry {
 }
 
 /**
- * 冷卻塔：**有腰的**旋轉體。
+ * Cooling towers: a **waisted** surface of revolution.
  *
- * 電廠在低多邊形城市裡最好認的剪影就是它，而那個形狀的實體只有一件事 ——
- * 中段比上下都窄。圓柱是直的、稜台是單調收放，兩個都做不出腰，所以這是
- * 唯一需要自己給側面輪廓的形狀。
+ * It is a power plant's most recognisable silhouette in a low-poly city, and that shape amounts
+ * to one fact: the middle is narrower than both ends. A cylinder is straight and a frustum is
+ * monotone, so neither produces a waist, making this the one shape that needs its own side
+ * profile.
  *
- * 輪廓本身在 `metrics.ts`：塔口那一圈環的內外緣（`COOL.THROAT` / `COOL.RIM`）
- * 是從同一條雙曲線算出來的，而量體資料要靠它們把航警燈放在環上。兩邊各算
- * 一份的話，腰的參數一動，燈就會掉進塔口。
+ * The profile itself lives in `metrics.ts`: the mouth ring's inner and outer edges
+ * (`COOL.THROAT` and `COOL.RIM`) are computed from the same hyperbola, and the mass data relies
+ * on them to place the obstruction light on the ring. Computed on both sides, changing the waist
+ * drops the light into the mouth.
  */
 function coolingTower(v: Volume): THREE.BufferGeometry {
   return lathe(coolingProfile().map(([r, y]) => new THREE.Vector2(r, y)), v);
 }
 
 /**
- * 煙囪：塔身微收，頂上一圈環，環的內側**凹下去**。
+ * Stacks: a slightly tapered shaft, a ring at the top, and the ring's inside **recessed**.
  *
- * 圓柱的頂是一片實心的圓盤，而真的煙囪頂上是一個洞 —— 十幾公尺高的東西
- * 在等角視角下最先看到的就是它的頂。
+ * A cylinder's top is a solid disc, while a real stack has a hole at the top — and the top is
+ * the first thing seen of anything ten metres tall in an isometric view.
  *
- * 凹槽用兩個同心圓柱做不出來：外筒的頂蓋會把內筒整個蓋掉。把外筒改成無蓋的
- * 管子也沒用 —— 建築材質是 `FrontSide`，管壁的法線朝外，俯視時內側被背面
- * 剔除，看到的是「穿過去」，也就是俯視時的那個破口。
+ * Two concentric cylinders cannot produce the recess: the outer cap covers the inner one
+ * entirely. Making the outer one an uncapped tube does not help either — the building material
+ * is `FrontSide`, a tube wall's normals point outward, and looking down the inside is back-face
+ * culled, showing straight through.
  *
- * 旋轉體給得出來：輪廓在頂端折回去往下走，那一段的法線跟著朝向軸心，
- * 所以俯視看得到的是凹槽的**內壁**而不是它的背面。
+ * A surface of revolution provides it: the profile folds back down at the top and that segment's
+ * normals turn toward the axis, so looking down shows the recess's **inner wall** rather than its
+ * back.
  */
 function chimney(v: Volume): THREE.BufferGeometry {
   const { BORE, COLLAR, DEPTH } = STACK;
   return lathe([
-    new THREE.Vector2(0.5, 0),            // 底座
-    new THREE.Vector2(COLLAR, 0.86),      // 微收的塔身
-    new THREE.Vector2(COLLAR, 1),         // 管口外緣
-    new THREE.Vector2(BORE, 1),           // 管口的環
-    new THREE.Vector2(BORE, 1 - DEPTH),   // 凹槽內壁（法線朝軸心）
-    new THREE.Vector2(0, 1 - DEPTH),      // 槽底
+    new THREE.Vector2(0.5, 0),            // base
+    new THREE.Vector2(COLLAR, 0.86),      // slightly tapered shaft
+    new THREE.Vector2(COLLAR, 1),         // outer edge of the mouth
+    new THREE.Vector2(BORE, 1),           // the mouth ring
+    new THREE.Vector2(BORE, 1 - DEPTH),   // recess inner wall, normals toward the axis
+    new THREE.Vector2(0, 1 - DEPTH),      // floor
   ], v);
 }
 
 /**
- * 圓槽：開口的容器，內壁一路往下到槽底。
+ * Tubs: open containers whose inner wall runs all the way down to the floor.
  *
- * 與煙囪的凹槽同一個做法、不同的用途 —— 這裡裝的是水，所以水面要**低於
- * 槽緣**才讀得出深度。實心的圓柱做不到：頂面是一片實心的圓盤，水面壓到它
- * 下面就整個埋進量體裡，資料是對的而畫面上什麼都沒有。
+ * The same construction as a stack's recess with a different purpose: this holds water, and the
+ * surface has to sit **below the rim** for the depth to read. A solid cylinder cannot do it —
+ * its top is a solid disc, and the surface pushed beneath it disappears inside the mass, with the
+ * data right and nothing on screen.
  *
- * 槽壁的厚度取 `TUB.INNER`，深度取 `TUB.DEPTH` —— 放水面的量體資料用的是
- * 同一組數字。
+ * The wall thickness comes from `TUB.INNER` and the depth from `TUB.DEPTH`, the same numbers the
+ * mass data uses to place the water surface.
  */
 function tub(v: Volume): THREE.BufferGeometry {
   const inner = 0.5 * TUB.INNER;
   const floor = 1 - TUB.DEPTH;
   return lathe([
-    new THREE.Vector2(0.5, 0),        // 槽底外緣
-    new THREE.Vector2(0.5, 1),        // 槽壁外側
-    new THREE.Vector2(inner, 1),      // 槽緣
-    new THREE.Vector2(inner, floor),  // 槽壁內側（法線朝軸心）
-    new THREE.Vector2(0, floor),      // 槽底
+    new THREE.Vector2(0.5, 0),        // outer edge of the floor
+    new THREE.Vector2(0.5, 1),        // outside of the wall
+    new THREE.Vector2(inner, 1),      // rim
+    new THREE.Vector2(inner, floor),  // inside of the wall, normals toward the axis
+    new THREE.Vector2(0, floor),      // floor
   ], v);
 }
 
 /**
- * 方池：`tub` 的矩形版，四片牆圍成一圈。
+ * Basins: the rectangular counterpart to `tub`, four walls enclosing a rectangle.
  *
- * 旋轉體轉不出矩形，而把盒子挖空要的是布林運算。四片實心的牆給得出同樣的
- * 東西，而且更便宜：一片盒子朝池心的那一面本來就是**朝內**的正面，
- * `FrontSide` 剔除不掉它。
+ * A surface of revolution cannot turn a rectangle, and hollowing a box takes boolean operations.
+ * Four solid walls give the same thing more cheaply: a box's face turned toward the centre is
+ * already an **inward-facing** front face, which `FrontSide` does not cull.
  *
- * 兩片沿 x 的牆走滿全寬、兩片沿 z 的牆縮掉牆厚，四個角因此只屬於前者 ——
- * 重疊的話那四個角會有兩層共面的皮。
+ * The two walls along x run the full width and the two along z are inset by the wall thickness,
+ * so the four corners belong to the former only; overlapping, those corners would carry two
+ * coplanar skins.
  */
 function basinWalls(v: Volume): THREE.BufferGeometry[] {
   const tw = v.w * (1 - TUB.INNER) / 2;
@@ -214,11 +228,11 @@ function basinWalls(v: Volume): THREE.BufferGeometry[] {
 }
 
 /**
- * 一條輪廓轉一圈。`cooling` 與 `stack` 共用。
+ * Revolves one profile. Shared by `cooling` and `stack`.
  *
- * 與 `cylinder` 同一條路徑（去 uv → 攤平 → 縮放 → 重算法線 → 位移），
- * 順序不能換：非等比縮放會扭曲既有的法線。輪廓的 x ∈ [0, 0.5]、y ∈ [0, 1]，
- * 縮放之後剛好填滿宣告的盒子。
+ * The same path as `cylinder` (drop uvs, de-index, scale, recompute normals, translate), and the
+ * order cannot be swapped: non-uniform scaling distorts existing normals. The profile's x runs 0
+ * to 0.5 and its y 0 to 1, so after scaling it exactly fills the declared box.
  */
 function lathe(profile: THREE.Vector2[], v: Volume): THREE.BufferGeometry {
   const src = new THREE.LatheGeometry(profile, CYLINDER_SIDES);
@@ -232,11 +246,11 @@ function lathe(profile: THREE.Vector2[], v: Volume): THREE.BufferGeometry {
 }
 
 /**
- * 一個量體的幾何。一份量體可能產出多份幾何（鋸齒天窗是一排）。
+ * One mass's geometry. A single mass can produce several geometries — a sawtooth roof is a row.
  *
- * 匯出是給 `geometry/civic/` 用的 —— 公共建築用同一組圖元，但護欄不同
- * （擋佔地邊界而不是行人包絡線）。圖元各寫一份的下場這個專案已經示範過
- * （BUG-231 的地板顏色）。
+ * Exported for `geometry/civic/`: civic buildings use the same primitives with a different guard,
+ * bounding the plot rather than the pedestrian envelope. A second copy of the primitives is the
+ * mistake behind BUG-231's duplicated floor colour.
  */
 export function shapeOf(v: Volume): THREE.BufferGeometry[] {
   const alongZ = (v.facing ?? 0) % 2 === 0;
@@ -284,11 +298,12 @@ export function shapeOf(v: Volume): THREE.BufferGeometry[] {
 }
 
 /**
- * 量體轉幾何。越過行人包絡線時**丟例外**。
+ * Turns masses into geometry. **Throws** when anything crosses the pedestrian envelope.
  *
- * 例外在遊戲執行時不該發生：生成器是確定性的、變體集合固定，所以測試跑過就
- * 表示永遠不會丟。那個 throw 是給未來改原型的人的護欄，不是執行期的錯誤處理 ——
- * 靜靜地讓行人穿牆比當場炸掉難追一百倍。
+ * The exception should never fire while the game runs: the generators are deterministic and the
+ * variant set is fixed, so passing tests mean it never throws. The throw is a guard for whoever
+ * changes a prototype later, not run-time error handling — silently letting pedestrians walk
+ * through walls is a hundred times harder to track down than failing on the spot.
  */
 export function assemble(volumes: readonly Volume[]): THREE.BufferGeometry {
   const over = maxAbsOf(volumes) - HALF_ENVELOPE;

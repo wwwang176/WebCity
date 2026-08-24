@@ -21,31 +21,35 @@ import {
 } from '../props';
 
 /**
- * 矮物件層 —— 站在地上、行人會撞到的東西。
+ * The low-prop layer: things standing on the ground that pedestrians would walk into.
  *
- * 它存在的理由是 BUG-219：等級以 `makeScale(w, h, d)` 乘在整份合併幾何上，
- * 所以住宅低密度 L1 升到 L3 時，庭院的樹跟著被拉高 1.75 倍（1.44 -> 2.52 m）。
- * 樹不會因為房子加蓋而長高。搬出來之後這一層只吃旋轉與位置，高度與基地
- * 縮放都不套用 —— 樹在每個等級都是同一個真實尺寸。
+ * It exists because of BUG-219. Level scaling multiplies `makeScale(w, h, d)` over the whole
+ * merged geometry, so upgrading low-density residential from L1 to L3 stretches the yard's tree
+ * by 1.75x, from 1.44 to 2.52 m. A tree does not grow because the house gained a storey. Split
+ * out, this layer takes rotation and position only, with neither height nor footprint scaling
+ * applied, so a tree is the same real size at every level.
  *
- * 幾何一律以**真實尺寸**撰寫（1 格 = 12 m），不再是「會被縮放的相對比例」。
+ * Geometry here is always written at **real size** (1 cell = 12 m), never as a proportion
+ * awaiting a scale.
  *
- * 帶寬差很多：住宅低有 1.45 m（放得下樹），其他分區只有 0.4 m（只放得下
- * 矮柱、垃圾桶、單車架）。所以每個零件都吃 `Band`，自己決定塞不塞得下。
+ * Band widths vary widely: low-density residential has 1.45 m, enough for a tree, while other
+ * zones have 0.4 m, enough only for bollards, bins and bike racks. So every piece takes a `Band`
+ * and decides for itself whether it fits.
  */
 
 export const PROP_TRIANGLE_BUDGET = TRIANGLE_BUDGET.PROP;
 
-/** 公尺換算成格。 */
+/** Metres to cells. */
 const M = (metres: number) => metres / METRES_PER_CELL;
 
 export type YardRing = Band;
 
 /**
- * 建築讓出來的環帶 —— 矮物件帶的別名。
+ * The ring a building leaves free: an alias for the low-prop band.
  *
- * 推導本身住在 `propBands`：貼片、矮物件、懸挑三類共用同一個內緣（建築抖到
- * 最寬時的外緣），只有外緣不同。把它留在這裡會變成第二份會漂移的推導。
+ * The derivation itself lives in `propBands`, where decals, low props and overhangs share one
+ * inner edge — the building's outer edge at its widest jitter — and differ only in outer edge.
+ * Kept here it would be a second derivation, free to drift.
  */
 export function yardRing(
   zoneType: number, density: Density, level: number,
@@ -57,15 +61,15 @@ export function hasGroundProps(zoneType: number, density: Density, level: number
   return getGroundPropVariants(zoneType, density, level).length > 0;
 }
 
-// ===== 放置輔助 =====
+// ===== Placement helpers =====
 
-/** 環帶的中線。單點物件放這裡，內外都留一半的餘裕。 */
+/** The band's centre line. A point object goes here, leaving half the clearance on each side. */
 const mid = (b: Band) => (b.inner + b.outer) / 2;
 
-/** 環帶的半寬。任何單點物件的半徑上限。 */
+/** The band's half-width: the radius limit for any point object. */
 const halfBand = (b: Band) => (b.outer - b.inner) / 2;
 
-/** 半徑取 `wanted` 與環帶容得下的較小者，讓同一個零件在寬窄帶都能用。 */
+/** Takes the smaller of `wanted` and what the band can hold, so one piece works in wide and narrow bands alike. */
 function fit(b: Band, wantedM: number, ratio = 0.9): number {
   return Math.min(M(wantedM), halfBand(b) * ratio);
 }
@@ -73,17 +77,17 @@ function fit(b: Band, wantedM: number, ratio = 0.9): number {
 type Axis = 'x' | 'z';
 type Sign = 1 | -1;
 
-/** 把 (沿邊位置 t, 離心距離 d) 換成 x/z。 */
+/** Converts (position along the edge t, distance from centre d) into x/z. */
 function place(axis: Axis, sign: Sign, t: number, d: number): [number, number] {
   return axis === 'z' ? [t, sign * d] : [sign * d, t];
 }
 
-// ===== 零件 =====
+// ===== Pieces =====
 
-/** 帶的深度：留兩成餘裕，物件不貼齊帶的內外緣。 */
+/** The band's usable depth: 20% clearance, so objects do not sit flush against either edge. */
 const bandDepth = (b: Band) => (b.outer - b.inner) * 0.8;
 
-/** 沿著某一邊的連續帶狀物（樹籬、花台、矮牆）。 */
+/** A continuous strip along one edge: hedge, planter, low wall. */
 function strip(
   b: Band, axis: Axis, sign: Sign, lengthFrac: number, heightM: number, part: number,
 ): THREE.BufferGeometry {
@@ -91,23 +95,24 @@ function strip(
   return propStrip(x, z, axis, b.outer * 2 * lengthFrac, bandDepth(b), heightM, part);
 }
 
-/** 樹籬。 */
+/** A hedge. */
 const hedge = (b: Band, axis: Axis, sign: Sign, lengthFrac: number, heightM: number) =>
   strip(b, axis, sign, lengthFrac, heightM, PART_FOLIAGE);
 
-/** 石砌花台／矮牆。標 PART_DETAIL 走金屬灰分支，不長窗戶也不變綠。 */
+/** A stone planter or low wall. Tagged PART_DETAIL for the metal-grey branch, so it grows no windows and does not turn green. */
 const planter = (b: Band, axis: Axis, sign: Sign, lengthFrac: number) =>
   strip(b, axis, sign, lengthFrac, 0.4, PART_DETAIL);
 
 /**
- * 柱狀樹（絲柏型）。
+ * A columnar tree, cypress-shaped.
  *
- * 庭院帶最寬也只有 1.45 m，球狀樹冠塞不下；柱狀的樹冠窄、可以往上長，
- * 是這個尺寸下唯一還像樹的選擇。
+ * The yard band is 1.45 m at its widest and a round crown does not fit; a columnar crown is
+ * narrow and grows upward, the only choice at this size that still reads as a tree.
  *
- * 樹本身住在 `geometry/plants` —— 公共建築的綠地共用同一棵。這裡只負責把
- * 「環帶上的哪個位置」換算成座標與半徑，因為帶是**住宅這一側才有**的概念
- * （公共建築佔 2×2 到 9×6 格，沒有環帶這回事）。
+ * The tree itself lives in `geometry/plants`, shared with civic buildings' greenery. This only
+ * converts a position on the band into coordinates and a radius, because the band is a concept
+ * that exists **on the zoned side only** — civic buildings occupy 2x2 to 9x6 cells and have no
+ * ring.
  */
 function columnarTree(
   b: Band, axis: Axis, sign: Sign, t: number, heightM: number,
@@ -117,48 +122,49 @@ function columnarTree(
 }
 
 /**
- * 種在某一邊的樹。
+ * A tree planted on one named side.
  *
- * 吃**邊名**而不是軸與方向：樹要站在草皮上，而哪幾邊是草皮寫在前庭那一層
- * （`lawnSidesFor`）。用 (軸, 方向) 寫的話，這邊寫 `('x', -1)`、那邊寫 `'w'`，
- * 對不對得上只能自己回想 —— 對不上就是一棵從柏油裡長出來的樹。
+ * It takes an **edge name** rather than an axis and a sign: a tree stands on grass, and which
+ * edges are grass is stated by the forecourt layer (`lawnSidesFor`). Written as (axis, sign),
+ * one side says `('x', -1)` and the other says `'w'`, and whether they agree can only be worked
+ * out from memory — disagreeing, the result is a tree growing out of asphalt.
  */
 function treeOn(b: Band, side: Side, t: number, heightM: number) {
   const { axis, sign } = SIDE_AXIS[side];
   return columnarTree(b, axis, sign, t, heightM);
 }
 
-/** 矮灌木叢。與樹一樣，球本身住在 `geometry/plants`。 */
+/** A low shrub. As with the tree, the sphere itself lives in `geometry/plants`. */
 function shrub(b: Band, axis: Axis, sign: Sign, t: number, radiusM: number) {
   const [x, z] = place(axis, sign, t, mid(b));
   return plantShrubBall(x, z, fit(b, radiusM, 0.95));
 }
 
-/** 修剪灌木球：兩顆球疊在一根短柱上。 */
+/** A topiary ball: two spheres stacked on a short stem. */
 function topiary(b: Band, axis: Axis, sign: Sign, t: number) {
   const [x, z] = place(axis, sign, t, mid(b));
   return plantTopiary(x, z, fit(b, 0.35, 0.85));
 }
 
-/** 圓花圃：一圈矮牆加中間的花。 */
+/** A round flower bed: a low ring wall with flowers inside. */
 function flowerBed(b: Band, axis: Axis, sign: Sign, t: number) {
   const [x, z] = place(axis, sign, t, mid(b));
   return plantFlowerBed(x, z, fit(b, 0.45, 0.9));
 }
 
-/** 信箱：一根柱加一個箱。 */
+/** A mailbox: a post and a box. */
 function mailbox(b: Band, axis: Axis, sign: Sign, t: number) {
   const [x, z] = place(axis, sign, t, mid(b));
   return propMailbox(x, z);
 }
 
-/** 垃圾桶。 */
+/** A bin. */
 function bin(b: Band, axis: Axis, sign: Sign, t: number) {
   const [x, z] = place(axis, sign, t, mid(b));
   return propBin(x, z, fit(b, 0.28, 0.9));
 }
 
-/** 矮柱列：沿著一條邊等距的短柱，擋車用。 */
+/** A bollard row: short posts evenly spaced along one edge, keeping vehicles out. */
 function bollards(b: Band, axis: Axis, sign: Sign, count: number) {
   const out: THREE.BufferGeometry[] = [];
   const span = b.outer * 1.5;
@@ -170,7 +176,7 @@ function bollards(b: Band, axis: Axis, sign: Sign, count: number) {
   return out;
 }
 
-/** 圍籬柱列：比矮柱細，配上一道橫桿。 */
+/** A picket row: thinner than bollards, with a rail across them. */
 function picketFence(b: Band, axis: Axis, sign: Sign, count: number) {
   const out: THREE.BufferGeometry[] = [];
   const span = b.outer * 1.7;
@@ -183,24 +189,24 @@ function picketFence(b: Band, axis: Axis, sign: Sign, count: number) {
   return out;
 }
 
-/** 單車架：兩個環。 */
+/** A bike rack: two hoops. */
 function bikeRack(b: Band, axis: Axis, sign: Sign, t: number) {
   const [x, z] = place(axis, sign, t, mid(b));
   return propBikeRack(x, z, axis);
 }
 
 /**
- * 庭園燈／路燈。
+ * A garden or street lamp.
  *
- * 燈桿是冷的金屬（`PART_DETAIL`），只有**燈頭**發光（`PART_LAMP`）——
- * 整支都標成發光的話，夜裡會看到一根從地上亮到頂的柱子。
+ * The pole is cold metal (`PART_DETAIL`) and only the **head** glows (`PART_LAMP`); tagging the
+ * whole thing as glowing gives a post lit from the ground to the top at night.
  */
 function lamp(b: Band, axis: Axis, sign: Sign, t: number, heightM: number) {
   const [x, z] = place(axis, sign, t, mid(b));
   return propLamp(x, z, heightM);
 }
 
-/** 曬衣桿：兩根柱加兩條橫線。 */
+/** A drying rack: two posts and two lines. */
 function dryingRack(b: Band, axis: Axis, sign: Sign) {
   const out: THREE.BufferGeometry[] = [];
   const span = b.outer * 0.9;
@@ -213,77 +219,80 @@ function dryingRack(b: Band, axis: Axis, sign: Sign) {
   return out;
 }
 
-/** 告示牌／招牌立柱。 */
+/** A notice board or sign post. */
 function signPost(b: Band, axis: Axis, sign: Sign, t: number) {
   const [x, z] = place(axis, sign, t, mid(b));
   return propSignPost(x, z, axis);
 }
 
-/** 油桶（工業）。 */
+/** A drum (industrial). */
 function drum(b: Band, axis: Axis, sign: Sign, t: number) {
   const [x, z] = place(axis, sign, t, mid(b));
   return propDrum(x, z, fit(b, 0.29, 0.9));
 }
 
 /**
- * 管架：兩根立柱撐著兩條橫管（工業）。
+ * A pipe rack: two posts carrying two horizontal pipes (industrial).
  *
- * 廠區最好認的東西之一，而且它是**水平**的 —— 這一層原本清一色是站著的
- * 柱狀物，加一個橫的立刻讀得出「這裡有製程」。
+ * One of the most recognisable things on an industrial site, and it is **horizontal**. Among a
+ * layer otherwise made entirely of upright posts, one horizontal piece immediately reads as "a
+ * process runs here".
  *
- * 高度壓在 2 m 以下：再高就侵入懸挑層的淨空（`OVERHEAD_CLEARANCE`）。
+ * Kept under 2 m: any higher and it enters the overhead layer's clearance
+ * (`OVERHEAD_CLEARANCE`).
  */
 function pipeRack(b: Band, axis: Axis, sign: Sign, lengthFrac: number) {
   const [x, z] = place(axis, sign, 0, mid(b));
   return propPipeRack(x, z, axis, b.outer * 2 * lengthFrac);
 }
 
-/** 氣瓶架：三支高壓氣瓶靠著一道矮框（工業）。 */
+/** A gas bottle rack: three cylinders against a low frame (industrial). */
 function gasBottles(b: Band, axis: Axis, sign: Sign, t: number) {
   const [x, z] = place(axis, sign, t, mid(b));
   return propGasBottles(x, z, axis, fit(b, 0.16, 0.9));
 }
 
 /**
- * 棧板堆：三層木棧板疊著（工業）。
+ * A pallet stack: three wooden pallets (industrial).
  *
- * 沿邊的長度不受帶寬限制 —— 帶子只有 0.4 m 深，但沿著牆可以擺 1.2 m 長。
- * 所以這是窄帶裡少數還放得下的「有體積的貨」。
+ * Its length along the edge is not bounded by the band's width: the band is 0.4 m deep, but 1.2 m
+ * fits along the wall. So it is one of the few pieces of goods with real volume that a narrow
+ * band can still hold.
  */
 function palletStack(b: Band, axis: Axis, sign: Sign, t: number) {
   const [x, z] = place(axis, sign, t, mid(b));
   return propPalletStack(x, z, axis, bandDepth(b));
 }
 
-/** 消防栓（工業／商業）。 */
+/** A hydrant (industrial and commercial). */
 function hydrant(b: Band, axis: Axis, sign: Sign, t: number) {
   const [x, z] = place(axis, sign, t, mid(b));
   return propHydrant(x, z);
 }
 
-/** 旗桿（辦公）。 */
+/** A flagpole (office). */
 function flagpole(b: Band, axis: Axis, sign: Sign, t: number) {
   const [x, z] = place(axis, sign, t, mid(b));
   return propFlagpole(x, z, axis);
 }
 
-// ===== 各分區的組合 =====
+// ===== Per-zone recipes =====
 
 type Recipe = (b: Band) => THREE.BufferGeometry[];
 
 /**
- * 住宅低密度的庭院階梯（規格修訂 4 的「周邊」欄）。
+ * The low-density residential yard ladder (the "surroundings" column of spec revision 4).
  *
- *   L1 素土院子：木柵、灌木、信箱、垃圾桶，四戶裡有一戶前院種了樹
- *      （四戶都種的話 L1 的零件量會超過 L2，等級階梯就倒過來了）
- *   L2 樹籬與一棵樹：樹籬、柱狀樹、花圃、單車架、曬衣桿
- *   L3 修剪庭園：三面樹籬、兩棵樹、修剪灌木球、花台、庭園燈
+ *   L1 bare yard: pickets, shrubs, mailbox, bin, with a tree in one front yard out of four
+ *      (a tree in all four would push L1's piece count above L2's and invert the ladder)
+ *   L2 hedge and one tree: hedge, columnar tree, flower bed, bike rack, drying rack
+ *   L3 tended garden: hedges on three sides, two trees, topiary, planter, garden lamp
  *
- * 每個等級四個組合 —— 兩個配四向旋轉只有 8 種面貌，一個 8x8 街廓看得出
- * 重複。四個就是 16 種。
+ * Four recipes per level: two combined with four rotations give only 8 faces, and an 8x8 block
+ * shows the repetition. Four give 16.
  *
- * 前庭的草皮：L1 只有北側，L2 北與東，L3 北東西。**樹只種在這幾邊** ——
- * 其餘的邊是車道與步道。
+ * Forecourt grass: north only at L1, north and east at L2, north, east and west at L3. **Trees go
+ * only on those sides** — the rest are the driveway and the path.
  */
 const RES_LOW: [Recipe[], Recipe[], Recipe[]] = [
   [
@@ -294,8 +303,8 @@ const RES_LOW: [Recipe[], Recipe[], Recipe[]] = [
           ...treeOn(b, 'n', -0.14, 3.2), ...mailbox(b, 'z', 1, 0.3)],
     b => [...picketFence(b, 'z', -1, 5), ...bin(b, 'x', -1, 0.2), shrub(b, 'z', -1, -0.2, 0.5)],
   ],
-  // L2 保留 L1 的信箱與垃圾桶：房子升級不會把信箱弄丟。少了這一條，
-  // 「L2 比 L1 豐富」在幾何上不成立 —— L1 的四道木柵反而零件更多。
+  // L2 keeps L1's mailbox and bin: upgrading a house does not lose its mailbox. Without them,
+  // "L2 is richer than L1" does not hold geometrically — L1's four picket runs are more pieces.
   [
     b => [hedge(b, 'z', 1, 0.9, 0.9), ...treeOn(b, 'e', -0.2, 4.0),
           ...flowerBed(b, 'z', 1, 0.28), ...bikeRack(b, 'z', 1, -0.25),
@@ -326,7 +335,7 @@ const RES_LOW: [Recipe[], Recipe[], Recipe[]] = [
   ],
 ];
 
-/** 商業：人行道家具。窄帶（0.4 m）只放得下柱狀物。 */
+/** Commercial: sidewalk furniture. A 0.4 m band holds upright pieces only. */
 const COMMERCIAL: [Recipe[], Recipe[], Recipe[]] = [
   [
     b => [...bin(b, 'z', 1, 0.28), ...hydrant(b, 'x', 1, -0.2)],
@@ -345,11 +354,12 @@ const COMMERCIAL: [Recipe[], Recipe[], Recipe[]] = [
 ];
 
 /**
- * 工業：管架、氣瓶、棧板、油桶、矮柱、消防栓。廠區沒有綠化。
+ * Industrial: pipe racks, gas bottles, pallets, drums, bollards, hydrants. No greenery on an
+ * industrial site.
  *
- * 工業的等級階梯不表現在高度上（現代廠房都是單層挑高、鋪滿基地），所以
- * 它全靠設備 —— 這一層與煙囪、筒倉一起，是「這是工廠不是商店」的全部證據。
- * 改版之前這裡只有油桶與消防栓，零件量比商業人行道還少。
+ * Industry's level ladder does not show in height — modern plants are single-storey with high
+ * ceilings, covering the plot — so it rests entirely on equipment. Together with stacks and
+ * silos, this layer is the whole of the evidence that this is a factory rather than a shop.
  */
 const INDUSTRIAL: [Recipe[], Recipe[], Recipe[]] = [
   [
@@ -375,9 +385,11 @@ const INDUSTRIAL: [Recipe[], Recipe[], Recipe[]] = [
 ];
 
 /**
- * 辦公：旗桿、花圃、單車架。L3 的前庭西側是綠地，所以那一邊種樹。
+ * Office: flagpole, flower bed, bike rack. At L3 the forecourt's west side is grass, so the tree
+ * goes there.
  *
- * 兩種密度共用這一份 —— 它們的前庭配方在 L3 都是「三面磚鋪 + 西側綠地」。
+ * Both densities share this recipe: at L3 both forecourts are brick on three sides with grass to
+ * the west.
  */
 const OFFICE: [Recipe[], Recipe[], Recipe[]] = [
   [
@@ -397,10 +409,11 @@ const OFFICE: [Recipe[], Recipe[], Recipe[]] = [
 ];
 
 /**
- * 住宅高：入口綠化，介於住宅低與商業之間。
+ * High-density residential: entrance planting, between low-density residential and commercial.
  *
- * 前庭的草皮 L1 沒有、L2 北側、L3 北與西 —— 樹跟著走。帶寬只有 0.4 m，
- * 所以是細瘦的行道樹（0.36 m 寬、3 m 高），不是住宅低那種 5 m 的庭園樹。
+ * Forecourt grass: none at L1, north at L2, north and west at L3, and the trees follow it. The
+ * band is only 0.4 m wide, so these are slender street trees at 0.36 m across and 3 m tall,
+ * rather than low-density residential's 5 m garden trees.
  */
 const RES_HIGH: [Recipe[], Recipe[], Recipe[]] = [
   [
@@ -429,7 +442,7 @@ const RECIPES: Record<string, [Recipe[], Recipe[], Recipe[]]> = {
   [heightKey(ZoneType.OFFICE, 'HIGH')]:           OFFICE,
 };
 
-/** 這個 (分區, 密度, 等級) 的矮物件組合。沒有帶子就沒有物件。 */
+/** The low-prop recipes for this (zone, density, level). No band means no props. */
 export function getGroundPropVariants(
   zoneType: number, density: Density, level: number,
 ): GeoBuilder[] {
