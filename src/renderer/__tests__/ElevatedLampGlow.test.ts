@@ -6,10 +6,11 @@ import { Grid } from '../../core/grid/Grid';
 import { RoadType, RoadDirection } from '../../core/road/types';
 
 /**
- * 高架路燈的光暈是半圓。
+ * An elevated street lamp's glow is a half circle.
  *
- * 燈站在橋面邊緣，整圈的光暈有一半會灑到橋外的空中 —— 看起來像一片浮在半空的
- * 黃霧。地面的路燈不受影響，它四周都是地。
+ * The lamp stands at the deck's edge, where half of a full ring falls into open air beyond the
+ * bridge and reads as yellow haze floating in mid-air. Ground lamps are unaffected: they have ground
+ * all around them.
  */
 
 function elevatedScene(): THREE.Scene {
@@ -27,7 +28,7 @@ function elevatedScene(): THREE.Scene {
   return scene;
 }
 
-/** 找出光暈那個 mesh —— 它是唯一帶頂點色漸層的圓盤。 */
+/** Finds the glow mesh: the only disc with a vertex-colour gradient. */
 function glowGeometry(scene: THREE.Scene): THREE.BufferGeometry {
   let found: THREE.BufferGeometry | null = null;
   scene.traverse((o) => {
@@ -41,20 +42,22 @@ function glowGeometry(scene: THREE.Scene): THREE.BufferGeometry {
 
 describe('高架路燈的光暈', () => {
   it('should only cover half the disc', () => {
-    // 整圓的話所有頂點會繞著中心散開一圈;半圓的話全部落在同一側。
+    // A full circle spreads its vertices all the way around the centre; a half circle keeps them on
+    // one side.
     const pos = glowGeometry(elevatedScene()).getAttribute('position');
     let minZ = Infinity, maxZ = -Infinity;
     for (let i = 0; i < pos.count; i++) {
       minZ = Math.min(minZ, pos.getZ(i));
       maxZ = Math.max(maxZ, pos.getZ(i));
     }
-    // 半圓靠在 z=0 這條直邊上，只往一側長。
+    // The half circle rests on the straight edge at z=0 and extends to one side only.
     expect(Math.min(Math.abs(minZ), Math.abs(maxZ))).toBeLessThan(1e-6);
     expect(Math.max(Math.abs(minZ), Math.abs(maxZ))).toBeGreaterThan(0.3);
   });
 
   it('should still fade out from the lamp', () => {
-    // 頂點色是漸層，中心亮邊緣暗。半圓化不能把它弄丟。
+    // The vertex colours are a gradient, bright at the centre and dark at the rim; halving must not
+    // lose it.
     const geo = glowGeometry(elevatedScene());
     const color = geo.getAttribute('color');
     let min = Infinity, max = -Infinity;

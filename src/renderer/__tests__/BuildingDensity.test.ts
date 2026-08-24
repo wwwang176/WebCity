@@ -6,8 +6,8 @@ import { Grid } from '../../core/grid/Grid';
 import { ZoneType } from '../../core/grid/types';
 
 /**
- * BUG-220：辦公區有兩種密度，人口差 11 倍（15 對 160），而渲染層拿不到
- * 密度，所以兩者外觀完全一樣。
+ * BUG-220: offices come in two densities whose populations differ elevenfold, 15 against 160, while
+ * the renderer cannot see the density and draws both identically.
  */
 interface Internals {
   positionToInstance: Map<string, { key: string; idx: number }>;
@@ -26,8 +26,9 @@ describe('density reaches the renderer', () => {
     renderer.addBuilding(1, 1, ZoneType.OFFICE, 'LOW', 1, false);
     renderer.addBuilding(2, 1, ZoneType.OFFICE, 'HIGH', 1, false);
 
-    // 比對 key 裡的密度段，不是整個 key：兩個不同格子的 variantIndex 本來
-    // 就可能不同，整串比對會在密度根本沒進 key 時照樣通過。
+    // Compares the density field of the key rather than the whole key: two cells may legitimately
+    // differ in variantIndex, and comparing the whole string passes even when the density never
+    // entered the key at all.
     const densityOf = (posKey: string) =>
       internals.positionToInstance.get(posKey)!.key.split('_')[1];
     expect(densityOf('1,1')).toBe('LOW');
@@ -39,8 +40,8 @@ describe('density reaches the renderer', () => {
     renderer.addBuilding(1, 1, ZoneType.OFFICE, 'LOW', 1, false);
     renderer.addBuilding(2, 1, ZoneType.OFFICE, 'HIGH', 1, false);
 
-    // 量幾何本身的高度，不是矩陣的縮放 —— 生成器產出的就是最終尺寸，
-    // 矩陣只剩旋轉與位移（階段 2C-1）。
+    // Measures the geometry's own height rather than the matrix scale: the generator emits final
+    // dimensions and the matrix carries only rotation and translation.
     const heightAt = (posKey: string) => {
       const e = internals.positionToInstance.get(posKey)!;
       const geo = internals.variantMeshes.get(e.key)!.geometry;

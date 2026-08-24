@@ -2,21 +2,21 @@ import { describe, it, expect } from 'vitest';
 import { BUILDING_VERT } from '../BuildingMaterial';
 
 /**
- * 建築的牆色從哪裡來。
+ * Where a building's wall colour comes from.
  *
- * 分區建築走 `InstancedMesh.setColorAt` → `instanceColor`，那條路徑一直是對的。
- * 但公共建築在遊戲裡是 `THREE.Group` 底下的普通 `Mesh`，展示區也是普通 `Mesh`
- * —— 它們**沒有** `instanceColor`，所以會落到 `#else` 分支。
+ * Zoned buildings go through `InstancedMesh.setColorAt` into `instanceColor`. Civic buildings are
+ * plain `Mesh` nodes under a `THREE.Group` in the game and plain `Mesh` nodes in the showcase, so
+ * they have **no** `instanceColor` and fall to the `#else` branch.
  *
- * 那個分支以前寫死 `vec3(0.7)`：不論是警局還是消防局，牆一律是同一片灰。
- * 「警局藍、消防局紅」在那個寫法下做不到。
+ * With `vec3(0.7)` hardcoded in that branch, a police station and a fire station both get one flat
+ * grey, and "police blue, fire red" is unreachable.
  */
 /**
- * 只切出決定 `vBldgColor` 的那一段。
+ * Cuts out only the section that decides `vBldgColor`.
  *
- * 不能用 `indexOf('#ifdef USE_INSTANCING')` 當終點 —— `USE_INSTANCING` 是
- * `USE_INSTANCING_COLOR` 的前綴，所以它會撞回起點，切出空字串，而空字串
- * 讓 `toContain` 以外的斷言全部靜靜地通過。
+ * `indexOf('#ifdef USE_INSTANCING')` cannot serve as the end: `USE_INSTANCING` is a prefix of
+ * `USE_INSTANCING_COLOR`, so it matches back at the start and yields an empty string, and an empty
+ * string silently passes every assertion other than `toContain`.
  */
 function colourBlock(): string {
   const start = BUILDING_VERT.indexOf('#ifdef USE_INSTANCING_COLOR');
@@ -37,7 +37,7 @@ describe('非實例化的建築也要有自己的顏色', () => {
   });
 
   it('should still prefer instanceColor when instancing', () => {
-    // 分區建築在遊戲裡走這一條。改壞的話整座城市的建築會變成同一個顏色。
+    // The path zoned buildings take in game. Broken, every building in the city turns one colour.
     const block = colourBlock();
     expect(block).toContain('vBldgColor = instanceColor;');
     expect(block.indexOf('instanceColor'), 'instanceColor 不在 #ifdef 那一支')

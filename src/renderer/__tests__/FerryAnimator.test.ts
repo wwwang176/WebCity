@@ -4,11 +4,10 @@ import type { VehicleAnimator } from '../VehicleAnimator';
 import type { TransportVehicleRenderData } from '../../core/transport/collectTransportVehicles';
 
 // ---------------------------------------------------------------------------
-// Task 2 & 3: FerryAnimator — 從 Game.ts 抽出的渡輪渲染端動畫
-//             實作 VehicleAnimator 介面
+// FerryAnimator — ferry animation on the render side, implementing VehicleAnimator.
 // ---------------------------------------------------------------------------
 
-/** 假造渡輪系統，提供最小接口供 FerryAnimator 使用 */
+/** A fake ferry system providing the minimum interface FerryAnimator uses. */
 function createMockFerrySystem(vessels: Array<{
   id: number;
   traveling: boolean;

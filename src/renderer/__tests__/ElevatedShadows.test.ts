@@ -6,18 +6,18 @@ import { Grid } from '../../core/grid/Grid';
 import { RoadType, RoadDirection } from '../../core/road/types';
 
 /**
- * 高架的路緣沒有影子。
+ * An elevated kerb casts no shadow.
  *
- * 它是一張**零厚度**的平面（`PlaneGeometry` 轉平），法線朝上。而 three.js 畫陰影圖
- * 的時候，`FrontSide` 的材質預設是渲染**背面**（`shadowSideTable`）—— 從頭頂的太陽
- * 看過去，這張平面露出來的是正面，背面被剔除，於是深度圖裡什麼都沒有，影子自然
- * 也沒有。
+ * It is a **zero-thickness** plane, a flattened `PlaneGeometry`, with its normal up. Drawing the
+ * shadow map, three.js renders the **back** face of a `FrontSide` material by default
+ * (`shadowSideTable`): seen from an overhead sun the plane shows its front face, the back face is
+ * culled, the depth map holds nothing and there is no shadow.
  *
- * 高架路面是一塊 `BoxGeometry`，它的底面就是背面，所以它一直都有影子 —— 兩者並排，
- * 缺的那一條特別明顯。
+ * An elevated road surface is a `BoxGeometry` whose underside is a back face, so it always has a
+ * shadow — and side by side, the missing one stands out.
  *
- * 這條測試不是去比對某一個欄位等於某個值，而是問一個會重複發生的問題:**任何說自己
- * 要投影、但沒有厚度的東西，都得指定 `shadowSide`**。
+ * These cases do not compare one field against one value; they ask a question that recurs:
+ * **anything that claims to cast a shadow without having thickness has to set `shadowSide`**.
  */
 
 function buildElevated(): THREE.Scene {
@@ -35,7 +35,7 @@ function buildElevated(): THREE.Scene {
   return scene;
 }
 
-/** 這個幾何有沒有厚度 —— 三個軸都要張得開才算立體。 */
+/** Whether a geometry has thickness: all three axes must extend for it to count as solid. */
 function isFlat(geo: THREE.BufferGeometry): boolean {
   geo.computeBoundingBox();
   const b = geo.boundingBox!;
@@ -60,7 +60,8 @@ describe('高架的影子', () => {
   });
 
   it('should actually have a flat caster to worry about', () => {
-    // 如果哪天路緣改成有厚度的盒子，上面那條會空轉 —— 這條會先倒，提醒去看一眼。
+    // Should the kerb become a box with thickness, the case above would spin idle; this one fails
+    // first and points at it.
     const flats = [] as THREE.Mesh[];
     buildElevated().traverse((o) => {
       if (o instanceof THREE.Mesh && o.castShadow && isFlat(o.geometry)) flats.push(o);

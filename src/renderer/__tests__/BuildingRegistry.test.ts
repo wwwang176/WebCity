@@ -5,8 +5,9 @@ import { ZONE_TYPES, LEVELS, TARGET_HEIGHTS_M, heightKey, type Density }
 import { ZoneType } from '../../core/grid/types';
 
 /**
- * 註冊表本身的性質。幾何的不變式（落地、置中、包絡線、三角形預算、零件標籤）
- * 全部搬到 `MassingGeometry.test.ts` —— 它們是生成器的責任，不是註冊表的。
+ * The registry's own properties. The geometry invariants — sitting on the ground, centring, the
+ * envelope, the triangle budget, the part labels — live in `MassingGeometry.test.ts`, as they are
+ * the generator's responsibility rather than the registry's.
  */
 describe('building variants', () => {
   it('should give every zone at every level a full set of variants', () => {
@@ -26,8 +27,8 @@ describe('building variants', () => {
   });
 
   it('should have no zone with both densities except office', () => {
-    // 辦公區是唯一兩種密度都有建築的分區（BUG-220）。多一個就表示高度表被
-    // 動過而沒有人重新想過密度的意義。
+    // Offices are the only zone with buildings at both densities (BUG-220). One more means the
+    // height table changed without anyone rethinking what density means.
     const both = ZONE_TYPES.filter(z =>
       TARGET_HEIGHTS_M[heightKey(z, 'LOW')] && TARGET_HEIGHTS_M[heightKey(z, 'HIGH')]);
     expect(both).toEqual([ZoneType.OFFICE]);

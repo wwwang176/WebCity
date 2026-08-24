@@ -7,10 +7,10 @@ import { Grid } from '../../core/grid/Grid';
 import { ZoneType } from '../../core/grid/types';
 
 /**
- * 桶數從 17 成長到 60（2C 之後 168），固定預配 6000 會讓常駐記憶體
- * 從 6.5 MB 漲到 60 MB 以上。改成倍增之後，重配那一刻要搬矩陣、顏色與
- * 四個自訂屬性 —— 漏搬任何一個，建築就會戴上別人的資料，而且只在城市
- * 長到超過初始容量時才發生。
+ * With 168 buckets, a fixed preallocation of 6000 instances holds over 60 MB resident. Growing by
+ * doubling instead, the moment of reallocation has to carry over the matrices, the colours and the
+ * four custom attributes — miss any one and buildings wear another building's data, and only once
+ * the city grows past the initial capacity.
  */
 const ZONE = ZoneType.RESIDENTIAL_LOW;
 
@@ -26,11 +26,12 @@ function freshRenderer(scene = new THREE.Scene()) {
 }
 
 /**
- * 填滿一片一定會撐破初始容量的建築。回傳所有座標。
+ * Fills an area with enough buildings to certainly exceed the initial capacity, and returns every
+ * coordinate.
  *
- * 尺寸要蓋過 `初始容量 × 變體數`：變體從三個變成八個之後（階段 2C-1），
- * 原本的 40×30 = 1200 棟分到八個桶只有 150 棟，一個都撐不破 256，
- * 整組倍增測試會靜靜地什麼都沒驗到。
+ * The size has to beat `initial capacity x variant count`: with eight variants, 40x30 = 1200
+ * buildings split across eight buckets is only 150 each, none exceeds 256, and the whole doubling
+ * suite silently verifies nothing.
  */
 function fillPast(renderer: BuildingRenderer, w = 64, h = 40): Array<[number, number]> {
   const cells: Array<[number, number]> = [];
@@ -78,19 +79,20 @@ describe('bucket capacity', () => {
         variantCount: variants.length, paletteSize: 1,
       }).facadeSeed;
       const seed = mesh.geometry.getAttribute('aSeed');
-      // aSeed.x 由變體決定，不是逐格亂數（階段 2C-1），所以這裡只驗
-      // 相位與材質這兩個逐格的分量有沒有在倍增時被搬丟。
+      // aSeed.x comes from the variant rather than per-cell randomness, so this only checks the two
+      // per-cell components, phase and material, for loss during the doubling.
       expect(seed.getY(entry.idx)).toBeCloseTo(expected[1], 6);
       expect(seed.getZ(entry.idx)).toBeCloseTo(expected[2], 6);
     }
   });
 
   it('should keep the mesh in the scene after a regrow', () => {
-    // 重配會建立新的 InstancedMesh；忘記把舊的移出場景、新的加進去，
-    // 城市會在長到某個大小時整片消失或畫兩次。
+    // Reallocating creates a new InstancedMesh; forget to remove the old one from the scene or to
+    // add the new one and the city vanishes, or draws twice, once it reaches a certain size.
     const { renderer, internals, scene } = freshRenderer();
-    // 重配前的那一批 mesh。場景裡的 InstancedMesh 不只變體桶（還有 zone
-    // overlay 與燈光點），所以數總數會抓錯人 —— 直接盯被換掉的那些。
+    // The meshes from before the reallocation. The scene's InstancedMeshes are not only the variant
+    // buckets — the zone overlay and the lights are there too — so a total count catches the wrong
+    // objects; these watch the ones actually replaced.
     const before = new Map(internals.variantMeshes);
     fillPast(renderer);
 

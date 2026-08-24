@@ -4,9 +4,9 @@ import {
 } from '../BuildingAppearance';
 
 /**
- * 這裡的每一條都對應 BuildingRenderer 現行寫法的一個具體缺陷或性質：
- * 決定論是存檔重開一致的前提；流獨立性直接針對舊寫法的對角線相關性；
- * 範圍是為了讓既有的視覺調校不被這次重構改變。
+ * Each case here pins one property of the appearance hash: determinism is what makes a reloaded save
+ * look the same, stream independence rules out correlation along the diagonal, and the ranges keep
+ * the existing visual tuning intact.
  */
 describe('hashCell', () => {
   it('should return the same value for the same inputs', () => {
@@ -24,12 +24,13 @@ describe('hashCell', () => {
   });
 
   it('should not share any stream value between cells 100 apart on the diagonal', () => {
-    // 舊寫法的具體失效模式：hash(x+100,y+100) 在 (0,0) 等於 hash(x,y) 在 (100,100)，
-    // 所以 (0,0) 與 (100,100) 的多條流共用同一批數字、只是換了角色。
+    // The failure mode this rules out: hash(x+100,y+100) at (0,0) equals hash(x,y) at (100,100), so
+    // the streams of (0,0) and (100,100) share one set of numbers with the roles swapped.
     //
-    // 斷言的是「兩格的所有流值合起來全部相異」，而不是「a 的每個值都不等於
-    // b 的每個值」。後者在「根本沒有流」的實作下會空過：那時每格的所有流
-    // 都塌成同一個值，兩格各一個值，兩兩自然不相等。
+    // The assertion is that all stream values of both cells taken together are distinct, not that
+    // every value of a differs from every value of b. The latter passes vacuously under an
+    // implementation with no streams at all: every stream of a cell collapses to one value, one
+    // value per cell, and two values naturally differ.
     const streams = Object.values(STREAM);
     const all = [
       ...streams.map(s => hashCell(0, 0, 0, s)),
@@ -92,7 +93,8 @@ describe('appearanceOf', () => {
     for (let x = 0; x < 50; x++) {
       for (let y = 0; y < 50; y++) {
         const a = appearanceOf({ ...input, x, y });
-        // 寬深現在是原始亂數，範圍由註冊表依分區展開（BUG-222）。
+        // Width and depth are raw random values here; the registry expands the ranges per zone
+        // (BUG-222).
         expect(a.width01).toBeGreaterThanOrEqual(0);
         expect(a.width01).toBeLessThan(1);
         expect(a.depth01).toBeGreaterThanOrEqual(0);
@@ -107,8 +109,9 @@ describe('appearanceOf', () => {
   });
 
   it('should keep height jitter well under one storey', () => {
-    // ±17.5% 讓同一等級的房子高矮差一層樓，看起來像等級不同。
-    // 目標高度表落實之後，抖動只該是同一種建築的自然差異（現為 ±10%）。
+    // At +-17.5% two houses of the same level differ by a storey and read as different levels. With
+    // the target height table in place the jitter is only the natural variation within one building
+    // type, currently +-10%.
     let lo = Infinity;
     let hi = -Infinity;
     for (let x = 0; x < 60; x++) {
