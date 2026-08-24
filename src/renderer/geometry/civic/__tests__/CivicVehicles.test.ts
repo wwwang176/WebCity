@@ -15,26 +15,26 @@ const car = (o: Partial<CivicVehicle> = {}): CivicVehicle =>
   ({ kind: 'policeCar', x: 0, z: 0, ...o });
 
 /**
- * 停在基地上的車輛。
+ * Vehicles parked on a plot.
  *
- * 巡邏車原本只是一個方塊，而現成的幾何一直都在：`geometry/policeCar.ts`
- * 就是城市裡開著的那台警車。
- * 停在警局停車場的那一台當然該是同一台。
+ * The geometry already exists: `geometry/policeCar.ts` is the patrol car driving around the city,
+ * and the one parked in a station's car park has to be the same vehicle rather than a plain box.
  *
- * 車輛**不能**併進建築的 mesh：它們用 `MeshLambertMaterial({vertexColors})`，
- * 把 RGB 直接寫在 `color` 屬性上；而建築 shader 把 `color` 讀成
- * （零件標籤, 分區, 地面明度）。混在一起的話，一台白藍相間的警車會被當成
- * `partType = 0.102` —— 落進金屬細節的分支，變成一塊灰。
+ * Vehicles **cannot** be merged into the building mesh: they use
+ * `MeshLambertMaterial({vertexColors})` with RGB written straight into the `color` attribute,
+ * while the building shader reads `color` as (part tag, zone, ground brightness). Mixed together,
+ * a white-and-blue patrol car reads as `partType = 0.102`, falls into the metal-detail branch,
+ * and turns into a grey block.
  */
 describe('停放的車輛', () => {
   it('should use the very geometry the driving cars use', () => {
-    // 自己再畫一台的話，停著的警車與開著的警車長得不一樣。
+    // Drawn separately, a parked patrol car and a driving one look different.
     const parked = assembleVehicles([car()], FOOT);
     expect(triangleCount(parked)).toBe(triangleCount(buildPoliceCarGeometry()));
   });
 
   it('should keep the vehicle colours in the color attribute', () => {
-    // 被 tagPart 蓋掉的話，車身的白藍會變成零件標籤。
+    // Overwritten by tagPart, a body's white and blue become part tags.
     const geo = assembleVehicles([car()], FOOT);
     const c = geo.getAttribute('color');
     const seen = new Set<string>();
@@ -45,8 +45,8 @@ describe('停放的車輛', () => {
   });
 
   it('should not carry the building attributes', () => {
-    // 它走的是別的材質，那些屬性對它沒有意義；帶著只是白吃記憶體，
-    // 而且 mergeGeometries 會因為屬性集合不一致而失敗。
+    // It uses a different material, where those attributes mean nothing: carrying them wastes
+    // memory, and mergeGeometries fails on the mismatched attribute set.
     const geo = assembleVehicles([car()], FOOT);
     expect(geo.getAttribute('aBldgColor')).toBeUndefined();
   });
@@ -61,7 +61,8 @@ describe('停放的車輛', () => {
   });
 
   it('should turn the car to face the way it was parked', () => {
-    // 幾何原本車頭朝 +x。停車格沿 z 排的話車要轉 90 度，否則它是橫著停的。
+    // The geometry faces +x. With the bays running along z the car is rotated 90 degrees, or it
+    // parks sideways.
     const along = assembleVehicles([car()], FOOT);
     const across = assembleVehicles([car({ rotationY: Math.PI / 2 })], FOOT);
     along.computeBoundingBox();
@@ -76,19 +77,20 @@ describe('停放的車輛', () => {
   });
 
   /**
-   * 護欄要量**旋轉之後**的包圍盒。
+   * The guard measures the bounding box **after** rotation.
    *
-   * 警車是 0.22 長 × 0.09 寬。轉 90 度之後長的那一邊換到 z —— 用旋轉前的
-   * 長寬檢查的話，一台其實伸出去 0.06 格（0.7 m）的車會被放行，而畫面上
-   * 它只是「有點壓到隔壁」。
+   * A patrol car is 0.22 long by 0.09 wide. Rotated 90 degrees the long side moves to z, and
+   * checked against its pre-rotation width and depth a car actually reaching 0.06 cells (0.7 m)
+   * out passes, showing on screen only as slightly overrunning the next cell.
    *
-   * 兩個方向都要測：只測「該擋的有擋」的話，把護欄寫成永遠 throw 也會通過。
+   * Both directions are tested: checking only that the guard refuses would pass a guard written
+   * to throw always.
    */
   it('should measure the bounding box after the car is turned', () => {
-    // 轉了之後車身沿 z 長 —— 停在 z = 0.92 會伸出去。
+    // Rotated, the body runs long along z, so parking at z = 0.92 reaches out.
     expect(() => assembleVehicles([car({ z: 0.92, rotationY: Math.PI / 2 })], FOOT),
       '轉向之後的越界沒有被擋下來').toThrow(/超出佔地/);
-    // 同一個位置、同一台車，沒轉的話只佔 0.045 格寬，放得下。
+    // The same position and the same car unrotated occupies 0.045 cells and fits.
     expect(() => assembleVehicles([car({ z: 0.92 })], FOOT),
       '沒轉的車被誤判成越界').not.toThrow();
   });
@@ -100,15 +102,17 @@ describe('停放的車輛', () => {
   });
 
   /**
-   * 不同車種的幾何**屬性集合不一樣**。
+   * Different vehicle kinds carry **different attribute sets**.
    *
-   * 飛機是 `position,normal,color`，八種地面車是 `position,normal,color,uv`。
-   * `mergeGeometries` 遇到不一致時**只印一行 console.error 然後回傳 null**
-   * —— 不丟例外。所以 `mergeGeometries(parts)!` 那個 `!` 是在對 TypeScript
-   * 說謊，而 null 會一路傳到瀏覽器裡的 `new THREE.Mesh` 才炸。
+   * Aircraft are `position,normal,color` and the eight ground vehicles are
+   * `position,normal,color,uv`. On a mismatch `mergeGeometries` **prints one console.error and
+   * returns null**; it does not throw. So the `!` in `mergeGeometries(parts)!` lies to
+   * TypeScript, and the null travels all the way to `new THREE.Mesh` in the browser before
+   * failing.
    *
-   * 這正是它逃過所有測試的方式：資料表的「不得丟例外」是綠的（它真的沒丟），
-   * 只有真的開起來才看得到。機場是第一個把飛機與公車停在同一塊地上的建築。
+   * That is exactly how it escapes every test: the data table's "must not throw" stays green
+   * because nothing throws, and it only shows when the game is actually opened. The airport is
+   * the first building to park an aircraft and a bus on one plot.
    */
   it('should merge vehicles whose geometries carry different attributes', () => {
     const geo = assembleVehicles([
@@ -121,14 +125,15 @@ describe('停放的車輛', () => {
   });
 
   /**
-   * 停著的車與開在路上的同型車必須**同色**。
+   * A parked vehicle and a driving one of the same type have to be **the same colour**.
    *
-   * 這件事原本是壞的，而且完全沒有徵兆：車輛幾何把車身的頂點色寫成 (1, 1, 1)，
-   * 真正的顏色是 `VehicleRenderer` 用 `setColorAt` 的逐實例色乘上去的 ——
-   * 而 `assembleVehicles` 產出的是普通 `Mesh`，沒有逐實例色。於是停在消防局
-   * 門口的消防車是**白的**。
+   * This fails with no visible symptom: vehicle geometry writes the body's vertex colour as
+   * (1, 1, 1) and the real colour is multiplied in by `VehicleRenderer`'s per-instance
+   * `setColorAt`, while `assembleVehicles` produces a plain `Mesh` with no per-instance colour.
+   * The fire engine outside a fire station is therefore **white**.
    *
-   * 看起來像「消防車不夠暗紅」，而真相是它根本沒有顏色。
+   * It looks like a fire engine that is not quite dark enough, and in fact it has no colour at
+   * all.
    */
   it('should paint a parked vehicle the colour that type drives in', () => {
     const named: Array<[CivicVehicle['kind'], string]> = [
@@ -142,15 +147,16 @@ describe('停放的車輛', () => {
   });
 
   it('should give a colour even to the types that drive in random ones', () => {
-    // `VEHICLE_CONFIG.color === −1` 是「逐台從色盤隨機挑」，而隨機需要一個
-    // vehicle id —— 停著的車沒有。公共建築又不做變體，所以要有定值。
+    // `VEHICLE_CONFIG.color === -1` means "pick from a palette per vehicle", and picking needs a
+    // vehicle id, which a parked vehicle has none of. Civic buildings have no variants either, so
+    // a fixed value is needed.
     for (const kind of ['car', 'van', 'truck', 'airplane'] as const) {
       expect(civicVehicleTint(kind), `${kind} 沒有定色`).toBeGreaterThan(0);
     }
   });
 
   it('should actually put the colour on the geometry', () => {
-    // 消防車車身的頂點色是 (1, 1, 1)。沒有乘上去的話它是白的。
+    // A fire engine's body vertex colour is (1, 1, 1). Without the multiply it is white.
     const geo = assembleVehicles([car({ kind: 'firetruck' })], { w: 2, h: 2 });
     const c = geo.getAttribute('color');
     let r = 0, g = 0, b = 0;
@@ -160,7 +166,8 @@ describe('停放的車輛', () => {
   });
 
   it('should let a plan override the tint', () => {
-    // 機場的地勤貨車是淺色的，而街上跑的貨車是隨機色盤。
+    // An airport's ground crew truck is pale, while trucks on the street draw from a random
+    // palette.
     const plain = assembleVehicles([car({ kind: 'truck' })], { w: 2, h: 2 });
     const white = assembleVehicles(
       [car({ kind: 'truck', tint: 0xffffff })], { w: 2, h: 2 });
@@ -174,13 +181,14 @@ describe('停放的車輛', () => {
   });
 
   /**
-   * 飛機不只機身。
+   * An aircraft is more than its fuselage.
    *
-   * `VehicleRenderer` 把它畫成兩個 instanced mesh：機身與**垂直尾翼** ——
-   * 分開是為了讓尾翼有自己的塗裝色。只取 `buildAirplaneGeometry()` 的話停在
-   * 停機坪上的飛機沒有尾翼，而那是一眼就看得到的。
+   * `VehicleRenderer` draws it as two instanced meshes, the fuselage and the **vertical tail**,
+   * separated so the tail can carry its own livery colour. Taking `buildAirplaneGeometry()` alone
+   * leaves an aircraft parked on an apron with no tail, which is visible at a glance.
    *
-   * 與警車、消防車同一條原則：停著的與開著的必須是同一台。
+   * The same principle as the patrol car and the fire engine: parked and driving have to be the
+   * same vehicle.
    */
   it('should give the parked aeroplane its vertical tail', () => {
     const parked = assembleVehicles(
@@ -191,12 +199,12 @@ describe('停放的車輛', () => {
   });
 
   it('should paint the tail fin in its own colour', () => {
-    // 尾翼與機身同色的話，那個「兩塊」就白分了 —— 而航空公司的塗裝就是
-    // 靠尾翼認的。
+    // With the tail the same colour as the fuselage, splitting it into two pieces is wasted, and
+    // an airline's livery is recognised from the tail.
     //
-    // 比的是「尾翼那幾個顏色**確實出現在**成品裡」。「整台不只一個顏色」
-    // 擋不住這件事：機身本來就有窗與機翼好幾種色，尾翼跟著機身上色也照樣
-    // 通過（實測過）。
+    // The check is that the tail's colours **actually appear** in the result. "The whole vehicle
+    // has more than one colour" does not catch this: the fuselage already carries several colours
+    // for windows and wings, and a tail coloured like the fuselage passes.
     const tail = buildAirplaneVTailGeometry();
     const tc = tail.getAttribute('color');
     const r = ((PARKED_TAIL_TINT >> 16) & 0xff) / 255;
@@ -220,7 +228,7 @@ describe('停放的車輛', () => {
   });
 
   it('should measure the aeroplane bounds across both pieces', () => {
-    // 護欄只看機身的話，尾翼可以伸出佔地而沒有人擋。
+    // With the guard reading the fuselage alone, a tail can reach off the plot unchecked.
     const tail = buildAirplaneVTailGeometry();
     tail.computeBoundingBox();
     const body = buildAirplaneGeometry();
@@ -233,7 +241,8 @@ describe('停放的車輛', () => {
   });
 
   it('should support every vehicle the city already has', () => {
-    // 消防局要消防車、醫院要救護車、垃圾場要垃圾車 —— 後面幾批都吃得到。
+    // Fire stations need engines, hospitals need ambulances, landfills need refuse trucks: the
+    // later batches all draw on this.
     const kinds: CivicVehicle['kind'][] = [
       'car', 'policeCar', 'ambulance', 'firetruck', 'bus', 'garbageTruck', 'van', 'truck',
     ];
@@ -244,10 +253,11 @@ describe('停放的車輛', () => {
   });
 
   /**
-   * 合併失敗要**大聲**失敗。
+   * A failed merge has to fail **loudly**.
    *
-   * `mergeGeometries` 的失敗是回傳 null，而 `!` 把它變成一個型別謊言。
-   * 加一顆假的、屬性湊不起來的幾何進去，應該當場丟例外而不是回傳 null。
+   * `mergeGeometries` fails by returning null, and `!` turns that into a type-level lie. Feeding
+   * it a geometry whose attributes cannot be reconciled should throw on the spot rather than
+   * return null.
    */
   it('should throw, not return null, when geometries cannot be merged', () => {
     const bad = new THREE.BufferGeometry();
