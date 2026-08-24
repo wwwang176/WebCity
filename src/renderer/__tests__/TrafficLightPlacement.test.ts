@@ -10,25 +10,26 @@ import { LaneGraph, LANE_GEOMETRY, type Direction } from '../../core/traffic/Lan
 import { makeGridLookup } from '../../../tests/helpers/makeGridLookup';
 
 /**
- * 號誌桿站在路緣上，橫臂彎進自己這一側的車道正上方。
+ * A signal's pole stands on the kerb and its arm reaches over that side's lanes.
  *
- * 原本四支都固定插在離中心線 0.18 的地方。號誌只出現在兩條幹道相交處
- * （`hasMajorOnBothAxes`），而四車道的路緣在 0.425、六車道在 0.475 ——
- * 0.18 是在柏油路**裡面**，而且落在對向車道上：從北邊來的車走 x = −0.09，
- * 燈卻在 x = +0.18，跨過中心線、在駕駛的左手邊。
+ * Fixed at 0.18 from the centre line, all four sit **inside** the asphalt — signals only appear
+ * where two arterials cross (`hasMajorOnBothAxes`), and a four-lane kerb is at 0.425 and a six-lane
+ * at 0.475 — and on the opposing carriageway: traffic from the north runs at x = -0.09 while the
+ * signal is at x = +0.18, across the centre line and on the driver's left.
  *
- * 「哪一側」不自己重算 —— 這一組拿 `LaneGraph` 真正算出來的進場點比對。
- * 兩邊各寫一次垂直向量的話，符號錯了會一起錯，測試照樣是綠的。
+ * "Which side" is not recomputed here: this group compares against the entry points `LaneGraph`
+ * actually produces. With the perpendicular written on both sides, a sign error is wrong in both
+ * and the tests stay green.
  */
 
 const CX = 10;
 const CY = 20;
 const MAJOR = [RoadType.FOUR_LANE, RoadType.SIX_LANE] as const;
 /**
- * 每一種有寬度的路。
+ * Every road type that has a width.
  *
- * 號誌只在兩條幹道相交處出現，但那是看**鄰居**的路型（`hasMajorOnBothAxes`）
- * —— 路口那一格自己是什麼型並沒有限制，所以每一種都要放得下。
+ * Signals appear only where two arterials cross, but that tests the **neighbours**' road types
+ * (`hasMajorOnBothAxes`); the junction cell's own type is unconstrained, so every type has to fit.
  */
 const ALL = [
   RoadType.RURAL, RoadType.TWO_LANE, RoadType.FOUR_LANE,
@@ -44,14 +45,14 @@ function mountsFor(roadType: number, roadFlags: number = ALL_WAYS): SignalMount[
   return signalMounts({ x: CX, y: CY, roadType, roadFlags });
 }
 
-/** 這一支離路中心線多遠（垂直於車流方向的那一軸）。 */
+/** How far this one sits from the road's centre line, on the axis perpendicular to traffic. */
 function lateral(m: SignalMount, which: 'pole' | 'head'): number {
   const x = which === 'pole' ? m.poleX : m.headX;
   const z = which === 'pole' ? m.poleZ : m.headZ;
   return m.from === 'north' || m.from === 'south' ? x - CX : z - CY;
 }
 
-/** 這一支沿著車流方向離格心多遠（正 = 車來的那一側）。 */
+/** How far this one sits from the cell centre along the direction of travel; positive is the arrival side. */
 function along(m: SignalMount): number {
   return m.from === 'north' ? CY - m.poleZ
     : m.from === 'south' ? m.poleZ - CY
@@ -60,9 +61,10 @@ function along(m: SignalMount): number {
 }
 
 /**
- * 一個四向十字路口的車道圖，用來問「從 `dir` 來的車實際走在哪」。
+ * A four-way junction's lane graph, used to ask where traffic arriving from `dir` actually runs.
  *
- * 路口本身加上四個鄰居 —— 少了鄰居的話 `buildFromGrid` 連不出進場點。
+ * The junction plus its four neighbours: without them `buildFromGrid` cannot connect the entry
+ * points.
  */
 function entryOffsets(roadType: RoadType): Map<Direction, number> {
   const cells = new Map<string, { roadType: RoadType; roadFlags: number }>();
@@ -80,7 +82,7 @@ function entryOffsets(roadType: RoadType): Map<Direction, number> {
   const out = new Map<Direction, number>();
   for (const p of graph.getConnectionPoints(`${CX},${CY}`)) {
     if (p.type !== 'entry' || p.lane !== 0) continue;
-    // 南北向的車橫向差在 x，東西向的差在 y
+    // North-south traffic varies laterally in x, east-west in y.
     out.set(p.direction, p.direction === 'north' || p.direction === 'south'
       ? p.position.x - CX
       : p.position.y - CY);
@@ -99,7 +101,7 @@ describe('號誌的擺放', () => {
   });
 
   it.each(ALL)('should stand the pole outside the kerb on a %s road', (roadType) => {
-    // 原本的 0.18 是柏油路上：四車道的路緣在 0.425。
+    // 0.18 is on the asphalt: a four-lane kerb is at 0.425.
     const kerb = ROAD_WIDTHS[roadType]! / 2;
     for (const m of mountsFor(roadType)) {
       expect(Math.abs(lateral(m, 'pole')), `${m.from} 那一支還站在柏油路上`)
@@ -108,7 +110,7 @@ describe('號誌的擺放', () => {
   });
 
   it.each(ALL)('should stand the pole on the pavement, not beyond it, on a %s road', (roadType) => {
-    // 站到人行道外面就是插在草地／建築裡了。
+    // Past the sidewalk it stands in grass or in a building.
     const outer = ROAD_WIDTHS[roadType]! / 2 + SIDEWALK_WIDTH;
     for (const m of mountsFor(roadType)) {
       expect(Math.abs(lateral(m, 'pole')), `${m.from} 那一支站到人行道外面了`)
@@ -117,7 +119,8 @@ describe('號誌的擺放', () => {
   });
 
   it.each(MAJOR)('should put the signal on the approaching driver\'s side (%s)', (roadType) => {
-    // 判準來自 `LaneGraph` 本身，不是這裡再算一次垂直向量。
+    // The criterion comes from `LaneGraph` itself rather than a second perpendicular computed
+    // here.
     const entries = entryOffsets(roadType);
     expect(entries.size, '車道圖沒有給出四個方向的進場點').toBe(4);
 
@@ -131,7 +134,7 @@ describe('號誌的擺放', () => {
   });
 
   it.each(ALL)('should keep the arm on its own half of the road (%s)', (roadType) => {
-    // 「同側」：橫臂不過中心線。
+    // Same side: the arm does not cross the centre line.
     const kerb = ROAD_WIDTHS[roadType]! / 2;
     for (const m of mountsFor(roadType)) {
       const head = lateral(m, 'head');
@@ -143,16 +146,18 @@ describe('號誌的擺放', () => {
   });
 
   it.each(ALL)('should hang the whole head over the carriageway (%s)', (roadType) => {
-    // 燈頭至少要伸過第一條車道的中心，而且**整顆**在柏油路上方 —— 半顆探出
-    // 路緣的話，從等角視角看會像是掛在人行道上。
+    // The head reaches at least the first lane's centre and sits **entirely** above the asphalt:
+    // half of it past the kerb reads in an isometric view as hanging over the sidewalk.
     //
-    // 上界是路緣而不是「最外側車道的外緣」：橫臂縮到 `ARM_REACH` 之後，燈頭
-    // 本來就會落在車道與路緣之間，那是刻意的長度，不是跑出界。
+    // The upper bound is the kerb rather than the outermost lane's outer edge: with the arm cut to
+    // `ARM_REACH` the head lands between the lanes and the kerb by design, which is a deliberate
+    // length rather than an overrun.
     const laneWidth = getLaneWidth(roadType);
     const kerb = ROAD_WIDTHS[roadType]! / 2;
     for (const m of mountsFor(roadType)) {
       const head = Math.abs(lateral(m, 'head'));
-      // 容差是浮點的：位置是「格心 ± 偏移」算出來的，10 − 9.91 不會剛好是 0.09。
+      // The tolerance is for floating point: positions come from cell centre plus or minus an
+      // offset, and 10 - 9.91 is not exactly 0.09.
       expect(head, `${m.from} 的燈頭還沒到第一條車道上方`)
         .toBeGreaterThanOrEqual(laneWidth / 2 - 1e-9);
       expect(head + SIGNAL.HEAD_SIZE / 2, `${m.from} 的燈頭有一半探出路緣`)
@@ -161,7 +166,8 @@ describe('號誌的擺放', () => {
   });
 
   it.each(ALL)('should still reach past the kerb after the arm was shortened (%s)', (roadType) => {
-    // 橫臂縮短的下限：再短就吊在人行道上，那跟沒有橫臂一樣。
+    // The lower bound on shortening the arm: any shorter and the head hangs over the sidewalk,
+    // which is the same as having no arm.
     const kerb = ROAD_WIDTHS[roadType]! / 2;
     for (const m of mountsFor(roadType)) {
       const reach = Math.abs(lateral(m, 'pole')) - Math.abs(lateral(m, 'head'));
@@ -179,7 +185,8 @@ describe('號誌的擺放', () => {
   });
 
   it.each(ALL)('should put the signal on the near side of the junction (%s)', (roadType) => {
-    // 近端：燈在車**進來**的那一側，不是路口對面。
+    // The near side: the signal is on the side traffic **arrives** from, not across the
+    // junction.
     for (const m of mountsFor(roadType)) {
       expect(along(m), `${m.from} 那一支跑到路口對面去了`).toBeGreaterThan(0);
       expect(along(m), `${m.from} 那一支離停止線太遠`)
@@ -188,21 +195,21 @@ describe('號誌的擺放', () => {
   });
 
   it('should keep the bulb no larger than the street lamp\'s', () => {
-    // 號誌的燈泡比路燈還大顆的話，路口會變成一排大燈籠。
+    // A signal bulb larger than a street lamp's turns a junction into a row of lanterns.
     expect(SIGNAL.HEAD_SIZE, '燈泡比路燈的還大')
       .toBeLessThanOrEqual(STREET_LAMP_BULB_RADIUS * 2);
   });
 
   it('should stand at least as tall as the street lamps beside it', () => {
-    // 號誌比路燈矮的話，讀起來就不像號誌。
+    // A signal shorter than a street lamp does not read as a signal.
     expect(SIGNAL.POLE_H, '燈桿比同一條路上的路燈還矮')
       .toBeGreaterThanOrEqual(STREET_LAMP_HEIGHT);
   });
 
   it('should hang the head off the arm, touching it', () => {
-    // 「在橫臂下面」不夠 —— 中間留一條縫的話，燈泡是浮在空中的。燈泡的尺寸
-    // 改過一次（縮成路燈燈泡那麼大），而 `HEAD_Y` 當時是寫死的數字，於是
-    // 縫就跑出來了。要求**貼合**，尺寸再改也不會鬆脫。
+    // "Below the arm" is not enough: with a gap between them the bulb floats. With `HEAD_Y`
+    // hard-coded, shrinking the bulb to street-lamp size opens exactly that gap. Requiring them to
+    // **meet** keeps it closed through any further size change.
     expect(SIGNAL.HEAD_Y + SIGNAL.HEAD_SIZE / 2, '燈泡與橫臂之間有一條縫')
       .toBeCloseTo(SIGNAL.ARM_Y - SIGNAL.ARM_T / 2, 9);
     expect(SIGNAL.ARM_Y, '橫臂高過桿頂').toBeLessThanOrEqual(SIGNAL.POLE_H);
@@ -217,10 +224,11 @@ describe('號誌的擺放', () => {
 });
 
 /**
- * 沒有路的那一邊不要立號誌。
+ * No signal on a side with no road.
  *
- * 號誌從三向路口起就會設（`syncTrafficLightsWithGrid` 的 `dirs >= 3`），而渲染端
- * 原本固定畫四支 —— T 字路口那一支立在草地上，管著一條不存在的路。
+ * Signals are placed from three-way junctions upward (`dirs >= 3` in
+ * `syncTrafficLightsWithGrid`), and drawing a fixed four leaves a T junction with one standing on
+ * grass, controlling a road that does not exist.
  */
 describe('T 字路口', () => {
   const T = RoadDirection.NORTH | RoadDirection.SOUTH | RoadDirection.EAST;
@@ -242,7 +250,8 @@ describe('T 字路口', () => {
   });
 
   it('should still place the ones it keeps exactly where the crossroads put them', () => {
-    // 少畫一支不能讓其餘幾支跟著位移 —— 位置只由方向決定，與有幾支無關。
+    // Drawing one fewer must not move the others: a position depends on its direction alone, not
+    // on how many there are.
     const cross = new Map(mountsFor(RoadType.FOUR_LANE).map(m => [m.from, m]));
     for (const m of mountsFor(RoadType.FOUR_LANE, T)) {
       const same = cross.get(m.from)!;
@@ -275,7 +284,8 @@ describe('號誌的渲染', () => {
   });
 
   it('should put the poles where the placement says', () => {
-    // 擺放算對了但畫在別的地方的話，上面那一整組測試都是白測的。
+    // Computing the placement correctly and drawing it somewhere else makes the whole group above
+    // worthless.
     const scene = new THREE.Scene();
     new TrafficLightRenderer().build(scene, [light]);
     const want = mountsFor(RoadType.FOUR_LANE)
@@ -284,7 +294,7 @@ describe('號誌的渲染', () => {
     const m4 = new THREE.Matrix4();
     const p = new THREE.Vector3();
     const got: string[] = [];
-    // 桿是唯一底面貼地的那一層
+    // The pole is the only layer whose base sits on the ground.
     const pole = instanced(scene).find(mesh => {
       mesh.getMatrixAt(0, m4);
       p.setFromMatrixPosition(m4);
@@ -300,8 +310,8 @@ describe('號誌的渲染', () => {
   });
 
   it('should end the arm exactly where the head hangs', () => {
-    // 上面那條顧的是高度，這條顧的是水平：橫臂的遠端必須落在燈泡的正上方，
-    // 否則燈泡是吊在半空中、旁邊有一根伸到別處的桿子。
+    // The case above guards the height and this one the horizontal: the arm's tip has to land
+    // directly above the bulb, or the bulb hangs in mid-air beside an arm reaching elsewhere.
     const scene = new THREE.Scene();
     new TrafficLightRenderer().build(scene, [light]);
     const m4 = new THREE.Matrix4();
@@ -325,13 +335,15 @@ describe('號誌的渲染', () => {
     for (let i = 0; i < arm.count; i++) {
       arm.getMatrixAt(i, m4);
       pos.setFromMatrixPosition(m4);
-      // 橫臂的幾何沿本地 +x 從原點長到 1，所以遠端是「起點 + 第一個基底向量」。
+      // The arm's geometry runs from the origin to 1 along local +x, so its tip is the start plus
+      // the first basis vector.
       dir.set(m4.elements[0]!, m4.elements[1]!, m4.elements[2]!);
       tip.copy(pos).add(dir);
       head.getMatrixAt(i, m4);
       hp.setFromMatrixPosition(m4);
-      // 容差到小數第 5 位：矩陣存在 `Float32Array` 裡，座標約 20 時單精度的
-      // eps 就有 2e-6，再嚴下去測的是浮點格式不是幾何。
+      // Tolerance to five decimal places: matrices live in a `Float32Array`, and at coordinates
+      // around 20 single-precision eps is already 2e-6. Any tighter tests the float format rather
+      // than the geometry.
       expect(tip.x, `第 ${i} 支的橫臂遠端沒有對到燈泡`).toBeCloseTo(hp.x, 5);
       expect(tip.z, `第 ${i} 支的橫臂遠端沒有對到燈泡`).toBeCloseTo(hp.z, 5);
     }
@@ -352,7 +364,8 @@ describe('號誌的渲染', () => {
     })!;
     expect(arm, '找不到橫臂那一層').toBeTruthy();
     arm.getMatrixAt(0, m4);
-    // 橫臂的本地長軸是 x，旋轉不改變基底向量的長度，所以拉伸量永遠讀 x。
+    // The arm's local long axis is x, and rotation does not change a basis vector's length, so the
+    // stretch is always read from x.
     const scale = new THREE.Vector3().setFromMatrixScale(m4);
     expect(scale.x, '橫臂沒有伸到燈頭那裡').toBeCloseTo(wantLen, 6);
   });

@@ -10,7 +10,7 @@ const ZONE = ZoneType.RESIDENTIAL_LOW;
 
 type Internals = Record<LayerName, InstancedLayer> & { zoneLayer: InstancedLayer };
 
-/** 掛在建築上的三層。同一組不變式對三層都成立，所以測試也逐層跑。 */
+/** The three layers attached to a building. One set of invariants holds for all three, so the tests run per layer. */
 const ATTACHMENT_LAYERS = ['decalLayer', 'propLayer', 'overheadLayer'] as const;
 type AnyLayer = LayerName | 'zoneLayer';
 type LayerName = (typeof ATTACHMENT_LAYERS)[number];
@@ -21,7 +21,7 @@ function fresh() {
   return { renderer, internals: renderer as unknown as Internals };
 }
 
-/** 這一格某一層實例的矩陣。 */
+/** One layer's instance matrix for this cell. */
 function layerMatrix(
   internals: Internals, layer: AnyLayer, x: number, y: number,
 ): THREE.Matrix4 {
@@ -32,7 +32,7 @@ function layerMatrix(
   return m;
 }
 
-/** 這一格某一層在世界座標中的包圍盒。 */
+/** One layer's world-space bounding box for this cell. */
 function layerBox(
   internals: Internals, layer: AnyLayer, x: number, y: number,
 ): THREE.Box3 {
@@ -49,11 +49,13 @@ const propBox = (i: Internals, x: number, y: number) => layerBox(i, 'propLayer',
 
 describe('ground prop layer', () => {
   it('should never scale a garden, at any level', () => {
-    // BUG-219：等級是乘在整份合併幾何上的 Y 縮放，所以住宅低 L1 升到 L3 時
-    // 庭院的樹被拉高 1.75 倍（1.44 -> 2.52 m）。樹不會因為房子加蓋而長高。
+    // BUG-219: level scaling multiplies a Y scale over the whole merged geometry, so upgrading
+    // low-density residential from L1 to L3 stretches the yard's tree by 1.75x, from 1.44 to
+    // 2.52 m. A tree does not grow because the house gained a storey.
     //
-    // 斷言的是「矩陣沒有縮放」而不是「不同等級的庭院一樣高」—— 後者是錯的，
-    // 庭院組合本來就隨等級換（素土院子 -> 樹籬 -> 修剪庭園）。
+    // The assertion is that the matrix carries no scale, not that yards at different levels are the
+    // same height — the latter is false, since the yard recipe changes with level, from a bare yard
+    // to a hedge to a tended garden.
     const scale = new THREE.Vector3();
     for (const level of [1, 2, 3]) {
       for (const [x, y] of [[0, 0], [3, 7], [11, 4]] as const) {
@@ -70,8 +72,8 @@ describe('ground prop layer', () => {
   });
 
   it('should draw the garden at exactly the size it was authored', () => {
-    // 上一條看矩陣，這一條看畫出來的結果 —— 兩者一起才擋得住「縮放搬到
-    // 幾何生成裡」這種繞過。真實尺寸：4 m 的樹就該是 4 m。
+    // The case above reads the matrix and this one the drawn result; together they close the
+    // workaround of moving the scale into geometry generation. Real sizes: a 4 m tree is 4 m.
     const { renderer, internals } = fresh();
     renderer.addBuilding(0, 0, ZONE, 'LOW', 2, false);
     const entry = internals.propLayer.entryFor('0,0')!;
@@ -92,8 +94,8 @@ describe('ground prop layer', () => {
   });
 
   it('should give every zone props, not just residential', () => {
-    // 階段 2B 時這一條是「鋪滿基地的分區沒有物件」—— 那是當時的幾何事實。
-    // 2B-2 把建築縮窄 7-8% 讓出 0.4 m 的帶子之後，事實反過來了。
+    // With buildings narrowed by 7 to 8% to open a 0.4 m band, plot-filling zones do have props;
+    // before that they had none.
     const { renderer, internals } = fresh();
     const cells: Array<[number, number, number, 'LOW' | 'HIGH']> = [
       [0, 0, ZoneType.RESIDENTIAL_HIGH, 'HIGH'],
@@ -118,8 +120,8 @@ describe('ground prop layer', () => {
   });
 
   it('should swap the garden when the house upgrades', () => {
-    // 庭院組合依等級而不同，所以升級必須換桶 —— 只改矩陣不換桶的話，
-    // L3 的房子會配著 L1 的素土院子。
+    // The yard recipe differs by level, so an upgrade has to change buckets: with only the matrix
+    // updated, an L3 house keeps an L1 bare yard.
     const { renderer, internals } = fresh();
     renderer.addBuilding(0, 0, ZONE, 'LOW', 1, false);
     const before = internals.propLayer.entryFor('0,0')!.key;
@@ -135,8 +137,8 @@ describe('ground prop layer', () => {
   });
 
   it('should keep every remaining garden on its own house after removals', () => {
-    // swap-with-last 的索引 bug 只在移除之後才現形，而且畫面上看不出來。
-    // 20x20 也會撐破初始容量，順帶蓋到倍增那條路徑。
+    // A swap-with-last index bug only surfaces after a removal and does not show on screen. A 20x20
+    // city also outgrows the initial capacity, covering the doubling path as well.
     const { renderer, internals } = fresh();
     const cells: Array<[number, number]> = [];
     for (let x = 0; x < 20; x++) {
@@ -159,8 +161,8 @@ describe('ground prop layer', () => {
   });
 
   it('should not give the whole street the same yard', () => {
-    // 庭院自己一條亂數流。與量體共用的話，同一種房子必定配同一個院子，
-    // 等於把重複感從房子搬到院子。
+    // The yard has a random stream of its own. Shared with the massing, one house type is always
+    // paired with one yard, which moves the repetition from the house to the yard.
     const { renderer, internals } = fresh();
     const keys = new Set<string>();
     for (let x = 0; x < 8; x++) {
@@ -174,14 +176,15 @@ describe('ground prop layer', () => {
 });
 
 /**
- * 貼片與懸挑是另外兩層。三層的實例管理一模一樣（同一個矩陣、跟著建築進退），
- * 差別只在幾何來源與是否投影 —— 所以不變式也要三層都測，否則新加的兩層會
- * 各自漂移。
+ * Decals and overhangs are the other two layers. All three manage instances identically — the same
+ * matrix, arriving and leaving with the building — and differ only in geometry source and whether
+ * they cast shadows. So the invariants are tested on all three, or the two newer layers drift.
  */
 describe('the massing layer is never scaled either', () => {
   it('should keep the instance matrix free of scale', () => {
-    // BUG-219 的不變式擴及量體層本身。生成器產出的是最終尺寸，所以實例矩陣
-    // 只該有旋轉與位移 —— 縮放一旦回來，附掛層就又看不到建築有多寬了。
+    // BUG-219's invariant extends to the massing layer itself. The generators emit final sizes, so
+    // an instance matrix should carry only rotation and translation; once scaling returns, the
+    // attachment layers again cannot see how wide a building is.
     const scale = new THREE.Vector3();
     const cases: Array<[number, number, 'LOW' | 'HIGH']> = [
       [ZoneType.RESIDENTIAL_LOW, 1, 'LOW'],
@@ -202,8 +205,8 @@ describe('the massing layer is never scaled either', () => {
   });
 
   it('should draw every building at the size its variant was generated at', () => {
-    // 上一條看矩陣，這一條看畫出來的結果 —— 兩者一起才擋得住「縮放搬到
-    // 幾何生成裡」這種繞過。
+    // The case above reads the matrix and this one the drawn result; together they close the
+    // workaround of moving the scale into geometry generation.
     const { renderer, internals } = fresh();
     renderer.addBuilding(0, 0, ZoneType.RESIDENTIAL_HIGH, 'HIGH', 3, false);
     const entry = internals.zoneLayer.entryFor('0,0')!;
@@ -213,7 +216,8 @@ describe('the massing layer is never scaled either', () => {
     );
     const drawn = layerBox(internals, 'zoneLayer', 0, 0);
     expect(drawn.max.y - drawn.min.y).toBeCloseTo(authored.max.y - authored.min.y, 9);
-    // 平面上比對「兩軸範圍的集合」而不是逐軸：四分之一圈的旋轉會交換 x 與 z。
+    // Compared in plan as the set of the two axes' spans rather than per axis: a quarter turn swaps
+    // x and z.
     const span = (b: THREE.Box3) =>
       [b.max.x - b.min.x, b.max.z - b.min.z].sort((p, q) => p - q);
     const [a0, a1] = span(authored);
@@ -225,8 +229,9 @@ describe('the massing layer is never scaled either', () => {
 
 describe('empty buckets cost nothing', () => {
   it('should not draw buckets that hold nothing', () => {
-    // 量體桶從 60 變 168。three.js 對 count === 0 的 InstancedMesh 仍會走完
-    // 整條 render list，所以桶數三倍之後這件事從「無所謂」變「有感」。
+    // The massing buckets go from 60 to 168. three.js still walks the full render list for an
+    // InstancedMesh with count === 0, so at three times the bucket count this goes from negligible
+    // to noticeable.
     const { renderer, internals } = fresh();
     const layer = internals.zoneLayer;
     for (const [key, mesh] of layer.bucketMap) {
@@ -260,11 +265,12 @@ describe('empty buckets cost nothing', () => {
 });
 
 describe('decal and overhead layers', () => {
-  /** 三層都有東西的組合：商業低 L2 起貼片、庭院、雨遮俱全。 */
+  /** A combination with content in all three layers: from low-density commercial L2, decals, yard and canopy are all present. */
   const SHOP = { zone: ZoneType.COMMERCIAL_LOW, density: 'LOW' as const };
 
   it('should not let flat decals cast shadows', () => {
-    // 一片沒有厚度的四邊形投出來的影子是一條線，而且每一棟都要算一次。
+    // A quad with no thickness casts a shadow that is a line, and it is computed once per
+    // building.
     const { renderer, internals } = fresh();
     renderer.addBuilding(0, 0, ZoneType.INDUSTRIAL, 'LOW', 1, false);
     const entry = internals.decalLayer.entryFor('0,0')!;
@@ -272,7 +278,8 @@ describe('decal and overhead layers', () => {
   });
 
   it('should still let overhead props cast shadows', () => {
-    // 反過來的那一半：雨遮是立體的，它在人行道上投下的影子正是騎樓的樣子。
+    // The converse: a canopy has volume, and the shadow it casts on the sidewalk is exactly what an
+    // arcade looks like.
     const { renderer, internals } = fresh();
     renderer.addBuilding(0, 0, SHOP.zone, SHOP.density, 3, false);
     const entry = internals.overheadLayer.entryFor('0,0')!;
@@ -297,8 +304,9 @@ describe('decal and overhead layers', () => {
   });
 
   it('should lay the forecourt at exactly the paving height', () => {
-    // 貼片的幾何自己帶著絕對高度（鋪面與標線的層序留在幾何裡），所以實例
-    // 不能再加一次基準高 —— 加了會把標線推到 5 mm，也把鋪面推離牆腳。
+    // Decal geometry carries absolute heights already, since the layering of paving and markings
+    // lives in the geometry, so an instance must not add a base height again: it would push the
+    // markings to 5 mm and the paving away from the wall's foot.
     const { renderer, internals } = fresh();
     renderer.addBuilding(0, 0, ZoneType.INDUSTRIAL, 'LOW', 1, false);
     expect(layerBox(internals, 'decalLayer', 0, 0).min.y)
@@ -306,8 +314,8 @@ describe('decal and overhead layers', () => {
   });
 
   it('should never scale any of the three layers', () => {
-    // BUG-219 的不變式擴及新的兩層：雨遮不會因為樓變高而變大，
-    // 鋪面不會因為基地抖窄而縮水。
+    // BUG-219's invariant extends to the two newer layers: a canopy does not grow with a taller
+    // building, and paving does not shrink because the footprint jittered narrower.
     const scale = new THREE.Vector3();
     for (const level of [2, 3]) {
       const { renderer, internals } = fresh();
@@ -335,8 +343,8 @@ describe('decal and overhead layers', () => {
   });
 
   it('should swap all three layers when the shop upgrades', () => {
-    // 三層的組合都依等級而不同，所以升級必須換桶 —— 只改矩陣的話，
-    // L3 的店會配著 L2 的鋪面與雨遮。
+    // All three layers' contents differ by level, so an upgrade has to change buckets: with only
+    // the matrix updated, an L3 shop keeps L2's paving and canopy.
     const { renderer, internals } = fresh();
     renderer.addBuilding(0, 0, SHOP.zone, SHOP.density, 2, false);
     const before = ATTACHMENT_LAYERS.map(l => internals[l].entryFor('0,0')!.key);
@@ -344,9 +352,10 @@ describe('decal and overhead layers', () => {
     ATTACHMENT_LAYERS.forEach((layer, i) => {
       expect(internals[layer].entryFor('0,0')!.key, `${layer} 沒跟著升級`)
         .not.toBe(before[i]);
-      // 換桶前必須先退位，否則舊桶留下一個沒有主人的實例 —— 索引表指向新桶，
-      // 舊的那一份永遠不會被移除，畫面上是 L2 的鋪面疊在 L3 的鋪面下。
-      // 看的是舊桶的實例數：索引表以格子為 key，孤兒不會讓 size 變大。
+      // The old slot has to be released before switching buckets, or it leaves an ownerless
+      // instance: the index points at the new bucket, the old copy is never removed, and on screen
+      // L2's paving sits under L3's. This reads the old bucket's instance count, since the index is
+      // keyed by cell and an orphan does not grow its size.
       expect(internals[layer].countOf(before[i]!), `${layer} 舊桶留下孤兒`).toBe(0);
     });
   });
@@ -361,7 +370,7 @@ describe('decal and overhead layers', () => {
   });
 
   it('should keep every remaining forecourt on its own building after removals', () => {
-    // swap-with-last 的索引 bug 只在移除之後才現形，而且畫面上看不出來。
+    // A swap-with-last index bug only surfaces after a removal and does not show on screen.
     const { renderer, internals } = fresh();
     const cells: Array<[number, number]> = [];
     for (let x = 0; x < 6; x++) {

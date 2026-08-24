@@ -9,11 +9,12 @@ import { volumesFor, VARIANT_COUNT } from '../geometry/buildings/massing';
 import { maxAbsOf } from '../geometry/buildings/massing/volume';
 
 /**
- * 這一桶最窄的那一個變體的牆面。
+ * The narrowest variant's wall in this bucket.
  *
- * **刻意不呼叫 `narrowestBuildingEdge`** —— 雨遮的幾何就是用那個函式建的，
- * 拿它當基準等於「用實作驗證實作」，那正是 BUG-226 躲過測試的方式：
- * 那條測試量的是 `buildingEdge()`，而幾何也是照它長的，所以永遠相符。
+ * **Deliberately not `narrowestBuildingEdge`**: the canopy geometry is built from that function,
+ * and using it as the reference verifies the implementation against itself, which is exactly how
+ * BUG-226 escaped its test — that test measured `buildingEdge()` and the geometry was built from
+ * it, so the two always agreed.
  */
 function narrowestOf(z: number, d: Density, level: number): number {
   let lo = Infinity;
@@ -53,15 +54,16 @@ function eachOverhead(fn: (geo: THREE.BufferGeometry, label: string) => void) {
 
 interface Rect { x0: number; x1: number; z0: number; z1: number }
 
-/** 一個零件的頂點數：正反兩面各四個角。 */
+/** Vertices per piece: four corners on each of two faces. */
 const VERTS_PER_PIECE = 8;
 
 /**
- * 拆回一個個零件的平面輪廓。
+ * Splits the geometry back into per-piece plan outlines.
  *
- * 懸挑物全部是雙面 quad（正反各四個角 = 8 個頂點），`mergeGeometries` 依序
- * 串接，所以 8 個一組就是一個零件。只看 XZ：建築在這些高度上都是實心的，
- * 「貼不貼得到牆」是平面問題。
+ * Every overhang is a double-sided quad — four corners per face, 8 vertices — and
+ * `mergeGeometries` concatenates them in order, so each group of 8 is one piece. Only XZ is read:
+ * the building is solid at these heights, and whether something reaches the wall is a plan
+ * question.
  */
 function pieceRects(geo: THREE.BufferGeometry): Rect[] {
   const pos = geo.getAttribute('position');
@@ -82,10 +84,11 @@ function pieceRects(geo: THREE.BufferGeometry): Rect[] {
 }
 
 /**
- * 「鎖在上面」的容差。
+ * The tolerance for "attached".
  *
- * 招牌離牆 20 cm 仍然是鎖在牆上的，強求貼平反而會與牆共面而 z-fighting。
- * 0.25 m 遠小於 BUG-226 的 0.68–1.17 m，所以這個容差不會讓那個缺陷溜過去。
+ * A sign 20 cm off the wall is still bolted to it, and demanding it sit flush makes it coplanar
+ * and z-fight. 0.25 m is far below BUG-226's 0.68 to 1.17 m, so this tolerance does not let that
+ * fault through.
  */
 const MOUNT_TOLERANCE = 0.25 / METRES_PER_CELL;
 
@@ -93,7 +96,7 @@ const touches = (a: Rect, b: Rect) =>
   a.x0 <= b.x1 + MOUNT_TOLERANCE && b.x0 <= a.x1 + MOUNT_TOLERANCE
   && a.z0 <= b.z1 + MOUNT_TOLERANCE && b.z0 <= a.z1 + MOUNT_TOLERANCE;
 
-/** 沒有連到建築（直接或透過其他零件）的零件索引。 */
+/** Indices of pieces not connected to the building, whether directly or through another piece. */
 function floatingPieces(geo: THREE.BufferGeometry, narrow: number): number[] {
   const rects = pieceRects(geo);
   const building: Rect = { x0: -narrow, x1: narrow, z0: -narrow, z1: narrow };
@@ -114,7 +117,8 @@ function floatingPieces(geo: THREE.BufferGeometry, narrow: number): number[] {
 
 describe('overhead props', () => {
   it('should never hang low enough to hit a walking person', () => {
-    // 這是懸挑物件唯一的存在理由：行人從下面走過。低於淨空就是穿模。
+    // The one reason overhangs exist: pedestrians walk beneath them. Below the clearance they
+    // intersect.
     eachOverhead((geo, label) => {
       geo.computeBoundingBox();
       expect(geo.boundingBox!.min.y, `${label} 會打到頭`)
@@ -123,7 +127,8 @@ describe('overhead props', () => {
   });
 
   it('should actually reach past the pedestrian envelope', () => {
-    // 全都縮在建築輪廓裡的話，這一層沒有存在的意義 —— 那就只是立面零件。
+    // All of them inside the building's outline leaves this layer with no reason to exist: those
+    // are facade components.
     const reaching: string[] = [];
     eachOverhead((geo, label) => {
       geo.computeBoundingBox();
@@ -137,7 +142,7 @@ describe('overhead props', () => {
   });
 
   it('should stop at the cell edge', () => {
-    // 越過格子邊界就會插進鄰居的建築裡。
+    // Past the cell boundary it enters a neighbour's building.
     eachOverhead((geo, label) => {
       geo.computeBoundingBox();
       const b = geo.boundingBox!;
@@ -149,24 +154,27 @@ describe('overhead props', () => {
   });
 
   it('should stay attached to the narrowest building in its bucket', () => {
-    // BUG-226：這一條原本量的是 `widestBuildingEdge` —— 每一棟的寬度是逐實例
-    // 抖動的（±15%），但雨遮的幾何是整個 (分區, 密度, 等級) 桶共用的一份，
-    // 它不可能知道自己掛在多寬的房子上。貼著**最寬**的那一棟，就等於在其餘
-    // 每一棟上浮空 0.68–1.17 m。測試驗證的是一棟沒人看得到的房子。
+    // BUG-226: measured against `widestBuildingEdge`, each building's width is jittered per
+    // instance by +/-15% while a canopy's geometry is one copy shared across the whole
+    // (zone, density, level) bucket and cannot know how wide the house it hangs on is. Attached to
+    // the **widest** one, it floats 0.68 to 1.17 m away on every other, and the test verifies a
+    // house nobody ever sees.
     //
-    // 唯一能永遠貼牆的做法是往內埋進最窄的那一棟裡：多出來的部分被牆擋住，
-    // 看不見。所以內緣量的是 `narrowestBuildingEdge`。
+    // The only way to always reach the wall is to bury inward into the narrowest one, where the
+    // excess is hidden by the wall. So the inner edge is measured against
+    // `narrowestBuildingEdge`.
     eachBucket((z, d, key) => {
       for (const level of LEVELS) {
         const narrow = narrowestOf(z, d, level);
         for (const build of getOverheadVariants(z, d, level)) {
           const geo = build();
-          // 判定是**連通性**而不是「有頂點碰到牆」：雨簷板掛在雨遮外緣，
-          // 本來就碰不到牆，但它靠著雨遮所以不算浮空。逐零件檢查「碰到建築、
-          // 或碰到已經確定沒浮空的零件」，遞移到收斂為止。
+          // The test is **connectivity** rather than "a vertex touches the wall": a fascia hangs at
+          // a canopy's outer edge and never touches the wall, yet rests on the canopy and is not
+          // floating. Each piece is checked against the building or against a piece already known
+          // not to float, iterated to a fixed point.
           //
-          // 只看合併後的包圍盒會放行：南側與東側兩片雨遮同時浮空時，
-          // 合起來的包圍盒仍然罩住建築。
+          // The merged bounding box alone lets it through: with the south and east canopies both
+          // floating, their combined box still encloses the building.
           const floating = floatingPieces(geo, narrow);
           expect(floating, `${key} L${level} 有 ${floating.length} 個零件浮空`)
             .toHaveLength(0);
@@ -177,12 +185,13 @@ describe('overhead props', () => {
   });
 
   it('should hang at shopfront height, not halfway up the facade', () => {
-    // 雨遮該在一樓的位置。立面 shader 的樓層高度是 2.64–3.6 m，所以「一樓
-    // 樓板線」取最低的那個 —— 樓高同樣是逐實例亂數，幾何不知道自己掛在
-    // 哪一棟上，取最低值才保證永遠不會越過一樓。
+    // A canopy belongs at first-floor height. The facade shader's storey height is 2.64 to 3.6 m,
+    // so the first-floor line takes the lowest: the storey height is also random per instance and
+    // the geometry does not know which building it hangs on, and only the lowest value guarantees
+    // it never crosses the first floor.
     //
-    // 原本的高度是手挑的公尺數（3.0–3.8 m），在 5 m 高的商業低 L1 上等於
-    // 掛在建築的六成高處。
+    // At a hand-picked height in metres, 3.0 to 3.8 m, it hangs at 60% of the height of a 5 m
+    // low-density commercial L1.
     eachOverhead((geo, label) => {
       geo.computeBoundingBox();
       const bottom = geo.boundingBox!.min.y;
@@ -192,7 +201,7 @@ describe('overhead props', () => {
   });
 
   it('should keep signs below the roofline of the shortest building it can sit on', () => {
-    // 招牌掛在雨遮上方是對的，掛到屋頂邊緣就變成別的東西了。
+    // A sign above the canopy is right; at the roof's edge it becomes something else.
     eachBucket((z, d, key) => {
       for (const level of LEVELS) {
         const shortest = TARGET_HEIGHTS_M[key]![level - 1]! / METRES_PER_CELL;
@@ -208,7 +217,7 @@ describe('overhead props', () => {
   });
 
   it('should never be tagged as wall', () => {
-    // 雨遮長出一格一格的窗會很怪。
+    // A canopy growing a grid of windows would be strange.
     eachOverhead((geo, label) => {
       const col = geo.getAttribute('color');
       for (let i = 0; i < col.count; i++) {
@@ -218,12 +227,12 @@ describe('overhead props', () => {
   });
 
   it('should be built from flat panels, not boxes', () => {
-    // 雨遮 10 cm 厚，在 1 格 = 12 m 的尺度下永遠不到一個像素 —— 那六個面裡
-    // 有五個是看不見的。用平面省下五分之四的三角形。
+    // A canopy is 10 cm thick, which at 1 cell = 12 m never reaches a pixel, and five of its six
+    // faces are invisible. A plane saves four fifths of the triangles.
     //
-    // 但平面是單面的（材質沒設 side，預設 FrontSide），而鏡頭的方位角可以
-    // 自由轉，所以每一片都要正反兩面 —— 4 個三角形，仍然只有 BoxGeometry
-    // 的三分之一。
+    // But a plane is single-sided — the material sets no side and defaults to FrontSide — while the
+    // camera's azimuth turns freely, so each piece needs both faces: 4 triangles, still a third of
+    // a BoxGeometry's.
     eachOverhead((geo, label) => {
       const pos = geo.getAttribute('position');
       expect(pos.count % VERTS_PER_PIECE, `${label} 不是雙面 quad`).toBe(0);
@@ -233,10 +242,12 @@ describe('overhead props', () => {
   });
 
   it('should be visible from every camera angle', () => {
-    // 單面平面從背後看會消失。鏡頭仰角夾在 10°–80°、方位角自由，所以
-    // 「朝上的面」永遠看得到，垂直的面不一定 —— 兩面都畫才是安全的做法。
+    // A single-sided plane disappears seen from behind. The camera's elevation is clamped to 10-80
+    // degrees while its azimuth is free, so upward-facing surfaces are always visible and vertical
+    // ones are not — drawing both faces is the safe choice.
     //
-    // 判定：每一片的法線都必須成對出現（n 與 −n），否則就有一面沒畫。
+    // The test: every piece's normals have to appear in pairs, n and -n, or one face is
+    // missing.
     eachOverhead((geo, label) => {
       const n = geo.getAttribute('normal');
       const key = (i: number) =>
@@ -270,14 +281,16 @@ describe('overhead props', () => {
   });
 
   it('should leave the detached house alone', () => {
-    // 獨棟住宅沒有騎樓也沒有招牌。硬加會讓它看起來像店面。
+    // A detached house has neither an arcade nor signage, and adding them makes it look like a
+    // shop.
     for (const level of LEVELS) {
       expect(getOverheadVariants(ZoneType.RESIDENTIAL_LOW, 'LOW', level)).toHaveLength(0);
     }
   });
 
   it('should earn its overhang with level', () => {
-    // L1 樸素、L3 有騎樓與招牌。這一層本身就是等級階梯的一部分。
+    // L1 is plain and L3 has an arcade and signage: this layer is part of the level ladder
+    // itself.
     for (const [zone, density] of [
       [ZoneType.COMMERCIAL_LOW, 'LOW'], [ZoneType.COMMERCIAL_HIGH, 'HIGH'],
     ] as Array<[number, Density]>) {

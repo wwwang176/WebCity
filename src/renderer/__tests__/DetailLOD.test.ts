@@ -10,14 +10,16 @@ import { ZoneType } from '../../core/grid/types';
 import { ViewMode } from '../../core/ViewMode';
 
 /**
- * 縮到遠景時把矮物件與懸挑整層關掉。
+ * Zoomed out, the low-prop and overhead layers switch off wholesale.
  *
- * 鏡頭是正交的，所以沒有「遠處的建築」—— 全畫面同一個距離，唯一有意義的
- * 訊號是縮放（`camera.top - camera.bottom`，單位是格）。這讓整件事變成一個
- * 全域布林翻三層的 `visible`，不需要逐實例的距離判斷，也不需要簡化幾何。
+ * The camera is orthographic, so there is no such thing as a distant building — the whole screen is
+ * at one distance, and the only meaningful signal is the zoom (`camera.top - camera.bottom`, in
+ * cells). That makes the whole thing one global boolean flipping three layers' `visible`, with no
+ * per-instance distance test and no simplified geometry.
  *
- * 地面貼片**不關**：它是平的鋪面，撐住「地面有東西」的觀感，關掉會讓遠景
- * 整片地變空，工業區那塊柏油也會消失。
+ * Ground decals **stay on**: they are flat paving holding up the sense that the ground has
+ * something on it, and dropping them empties the ground at range, taking the industrial zone's
+ * asphalt with it.
  */
 
 type Internals = {
@@ -30,11 +32,12 @@ type Internals = {
 type LayerName = keyof Internals;
 
 /**
- * 一整座小城，四層都有實例可以看。
+ * A small city with instances in all four layers.
  *
- * 必須混住宅與商業：獨棟住宅沒有雨遮也沒有招牌，所以只蓋住宅的話懸挑層
- * 一個實例都沒有，「懸挑被關掉了」會因為它本來就是空的而假裝成立。
- * `(7, 7)` 留白給「遠景時新蓋一棟」那一條。
+ * Residential and commercial have to be mixed: a detached house has neither canopy nor signage, so
+ * a residential-only city leaves the overhead layer with no instances at all and "the overhead
+ * layer was switched off" passes because it was empty to begin with. `(7, 7)` is left free for the
+ * "build one while zoomed out" case.
  */
 function city() {
   const renderer = new BuildingRenderer();
@@ -49,13 +52,14 @@ function city() {
 }
 
 /**
- * 這一層有多少非空的桶畫得出來：全部、一個都沒有，還是介於中間。
+ * How many of this layer's non-empty buckets draw: all, none, or somewhere in between.
  *
- * 三態而不是布林。二值的「每個桶都畫嗎」會漏掉最重要的那個失敗 ——
- * 閘門漏在 `acquire` 時只有**新蓋的那一桶**會亮回來，其餘仍是關的，
- * 於是「不是全開」照樣成立、測試綠燈通過。'some' 一律是錯的。
+ * Three states rather than a boolean. A binary "do all buckets draw" misses the most important
+ * failure: with the gate missed in `acquire`, only the **newly built** bucket comes back on and the
+ * rest stay off, so "not all open" still holds and the test passes. 'some' is always wrong.
  *
- * 空桶本來就是 `visible = false`（那是省 render list 的既有優化），不算在內。
+ * Empty buckets are `visible = false` already — an existing optimisation that saves render list
+ * work — and are not counted.
  */
 function drawnState(internals: Internals, name: LayerName): 'all' | 'none' | 'some' {
   const layer = internals[name];
@@ -82,8 +86,8 @@ describe('detail LOD', () => {
   });
 
   it('should keep the massing and the ground decals at every zoom', () => {
-    // 量體關掉就沒有城市了；貼片是選擇留下的（見檔頭）。這一條是防止
-    // 「乾脆全部關掉」這種省事的實作。
+    // Switching off the masses leaves no city, and decals are kept deliberately (see the top of
+    // this file). This guards against the lazy implementation that switches everything off.
     const { renderer, internals } = city();
     renderer.updateDetailLOD(200);
 
@@ -101,8 +105,9 @@ describe('detail LOD', () => {
   });
 
   it('should not flip inside the hysteresis band', () => {
-    // 兩個門檻之間必須留一段遲滯。只有一條線的話，滾輪停在門檻上會讓整層
-    // 每幀開關一次 —— 那比不做還糟，因為畫面在閃。
+    // The two thresholds have to leave a band of hysteresis. With a single line, a wheel resting on
+    // it switches the whole layer on and off every frame — worse than doing nothing, because the
+    // screen flickers.
     expect(DETAIL_LOD.HIDE_ABOVE, '遲滯帶是空的').toBeGreaterThan(DETAIL_LOD.SHOW_BELOW);
 
     const mid = (DETAIL_LOD.HIDE_ABOVE + DETAIL_LOD.SHOW_BELOW) / 2;
@@ -117,9 +122,9 @@ describe('detail LOD', () => {
   });
 
   it('should keep new buildings hidden while zoomed out', () => {
-    // 這是最容易漏的一條：`acquire()` 為了讓桶從空變成有實例，會設
-    // `visible = true`。少了閘門，縮在遠景時蓋一棟新房子，它腳下的矮物件
-    // 會單獨冒出來 —— 而且只有那一桶。
+    // The easiest one to miss: `acquire()` sets `visible = true` to bring a bucket from empty to
+    // occupied. Without the gate, building a house while zoomed out makes the low props at its feet
+    // appear on their own — and only that one bucket.
     const { renderer, internals } = city();
     renderer.updateDetailLOD(200);
     renderer.addBuilding(7, 7, ZoneType.COMMERCIAL_LOW, 'LOW', 3, false);
@@ -130,10 +135,10 @@ describe('detail LOD', () => {
 
 describe('view mode hides every attachment layer', () => {
   it('should hide decals, low props and overheads behind the white model', () => {
-    // 階段 2B 把這三層從量體拆出去時漏掉了 `setViewMode`：它藏的是
-    // variantMeshes / overlayMeshes / infraGroups，三個附掛層一個都沒藏，
-    // `buildWhiteModelMesh` 也沒烘它們。所以切到污染或地價檢視時，貼片、
-    // 樹、招牌會維持原色浮在白模上面。
+    // `setViewMode` hides variantMeshes, overlayMeshes and infraGroups, and none of the three
+    // attachment layers, which `buildWhiteModelMesh` does not bake either. So switching to the
+    // pollution or land value view leaves decals, trees and signage in their own colours floating
+    // above the white model.
     const { renderer, internals } = city();
     const scene = new THREE.Scene();
 
@@ -157,8 +162,9 @@ describe('view mode hides every attachment layer', () => {
   });
 
   it('should not resurrect the detail layers if the camera is still zoomed out', () => {
-    // 兩個閘門是獨立的。離開檢視模式時直接把三層設回 visible，會讓縮在
-    // 遠景的鏡頭突然長回矮物件 —— 而使用者從頭到尾沒有動過滾輪。
+    // The two gates are independent. Setting all three back to visible on leaving a view mode makes
+    // a zoomed-out camera suddenly grow low props again, with the user never having touched the
+    // wheel.
     const { renderer, internals } = city();
     const scene = new THREE.Scene();
 
@@ -173,12 +179,12 @@ describe('view mode hides every attachment layer', () => {
 
 describe('the game actually drives it', () => {
   it('should feed the camera frustum height in every frame', () => {
-    // 上面九條全綠、遊戲裡卻什麼都沒發生 —— 因為沒有人呼叫。這一層接線
-    // 沒有單元測試擋得住（`Game` 要真的 WebGL 才建得起來），所以照
-    // `EveryFieldIsAccountedFor` 與 `JsxIdentifiersAreImported` 的前例讀原始碼。
+    // The nine cases above can all be green while nothing happens in the game, because nothing
+    // calls it. No unit test can guard that wiring — `Game` needs real WebGL to construct — so this
+    // reads the source, following `EveryFieldIsAccountedFor` and `JsxIdentifiersAreImported`.
     //
-    // 它擋的是「整個功能是死碼」，不是「參數算對了」。後者靠 DETAIL_LOD
-    // 的註解與那兩個門檻本身。
+    // It guards against the whole feature being dead code, not against the parameters being right.
+    // That is DETAIL_LOD's comments and the two thresholds themselves.
     const src = readFileSync(
       new URL('../../Game.ts', import.meta.url), 'utf8',
     );
@@ -193,8 +199,9 @@ describe('the game actually drives it', () => {
 
 describe('InstancedLayer visibility gate', () => {
   it('should leave empty buckets hidden when the gate opens', () => {
-    // 閘門開不等於全部畫出來。空桶要維持關閉 —— three.js 對 count === 0 的
-    // InstancedMesh 仍會走完整條 render list，而開局大部分的桶都是空的。
+    // An open gate does not mean everything draws. Empty buckets stay closed: three.js still walks
+    // the full render list for an InstancedMesh with count === 0, and most buckets are empty at
+    // startup.
     const layer = new InstancedLayer(new THREE.MeshBasicMaterial(), 4);
     const scene = new THREE.Scene();
     layer.createBucket(scene, 'empty', new THREE.BoxGeometry());
@@ -209,8 +216,9 @@ describe('InstancedLayer visibility gate', () => {
   });
 
   it('should keep the last release consistent with the gate', () => {
-    // `release()` 把桶清空時會設 visible = false，而清空後再開閘門也不該
-    // 把它打開。反過來說，閘門關著時移除實例也不能把它打開。
+    // `release()` sets visible = false when it empties a bucket, and opening the gate afterwards
+    // must not turn it back on. Conversely, removing an instance while the gate is closed must not
+    // open it either.
     const layer = new InstancedLayer(new THREE.MeshBasicMaterial(), 4);
     const scene = new THREE.Scene();
     layer.createBucket(scene, 'b', new THREE.BoxGeometry());
