@@ -8,12 +8,15 @@ import {
 } from '../RoadStripBuilder';
 
 /**
- * 九十度彎的路面與路緣走圓弧，不是兩塊長方形拼出來的直角。
+ * A 90 degree bend's road surface and kerbs follow an arc rather than a right angle made of two
+ * rectangles.
  *
- * 車道虛線與雙黃線早就是弧的（`emitLBendDashes`、`buildCurvedCenterLineData`），
- * 只有柏油與路緣還是方的 —— 所以彎道上的線是圓的、路是方的。
+ * Lane dashes and the double yellow line are already curved (`emitLBendDashes`,
+ * `buildCurvedCenterLineData`), leaving only the asphalt and the kerbs square: the lines on a bend
+ * are round and the road is square.
  *
- * 路面與路緣要一起改:只把路緣拉成弧，方形的柏油角會整塊跑到路緣外面。
+ * Surface and kerb change together: curving the kerb alone puts the square asphalt corner entirely
+ * outside it.
  */
 
 const NS = RoadDirection.NORTH | RoadDirection.SOUTH;
@@ -26,7 +29,7 @@ function cell(flags: number, roadType = RoadType.TWO_LANE): RoadCell {
   return { x: 0, y: 0, roadType, roadFlags: flags };
 }
 
-/** 這個彎繞著哪一個角轉。與 `emitLBendDashes` 用的是同一組參數。 */
+/** Which corner this bend turns about. The same parameters `emitLBendDashes` uses. */
 function turnCentre(flags: number): { cx: number; cz: number } {
   const hasN = (flags & RoadDirection.NORTH) !== 0;
   const hasE = (flags & RoadDirection.EAST) !== 0;
@@ -42,8 +45,9 @@ describe('L 形彎的路面', () => {
   });
 
   it('should put the outer edge exactly where the road ends', () => {
-    // 外緣是看得見的那一條。長方形蓋不滿彎的環面，補的部分全部朝**內**塞 ——
-    // 朝外補的話柏油會凸出路緣，那正是玩家會看到的破綻。
+    // The outer edge is the visible one. A rectangle cannot fill a curved annulus, and every
+    // extension goes **inward**: extended outward, the asphalt projects past the kerb, which is
+    // exactly what a player would notice.
     const half = ROAD_WIDTHS[RoadType.TWO_LANE]! / 2;
     const c = turnCentre(NE);
     for (const s of buildRoadStrips([cell(NE)])) {
@@ -52,8 +56,9 @@ describe('L 形彎的路面', () => {
   });
 
   it('should keep every piece on the arc', () => {
-    // 彎心在格子的角上，路心線就是那個四分之一圓。車道虛線用的也是這個半徑，
-    // 所以線會落在柏油上。中心略偏內是補內側留下的，不到千分之二格。
+    // The bend's centre is on the cell's corner and the road's centre line is that quarter circle.
+    // The lane dashes use the same radius, so they land on the asphalt. The slight inward offset of
+    // the centre is what the inward extension leaves, under 0.002 cells.
     const c = turnCentre(NE);
     for (const s of buildRoadStrips([cell(NE)])) {
       expect(Math.abs(radius(s, c) - 0.5)).toBeLessThan(0.01);
@@ -63,7 +68,7 @@ describe('L 形彎的路面', () => {
   it('should point every piece along the arc, not along the axes', () => {
     const c = turnCentre(NE);
     for (const s of buildRoadStrips([cell(NE)])) {
-      // 長邊方向（局部 +Z 轉過 rotY）要垂直於半徑。
+      // The long axis, local +Z rotated by rotY, has to be perpendicular to the radius.
       const along = { x: Math.sin(s.rotY), z: Math.cos(s.rotY) };
       const out = { x: s.x - c.cx, z: s.z - c.cz };
       expect(along.x * out.x + along.z * out.z).toBeCloseTo(0, 9);
@@ -71,8 +76,9 @@ describe('L 形彎的路面', () => {
   });
 
   it('should not let the asphalt spill past the outer edge of the turn', () => {
-    // 這是原本的病:方角落在 √2×(0.5+半幅) ≈ 1.13，而路面外緣只到 0.5+半幅 = 0.8。
-    // 那塊多出來的柏油正是路緣拉成弧之後會露在外面的東西。
+    // The square corner lands at sqrt(2) x (0.5 + half-width) ~ 1.13 while the surface's outer edge
+    // reaches only 0.5 + half-width = 0.8. That excess asphalt is exactly what shows outside the
+    // kerb once the kerb is curved.
     const half = ROAD_WIDTHS[RoadType.TWO_LANE]! / 2;
     const c = turnCentre(NE);
     for (const s of buildRoadStrips([cell(NE)])) {
@@ -82,7 +88,8 @@ describe('L 形彎的路面', () => {
   });
 
   it('should still meet the neighbouring cells at both ends', () => {
-    // 弧要從格子的北邊界一路接到東邊界。少接一段，彎道兩頭就會出現缺口。
+    // The arc runs from the cell's north boundary to its east boundary. Falling short leaves gaps
+    // at both ends of the bend.
     const c = turnCentre(NE);
     const angles = buildRoadStrips([cell(NE)])
       .map(s => Math.atan2(Math.abs(s.z - c.cz), Math.abs(s.x - c.cx)))
@@ -93,11 +100,14 @@ describe('L 形彎的路面', () => {
   });
 
   it('should cover the whole quarter-ring, with no holes anywhere in it', () => {
-    // 這一條原本問錯了問題。舊版只檢查相鄰兩段的**中線端點**有沒有接上 ——
-    // 接上了，可是每一段都是直的長方形，兩段夾角 θ，於是外緣張開一個楔形的洞、
-    // 內緣互相重疊。中線是唯一沒有縫的那條線，所以測試全綠而路面是破的。
+    // Checking only whether adjacent segments' **centre line endpoints** meet asks the wrong
+    // question: they do meet, but each segment is a straight rectangle and adjacent ones sit at an
+    // angle theta, so the outer edge opens a wedge-shaped hole while the inner edges overlap. The
+    // centre line is the one line that never has a gap, so the test stays green while the surface
+    // is broken.
     //
-    // 改成直接問「這個環面上每一點有沒有被蓋到」，那才是玩家看到的東西。
+    // This asks directly whether every point on the annulus is covered, which is what a player
+    // sees.
     const half = ROAD_WIDTHS[RoadType.TWO_LANE]! / 2;
     const c = turnCentre(NE);
     const strips = buildRoadStrips([cell(NE)]);
@@ -106,11 +116,11 @@ describe('L 形彎的路面', () => {
     for (const rad of [0.5 - half + eps, 0.5 - half / 2, 0.5, 0.5 + half / 2, 0.5 + half - eps]) {
       for (let i = 0; i <= 240; i++) {
         const a = (i / 240) * (Math.PI / 2);
-        // NE 彎:dirX = -1、dirZ = +1（見 emitLBendDashes）。
+        // An NE bend has dirX = -1 and dirZ = +1 (see emitLBendDashes).
         const px = c.cx - rad * Math.cos(a);
         const pz = c.cz + rad * Math.sin(a);
         const covered = strips.some(s => {
-          // 換到這一段自己的座標系:局部 +Z 是長邊，+X 是寬邊。
+          // Into this segment's own frame: local +Z is its length and +X its width.
           const dx = px - s.x, dz = pz - s.z;
           const along = dx * Math.sin(s.rotY) + dz * Math.cos(s.rotY);
           const across = dx * Math.cos(s.rotY) - dz * Math.sin(s.rotY);
@@ -126,7 +136,7 @@ describe('L 形彎的路面', () => {
     const half = ROAD_WIDTHS[RoadType.TWO_LANE]! / 2;
     const c = turnCentre(NE);
     const strips = buildSidewalkStrips([cell(NE)]);
-    // 路緣騎在柏油邊緣上，中心就是柏油外緣。
+    // The kerb straddles the asphalt's edge, so its centre is that edge.
     const mid = 0.5 + half;
     const eps = 1e-6;
 
@@ -147,7 +157,8 @@ describe('L 形彎的路面', () => {
   });
 
   it('should carry at least the full road width across the turn', () => {
-    // 至少要有路寬，才接得上兩頭的直路;多出來的是補內側的量，不該多到看得出來。
+    // At least the road's width, or it cannot meet the straight road at either end. Anything more
+    // is the inward extension, which should not be large enough to see.
     for (const type of [RoadType.RURAL, RoadType.TWO_LANE, RoadType.FOUR_LANE, RoadType.HIGHWAY]) {
       for (const s of buildRoadStrips([cell(NE, type)])) {
         expect(s.sx, `${type} too narrow`).toBeGreaterThanOrEqual(ROAD_WIDTHS[type]! - 1e-9);
@@ -179,8 +190,8 @@ describe('L 形彎的路緣', () => {
     const strips = buildSidewalkStrips([cell(NE)]);
     expect(strips).toHaveLength(BEND_KERB_SEGMENTS);
     for (const s of strips) {
-      // 外緣準確 —— 路緣的外側就是玩家看到的街廓邊界。內半條壓在柏油底下，
-      // 跟直路一樣。
+      // The outer edge is exact: a kerb's outside is the block boundary a player sees. Its inner
+      // half is under the asphalt, as on a straight road.
       expect(radius(s, c) + s.sx / 2).toBeCloseTo(0.5 + half + SIDEWALK_WIDTH / 2, 9);
       expect(s.sx).toBeGreaterThanOrEqual(SIDEWALK_WIDTH - 1e-9);
       expect(s.sx).toBeLessThan(SIDEWALK_WIDTH + 0.03);
@@ -188,9 +199,10 @@ describe('L 形彎的路緣', () => {
   });
 
   it('should keep its inner half under the asphalt, like a straight kerb does', () => {
-    // 直路的路緣有一半壓在路面底下（路緣的平面在 y=0.028，路面那塊板子佔 0 到
-    // 0.05）。彎道照做，露出來的才會一樣寬。埋得比半條還深也不對 —— 那是補內側
-    // 的量失控，路緣會看起來比直路窄。
+    // On a straight road half the kerb is under the surface: the kerb's plane is at y = 0.028 and
+    // the road slab spans 0 to 0.05. A bend does the same so the visible width matches. Buried
+    // deeper than half is wrong too — that is the inward extension running away, and the kerb looks
+    // narrower than on a straight road.
     const half = ROAD_WIDTHS[RoadType.TWO_LANE]! / 2;
     const c = turnCentre(NE);
     for (const s of buildSidewalkStrips([cell(NE)])) {
@@ -201,7 +213,8 @@ describe('L 形彎的路緣', () => {
   });
 
   it('should only kerb the outside of the turn', () => {
-    // 內側沒有路緣 —— 直路的規則是「沒有路的那一邊才鋪」，彎道的內側兩邊都有路。
+    // No kerb on the inside: a straight road's rule is "only the side with no road", and a bend has
+    // road on both inner sides.
     const c = turnCentre(NE);
     for (const s of buildSidewalkStrips([cell(NE)])) {
       expect(radius(s, c)).toBeGreaterThan(0.5);
@@ -232,7 +245,7 @@ describe('L 形彎的路緣', () => {
 });
 
 describe('L 形彎的路緣石不能凸出去', () => {
-  /** 一段長方形四個角裡，離彎心最遠的那一個。 */
+  /** The furthest of a rectangle's four corners from the bend's centre. */
   function furthestCorner(
     s: { x: number; z: number; sx: number; sz: number; rotY: number },
     c: { cx: number; cz: number },
@@ -249,28 +262,30 @@ describe('L 形彎的路緣石不能凸出去', () => {
   }
 
   it('should not let the kerb bulge past its own outer radius', () => {
-    // 每一段都是直的長方形，中間貼著圓弧 —— 所以**兩端的角**會凸到圓外面，
-    // 凸出量是 R×(1/cos(θ/2)−1)。段數太少的話那是一圈看得見的扇貝邊，接在
-    // 直路的路緣上特別明顯:直路是一條直線，彎道卻鼓出來一塊。
+    // Each segment is a straight rectangle following the arc, so **its two ends** bulge outside the
+    // circle by R x (1/cos(theta/2) - 1). With too few segments that is a visible scalloped edge,
+    // and it shows most against a straight road's kerb: the straight one is a line and the bend
+    // bulges out of it.
     const half = ROAD_WIDTHS[RoadType.TWO_LANE]! / 2;
     const nominal = 0.5 + half + SIDEWALK_WIDTH / 2;
     const c = turnCentre(NE);
     for (const s of buildSidewalkStrips([cell(NE)])) {
-      // 容許量取路緣寬的 5% —— 再多就看得出來了。
+      // The tolerance is 5% of the kerb's width; more is visible.
       expect(furthestCorner(s, c) - nominal).toBeLessThan(SIDEWALK_WIDTH * 0.05);
     }
   });
 
   it('should keep the kerb about as thick as it is on a straight', () => {
-    // 補內側的量跟半徑成正比，而路緣的半徑比路面大 —— 段數不夠的話彎道的路緣
-    // 會比直路胖一圈。
+    // The inward extension scales with the radius, and a kerb's radius exceeds the surface's, so
+    // with too few segments a bend's kerb is wider than a straight road's.
     for (const s of buildSidewalkStrips([cell(NE)])) {
       expect(s.sx).toBeLessThan(SIDEWALK_WIDTH * 1.05);
     }
   });
 
   it('should spend the extra pieces on the kerb, not on the asphalt', () => {
-    // 柏油的凸出被路緣蓋住，所以它不需要那麼多段。段數分開才不會白花實例。
+    // The asphalt's bulge is covered by the kerb, so it needs fewer segments. Separate counts avoid
+    // spending instances for nothing.
     expect(BEND_KERB_SEGMENTS).toBeGreaterThan(BEND_ARC_SEGMENTS);
     expect(buildSidewalkStrips([cell(NE)])).toHaveLength(BEND_KERB_SEGMENTS);
     expect(buildRoadStrips([cell(NE)])).toHaveLength(BEND_ARC_SEGMENTS);
@@ -286,8 +301,9 @@ describe('路燈', () => {
   });
 
   it('should follow the kerb round a bend', () => {
-    // 原本是照直路的規則擺的:南邊界與西邊界的中點。那兩點離彎心 1.003，而路緣
-    // 只到 0.87 —— 路燈整個站到草地上去了。
+    // Placed by the straight-road rule, the lamps land at the midpoints of the south and west
+    // boundaries, 1.003 from the bend's centre while the kerb reaches only 0.87 — leaving them
+    // standing on grass.
     const half = ROAD_WIDTHS[RoadType.TWO_LANE]! / 2;
     const onKerb = 0.5 + half + SIDEWALK_WIDTH / 2;
     const c = turnCentre(NE);
@@ -313,7 +329,7 @@ describe('路燈', () => {
   });
 
   it('should light only the sides with no road on them', () => {
-    // 十字路口三面有路，只剩一面要燈。
+    // With road on three sides, only one side needs a lamp.
     const lamps = buildLampPositions([cell(RoadDirection.NORTH | RoadDirection.SOUTH | RoadDirection.EAST)]);
     expect(lamps).toHaveLength(1);
     expect(lamps[0]!.x).toBeLessThan(0);
@@ -331,7 +347,7 @@ describe('彎道的路緣石看起來要跟直路一樣寬', () => {
   const TYPES = [RoadType.RURAL, RoadType.TWO_LANE, RoadType.FOUR_LANE, RoadType.SIX_LANE,
     RoadType.HIGHWAY, RoadType.ONE_WAY];
 
-  /** 直路上露在柏油外面的那一截路緣有多寬。 */
+  /** How much of a straight road's kerb shows outside the asphalt. */
   function visibleOnStraight(type: number): number {
     const w = ROAD_WIDTHS[type]!;
     const strip = buildSidewalkStrips([cell(NS, type)]).find(s => s.x > 0)!;
@@ -339,15 +355,16 @@ describe('彎道的路緣石看起來要跟直路一樣寬', () => {
   }
 
   it.each(TYPES)('should bury half the kerb under the asphalt on a straight (%i)', (type) => {
-    // 直路的路緣是**騎在柏油邊緣上**的:strip 的中心就在 ±路寬/2，內半條壓在路面
-    // 底下（路緣的平面在 y=0.028，而路面那塊板子佔 0 到 0.05）。所以看得見的只有
-    // 半條 —— 這是這一條測試存在的理由，彎道必須照著同一套來。
+    // A straight road's kerb **straddles the asphalt's edge**: the strip's centre sits at
+    // +/-width/2 and its inner half is under the surface, since the kerb's plane is at y = 0.028
+    // and the road slab spans 0 to 0.05. So only half of it shows — which is why this case exists,
+    // and a bend has to follow the same rule.
     expect(visibleOnStraight(type)).toBeCloseTo(SIDEWALK_WIDTH / 2, 9);
   });
 
   it.each(TYPES)('should show exactly as much kerb on a bend (%i)', (type) => {
-    // 原本彎道的整條路緣都擺在柏油外面，於是露出 0.14 而直路只露 0.07 —— 正好兩倍，
-    // 每一種路寬都一樣。
+    // With the whole kerb placed outside the asphalt, a bend shows 0.14 against a straight road's
+    // 0.07: exactly twice, at every road width.
     const w = ROAD_WIDTHS[type]!;
     const asphaltEdge = 0.5 + w / 2;
     const c = turnCentre(NE);
@@ -361,10 +378,10 @@ describe('彎道的路緣石看起來要跟直路一樣寬', () => {
 });
 
 describe('高架路燈的光只灑在橋面上', () => {
-  /** 這盞燈的光往哪個方向開。局部 +Z 轉過 rotY。 */
+  /** Which way this lamp's light opens: local +Z rotated by rotY. */
   const facing = (l: { rotY: number }) => ({ x: Math.sin(l.rotY), z: Math.cos(l.rotY) });
 
-  /** a 指向 b 的單位向量。 */
+  /** The unit vector from a toward b. */
   function towards(a: { x: number; z: number }, bx: number, bz: number) {
     const dx = bx - a.x, dz = bz - a.z;
     const len = Math.hypot(dx, dz);
@@ -372,8 +389,9 @@ describe('高架路燈的光只灑在橋面上', () => {
   }
 
   it('should face a straight road`s lamp inwards, across the carriageway', () => {
-    // 高架的光暈是半圓不是整圓 —— 燈站在橋面邊緣，光不該灑到橋外的空中去。
-    // 半圓往哪邊開由 rotY 決定，而它必須指向路面。
+    // An elevated lamp's glow is a half circle rather than a full one: it stands at the deck's edge
+    // and its light should not fall into open air beyond the bridge. Which way the half opens comes
+    // from rotY, and it has to point at the road surface.
     for (const l of buildLampPositions([cell(NS)])) {
       const f = facing(l);
       const inward = towards(l, 0, 0);
@@ -382,8 +400,8 @@ describe('高架路燈的光只灑在橋面上', () => {
   });
 
   it.each([[NE], [NW], [SE], [SW]])('should face a bend`s lamps at the centre of the turn (%i)', (flags) => {
-    // 彎道上「內側」不是某一個座標軸，是彎心的方向 —— 兩盞燈各自朝內，合起來
-    // 就是一條沿著弧的光帶。
+    // On a bend, inward is the direction of the bend's centre rather than a coordinate axis: each
+    // lamp points inward, and together they make a band of light along the arc.
     const c = turnCentre(flags);
     for (const l of buildLampPositions([cell(flags)])) {
       const f = facing(l);
@@ -393,9 +411,9 @@ describe('高架路燈的光只灑在橋面上', () => {
   });
 
   it('should face every side of a dead end back at the road', () => {
-    // 死路除了來的那一面都要燈。三盞各自朝向格子中心 —— 共用一個角度的話會有兩盞
-    // 把光打到橋外面去。只檢查角度互不相同是不夠的:那三個角度剛好各不相同，卻
-    // 可以全部指錯邊。
+    // A dead end needs a lamp on every side but the one traffic arrives from. All three point at the
+    // cell's centre; sharing one angle sends two of them off the bridge. Checking only that the
+    // angles differ is not enough: three distinct angles can all point the wrong way.
     const lamps = buildLampPositions([cell(RoadDirection.NORTH)]);
     expect(lamps).toHaveLength(3);
     for (const l of lamps) {

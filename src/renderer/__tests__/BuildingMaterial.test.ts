@@ -9,12 +9,12 @@ import { FLOOR_HEIGHT_UNITS, SHOPFRONT_CEILING } from '../geometry/buildings/pro
 import { roofPaletteFor } from '../ColorPalettes';
 import { ZONE_TYPES } from '../geometry/buildings/registry';
 
-/** GLSL 一定要看得出是 float —— 整數字面值在 GLSL 裡不是 float。 */
+/** GLSL has to see a float: an integer literal is not one. */
 const glslNum = (v: number) => (Number.isInteger(v) ? `${v}.0` : String(v));
 
 /**
- * GLSL 本身測不了，但「TS 常數有沒有真的進到 GLSL 裡」測得了 —— 而那正是
- * 兩邊會漂移的地方。
+ * The GLSL itself cannot be tested, but whether the TS constants actually reach it can be — and
+ * that is exactly where the two drift apart.
  */
 describe('the shader uses the thresholds the parts module defines', () => {
   it('should carry every threshold value into the fragment source', () => {
@@ -24,8 +24,9 @@ describe('the shader uses the thresholds the parts module defines', () => {
   });
 
   it('should carry the floor height the geometry hangs awnings from', () => {
-    // 雨遮掛在「一樓樓板線」上，而樓板線是 shader 畫窗戶用的樓層高度。
-    // 兩邊各寫一份的話，雨遮會壓在窗戶中間 —— 沒有任何東西會報錯。
+    // A canopy hangs on the first-floor line, and that line is the storey height the shader draws
+    // windows from. Written on both sides, the canopy lands across the middle of a window and
+    // nothing reports it.
     expect(BUILDING_FRAG).toContain(String(FLOOR_HEIGHT_UNITS.MIN));
     expect(BUILDING_FRAG).toContain(String(FLOOR_HEIGHT_UNITS.MAX));
     expect(SHOPFRONT_CEILING).toBe(FLOOR_HEIGHT_UNITS.MIN);
@@ -39,14 +40,14 @@ describe('the shader uses the thresholds the parts module defines', () => {
   });
 
   it('should no longer hardcode the floor height and window width', () => {
-    // 這兩個常數是「高樓重複性太高」的隱藏主因：不論量體怎麼變，
-    // 所有塔樓的窗戶格都一樣。
+    // These two constants are the hidden reason towers repeat: however the masses vary, every
+    // tower shares one window grid.
     expect(BUILDING_FRAG).not.toContain('float floorH =');
     expect(BUILDING_FRAG).not.toContain('float winW =');
   });
 
   it('should branch on the detail tag before it reaches the wall branch', () => {
-    // 沒有這個分支，第三階段的水塔與冷氣機會被畫上窗戶。
+    // Without this branch, water tanks and air handling units get windows drawn on them.
     const detailAt = BUILDING_FRAG.indexOf('isDetail');
     const wallAt = BUILDING_FRAG.indexOf('=== WALL');
     expect(detailAt).toBeGreaterThan(-1);
@@ -55,21 +56,22 @@ describe('the shader uses the thresholds the parts module defines', () => {
   });
 
   /**
-   * 指定顏色的量體要真的拿到那個顏色。
+   * A mass that specifies a colour has to actually get it.
    *
-   * 白色的水塔連續兩版都畫成灰的。原因不在資料 —— 塔身一直
-   * 帶著 `color: [0.94, 0.95, 0.96]`，而測試也一直在驗那個陣列。問題是
-   * **shader 沒有一個照著它畫的分支**：
+   * A white water tank can render grey with the data entirely correct: the tank carries
+   * `color: [0.94, 0.95, 0.96]` and the tests check that array. The problem is that **the shader
+   * has no branch that draws it**:
    *
-   * - 牆會被 `FACADE_UTILITY` 壓成 `vBldgColor * 0.70~0.90`，再加一條高窗帶
-   *   與一排紅色警示燈；
-   * - `PART_DETAIL` 直接寫死一片金屬灰（`vec3(m, m*1.02, m*1.06)`），
-   *   `vBldgColor` 連讀都沒讀 —— 在它上面指定顏色等於沒指定；
-   * - `PART_GROUND` 的色譜上限是 `vec3(0.60, 0.58, 0.55)` 的磚鋪，
-   *   `shade: 1.0` 也只到中灰。
+   * - a wall is compressed by `FACADE_UTILITY` to `vBldgColor * 0.70-0.90` and given a high window
+   *   band and a row of red warning lamps;
+   * - `PART_DETAIL` hard-codes a metal grey (`vec3(m, m*1.02, m*1.06)`) and never reads
+   *   `vBldgColor`, so specifying a colour on it does nothing;
+   * - `PART_GROUND`'s ramp tops out at brick, `vec3(0.60, 0.58, 0.55)`, and even `shade: 1.0`
+   *   reaches only mid grey.
    *
-   * 三條路都到不了白色，而且**沒有一條會報錯**。`PART_SHELL` 是缺的那一條：
-   * 塗裝過的殼（水塔、煙囪、儲槽），照量體自己的顏色畫，不長窗也不發光。
+   * None of the three reaches white, and **none of them reports anything**. `PART_SHELL` is the
+   * missing one: a painted shell — water tank, stack, storage vessel — drawn in the mass's own
+   * colour, with no windows and no glow.
    */
   it('should paint a shell in the colour the volume asked for', () => {
     const start = BUILDING_FRAG.indexOf('} else if (isShell)');
@@ -81,12 +83,12 @@ describe('the shader uses the thresholds the parts module defines', () => {
   });
 
   /**
-   * 外殼不准把顏色壓暗。
+   * A shell may not darken the colour it was given.
    *
-   * 這是同一個 bug 的第二層：`PART_SHELL` 加進來之後白塔**還是**米灰的，
-   * 因為那條分支自己寫了 `vBldgColor * 0.90`。牆是 0.70~0.90、
-   * `PART_DETAIL` 是寫死的 0.42~0.58 —— 係數小於 1 的話這條新分支只是把
-   * 一個灰換成另一個灰，而截圖前沒有任何東西會說出來。
+   * The second layer of the same fault: with `PART_SHELL` added, a white tank is **still**
+   * beige-grey, because that branch writes `vBldgColor * 0.90` of its own. Walls are 0.70-0.90 and
+   * `PART_DETAIL` is a hard-coded 0.42-0.58; below 1, the new branch merely swaps one grey for
+   * another, and nothing says so before a screenshot.
    */
   it('should not darken a shell below the colour it was given', () => {
     expect(SHELL_LIFT.BASE, '外殼的明度係數 < 1 —— 白色還是會畫成灰色')
@@ -96,10 +98,11 @@ describe('the shader uses the thresholds the parts module defines', () => {
   });
 
   /**
-   * 水位是**真的**在動，不是只有顏色在動。
+   * The water level **really** moves; it is not only the colour that moves.
    *
-   * fragment 端那道波光只改顏色，平面本身是靜止的 —— 一塊有花紋的地板。
-   * 要讓水位起伏只能在 vertex 端位移，而那需要頂點端也拿得到 `uTime`。
+   * The fragment shader's shimmer changes colour only and the plane itself is static, which reads
+   * as patterned flooring. Making the level rise and fall takes displacement in the vertex stage,
+   * which needs `uTime` there too.
    */
   it('should make the water surface actually rise and fall', () => {
     expect(BUILDING_VERT, '頂點端沒有時間，位移做不出來')
@@ -107,14 +110,15 @@ describe('the shader uses the thresholds the parts module defines', () => {
     expect(BUILDING_VERT, '水面沒有位移 —— 波光只是顏色').toContain('wPos.y +=');
     expect(BUILDING_VERT, '位移沒有只挑水面')
       .toContain(String(PART_THRESHOLDS.WATER_MIN));
-    // 只動朝上的面。連池壁一起動的話整個槽會跟著呼吸。
+    // Only upward-facing surfaces move; moving the walls too makes the whole vessel breathe.
     expect(BUILDING_VERT, '位移沒有只挑朝上的面').toContain('normal.y > 0.5');
     expect(BUILDING_VERT, 'shader 沒有用 WATER_BOB，那是第二份資料')
       .toContain(String(WATER_BOB.AMP_M / METRES_PER_CELL));
   });
 
   it('should branch on the shell tag before it reaches the wall branch', () => {
-    // 落到牆的分支就是高窗帶加警示燈 —— 一支長了窗戶的煙囪。
+    // Falling to the wall branch means a high window band and warning lamps: a stack with windows
+    // in it.
     const shellAt = BUILDING_FRAG.indexOf('isShell');
     const wallAt = BUILDING_FRAG.indexOf('=== WALL');
     expect(shellAt).toBeGreaterThan(-1);
@@ -122,7 +126,7 @@ describe('the shader uses the thresholds the parts module defines', () => {
   });
 
   it('should give low-density residential a window grid, not just siding lines', () => {
-    // 這個分支原本只有水平壁板線，所以近看沒有任何細節可看。
+    // With horizontal siding lines alone, this branch has no detail to look at up close.
     const branch = BUILDING_FRAG.slice(
       BUILDING_FRAG.indexOf('RESIDENTIAL LOW'),
       BUILDING_FRAG.indexOf('RESIDENTIAL HIGH'),
@@ -133,15 +137,16 @@ describe('the shader uses the thresholds the parts module defines', () => {
   });
 
   it('should carry the ground shade from the blue channel into the fragment', () => {
-    // 同一份貼片幾何裡要同時有深色柏油與淺色鋪面，而 aSeed 是逐實例的 ——
-    // 它分不出同一個 mesh 內的兩塊地面。所以明度走頂點色的 B 通道。
+    // One decal geometry has to carry both dark asphalt and pale paving, and aSeed is per instance
+    // and cannot tell two ground patches within one mesh apart. So the brightness goes through the
+    // vertex colour's B channel.
     expect(BUILDING_VERT).toContain('varying float vGroundShade;');
     expect(BUILDING_VERT).toContain('vGroundShade = color.b;');
     expect(BUILDING_FRAG).toContain('varying float vGroundShade;');
   });
 
   it('should branch on the ground tag before it reaches the wall branch', () => {
-    // 落到牆的分支就會長出窗戶 —— 柏油地面上一格一格的窗。
+    // Falling to the wall branch grows windows: a grid of them across the asphalt.
     const groundAt = BUILDING_FRAG.indexOf('isGround');
     const wallAt = BUILDING_FRAG.indexOf('=== WALL');
     expect(groundAt).toBeGreaterThan(-1);
@@ -149,8 +154,8 @@ describe('the shader uses the thresholds the parts module defines', () => {
   });
 
   it('should carry every roof colour from the palette table into the fragment', () => {
-    // 屋頂色以前是寫死在 GLSL 的 `getRoofColor` 裡。那裡沒有任何東西測得到，
-    // 所以「商業低密度整條街是橘的」只能靠眼睛發現。
+    // Hard-coded into the GLSL's `getRoofColor`, nothing about the roof colours is testable, and
+    // "the whole low-density commercial street is orange" can only be found by eye.
     for (const zone of ZONE_TYPES) {
       for (const [r, g, b] of roofPaletteFor(zone)) {
         expect(BUILDING_FRAG, `zone ${zone} 的 ${r},${g},${b} 沒有進到 shader`)
@@ -160,7 +165,8 @@ describe('the shader uses the thresholds the parts module defines', () => {
   });
 
   it('should branch on zone in the order the category constants define', () => {
-    // 門檻寫錯順序不會有任何東西報錯 —— 只會讓某個分區永遠拿到別人的屋頂。
+    // Thresholds in the wrong order report nothing; they only give one zone somebody else's roof
+    // permanently.
     const branch = BUILDING_FRAG.slice(
       BUILDING_FRAG.indexOf('vec3 getRoofColor'),
       BUILDING_FRAG.indexOf('void main'),
@@ -170,18 +176,19 @@ describe('the shader uses the thresholds the parts module defines', () => {
     for (let i = 1; i < thresholds.length; i++) {
       expect(thresholds[i]!, `第 ${i} 個門檻沒有遞增`).toBeGreaterThan(thresholds[i - 1]!);
     }
-    // 最後一個類別走 else，所以門檻數比類別數少一個。
+    // The last category takes the else, so there is one threshold fewer than categories.
     //
-    // 用 `sortedFacadeKeys()` 而不是 `ZONE_TYPES`：這條鏈是由 `ZONE_CAT`
-    // 生成的，而 `ZONE_CAT` 除了六個分區還有公共建築的立面類別（`FACADE_*`）。
-    // `ZONE_TYPES` 是從高度表推導的「哪些分區有建築」，公共建築沒有高度表 ——
-    // 兩者本來就不是同一件事，只是在加公共類別之前碰巧一樣大。
+    // `sortedFacadeKeys()` rather than `ZONE_TYPES`: the chain is generated from `ZONE_CAT`, which
+    // holds the civic facade categories (`FACADE_*`) alongside the six zones. `ZONE_TYPES` is
+    // derived from the height table as "which zones have buildings", and civic buildings have no
+    // height table — the two were never the same thing and merely happened to be the same size
+    // before the civic categories were added.
     expect(thresholds.length).toBe(sortedFacadeKeys().length - 1);
   });
 
   it('should let the shopfront glass take part in day and night', () => {
-    // 落地窗原本算好了顏色卻沒有設 windowMask —— 白天沒有反射、夜晚不會亮，
-    // 而一條商店街的夜景主角就是它。
+    // Shopfront glazing that computes a colour without setting windowMask gets no reflection by day
+    // and never lights at night — and it is what a shopping street looks like at night.
     const storefront = BUILDING_FRAG.slice(
       BUILDING_FRAG.indexOf('COMMERCIAL LOW'),
       BUILDING_FRAG.indexOf('Upper wall'),
@@ -193,8 +200,9 @@ describe('the shader uses the thresholds the parts module defines', () => {
   });
 
   it('should keep the shopfront floor-to-ceiling, not a window grid', () => {
-    // 落地窗與樓上的小窗長得不一樣正是它的重點。它只有豎向窗框，所以
-    // 分割式只吃 wallU；一旦出現對 y 取 fract 的分割，它就變成一般窗格了。
+    // Looking different from the small windows above is the whole point of shopfront glazing. It
+    // has vertical mullions only, so its division reads wallU alone; as soon as a division takes
+    // fract of y, it becomes an ordinary window grid.
     const storefront = BUILDING_FRAG.slice(
       BUILDING_FRAG.indexOf('COMMERCIAL LOW'),
       BUILDING_FRAG.indexOf('Upper wall'),
@@ -204,8 +212,9 @@ describe('the shader uses the thresholds the parts module defines', () => {
   });
 
   it('should let a branch opt out of the daytime sky reflection', () => {
-    // 「會透光」與「是玻璃」是兩件事：工業的捲門夜裡會透出暖光，但它白天
-    // 不該變成一片藍。少了這個分離，唯一的做法是讓捲門完全不亮。
+    // "Passes light" and "is glass" are different things: an industrial roller door spills warm
+    // light at night and should not turn blue by day. Without the separation, the only option is a
+    // roller door that never lights.
     expect(BUILDING_FRAG).toContain('float glassiness = 1.0;');
     expect(BUILDING_FRAG, '天空反射沒有吃 glassiness')
       .toContain('dayFactor * windowMask * glassiness');
@@ -214,7 +223,7 @@ describe('the shader uses the thresholds the parts module defines', () => {
   });
 
   it('should compute the day/night factors outside the window block', () => {
-    // 招牌與燈頭沒有窗戶，但它們一樣要知道現在是不是晚上。
+    // Signage and lamp heads have no windows and still need to know whether it is night.
     const nightAt = BUILDING_FRAG.indexOf('float nightFactor');
     const windowAt = BUILDING_FRAG.indexOf('if (windowMask > 0.01)');
     expect(nightAt).toBeGreaterThan(-1);
@@ -223,13 +232,13 @@ describe('the shader uses the thresholds the parts module defines', () => {
   });
 
   it('should open exactly one door on a low-density house', () => {
-    // `doorX = abs(fract(fx) - 0.5)` 對**每一格**都成立，所以註解寫的
-    // 「一樓正中央開一道門」實際上是每一格都開一道。一面牆 1.5–2.3 格
-    // （房子 6 m、一格 2.6–3.9 m）、四面牆繞一圈 —— 一棟房子六到八道
-    // 咖啡色的門（BUG-233）。
+    // `doorX = abs(fract(fx) - 0.5)` holds for **every** cell, so "one door at the centre of the
+    // ground floor" is in fact one door per cell. A wall is 1.5 to 2.3 cells (a 6 m house at 2.6 to
+    // 3.9 m per cell) and there are four of them, giving one house six to eight brown doors
+    // (BUG-233).
     //
-    // 門必須同時綁在「哪一面牆」與「牆的中央」上，兩者都只能由建築的格子
-    // 決定，因為那是 fragment shader 裡唯一每棟固定的量。
+    // A door has to be bound to both which wall and the centre of that wall, and both can only come
+    // from the building's cell, the one quantity constant per building inside a fragment shader.
     expect(BUILDING_FRAG, '門的橫向位置還是只看 fract，等於每格一道')
       .not.toContain('abs(fract(fx) - 0.5)');
     expect(BUILDING_FRAG, '門沒有挑一面牆').toContain('doorSide');
@@ -237,9 +246,9 @@ describe('the shader uses the thresholds the parts module defines', () => {
   });
 
   it('should still give the ground floor windows', () => {
-    // `winMask = doorRow ? 0.0 : winMask` 把整層一樓的窗戶歸零 —— 不是
-    // 「門那一格沒有窗」。一樓因此拿不到 windowMask：沒有玻璃、沒有日間
-    // 天空反射，`isLitWindow` 永遠是 false，夜裡一樓全暗。
+    // `winMask = doorRow ? 0.0 : winMask` zeroes the whole ground floor's windows rather than only
+    // the door's cell. The ground floor therefore gets no windowMask: no glass, no daytime sky
+    // reflection, `isLitWindow` permanently false, and the whole ground floor dark at night.
     expect(BUILDING_FRAG, '一樓的窗戶仍被整層歸零')
       .not.toContain('winMask = doorRow ? 0.0 : winMask;');
     expect(BUILDING_FRAG, '門沒有從窗戶遮罩裡扣掉，而是取代了它')
@@ -247,9 +256,9 @@ describe('the shader uses the thresholds the parts module defines', () => {
   });
 
   it('should at least be bracket-balanced', () => {
-    // GLSL 在這裡編不了，所以編譯錯誤只會表現成**整片畫面空白**。括號平衡
-    // 抓不到型別錯誤，但抓得到「編輯時切掉半個區塊」—— 而那是這個檔案最
-    // 常見的失手方式：它是一段沒有任何工具檢查的字串。
+    // The GLSL cannot be compiled here, so a compile error shows up only as **a blank screen**.
+    // Balanced brackets catch no type errors, but they do catch half a block removed during an
+    // edit — the most common slip in this file, which is a string no tool checks.
     for (const [open, close] of [['{', '}'], ['(', ')']] as const) {
       for (const src of [BUILDING_VERT, BUILDING_FRAG]) {
         let depth = 0;
