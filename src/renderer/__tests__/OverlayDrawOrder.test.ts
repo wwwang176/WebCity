@@ -5,16 +5,17 @@ import { getBuildingMaterial } from '../BuildingMaterial';
 import { Grid } from '../../core/grid/Grid';
 
 /**
- * 覆蓋層必須自己指定繪製順序。
+ * An overlay sets its own render order.
  *
- * 建築材質是 `transparent: true`，所以建築、地面貼片與覆蓋層全都在同一個透明
- * 批次裡。three.js 對透明物件是**按物件中心點到鏡頭的距離**排序的 —— 而覆蓋層
- * 是一整張蓋滿全圖的單一 mesh，中心點只有一個。兩者比大小時比的是那一個點，
- * 所以**鏡頭一轉前後關係就翻面**：地面貼片一下子被半透明色塊蓋掉、一下子又
- * 冒出來。
+ * The building material is `transparent: true`, so buildings, ground decals and overlays all land in
+ * one transparent batch, which three.js sorts **by the distance from each object's centre to the
+ * camera**. An overlay is a single mesh covering the whole map and has exactly one centre, so the
+ * comparison rests on that one point and **the depth relation flips as the camera turns**: ground
+ * decals are covered by the translucent patch one moment and back on top the next.
  *
- * 指定 renderOrder 之後排序不再取決於鏡頭角度。覆蓋層排在地面細節**之前**，
- * 所以貼片畫在色塊上面 —— 玩家同時看得到「這一格的數值」與「這裡有什麼」。
+ * With a render order set, the sorting no longer depends on the camera angle. Overlays draw
+ * **before** the ground detail, so decals land on top of the patches and the player sees both the
+ * cell's value and what stands there.
  */
 
 function buildOverlay(type: OverlayType) {
@@ -39,7 +40,7 @@ describe('覆蓋層的繪製順序', () => {
   });
 
   it('should order every overlay type the same way', () => {
-    // 不是只有某幾種圖層有這個毛病 —— 它們共用同一段建立程式碼。
+    // Not confined to a few overlays: they share one piece of construction code.
     for (const type of [OverlayType.POLICE, OverlayType.HEALTH, OverlayType.COMMUTE, OverlayType.POLLUTION]) {
       const internals = buildOverlay(type);
       expect(internals.mesh!.renderOrder, `${type} 的繪製順序與其他圖層不同`)
@@ -48,15 +49,16 @@ describe('覆蓋層的繪製順序', () => {
   });
 
   it('should keep the overlay from writing depth', () => {
-    // 排在地面細節之前，靠的是「不寫深度」—— 寫了的話後面畫的貼片會被深度測試擋掉。
+    // Drawing before the ground detail works only without depth writes; with them, the decals drawn
+    // afterwards fail the depth test.
     const internals = buildOverlay(OverlayType.COMMUTE);
     const mat = internals.mesh!.material as THREE.MeshBasicMaterial;
     expect(mat.depthWrite).toBe(false);
   });
 
   it('should sit behind the building layer, which owns the default order', () => {
-    // 建築與貼片用的是同一份材質，繪製順序是預設的 0。這條把那個前提釘住 ——
-    // 哪天建築層改了順序，這裡會知道。
+    // Buildings and decals share one material at the default render order of 0. This pins that
+    // premise, so a change to the building layer's order shows up here.
     expect(getBuildingMaterial().transparent, '建築材質不再是透明的，整條推論要重看').toBe(true);
   });
 });

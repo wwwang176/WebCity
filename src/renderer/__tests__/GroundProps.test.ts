@@ -37,8 +37,8 @@ function treeClusters(geo: THREE.BufferGeometry): Array<{ x: number; z: number }
   const pts: Array<[number, number]> = [];
   for (let i = 0; i < pos.count; i++) {
     const p = col.getX(i);
-    if (p <= 0.35 || p >= 0.65) continue;          // 不是綠化
-    if (pos.getY(i) < TREE_MIN_Y) continue;         // 不夠高
+    if (p <= 0.35 || p >= 0.65) continue;          // not foliage
+    if (pos.getY(i) < TREE_MIN_Y) continue;         // not tall enough
     pts.push([pos.getX(i), pos.getZ(i)]);
   }
 

@@ -3,12 +3,12 @@ import type { VehicleAnimator } from '../VehicleAnimator';
 import { FerryAnimator } from '../FerryAnimator';
 
 // ---------------------------------------------------------------------------
-// Task 3: VehicleAnimator 介面 — 確認所有 animator 遵循統一介面
+// The VehicleAnimator interface — every animator conforms to one shape.
 // ---------------------------------------------------------------------------
 
 describe('VehicleAnimator interface', () => {
   it('VehicleAnimator 介面應定義 update 和 dispose 方法', () => {
-    // 建立一個 minimal mock 來驗證介面形狀
+    // A minimal mock verifying the interface's shape.
     const mock: VehicleAnimator = {
       update: () => {},
       dispose: () => {},

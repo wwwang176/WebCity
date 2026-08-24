@@ -127,9 +127,9 @@ describe('車輛的視錐剔除', () => {
     renderer.setCullCamera(isoCamera({ x: 0, z: 0 }, 40));
     const list = [
       car(1, 0, 0),
-      car(2, 600, 600),   // 畫面外
+      car(2, 600, 600),   // off screen
       car(3, 2, 2),
-      car(4, -700, 400),  // 畫面外
+      car(4, -700, 400),  // off screen
       car(5, -3, 1),
     ];
     renderer.update(list);
@@ -147,7 +147,7 @@ describe('車輛的視錐剔除', () => {
     // camera back changes the count not at all: the view grows while the vehicles stay in a small
     // circle at its centre.
     const { scene, renderer } = setup();
-    const spread = block(1, 0, 0, 40);   // 40×40 格，遠大於任何一個視野
+    const spread = block(1, 0, 0, 40);   // 40x40 cells, far larger than any one view
 
     renderer.setCullCamera(isoCamera({ x: 0, z: 0 }, 20));
     renderer.update(spread);

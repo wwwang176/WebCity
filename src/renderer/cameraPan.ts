@@ -1,27 +1,27 @@
 /**
- * 拖曳位移換算成相機焦點的位移。遊戲與展示區共用。
+ * Converts a drag in pixels into a shift of the camera target. Shared by the game and the showcase.
  *
- * 正確性的判準只有一條：**游標按住的那一點要黏在游標下面。** 拖曳 N 像素，
- * 世界就該移動「N 像素在目前縮放下代表的距離」—— 所以比例是
- * `視錐高度 / 畫布高度`（一像素幾格），不是任何固定的常數。
+ * There is one criterion for correctness: **the point under the cursor stays under the cursor.** Drag
+ * N pixels and the world moves by whatever distance N pixels represents at the current zoom, so the
+ * ratio is `frustum height / canvas height`, cells per pixel, and not any fixed constant.
  *
- * 展示區原本自己寫了一版，分母寫死 600，等於假設畫布永遠 600 px 高；遊戲的
- * space + 左鍵那條路徑用的是真實高度。同一個手勢兩份算式，而且只有在
- * 600 px 高的視窗裡才會一致。
+ * A second copy in the showcase hardcoded 600 as the denominator, assuming a canvas always 600 px
+ * tall, while the game's space + left button path used the real height: one gesture, two formulas,
+ * agreeing only in a 600 px window.
  */
 
 /**
- * @param dx           水平拖曳的像素數
- * @param dy           垂直拖曳的像素數
- * @param viewSize     正交視錐的高度（格），即 `camera.top - camera.bottom`
- * @param canvasHeight 畫布高度（像素）
+ * @param dx           The horizontal drag, in pixels.
+ * @param dy           The vertical drag, in pixels.
+ * @param viewSize     The orthographic frustum's height in cells, `camera.top - camera.bottom`.
+ * @param canvasHeight The canvas height, in pixels.
  */
 export function dragToPan(
   dx: number, dy: number, viewSize: number, canvasHeight: number,
 ): { x: number; z: number } {
-  // 畫布還沒佈局完時 `clientHeight` 是 0。除以零會讓相機焦點變成 NaN，
-  // 而 NaN 一旦進到 cameraTarget 就再也回不來 —— 畫面整個消失，也沒有任何
-  // 東西會報錯。
+  // `clientHeight` is 0 before the canvas has been laid out. Dividing by zero turns the camera
+  // target into NaN, and NaN in cameraTarget never comes back out: the view disappears entirely and
+  // nothing reports it.
   const scale = canvasHeight > 0 ? viewSize / canvasHeight : 0;
   return { x: -dx * scale, z: -dy * scale };
 }

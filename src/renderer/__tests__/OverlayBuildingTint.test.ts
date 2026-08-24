@@ -4,20 +4,22 @@ import { OverlayRenderer, OverlayType } from '../OverlayRenderer';
 import { Grid } from '../../core/grid/Grid';
 
 /**
- * 壓在色塊上的建築，要拿到色塊本來的顏色。
+ * A building standing on a colour patch takes that patch's colour.
  *
- * 用地與土地價值的資訊在地面上，而建築正好蓋在地面上 —— 蓋滿房子的街廓只看得到
- * 屋頂，看不到腳下那一格是什麼級。（色塊還沒對位的時候看得出來，因為顏色露在建築
- * 的東南邊；對位修好之後就整片被蓋住了。）
+ * Zoning and land value are drawn on the ground, and buildings stand on the ground: a fully built
+ * block shows only roofs and never the grade of the cell underneath. (While the patches were
+ * misaligned it was visible, because the colour showed southeast of each building; once aligned, it
+ * is entirely covered.)
  *
- * 所以 `Game` 會把建築也塗一次。塗什麼顏色不能各算各的:兩邊各有一份對照表的話，
- * 改了一邊另一邊就不一樣。這支測試釘住「建築的顏色 === 那一格地面的顏色」。
+ * So `Game` tints the buildings too, and the colour cannot be computed twice: with a lookup table on
+ * each side, changing one leaves the other different. These cases pin building colour to the colour
+ * of the ground in that cell.
  */
 
 const W = 16;
 const H = 16;
 
-/** 蓋一張圖層，回傳格 (x,y) 那個頂點的顏色（hex）。 */
+/** Builds an overlay and returns the hex colour of cell (x,y)'s vertex. */
 function groundHex(type: OverlayType, x: number, y: number, value: number): number {
   const renderer = new OverlayRenderer();
   const scene = new THREE.Scene();
@@ -43,7 +45,8 @@ describe('colorFor', () => {
   });
 
   it('should keep two levels apart', () => {
-    // 同一張圖層裡不同的值要看得出差別 —— 全部回同一個顏色也能通過上面那條。
+    // Different values within one overlay have to look different; returning one colour for
+    // everything would pass the case above.
     const r = new OverlayRenderer();
     expect(r.colorFor(OverlayType.LAND_VALUE, 10)).not.toBe(r.colorFor(OverlayType.LAND_VALUE, 90));
     expect(r.colorFor(OverlayType.ZONE, 15)).not.toBe(r.colorFor(OverlayType.ZONE, 45));

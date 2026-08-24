@@ -16,8 +16,8 @@ describe('triangleCount', () => {
   it('should count faces, not vertices, on an indexed geometry', () => {
     const box = new THREE.BoxGeometry(1, 1, 1);
     expect(box.index).not.toBeNull();
-    expect(box.getAttribute('position').count).toBe(24); // 每個角被三個面各用一次
-    expect(triangleCount(box)).toBe(12);                 // 六個面 x 兩個三角形
+    expect(box.getAttribute('position').count).toBe(24); // each corner is used once by each of three faces
+    expect(triangleCount(box)).toBe(12);                 // six faces x two triangles
   });
 
   it('should still be right when a geometry has no index', () => {

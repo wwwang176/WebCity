@@ -396,7 +396,7 @@ describe('高架道路：地下模式要跟著半透明', () => {
     // between are visible to the player too.
     expect(ld.lampGlowMesh.visible, '切進地下模式的瞬間光暈還亮著').toBe(false);
 
-    renderer.update(0);   // 半夜，路燈全開
+    renderer.update(0);   // midnight, every street lamp lit
 
     expect(ld.lampGlowMat.opacity, '地下模式看得到高架路燈的光暈').toBe(0);
   });

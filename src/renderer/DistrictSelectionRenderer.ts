@@ -28,7 +28,7 @@ export class DistrictSelectionRenderer {
     this.clear(scene);
     if (segments.length === 0) return;
 
-    const positions = new Float32Array(segments.length * 18);   // 每段 2 個三角形
+    const positions = new Float32Array(segments.length * 18);   // 2 triangles per segment
     const hw = DistrictSelectionRenderer.WIDTH / 2;
     const y = DistrictSelectionRenderer.HEIGHT;
     let o = 0;

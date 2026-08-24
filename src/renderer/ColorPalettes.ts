@@ -35,14 +35,14 @@ const BASE_PALETTES: Record<number, number[]> = {
   // whole shopping street reads as orange, and orange is already taken on this map by low-density
   // residential's terracotta.
   [ZoneType.COMMERCIAL_LOW]:   [
-    0x8fb0cc, // 鋼藍
-    0xdde6ee, // 藍白
-    0x5f89b0, // 中藍
-    0x3f5f85, // 深靛藍
-    0xa8c0d4, // 霧藍
-    0x7799b8, // 藍灰
-    0x4d7ba6, // 海藍
-    0xc3d2de, // 近白偏藍
+    0x8fb0cc, // steel blue
+    0xdde6ee, // blue white
+    0x5f89b0, // mid blue
+    0x3f5f85, // deep indigo
+    0xa8c0d4, // misty blue
+    0x7799b8, // blue grey
+    0x4d7ba6, // sea blue
+    0xc3d2de, // near-white blue
   ],
   [ZoneType.COMMERCIAL_HIGH]:  [
     0x78a8c0, // blue-green glass
@@ -93,40 +93,40 @@ export type RoofColor = readonly [number, number, number];
 const ROOF_PALETTE_TABLE: Record<number, readonly RoofColor[]> = {
   // Low-density residential: clay tile and slate.
   [ZoneType.RESIDENTIAL_LOW]: [
-    [0.35, 0.22, 0.14], // 深褐瓦
-    [0.58, 0.30, 0.18], // 赤陶紅
-    [0.40, 0.38, 0.36], // 板岩灰
-    [0.45, 0.28, 0.16], // 暖褐
-    [0.52, 0.34, 0.22], // 杉木褐
-    [0.32, 0.30, 0.28], // 深板岩
+    [0.35, 0.22, 0.14], // dark brown tile
+    [0.58, 0.30, 0.18], // terracotta red
+    [0.40, 0.38, 0.36], // slate grey
+    [0.45, 0.28, 0.16], // warm brown
+    [0.52, 0.34, 0.22], // cedar brown
+    [0.32, 0.30, 0.28], // dark slate
   ],
   // High-density residential: Parisian zinc and dark slate.
   [ZoneType.RESIDENTIAL_HIGH]: [
-    [0.45, 0.45, 0.48], // 鋅灰
-    [0.30, 0.30, 0.32], // 深板岩
-    [0.38, 0.36, 0.34], // 暖深灰
-    [0.35, 0.38, 0.42], // 藍灰板岩
+    [0.45, 0.45, 0.48], // zinc grey
+    [0.30, 0.30, 0.32], // dark slate
+    [0.38, 0.36, 0.34], // warm dark grey
+    [0.35, 0.38, 0.42], // blue-grey slate
   ],
   // Low-density commercial: the blue zone's roofs have to be blue too.
   [ZoneType.COMMERCIAL_LOW]: [
-    [0.24, 0.29, 0.35], // 深板岩藍
-    [0.30, 0.36, 0.43], // 鋅藍
-    [0.19, 0.23, 0.29], // 近黑藍
-    [0.36, 0.42, 0.49], // 中藍灰
-    [0.27, 0.34, 0.42], // 暗鋼藍
+    [0.24, 0.29, 0.35], // dark slate blue
+    [0.30, 0.36, 0.43], // zinc blue
+    [0.19, 0.23, 0.29], // near-black blue
+    [0.36, 0.42, 0.49], // mid blue grey
+    [0.27, 0.34, 0.42], // dark steel blue
   ],
   // High-density commercial: modern flat roofs.
   [ZoneType.COMMERCIAL_HIGH]: [
-    [0.32, 0.34, 0.36], // 深平灰
-    [0.38, 0.42, 0.40], // 銅綠
-    [0.28, 0.30, 0.32], // 炭灰
+    [0.32, 0.34, 0.36], // deep flat grey
+    [0.38, 0.42, 0.40], // verdigris
+    [0.28, 0.30, 0.32], // charcoal
   ],
   // Industrial: corrugated metal.
   [ZoneType.INDUSTRIAL]: [
-    [0.55, 0.56, 0.58], // 亮銀
-    [0.40, 0.40, 0.42], // 中灰金屬
-    [0.50, 0.35, 0.25], // 鏽蝕
-    [0.35, 0.36, 0.38], // 暗金屬
+    [0.55, 0.56, 0.58], // bright silver
+    [0.40, 0.40, 0.42], // mid grey metal
+    [0.50, 0.35, 0.25], // rust
+    [0.35, 0.36, 0.38], // dark metal
   ],
   // Office: modern flat roofs.
   [ZoneType.OFFICE]: [
@@ -138,31 +138,31 @@ const ROOF_PALETTE_TABLE: Record<number, readonly RoofColor[]> = {
   // verdigris is deliberate, since a street of grey police stations and schools does not read as
   // civic at all.
   [FACADE_CIVIC]: [
-    [0.26, 0.27, 0.29], // 深瀝青
-    [0.34, 0.34, 0.35], // 中灰防水層
-    [0.30, 0.42, 0.38], // 銅綠
-    [0.38, 0.36, 0.33], // 舊石棉
+    [0.26, 0.27, 0.29], // deep bitumen
+    [0.34, 0.34, 0.35], // mid grey membrane
+    [0.30, 0.42, 0.38], // verdigris
+    [0.38, 0.36, 0.33], // aged asbestos
   ],
   // Utilities: galvanised corrugated sheet and rust. Deliberately close to the industrial palette:
   // a power plant and a water plant are industrial facilities that happen to be municipal.
   [FACADE_UTILITY]: [
-    [0.48, 0.50, 0.52], // 鍍鋅
-    [0.38, 0.39, 0.41], // 舊鍍鋅
-    [0.46, 0.33, 0.24], // 鏽紅
+    [0.48, 0.50, 0.52], // galvanised
+    [0.38, 0.39, 0.41], // aged galvanised
+    [0.46, 0.33, 0.24], // rust red
   ],
   // Transit: white membrane and pale grey metal. Station roofs are mostly light construction and
   // therefore brighter than the rest.
   [FACADE_TRANSIT]: [
-    [0.72, 0.74, 0.76], // 白膜
-    [0.58, 0.62, 0.66], // 淺灰金屬
-    [0.50, 0.56, 0.62], // 玻璃頂棚
+    [0.72, 0.74, 0.76], // white membrane
+    [0.58, 0.62, 0.66], // light grey metal
+    [0.50, 0.56, 0.62], // glass canopy
   ],
   // Green space: timber and green roofs. The only roofed things in a park are the pavilion, the
   // keeper's hut and the toilets.
   [FACADE_GREEN]: [
-    [0.30, 0.22, 0.15], // 深木
-    [0.42, 0.30, 0.20], // 杉木
-    [0.28, 0.38, 0.22], // 綠化屋頂
+    [0.30, 0.22, 0.15], // dark wood
+    [0.42, 0.30, 0.20], // cedar
+    [0.28, 0.38, 0.22], // green roof
   ],
 };
 

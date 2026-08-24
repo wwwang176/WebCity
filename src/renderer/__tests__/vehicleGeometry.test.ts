@@ -16,7 +16,7 @@ import {
 } from '../geometry';
 
 // ---------------------------------------------------------------------------
-// Task 1: vehicleGeometry 拆分為獨立檔案後，barrel export 應保持完整
+// vehicleGeometry is split across files; the barrel export stays complete.
 // ---------------------------------------------------------------------------
 
 describe('geometry barrel export', () => {
@@ -61,7 +61,7 @@ describe('geometry barrel export', () => {
     const pos = geo.attributes.position;
     expect(pos).toBeDefined();
     expect(pos!.count).toBeGreaterThan(0);
-    // 所有 geometry 都應該有 vertex colors
+    // Every geometry carries vertex colours.
     expect(geo.attributes.color).toBeDefined();
   });
 

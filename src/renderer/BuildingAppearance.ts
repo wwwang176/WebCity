@@ -70,7 +70,7 @@ export function variantIndexOf(
     Math.floor(hashCell(px, py, seedByte, STREAM.VARIANT) * variantCount) % variantCount;
 
   const v = raw(x, y);
-  if (variantCount < 3) return v;   // 兩個變體時避無可避
+  if (variantCount < 3) return v;   // with two variants there is nothing to avoid to
 
   const west = raw(x - 1, y);
   const north = raw(x, y - 1);

@@ -115,7 +115,7 @@ describe('heightOptions', () => {
 
 describe('dimensionsFor', () => {
   it('should return null for a bucket with no buildings', () => {
-    expect(dimensionsFor(1, 'HIGH', 1, 0)).toBeNull();   // 住宅低沒有高密度
+    expect(dimensionsFor(1, 'HIGH', 1, 0)).toBeNull();   // low residential has no high density
     expect(dimensionsFor(999, 'LOW', 1, 0)).toBeNull();
   });
 

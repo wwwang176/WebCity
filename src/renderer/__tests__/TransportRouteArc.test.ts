@@ -4,9 +4,9 @@ import { TransportRouteRenderer } from '../TransportRouteRenderer';
 import type { TransportRouteRenderData } from '../../core/transport/collectTransportRoutes';
 
 /**
- * 路線連線畫成拋物線。弧的數學在 `core/transport/RouteArc`（有自己那一組測試），
- * 這裡只釘住渲染端**真的用了它** —— 幾何仍然照站點兩兩直連的話，弧算得再好也
- * 沒有畫出來。
+ * Route lines are drawn as parabolas. The arc arithmetic lives in `core/transport/RouteArc` with its
+ * own tests; these cases pin that the renderer **actually uses it** — with the geometry still
+ * joining stops in straight pairs, however well the arc computes, none of it is drawn.
  */
 
 function route(stops: { x: number; y: number }[]): TransportRouteRenderData {
@@ -32,7 +32,8 @@ describe('路線連線的幾何', () => {
 
   it('should sample the hops instead of joining the stops directly', () => {
     const geo = firstLineGeometry(makeRenderer(STOPS));
-    // 直連是 4 個點（三站 + 繞回第一站）。取樣過的弧遠不止。
+    // Straight joins give 4 points: three stops plus the wrap back to the first. A sampled arc gives
+    // far more.
     expect(geo.getAttribute('position').count, '連線還是站點兩兩直連').toBeGreaterThan(8);
   });
 
@@ -48,7 +49,8 @@ describe('路線連線的幾何', () => {
   });
 
   it('should keep the line at ground height where it meets a stop', () => {
-    // 弧要接得到站牌。整條線一起抬高的話，線會浮在城市上方與站點脫節。
+    // The arcs have to meet the stops; lifting the whole line leaves it floating above the city,
+    // detached from them.
     const pos = firstLineGeometry(makeRenderer(STOPS)).getAttribute('position');
     let lowest = Infinity;
     for (let i = 0; i < pos.count; i++) lowest = Math.min(lowest, pos.getY(i));

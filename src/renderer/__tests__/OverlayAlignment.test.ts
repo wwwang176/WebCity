@@ -4,15 +4,17 @@ import { OverlayRenderer, OverlayType } from '../OverlayRenderer';
 import { Grid } from '../../core/grid/Grid';
 
 /**
- * 色塊要蓋在它描述的那一格上。
+ * A colour patch covers the cell it describes.
  *
- * 覆蓋層是逐頂點上色的，而頂點落在格子的**角**上 —— 格 (i,j) 的中心在世界座標
- * `(i, ·, j)`（建築、游標、分區外框都是整數），但頂點 (i,j) 原本落在
- * `(i-0.5, ·, j-0.5)`。於是整張色場往 −x、−z 各偏半格，在等角視角下看起來就是
- * 整片往西北挪了半格。
+ * The overlay is coloured per vertex and the vertices sit on the cells' **corners**: the centre of
+ * cell (i,j) is at world `(i, ., j)` — buildings, the cursor and district outlines are all on
+ * integers — while vertex (i,j) sits at `(i-0.5, ., j-0.5)`. The whole colour field then shifts half
+ * a cell along -x and -z, which in an isometric view reads as the whole sheet moved half a cell
+ * northwest.
  *
- * 內插造成的糊是另一回事，這裡不管:色塊本來就會在相鄰格之間漸層，而建築壓在
- * 上面時仍然看得出誰是誰。位置錯了就沒得救。
+ * The blur from interpolation is a separate matter and out of scope here: a patch is meant to fade
+ * between neighbouring cells, and with buildings on top it is still readable. A wrong position is
+ * not.
  */
 
 const W = 16;
@@ -27,7 +29,7 @@ function build(type: OverlayType, data: Map<string, number>): THREE.Mesh {
   return mesh!;
 }
 
-/** 有上色的頂點在世界座標的哪裡。 */
+/** Where the coloured vertices sit in world coordinates. */
 function litAt(mesh: THREE.Mesh): { x: number; y: number }[] {
   const pos = mesh.geometry.getAttribute('position');
   const color = mesh.geometry.getAttribute('color');
@@ -42,7 +44,7 @@ function litAt(mesh: THREE.Mesh): { x: number; y: number }[] {
   return out;
 }
 
-/** 整張色塊蓋到的世界範圍。 */
+/** The world extent the whole patch covers. */
 function extent(mesh: THREE.Mesh): { minX: number; maxX: number; minY: number; maxY: number } {
   const pos = mesh.geometry.getAttribute('position');
   let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
@@ -69,14 +71,14 @@ describe('覆蓋層的對位', () => {
     [0, H - 1],
     [W - 1, 0],
   ])('should line up at the map corner (%i, %i) too', (cx, cy) => {
-    // 四個角是夾邊界的地方 —— 原本 `Math.min(i, w-1)` 把最外圈的頂點折回來，
-    // 折的方向就是偏移的來源。
+    // The four corners are where the clamping happens: `Math.min(i, w-1)` folds the outermost
+    // vertices back, and the direction of that fold is where the offset comes from.
     const mesh = build(OverlayType.POLICE, new Map([[`${cx},${cy}`, 80]]));
     expect(litAt(mesh)).toEqual([{ x: cx, y: cy }]);
   });
 
   it('should keep every overlay type on the same grid', () => {
-    // 所有圖層共用同一段建立程式碼。
+    // Every overlay shares this construction code.
     for (const type of [
       OverlayType.DISTRICT, OverlayType.COMMUTE, OverlayType.LAND_VALUE,
       OverlayType.CRIME, OverlayType.GARBAGE, OverlayType.POWER, OverlayType.WATER,
@@ -87,14 +89,15 @@ describe('覆蓋層的對位', () => {
   });
 
   it('should not hang over the edge of the map', () => {
-    // 把整片往東南推半格也能修好偏移，但那樣色塊會有半格懸在地圖外面 ——
-    // 地形只鋪到 w-0.5，多出來的那條會浮在虛空上。
+    // Pushing the whole sheet half a cell southeast would also fix the offset, but then half a cell
+    // of patch hangs off the map: the terrain reaches only to w-0.5 and the extra strip floats over
+    // nothing.
     const mesh = build(OverlayType.POLLUTION, new Map([['3,5', 80]]));
     expect(extent(mesh)).toEqual({ minX: 0, maxX: W - 1, minY: 0, maxY: H - 1 });
   });
 
   it('should still give every cell its own vertex', () => {
-    // 一格一個頂點。少了就代表有格子共用同一個值，圖層會漏格。
+    // One vertex per cell; fewer means cells share a value and the overlay skips some.
     const mesh = build(OverlayType.POLLUTION, new Map([['3,5', 80]]));
     expect(mesh.geometry.getAttribute('position').count).toBe(W * H);
   });

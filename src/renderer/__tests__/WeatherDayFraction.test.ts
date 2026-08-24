@@ -3,9 +3,10 @@ import * as THREE from 'three';
 import { WeatherRenderer } from '../WeatherRenderer';
 
 /**
- * update() 只能讓時間往前走，所以要看「某個時刻長什麼樣」原本沒有辦法。
- * 展示區的時間滑桿靠這個存取子；沒有它，滑桿只能改到 uTime，而 uTime 在
- * shader 裡只控制窗戶亮燈的隨機週期，日夜完全不動 —— 拖了像沒反應。
+ * update() only moves time forward, leaving no way to see what a given moment looks like. The
+ * showcase's time slider needs this accessor: without it the slider can only reach uTime, which in
+ * the shader drives the random period of the window lights alone and leaves the day-night cycle
+ * still, so dragging it appears to do nothing.
  */
 function fakeSceneManager() {
   const scene = new THREE.Scene();
@@ -35,7 +36,7 @@ describe('setDayFraction', () => {
   });
 
   it('should make noon brighter than midnight', () => {
-    // 這才是「時間滑桿有沒有效」的實質檢查：光真的變了。
+    // The substantive check that the time slider works: the light really changes.
     const w = new WeatherRenderer(fakeSceneManager(), 60);
     w.setDayFraction(0.5);
     const noon = w.sunIntensity;

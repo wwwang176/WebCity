@@ -211,17 +211,17 @@ describe('buildLaneMarkingData L-bend support', () => {
 });
 
 /**
- * 畫出來的虛線要落在車真正開的兩條車道中間。
+ * A painted lane divider falls between the two lanes cars actually drive in.
  *
- * 原本虛線的位置是 `路寬/4`，而且不管幾車道都只畫**一條** —— 與車道圖用的
- * 車道寬（當時是寫死的 0.18）是兩套獨立的數字。四車道剛好對上（`w/4` 正好
- * 等於兩條車道時的車道寬），六車道則是「一條虛線、三排車」，而且那條線不在
- * 任何兩排車之間。
+ * Placing dividers at `road width / 4` and drawing exactly **one** regardless of lane count made two
+ * independent sets of numbers, the other being the lane graph's lane width. Four lanes happened to
+ * line up, since `w/4` equals the lane width at two lanes, while six lanes gave one divider against
+ * three columns of cars, with that line between no two of them.
  *
- * 兩邊現在都從 `getLaneWidth` 來。
+ * Both sides now come from `getLaneWidth`.
  */
 describe('虛線與車道', () => {
-  /** 一段東西向直路中間那格的虛線橫向位置（去重、取正值、由內而外）。 */
+  /** The lateral divider positions in the middle cell of a straight east-west road, deduplicated, positive, inner to outer. */
   function dividers(roadType: RoadType): number[] {
     const cells: RoadCell[] = [];
     for (let x = 0; x < 3; x++) {
@@ -231,14 +231,14 @@ describe('虛線與車道', () => {
       });
     }
     const mine = buildLaneMarkingData(cells).filter(m => m.srcX === 1);
-    // 去重不四捨五入：同一條虛線的每一段本來就是同一個值，截斷只會讓下面的
-    // 比較在小數第 7 位以後失真。
+    // Deduplicated without rounding: every dash of one divider already carries the same value, and
+    // truncating only distorts the comparisons below past the seventh decimal.
     return [...new Set(mine.map(m => m.offsetPerp))]
       .filter(o => o > 0)
       .sort((a, b) => a - b);
   }
 
-  /** 該向各車道的中心，由內而外。 */
+  /** That direction's lane centres, inner to outer. */
   function laneCentres(roadType: RoadType): number[] {
     const w = getLaneWidth(roadType);
     return Array.from({ length: getLaneCount(roadType) }, (_, i) => (i + 0.5) * w);
@@ -273,7 +273,7 @@ describe('虛線與車道', () => {
   });
 
   it('should still draw a dashed centre line on a single-lane-per-direction road', () => {
-    // 一條車道就沒有「車道之間」，那條虛線就是中心線本身。
+    // With one lane there is no between-lanes, and the divider is the centre line itself.
     const cells: RoadCell[] = [{
       x: 0, y: 0, roadType: RoadType.TWO_LANE,
       roadFlags: RoadDirection.EAST | RoadDirection.WEST,
@@ -284,10 +284,11 @@ describe('虛線與車道', () => {
 });
 
 /**
- * 虛線的實例容量要蓋得住實際畫出來的量。
+ * The divider instance capacity covers what is actually drawn.
  *
- * `RoadInstanceTracker` 放不下時回傳 −1，呼叫端整格跳過 —— 超出的虛線是靜靜地
- * 消失，不會報錯。六車道從一格 8 條變成 16 條時就撞上了原本寫死的 14。
+ * `RoadInstanceTracker` returns -1 when full and the caller skips the whole cell, so dividers past
+ * the capacity disappear silently without an error. Six lanes going from 8 dashes per cell to 16
+ * ran straight into a hardcoded 14.
  */
 describe('虛線的容量', () => {
   const TWO_WAY_FLAGS = [
@@ -310,7 +311,7 @@ describe('虛線的容量', () => {
   });
 
   it('should be tight enough to be worth having', () => {
-    // 上限開得太寬的話這條測試永遠是綠的。最寬的那種路必須真的用到它。
+    // A capacity set too high keeps this green forever; the widest road has to actually reach it.
     const worst = Math.max(...Object.keys(ROAD_WIDTHS).map(Number).flatMap(roadType =>
       TWO_WAY_FLAGS.map(roadFlags =>
         buildLaneMarkingData([{ x: 0, y: 0, roadType, roadFlags }]).length)));

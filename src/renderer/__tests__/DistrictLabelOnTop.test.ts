@@ -72,7 +72,7 @@ function transparentDrawOrder(scene: THREE.Scene, camera: THREE.Camera): THREE.O
   });
   items.sort((a, b) => {
     if (a.renderOrder !== b.renderOrder) return a.renderOrder - b.renderOrder;
-    if (a.z !== b.z) return b.z - a.z;   // 遠的先畫
+    if (a.z !== b.z) return b.z - a.z;   // far objects draw first
     return a.id - b.id;
   });
   return items.map(i => i.obj);

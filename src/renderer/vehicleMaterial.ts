@@ -1,19 +1,18 @@
 import * as THREE from 'three';
 
 /**
- * 車輛材質。
+ * The vehicle material.
  *
- * 車輛的顏色**直接寫在 `color` 屬性上**（`geometry/common.ts` 的
- * `setVertexColors`），所以它們吃的是 `vertexColors: true` 的 Lambert，
- * 而不是建築那支把 `color` 讀成「零件標籤 / 分區 / 地面明度」的 shader。
+ * A vehicle's colour is written **straight into the `color` attribute** by `setVertexColors` in
+ * `geometry/common.ts`, so vehicles take a Lambert with `vertexColors: true` rather than the
+ * building shader, which reads `color` as a part label, zone and ground lightness.
  *
- * 抽成一個工廠的理由：`VehicleRenderer` 與公共建築的停車場都要建它，而
- * 各寫一份 `new MeshLambertMaterial({ vertexColors: true })` 的話，哪天
- * 有人替車輛加上 `flatShading` 或改成別的材質，停在停車場的那幾台會靜靜地
- * 留在舊的樣子。
+ * A factory because both `VehicleRenderer` and the civic buildings' car parks build it: with a
+ * `new MeshLambertMaterial({ vertexColors: true })` written on each side, adding `flatShading` to
+ * vehicles or switching the material would silently leave the parked ones as they were.
  *
- * 回傳新實例而不是單例：`VehicleRenderer` 逐車種各建一個
- * `InstancedMesh`，它們之後可能各自需要不同的設定。
+ * It returns a new instance rather than a singleton: `VehicleRenderer` builds one `InstancedMesh`
+ * per vehicle type, and those may come to need different settings.
  */
 export function createVehicleMaterial(): THREE.MeshLambertMaterial {
   return new THREE.MeshLambertMaterial({ vertexColors: true });

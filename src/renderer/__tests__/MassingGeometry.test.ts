@@ -56,7 +56,7 @@ describe('massing geometry', () => {
   });
 
   it('should return nothing for a bucket with no buildings', () => {
-    expect(getMassingVariants(1, 'HIGH', 1)).toEqual([]);   // 住宅低沒有高密度
+    expect(getMassingVariants(1, 'HIGH', 1)).toEqual([]);   // low residential has no high density
     expect(getMassingVariants(999, 'LOW', 1)).toEqual([]);
   });
 

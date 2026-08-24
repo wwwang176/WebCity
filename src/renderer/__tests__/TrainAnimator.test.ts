@@ -195,7 +195,7 @@ describe('TrainAnimator', () => {
     expect(v[0]!.x).toBe(0);
   });
 
-  // ── 車廂測試 ──────────────────────────────────────────
+  // ── Carriages ─────────────────────────────────────────
 
   it('should add trailing carriages (3 total)', () => {
     const animator = new TrainAnimator();
@@ -237,7 +237,7 @@ describe('TrainAnimator', () => {
     expect(car2.x).toBeLessThan(car1.x);
   });
 
-  // ── 圓弧路徑測試 ─────────────────────────────────────
+  // ── Curved paths ─────────────────────────────────────
 
   it('should follow curved path at corners', () => {
     const animator = new TrainAnimator();
