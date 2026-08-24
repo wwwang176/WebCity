@@ -7,22 +7,23 @@ import type { PropSpec } from '../../props';
 import type { CivicPlan, CivicVolume, CivicDecal, CivicVehicle } from '../types';
 
 /**
- * 大學 —— 3×3 格 = 36 × 36 m。
+ * University — 3x3 cells = 36 x 36 m.
  *
- * 辨識特徵：**四面圍合的方庭**、圓頂主樓、鐘塔。方庭是最強的那一個 ——
- * 它是城市裡唯一一棟「中間是空的」建築，而那在等角視角下一眼就看得出來。
+ * Recognition features: a **quadrangle enclosed on all four sides**, a domed north range, and a
+ * clock tower. The quadrangle is the strongest — it is the city's only building that is hollow in
+ * the middle, and that is visible at a glance in an isometric view.
  *
  * ```
  *   z-  ┌───────────────────────────┐
- *       │      北棟（圓頂在中央）       │
+ *       │   north range (dome at centre)  │
  *       ├────┬─────────────────┬────┤
- *       │ 西 │   方庭：草地      │ 東 │
- *       │ 棟 │   ＋十字步道      │ 棟 │
- *       │    │   ＋中央水池      │    │
+ *       │west│  quad: grass     │east│
+ *       │range│  + cross paths  │range│
+ *       │    │  + central pool  │    │
  *       ├────┴─────────────────┴────┤
- *       │      南棟（鐘塔在中央）       │
+ *       │   south range (clock tower at centre) │
  *       └───────────▔▔▔─────────────┘
- *   z+          前庭（校車與訪客車）
+ *   z+       forecourt (buses and visitor parking)
  * ```
  */
 
@@ -32,59 +33,56 @@ const RANGE_TOP = M(12.0);
 const RANGE_ROOF = M(12.5);
 
 /**
- * 北棟的中心。圓頂疊在它正上方。
+ * The north range's centre. The dome sits directly above it.
  *
- * 北棟比其他三棟深（9 m 對 7 m）—— 圓頂要**整個落在它上面**，而 8.4 m 的
- * 圓頂放在 7 m 深的棟上會前後各伸出 0.7 m，後面那一邊直接掉出基地。
+ * The north range is deeper than the other three, 9 m against 7 m, because the dome has to land
+ * **entirely on it**: an 8.4 m dome on a 7 m range overhangs 0.7 m front and back, and the back
+ * side falls straight off the plot.
  */
 const NORTH_Z = M(-12.5);
-/** 南棟的中心。鐘塔疊在它正上方。 */
+/** The south range's centre. The clock tower sits directly above it. */
 const SOUTH_Z = M(9.5);
 
 /**
- * 圓頂 —— **鼓座 + 半球**。
+ * The dome: **a drum plus a hemisphere**.
  *
- * 保留圓頂、移除另一座高塔，而圓頂要讀成半球。原本它是一疊愈往上愈窄的
- * 八角柱（8.4 → 7.6 → 5.6 → 3.4 m），
- * 遠景讀得出「圓頂」，走近就是四層邊緣分明的台階。
+ * The hemisphere uses `shape: 'dome'` with a drum beneath it. A hemisphere set straight on the
+ * roof is too flat — a hemisphere's height is necessarily half its diameter, and the dome's
+ * height is this building's silhouette. The drum is also how a real dome is built, with the
+ * clerestory in that ring. A stack of octagonal prisms narrowing upward reads as a dome at range
+ * and as sharply stepped tiers up close.
  *
- * 現在半球走 `shape: 'dome'`（`shapeOf` 新增的形狀），而下面墊一段鼓座 ——
- * 直接把半球扣在屋頂上的話它太扁：半球的高度必然只有直徑的一半，而圓頂的
- * 高度是這一棟的剪影。鼓座同時是真實圓頂的做法（採光層就在那一圈）。
+ * Both parts take `PART_ROOF` rather than `PART_WALL`: the wall branch would paint window panes
+ * across the dome, and a dome covered in windows is only a slightly odd tower.
  *
- * 兩段都走 `PART_ROOF` 而不是 `PART_WALL`：牆的分支會在它身上畫窗格，
- * 而一個長滿窗戶的圓頂看起來就只是一個有點怪的塔。
+ * The diameter may not exceed the north range's depth of 9 m.
  *
- * 直徑不得超過北棟的深度（9 m）。
- */
-/**
- *
- * 半球的高度**必然**是直徑的一半，所以「降低圓頂」只有兩條路：縮直徑，
- * 或縮鼓座。兩條各走一半 —— 直徑 8.4 → 6.4、鼓座 3.5 → 2.2 m，整組
- * （鼓座 + 半球）從 7.7 m 降到 5.4 m，剛好 −30%。
- *
- * 只縮鼓座的話它會低到讀不出「這是一座鼓」；只縮直徑的話圓頂會小得像
- * 屋頂上的一個帽子。
+ * Since a hemisphere's height is necessarily half its diameter, lowering the dome has exactly two
+ * routes: a smaller diameter or a shorter drum. Half of the reduction goes to each — diameter
+ * 8.4 to 6.4 and drum 3.5 to 2.2 m, taking drum plus hemisphere from 7.7 m to 5.4 m, exactly 30%.
+ * The drum alone would drop too low to read as a drum, and the diameter alone would leave a dome
+ * the size of a cap on the roof.
  */
 const DOME_DIA = 6.4;
 const DRUM_BASE = M(14.5);
 const DRUM_TOP = M(16.7);
-/** 半球的高度 = 半徑。 */
+/** A hemisphere's height equals its radius. */
 const DOME_TOP_M = 16.7 + DOME_DIA / 2;
 
 const massing: CivicVolume[] = [
-  // ── 四棟圍成方庭 ──────────────────────────────────────────
-  // 北棟：x [−17, 17]、z [−17, −8]。比其他三棟深，好放得下圓頂。
+  // ── Four ranges enclosing the quadrangle ──────────────────
+  // North range: x [-17, 17], z [-17, -8]. Deeper than the other three, to carry the dome.
   {
     tag: 'range',
     x: 0, z: NORTH_Z, w: M(34.0), d: M(9.0), y0: 0, y1: RANGE_N_TOP,
   },
   {
-    // 只往北出簷 —— 南緣是方庭，東西兩端接著側棟。
+    // Overhangs to the north only: the quadrangle is to the south and the side ranges meet its
+    // two ends.
     tag: 'rangeRoof', part: PART_ROOF,
     x: 0, z: M(-12.65), w: M(34.6), d: M(9.3), y0: RANGE_N_TOP, y1: RANGE_N_ROOF,
   },
-  // 南棟：x [−17, 17]、z [6, 13]
+  // South range: x [-17, 17], z [6, 13]
   {
     tag: 'range',
     x: 0, z: SOUTH_Z, w: M(34.0), d: M(7.0), y0: 0, y1: RANGE_TOP,
@@ -93,19 +91,19 @@ const massing: CivicVolume[] = [
     tag: 'rangeRoof', part: PART_ROOF,
     x: 0, z: M(9.65), w: M(34.6), d: M(7.3), y0: RANGE_TOP, y1: RANGE_ROOF,
   },
-  // 東西兩棟：z [−8, 6]，**兩端剛好接上**北棟與南棟 —— 留縫的話方庭會從
-  // 角落漏出去，圍合就白做了。
+  // East and west ranges: z [-8, 6], meeting the north and south ranges **exactly** at both ends.
+  // With a gap, the quadrangle leaks out at a corner and the enclosure is wasted.
   ...([-13.5, 13.5] as const).map((x): CivicVolume => ({
     tag: 'range',
     x: M(x), z: M(-1.0), w: M(7.0), d: M(14.0), y0: 0, y1: RANGE_TOP,
   })),
   ...([-13.65, 13.65] as const).map((x): CivicVolume => ({
-    // 只往外出簷。往內伸的話屋簷會蓋住方庭的一角。
+    // Overhangs outward only; inward, the eaves would cover a corner of the quadrangle.
     tag: 'rangeRoof', part: PART_ROOF,
     x: M(x), z: M(-1.0), w: M(7.3), d: M(14.0), y0: RANGE_TOP, y1: RANGE_ROOF,
   })),
 
-  // ── 圓頂 ──────────────────────────────────────────────────
+  // ── The dome ──────────────────────────────────────────────
   {
     tag: 'domeDrum', part: PART_ROOF, shape: 'cylinder',
     x: 0, z: NORTH_Z, w: M(DOME_DIA), d: M(DOME_DIA),
@@ -117,13 +115,13 @@ const massing: CivicVolume[] = [
     y0: DRUM_TOP, y1: M(DOME_TOP_M),
   },
   {
-    // 頂尖的燈籠。夜裡圓頂只剩它還看得見。
+    // The lantern at the apex. At night it is all that remains visible of the dome.
     tag: 'finial', part: PART_LAMP, shape: 'cylinder',
     x: 0, z: NORTH_Z, w: M(1.2), d: M(1.2),
     y0: M(DOME_TOP_M), y1: M(DOME_TOP_M + 1.1),
   },
 
-  // ── 屋頂設備 ──────────────────────────────────────────────
+  // ── Rooftop equipment ─────────────────────────────────────
   ...([-11, 11] as const).map((x): CivicVolume => ({
     tag: 'ac', part: PART_DETAIL,
     x: M(x), z: NORTH_Z, w: M(2.0), d: M(1.4), y0: RANGE_N_ROOF, y1: M(15.3),
@@ -131,26 +129,26 @@ const massing: CivicVolume[] = [
 ];
 
 /**
- * 地面。
+ * The ground.
  *
- * 方庭是四塊草地 + 一個十字步道 —— 底層貼片彼此不得重疊，所以步道不能整條
- * 疊在草地上，只能把草地切成四塊。東西向的步道因此也是兩段（中間那一格
- * 歸南北向那一條）。
+ * The quadrangle is four patches of grass plus a cross of paths. Base decals may not overlap, so
+ * the paths cannot lie over the grass and the grass is cut into four instead. The east-west path
+ * is therefore two pieces, with the middle square belonging to the north-south one.
  */
 const PATH_HALF = 1.5;
 const QUAD = { x: 10.0, z0: -8.0, z1: 6.0 };
 
 const decals: CivicDecal[] = [
-  // 南北向步道，穿過中心。
+  // The north-south path, through the centre.
   {
     x: 0, z: M((QUAD.z0 + QUAD.z1) / 2),
     w: M(PATH_HALF * 2), d: M(QUAD.z1 - QUAD.z0), shade: 0.62,
   },
-  // 前庭：南棟之外，z [13, 18]
+  // Forecourt, beyond the south range: z [13, 18]
   { x: 0, z: M(15.5), w: M(36.0), d: M(5.0), shade: 0.6 },
 ];
 
-// 東西向步道的兩段。
+// The east-west path's two pieces.
 for (const side of [-1, 1]) {
   const inner = PATH_HALF;
   const outer = QUAD.x;
@@ -160,7 +158,7 @@ for (const side of [-1, 1]) {
   });
 }
 
-// 四塊草地。
+// The four patches of grass.
 for (const sx of [-1, 1]) {
   for (const [za, zb] of [[QUAD.z0, -PATH_HALF], [PATH_HALF, QUAD.z1]] as const) {
     decals.push({
@@ -170,7 +168,7 @@ for (const sx of [-1, 1]) {
   }
 }
 
-// 前庭的停車格分隔線。
+// The forecourt's parking bay separators.
 for (let i = 0; i < 5; i++) {
   decals.push({
     x: M(4.0 + i * 2.8), z: M(15.6), w: M(0.15), d: M(4.6),
@@ -179,9 +177,9 @@ for (let i = 0; i < 5; i++) {
 }
 
 /**
- * 方庭中央的水池 —— 這一棟最便宜的「這裡是大學」訊號。
+ * The pool at the quadrangle's centre: this building's cheapest "this is a university" signal.
  *
- * `geometry/props` 沒有水池，所以它是自訂量體。
+ * `geometry/props` has no pool, so it is a custom mass.
  */
 const props: CivicVolume[] = [
   {
@@ -195,7 +193,8 @@ const props: CivicVolume[] = [
 ];
 
 const overhead: CivicVolume[] = [
-  // 大門的門廊。鐘塔正下方 —— 從前庭看過去，門廊、鐘面、尖頂在同一條軸線上。
+  // The main entrance porch, directly under the clock tower: seen from the forecourt, porch,
+  // clock face and spire line up on one axis.
   {
     tag: 'portico',
     x: 0, z: M(13.7), w: M(9.0), d: M(2.6), y0: M(4.4), y1: M(4.9),
@@ -203,12 +202,12 @@ const overhead: CivicVolume[] = [
 ];
 
 const fixtures: PropSpec[] = [
-  // ── 方庭的四棵大樹，一塊草地一棵。 ──
+  // ── Four large trees in the quadrangle, one per patch of grass. ──
   ...([-1, 1] as const).flatMap(sx => ([-5.2, 3.2] as const).map(z => ({
     kind: 'tree' as const,
     x: M(sx * 6.0), z: M(z), heightM: 8.0, crownRadius: M(1.8),
   }))),
-  // 步道兩側的矮籬，把草地與路分開。
+  // Low hedges along the paths, separating grass from paving.
   ...([-1, 1] as const).map(sx => ({
     kind: 'hedge' as const,
     x: M(sx * 2.4), z: M(-1.0), axis: 'x' as const,
@@ -221,8 +220,8 @@ const fixtures: PropSpec[] = [
   { kind: 'flowerBed', x: M(-2.6), z: M(2.2), radius: M(0.7) },
   { kind: 'flowerBed', x: M(2.6), z: M(2.2), radius: M(0.7) },
 
-  // ── 街道家具 ──
-  // 方庭的燈沿著步道排 —— 大學的夜景就是那一條發亮的軸線。
+  // ── Street furniture ──
+  // The quadrangle's lamps run along the paths: a university at night is that lit axis.
   { kind: 'lamp', x: M(-2.2), z: M(-6.0), heightM: 4.0 },
   { kind: 'lamp', x: M(2.2), z: M(-6.0), heightM: 4.0 },
   { kind: 'lamp', x: M(-2.2), z: M(4.0), heightM: 4.0 },
@@ -233,7 +232,7 @@ const fixtures: PropSpec[] = [
   { kind: 'flagpole', x: M(-6.0), z: M(14.0), axis: 'z' },
   { kind: 'signPost', x: M(6.0), z: M(14.0), axis: 'z' },
   { kind: 'bin', x: M(-2.2), z: M(13.8), radius: M(0.26) },
-  // 大學的單車架要多。
+  // A university needs more bike racks.
   ...([-11.0, -10.2, -9.4] as const).map(x => ({
     kind: 'bikeRack' as const, x: M(x), z: M(14.4), axis: 'x' as const,
   })),
@@ -243,7 +242,7 @@ const fixtures: PropSpec[] = [
 ];
 
 const vehicles: CivicVehicle[] = [
-  // 校車沿著前庭的路邊停 —— 與兩所學校同一個理由。
+  // Buses park along the forecourt's kerb, for the same reason as at the two schools.
   { kind: 'bus', x: M(-6.0), z: M(16.4) },
   { kind: 'car', x: M(5.4), z: M(15.6), rotationY: Math.PI / 2 },
   { kind: 'car', x: M(8.2), z: M(15.6), rotationY: Math.PI / 2 },
@@ -251,10 +250,11 @@ const vehicles: CivicVehicle[] = [
 ];
 
 /**
- * `aSeed`。
+ * `aSeed`.
  *
- * `.x` = 0.42 給出 0.2536 格 = 3.04 m 的樓高 —— 老校舍的層高比中小學大。
- * 14 m 的北棟在 4.11 m 的門廳之上還有 3.2 層的窗格。
+ * `.x` = 0.42 gives 0.2536 cells = 3.04 m per storey; an old university building's floors are
+ * taller than a school's. A 14 m north range carries 3.2 storeys of window panes above a 4.11 m
+ * lobby.
  */
 const SEED = [0.42, 0.29, 0.81] as const;
 

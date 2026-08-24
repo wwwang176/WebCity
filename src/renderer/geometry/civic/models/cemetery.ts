@@ -7,45 +7,48 @@ import type { PropSpec } from '../../props';
 import type { CivicPlan, CivicVolume, CivicDecal } from '../types';
 
 /**
- * 墓園 —— 2×2 格 = 24 × 24 m。
+ * Cemetery — 2x2 cells = 24 x 24 m.
  *
- * 辨識特徵：**成排對齊的墓碑**、一座紀念碑與它頂上的發光十字、入口門柱。
- * 墓碑是最強的那一個 —— 一片整齊的矮方塊陣列在城市裡沒有第二個。
+ * Recognition features: **aligned rows of headstones**, a memorial with a glowing cross on top,
+ * and the entrance piers. The headstones are the strongest — a tidy array of low blocks has no
+ * counterpart anywhere in the city.
  *
- * **這一棟沒有建築。** 原本那座禮拜堂（8 × 6 m、山牆屋頂、鐘塔）在 24 m 的
- * 基地上吃掉整個北端，而它對辨識度的貢獻是零：城市裡讀出「這是墓園」靠的
- * 是墓碑陣列，那座小房子只是又一個帶山牆的方塊。拆掉它換成一座 5.5 m 的
- * 紀念碑，十字還在原來的高度，而墓園終於看起來像一片地而不是一塊建地。
+ * **There is no building here.** A chapel of 8 x 6 m with a gabled roof and a bell tower takes
+ * the whole north end of a 24 m plot and contributes nothing to recognition: what says cemetery
+ * is the array of headstones, and the small building is only one more gabled box. A 5.5 m
+ * memorial replaces it, the cross stays at the same height, and the cemetery reads as ground
+ * rather than as a building plot.
  *
- * 對齊是重點。散落的矮方塊讀起來是「地上有一堆東西」；排成格線才是墓園，
- * 所以行列座標是算出來的，不是一顆一顆手寫的。
+ * Alignment is the point. Scattered low blocks read as clutter on the ground; laid out on a grid
+ * they read as a cemetery. So the row and column coordinates are computed rather than written
+ * one by one.
  *
  * ```
  *   z-  ┌────────────────────────┐
- *       │        紀念碑（十字）      │
+ *       │       memorial (cross)  │
  *       ├────────┬──┬────────────┤
- *       │ 墓碑列  │步│  墓碑列      │
- *       │ ▪ ▪ ▪  │道│  ▪ ▪ ▪      │
+ *       │ stones │pa│  stones     │
+ *       │ ▪ ▪ ▪  │th│  ▪ ▪ ▪      │
  *       │ ▪ ▪ ▪  │  │  ▪ ▪ ▪      │
  *   z+  └────────┴╥╨┴────────────┘
- *                 門柱
+ *                 piers
  * ```
  */
 
-/** 紀念碑的中心。步道的盡頭。 */
+/** The memorial's centre, at the end of the path. */
 const MEMORIAL_Z = -8.5;
-/** 石柱頂 —— 十字從這裡開始。 */
+/** The top of the stone shaft, where the cross begins. */
 const SHAFT_TOP = M(4.2);
-/** 步道半寬。墓碑不得踏進來。 */
+/** The path's half-width. Headstones may not encroach on it. */
 const PATH_HALF = 2.0;
 
-/** 墓碑的行列。算出來的，不是手寫的 —— 手寫的三十顆一定會有一顆沒對齊。 */
+/** The headstones' rows and columns. Computed rather than written out: among thirty written by hand, one is always misaligned. */
 const STONE_COLS = [-9.4, -6.6, -3.8, 3.8, 6.6, 9.4];
 const STONE_ROWS = [-3.4, -0.6, 2.2, 5.0, 7.8];
 
 const massing: CivicVolume[] = [
-  // ── 紀念碑。三階石台 + 石柱 + 十字。 ────────────────────────
-  // 一階一階往上收 —— 直接一根柱子插在地上的話它讀起來是一根電線桿。
+  // ── The memorial: a three-step base, a shaft, and a cross. ──
+  // It steps inward as it rises; a bare shaft in the ground reads as a utility pole.
   {
     tag: 'plinth',
     x: 0, z: M(MEMORIAL_Z), w: M(3.2), d: M(3.2), y0: 0, y1: M(0.45),
@@ -59,8 +62,10 @@ const massing: CivicVolume[] = [
     x: 0, z: M(MEMORIAL_Z), w: M(0.9), d: M(0.9), y0: M(0.9), y1: SHAFT_TOP,
   },
 
-  // ── 十字。三段共邊不重疊 —— 一豎一橫直接疊的話中間是看不見的內部面。 ──
-  // 全部走 `PART_LAMP`：夜裡整座墓園只剩這個十字，那正是它該有的樣子。
+  // ── The cross: three pieces sharing edges without overlapping. An upright and a bar simply
+  // stacked leave an invisible interior face where they cross. ──
+  // All of it takes `PART_LAMP`: at night the cross is all that remains of the cemetery, which is
+  // exactly how it should be.
   {
     tag: 'cross', part: PART_LAMP,
     x: 0, z: M(MEMORIAL_Z), w: M(0.26), d: M(0.26), y0: SHAFT_TOP, y1: M(4.7),
@@ -74,7 +79,7 @@ const massing: CivicVolume[] = [
     x: 0, z: M(MEMORIAL_Z), w: M(0.26), d: M(0.26), y0: M(5.0), y1: M(5.5),
   },
 
-  // ── 入口門柱。兩根柱，過樑在 `overhead`。 ────────────────────
+  // ── The entrance piers: two piers, with the lintel in `overhead`. ──
   ...([-3.2, 3.2] as const).map((x): CivicVolume => ({
     tag: 'gatePier',
     x: M(x), z: M(10.6), w: M(1.0), d: M(1.0), y0: 0, y1: M(3.2),
@@ -82,25 +87,26 @@ const massing: CivicVolume[] = [
 ];
 
 /**
- * 地面。中央步道從門口一路通到紀念碑 —— 走不到頭的步道是一條裝飾線。
+ * The ground. The central path runs from the gate all the way to the memorial; a path that stops
+ * short is a decorative line.
  *
- * 鋪面只留兩塊：步道與碑前的小廣場。原本碑前那塊是**整整 24 m 寬**的鋪面
- * （那是為了襯托禮拜堂），拆掉建築之後它就只是一大片沒有理由的水泥。
+ * Only two paved areas remain: the path and the small plaza in front of the memorial. A full
+ * 24 m of paving there is a large area of concrete with no reason for it.
  */
 const decals: CivicDecal[] = [
-  // 中央步道：x [−2, 2]、z [−5.5, 12]
+  // The central path: x [-2, 2], z [-5.5, 12]
   { x: 0, z: M(3.25), w: M(PATH_HALF * 2), d: M(17.5), shade: 0.62 },
-  // 碑前廣場：x [−5, 5]、z [−12, −5.5]
+  // The plaza in front of the memorial: x [-5, 5], z [-12, -5.5]
   { x: 0, z: M(-8.75), w: M(10.0), d: M(6.5), shade: 0.55 },
 ];
 
-// 兩塊墓區草地。
+// The two grave-plot lawns.
 for (const side of [-1, 1]) {
   decals.push({
     x: M(side * (PATH_HALF + 12.0) / 2), z: M(3.25),
     w: M(12.0 - PATH_HALF), d: M(17.5), shade: 0.0, lawn: true,
   });
-  // 廣場兩側的草地。少了它，那兩塊角落是裸地。
+  // Grass flanking the plaza. Without it, those two corners are bare ground.
   decals.push({
     x: M(side * (5.0 + 12.0) / 2), z: M(-8.75),
     w: M(7.0), d: M(6.5), shade: 0.0, lawn: true,
@@ -108,9 +114,10 @@ for (const side of [-1, 1]) {
 }
 
 /**
- * 墓碑 —— 這一棟唯一真正需要自訂量體的東西。
+ * The headstones: the one thing here that genuinely needs custom masses.
  *
- * 放在 `props`：遠景整層關掉，而三十顆 0.9 m 的方塊在遠景本來就看不見。
+ * They live in `props`, which distant LOD drops wholesale, and thirty 0.9 m blocks are invisible
+ * at that range anyway.
  */
 const props: CivicVolume[] = STONE_COLS.flatMap(x => STONE_ROWS.map((z): CivicVolume => ({
   tag: 'headstone', part: PART_DETAIL,
@@ -118,7 +125,7 @@ const props: CivicVolume[] = STONE_COLS.flatMap(x => STONE_ROWS.map((z): CivicVo
 })));
 
 const overhead: CivicVolume[] = [
-  // 門柱之間的過樑。行人淨空 2.2 m 之上。
+  // The lintel between the piers, above the 2.2 m pedestrian clearance.
   {
     tag: 'gateLintel',
     x: 0, z: M(10.6), w: M(7.4), d: M(0.8), y0: M(3.2), y1: M(3.8),
@@ -126,7 +133,7 @@ const overhead: CivicVolume[] = [
 ];
 
 const fixtures: PropSpec[] = [
-  // ── 邊界的樹。墓園的樹是圍出「這裡是另一個地方」的那道界線。 ──
+  // ── Boundary trees. A cemetery's trees are the line that marks it as somewhere else. ──
   ...([-1, 1] as const).flatMap(sx => ([-2.0, 3.4, 8.8] as const).map(z => ({
     kind: 'tree' as const,
     x: M(sx * 11.0), z: M(z), heightM: 7.5, crownRadius: M(0.7),
@@ -134,20 +141,20 @@ const fixtures: PropSpec[] = [
   { kind: 'tree', x: M(-6.0), z: M(11.0), heightM: 6.0, crownRadius: M(0.7) },
   { kind: 'tree', x: M(6.0), z: M(11.0), heightM: 6.0, crownRadius: M(0.7) },
 
-  // 步道兩側的矮籬。
+  // Low hedges along the path.
   ...([-1, 1] as const).map(sx => ({
     kind: 'hedge' as const,
     x: M(sx * 2.4), z: M(3.0), axis: 'x' as const,
     length: M(16.0), depth: M(0.5), heightM: 0.8,
   })),
-  // 碑的兩側。原本這裡有一對修剪樹、一對花圃、一對灌木共六樣東西圍著
-  // 禮拜堂 —— 碑比房子小得多，同樣的六樣會把它埋掉。
+  // Flanking the memorial. Six items — a pair of topiaries, a pair of flower beds and a pair of
+  // shrubs — suit a building; a memorial is far smaller and the same six would bury it.
   { kind: 'flowerBed', x: M(-2.6), z: M(-8.5), radius: M(0.7) },
   { kind: 'flowerBed', x: M(2.6), z: M(-8.5), radius: M(0.7) },
   { kind: 'topiary', x: M(-4.0), z: M(-5.4), radius: M(0.7) },
   { kind: 'topiary', x: M(4.0), z: M(-5.4), radius: M(0.7) },
 
-  // ── 街道家具。少而暗 —— 墓園不需要熱鬧。 ──
+  // ── Street furniture: few and dim. A cemetery does not need to be lively. ──
   { kind: 'lamp', x: M(-2.6), z: M(9.0), heightM: 3.6 },
   { kind: 'lamp', x: M(2.6), z: M(9.0), heightM: 3.6 },
   { kind: 'lamp', x: M(-2.6), z: M(-3.0), heightM: 3.6 },
@@ -161,19 +168,18 @@ const fixtures: PropSpec[] = [
 ];
 
 /**
- * **不停車。**
+ * **No vehicles.**
  *
- * 原本靈車與家屬的車停在禮拜堂前 —— 沒有禮拜堂就沒有那個門口，而碑前廣場
- * 只有 10 m 寬，兩台車會把它變成一個停車場。順帶修掉一個既有的錯：那台
- * 靈車本來就壓在旗桿上。
+ * With no chapel there is no entrance to park in front of, and the plaza before the memorial is
+ * only 10 m wide, where two vehicles would turn it into a car park.
  */
 const vehicles: CivicPlan['vehicles'] = [];
 
 /**
- * `aSeed`。
+ * `aSeed`.
  *
- * `FACADE_GREEN` 的牆沒有窗格，所以 `.x`（樓層節奏）在這一棟身上沒有作用
- * —— 禮拜堂靠的是山牆屋頂與十字，不是窗戶。
+ * `FACADE_GREEN`'s walls carry no window panes, so `.x`, the floor rhythm, has no effect here:
+ * this plot is read from its headstones and its cross, not from windows.
  */
 const SEED = [0.5, 0.21, 0.38] as const;
 
