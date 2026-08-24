@@ -9,8 +9,9 @@ import { AgentSession } from './agent/AgentSession';
 import { registerSessionBridge, setScreen, setStartFailure } from './agent/registry';
 import { buildStatus } from './agent/status';
 
-// 讓 dev server 的 `POST /agent` 轉得進這個分頁。`import.meta.env.DEV` 是靜態的,
-// 正式 build 會整段搖掉 —— 而伺服器那半邊本來就只住在 dev server 裡。
+// Lets the dev server's `POST /agent` reach this tab. `import.meta.env.DEV` is static and a
+// production build shakes the whole branch out, and the server half lives only in the dev server
+// anyway.
 if (import.meta.env.DEV) void import('./agent/bridge/client');
 
 interface SaveInfo {
@@ -37,9 +38,10 @@ async function startGame(loadedState?: GameState, saveInfo?: SaveInfo, mapConfig
   updateLoadingProgress(10, 'Initializing...');
   await new Promise(r => requestAnimationFrame(r));
 
-  // 主選單掛在 body 上，不在 `#app` 裡 —— 清掉 `#app` 碰不到它。
-  // 從按鈕進來時處理器已經先移除過了（那是為了讓選單立刻消失，不用等載入），
-  // 這裡是第二道，也是唯一一道**每個呼叫端都會經過**的。
+  // The main menu is attached to body rather than inside `#app`, so clearing `#app` does not reach
+  // it. Coming from a button the handler has already removed it, which is what makes the menu vanish
+  // at once instead of after the load; this is the second removal, and the only one **every caller
+  // passes through**.
   removeMenuScreens();
   app.innerHTML = '';
   app.style.display = 'block';
@@ -72,8 +74,8 @@ async function startGame(loadedState?: GameState, saveInfo?: SaveInfo, mapConfig
 function showMainMenu(failure?: SaveFailure, note?: string): void {
   const app = document.getElementById('app');
   if (!app) return;
-  // 載入失敗也會走到這裡 —— 少了這行，畫面狀態會卡在 'loading'，而 agent 會一直
-  // 回報「還在載入」。
+  // A failed load reaches here too: without this line the screen state sticks at 'loading' and the
+  // agent keeps reporting that it is still loading.
   setScreen('menu', 'main');
   app.innerHTML = '';
   app.style.display = 'block';
@@ -183,24 +185,26 @@ async function startGameGuarded(
     removeLoadingScreen();
     const failure = classifySaveError(err, 'load');
     console.error('[game] failed to start:', failure.detail);
-    // 主控台只有坐在瀏覽器前面的人看得到。程式呼叫的那一端在另一個 process。
+    // The console is visible only to whoever is sitting at the browser. The programmatic caller is in
+    // another process.
     setStartFailure(failure.detail ?? String(err));
     showMainMenu({ ...failure, message: 'The game could not start. Nothing has been changed.' });
   }
 }
 
-// 載入與開新局住在這裡（它們會把整個 Game 換掉），agent 從註冊表取用。
-// 刪除存檔刻意不註冊 —— 沒有復原功能，存檔是唯一的檢查點。
+// Loading and starting a new game live here, since they replace the whole Game, and the agent reaches
+// them through the registry. Deleting a save is deliberately not registered: there is no undo, and a
+// save is the only checkpoint.
 registerSessionBridge({
   newGame: (mapConfig) => startGameGuarded(undefined, undefined, mapConfig as MapConfig | undefined),
   load: (slotId) => handleLoadGame(slotId),
 });
 
-// 主選單上也要碰得到「有哪些存檔」與「開新局」—— 那時候還沒有 Game，所以先掛一個
-// 只有 session 的版本。開局之後 startGame 會換成完整的。
+// Listing the saves and starting a game have to be reachable from the main menu, where there is no
+// Game yet, so a session-only version is installed first. startGame replaces it with the full one.
 (window as unknown as Record<string, unknown>).__agent = {
-  // 開局前沒有 Game，所以只有這兩塊。`status()` 在這裡也答得出來 —— 那正是
-  // 「我現在該做什麼」最需要它的時候。
+  // Before a game there is no Game, so only these two are present. `status()` still answers here,
+  // which is exactly when what to do next is least obvious.
   status: () => buildStatus(null),
   session: new AgentSession(
     () => { throw new Error('no game is running'); },
