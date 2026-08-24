@@ -8,7 +8,7 @@ import { PALETTE, toCSS } from '../../ColorPalette';
 
 
 interface SubTool { tool: ToolType; label: string; key: string; color: string; icon: string }
-/** `tool` 是給只有一支工具的群組用的:群組本身就是那個工具，沒有子按鈕可以挑。 */
+/** `tool` is for a group holding one tool: the group is that tool, with no sub-buttons to choose from. */
 interface ToolGroup { id: string; label: string; icon: string; color: string; items: SubTool[]; tool?: ToolType }
 
 const ZONE_GROUP: ToolGroup = {
@@ -73,10 +73,11 @@ const TRANSPORT_GROUP: ToolGroup = {
 };
 
 /**
- * 分區只有一支筆刷，所以整個群組就是那個工具 —— 沒有另外一顆 Paint 可以挑。
+ * Districts have one brush, so the group is that tool and there is no separate Paint button.
  *
- * 原本有。它跟下面那排模式按鈕都是「按了就拿起筆刷」，於是「哪一顆是亮的」沒有
- * 一致的意思:Paint 說的是工具，Add 說的是動作，兩個同時亮著卻在回答不同的問題。
+ * With one, it and the mode buttons below both mean "press this and you are holding the brush", and
+ * which button is lit no longer means one thing: Paint names a tool, Add names an action, and the two
+ * light up together while answering different questions.
  */
 const DISTRICT_GROUP: ToolGroup = {
   id: 'district', label: 'District', icon: '\u{1F3F3}', color: '#ab47bc',
@@ -85,14 +86,15 @@ const DISTRICT_GROUP: ToolGroup = {
 };
 
 /**
- * 下一次拖曳會做什麼。四個動詞，永遠剛好一個亮著。
+ * What the next drag will do. Four verbs, exactly one lit at any time.
  *
- * 工具列在拖曳畫布上只該回答這一個問題。「選了誰」歸地圖上的白框，「剛才發生了
- * 什麼」歸當下的提示 —— 三件事擠在同一排就是原本那排按鈕難懂的原因。
+ * That is the only question the toolbar should answer about dragging on the canvas. What is selected
+ * belongs to the outline on the map, and what just happened belongs to the current hint; three things
+ * crowded into one row is what made the old buttons hard to read.
  *
- * New 是模式不是動作:點了它就亮著等你拖，拖完分區成立、選取跟著成立，亮的自然
- * 跑到 Add。顏色跟拖曳預覽一致 —— 兩處對不起來的話，玩家會以為預覽的顏色代表
- * 別的東西。
+ * New is a mode rather than an action: pressing it leaves it lit awaiting a drag, and once the drag
+ * creates the district and selects it, the lit button moves to Add on its own. The colour matches the
+ * drag preview — out of step, the player takes the preview's colour to mean something else.
  */
 const DISTRICT_MODES = [
   { mode: 'add' as const, label: 'Add', icon: '\uFF0B', color: '#ab47bc',
@@ -106,19 +108,20 @@ const DISTRICT_MODES = [
 const ALL_GROUPS = [ZONE_GROUP, ROAD_GROUP, CIVIC_GROUP, UTILITY_GROUP, TRANSPORT_GROUP, DISTRICT_GROUP];
 
 /**
- * 手上正拿著分區筆刷嗎。
+ * Whether the district brush is currently held.
  *
- * 那一排動詞回答的是「我下一次拖曳會做什麼」，沒拿著筆刷時答案是「以上皆非」——
- * 亮著的按鈕就成了假話。工具可以在子選單還開著的時候被換掉:關掉分區圖層會把筆刷
- * 一起放下（`Game.leaveDistrictEditing`），而鍵盤切圖層不經過工具列的關閉處理。
+ * The row of verbs answers what the next drag will do, and without the brush in hand the answer is
+ * none of them, which makes a lit button a lie. The tool can change while the submenu is still open:
+ * closing the district overlay puts the brush down (`Game.leaveDistrictEditing`), and switching
+ * overlays by keyboard does not go through the toolbar's close handling.
  */
 const holdingDistrictBrush = () => gameSignals.currentTool() === 'district';
 
 /**
- * 筆刷現在畫進哪一區。分區被合併掉之後 id 還在，但那一區已經不存在了。
+ * Which district the brush paints into. After a merge the id remains while that district does not.
  *
- * 工具列不顯示它 —— 地圖上的白框與名稱已經說了同一件事，而且說在玩家正在看的地方。
- * 這裡只用來決定哪幾顆按鈕按得下去。
+ * The toolbar does not display it: the map's outline and name already say the same thing, and say it
+ * where the player is looking. This only decides which buttons are enabled.
  */
 function activeDistrict() {
   const id = gameSignals.activeDistrictId();
@@ -162,7 +165,8 @@ function ToolGroupComponent(props: {
         onClick={(e) => {
           e.stopPropagation();
           props.onToggleGroup(props.group.id);
-          // 只有一支工具的群組，展開它就等於拿起它 —— 底下沒有別的東西可以挑。
+          // In a group holding one tool, opening it is taking it: there is nothing else below to
+          // choose.
           if (props.group.tool) props.onSelectTool(props.group.tool);
         }}
       >
@@ -230,7 +234,7 @@ function ToolGroupComponent(props: {
                     style={off() ? 'opacity:0.35;cursor:not-allowed' : undefined}
                     onClick={(e) => {
                       e.stopPropagation();
-                      // 挑一個動詞就等於拿起筆刷 —— 這一排沒有別的東西是「工具」。
+                      // Choosing a verb is taking the brush: nothing else in this row is a tool.
                       getGame().setTool('district');
                       getGame().setDistrictPaintMode(m.mode);
                     }}
@@ -302,14 +306,17 @@ export function Toolbar(props: { onOpenModal: (id: string) => void }) {
   const closeOnOutsideClick = (e: MouseEvent) => {
     const target = e.target as HTMLElement | null;
     if (target?.closest('#toolbar')) return;
-    // 點地圖不算「點到外面」—— 那是在用剛剛挑的工具，不是把選單撥掉。
+    // Clicking the map does not count as clicking outside: that is using the tool just chosen, not
+    // dismissing the menu.
     //
-    // 分區筆刷上這件事最明顯:選一個模式、在地圖上拖一塊、想換個模式，子選單卻已經
-    // 收起來了，而換模式正是這支筆刷的日常。畫分區、鋪路、劃地全都是「挑一個設定
-    // 再到地圖上動手」的循環。
+    // It shows most clearly on the district brush: choose a mode, drag a patch on the map, want
+    // another mode — and the submenu has already closed, while changing modes is this brush's daily
+    // work. Painting districts, laying roads and zoning are all a cycle of choosing a setting and then
+    // acting on the map.
     if (target instanceof HTMLCanvasElement) return;
-    // 面板裡的操作也不算 —— 在條例面板裡切分區跟手上拿著什麼工具是兩回事，
-    // 關掉面板之後子選單卻收起來了，玩家得再點一次才能繼續畫。
+    // Nor does acting inside a panel: switching districts in the policy panel is a separate matter
+    // from which tool is held, and closing the panel with the submenu shut costs the player another
+    // click before they can paint again.
     if (target?.closest('[role="dialog"]')) return;
     setOpenGroup(null);
   };

@@ -13,14 +13,16 @@ import { sanitiseDistrictName, DISTRICT_NAME_MAX } from '../../core/district/Dis
 import { DISTRICT_SWATCHES, swatchCssFor } from '../../core/district/DistrictPalette';
 
 /**
- * 條例面板。
+ * The policy panel.
  *
- * 全城與分區合在同一個面板裡，左邊選範圍、右邊看內容 —— 兩者回答的是同一件事的
- * 兩個層級（這座城市要不要 vs 這一區要不要），分成兩個面板玩家得自己記住哪條在
- * 哪裡。條列的樣子也一致，因為玩家要比較的就是它們。
+ * City-wide and district policies share one panel, scope on the left and content on the right: the two
+ * answer the same question at two levels — whether the city wants this, whether this district wants
+ * this — and split across two panels the player has to remember which policy lives where. The rows
+ * look the same for the same reason: comparing them is the point.
  *
- * 分區的清單是「現在提供的 ∪ 這一區已經帶著的」。少了後者，舊存檔裡已下架的條例
- * 會從畫面上消失，玩家就再也關不掉它 —— 它們集中在最後的 Retired 一組。
+ * A district's list is what is offered now, unioned with what the district already carries. Without
+ * the second part, a retired policy in an old save disappears from the view and the player can never
+ * switch it off; they are collected in the Retired group at the end.
  */
 
 type Pane = { kind: 'city' } | { kind: 'district'; id: string };
@@ -34,29 +36,31 @@ export function PolicyModal(props: {
 
   const districts = () => {
     version();
-    gameSignals.tick();   // 一邊開著面板一邊畫分區，格數與費用要跟著動
+    gameSignals.tick();   // painting districts with the panel open moves the cell counts and fees
     return getGame().getState().districts.getAllDistricts();
   };
 
   createEffect(() => {
     if (!props.open) return;
-    // **訂閱** signal，不是讀 `game.activeDistrictId` 那個普通欄位。面板開著的時候
-    // 選取可能被外面清掉（關圖層、鍵盤切圖層、刪掉分區），讀普通欄位的話這個 effect
-    // 不會再跑，側邊欄就停在一個已經不是作用中的分區上。
+    // **Subscribes** to the signal rather than reading the plain `game.activeDistrictId` field. While
+    // the panel is open the selection can be cleared from outside — closing the overlay, switching
+    // overlays by keyboard, deleting the district — and reading the plain field never reruns this
+    // effect, leaving the sidebar on a district that is no longer active.
     const active = gameSignals.activeDistrictId();
     setVersion(v => v + 1);
     const game = getGame();
-    // 已經在畫某一區的話就停在那一區 —— 玩家剛畫完打開面板，想看的是那一區。
+    // Stays on the district already being painted: a player who has just painted and opened the panel
+    // wants that district.
     const districts = game.getState().districts.getAllDistricts();
     const target = districts.find(d => d.id === active);
     setPane(target ? { kind: 'district', id: target.id } : { kind: 'city' });
   });
 
   /**
-   * 側邊選誰，筆刷就畫誰。
+   * The brush paints whichever district the sidebar selects.
    *
-   * 少了這一條，玩家在面板裡點了 Docklands、關掉面板繼續畫，格子還是進 Riverside
-   * —— 而畫面上沒有任何東西說明為什麼。
+   * Without this, a player who clicks Docklands in the panel, closes it and keeps painting still puts
+   * cells into Riverside, with nothing on screen explaining why.
    */
   const selectDistrict = (id: string) => {
     setPane({ kind: 'district', id });
@@ -65,7 +69,7 @@ export function PolicyModal(props: {
 
   const population = () => { version(); return getGame().getState().citizens.getPopulation(); };
 
-  /** 目前選到的分區。分區被刪掉的話回 undefined，畫面退回全城。 */
+  /** The selected district. Returns undefined once the district is deleted, and the view falls back to city-wide. */
   const selectedDistrict = () => {
     const p = pane();
     if (p.kind !== 'district') return undefined;
@@ -75,8 +79,8 @@ export function PolicyModal(props: {
   const isCity = () => pane().kind === 'city' || !selectedDistrict();
 
   /**
-   * 計費規模。育兒補貼與免費診所按實際受益人頭收費，所以要走一趟市民清單 ——
-   * 只在面板開著的時候算，關掉就不再走。
+   * The billing scale. Childcare support and free clinics are charged per actual beneficiary, so this
+   * walks the citizen list — only while the panel is open, and not once it closes.
    */
   const scale = () => {
     version();
@@ -129,8 +133,9 @@ export function PolicyModal(props: {
       state.ordinances.setLevel(pt, level);
     } else {
       state.policies.setPolicyLevel(d.id, pt, level);
-      // 限制型條例決定這一區的空地能不能長房子，而圖層是照著畫的。這裡沒有別的
-      // 東西看得到那個改變，而玩家坐在這個面板前時遊戲往往是暫停的。
+      // Restrictive policies decide whether a district's empty land can grow buildings, and the
+      // overlay is drawn from that. Nothing else here sees the change, and the game is usually paused
+      // while the player sits in this panel.
       game.notifyDistrictPolicyChanged();
     }
     setVersion(v => v + 1);
@@ -139,8 +144,8 @@ export function PolicyModal(props: {
   const removePolicy = (pt: PolicyType) => {
     const d = selectedDistrict();
     if (!d) return;
-    // 已下架的條例只能移除。走一般的等級設定會把一條 level 0 的紀錄又寫回去 ——
-    // 舊存檔就是這樣留下一條玩家看得到卻永遠關不掉的政策。
+    // A retired policy can only be removed. Going through the ordinary level setter writes a level 0
+    // record back, which is how an old save keeps a policy the player can see and never switch off.
     getGame().getState().policies.removePolicy(d.id, pt);
     getGame().notifyDistrictPolicyChanged();
     setVersion(v => v + 1);
@@ -150,7 +155,7 @@ export function PolicyModal(props: {
     const d = selectedDistrict();
     if (!d) return;
     getGame().getState().districts.renameDistrict(d.id, sanitiseDistrictName(raw, d.name));
-    // 圖層上的標籤是拿名字畫的，不重畫的話地圖上還是舊名字。
+    // The overlay's labels are drawn from the name, and without a redraw the map keeps the old one.
     getGame().refreshOverlay();
     setVersion(v => v + 1);
   };
@@ -159,23 +164,24 @@ export function PolicyModal(props: {
     const d = selectedDistrict();
     if (!d) return;
     getGame().getState().districts.setDistrictColor(d.id, index);
-    // 圖層是拿分區顏色畫的，換色之後要重畫一次才看得到。
+    // The overlay is drawn in the district's colour, and a new colour shows only after a redraw.
     getGame().refreshOverlay();
     setVersion(v => v + 1);
   };
 
   /**
-   * 刪掉整個分區。
+   * Deletes a whole district.
    *
-   * 把格子扣光不會讓分區消失（它身上的條例設定不該因為擦掉一次就消失），所以要有
-   * 一條明確的路徑，不然側邊欄會慢慢積滿碰不到的名字。
+   * Erasing its last cell does not remove it — its policy settings should not vanish over one erase —
+   * so there has to be an explicit path, or the sidebar slowly fills with names nothing can reach.
    */
   const removeDistrict = () => {
     const d = selectedDistrict();
     if (!d) return;
     const game = getGame();
     game.getState().districts.deleteDistrict(d.id);
-    // 刪掉的可能正是筆刷手上那一區 —— 不放掉的話工具列會停在一個不存在的名字上。
+    // The deleted district may be the one the brush holds; without releasing it the toolbar sits on a
+    // name that no longer exists.
     if (game.activeDistrictId === d.id) game.setActiveDistrict(null);
     game.notifyDistrictPolicyChanged();
     game.refreshOverlay();
@@ -198,8 +204,8 @@ export function PolicyModal(props: {
     >
       <div class="overview-layout">
         <nav class="overview-sidebar">
-          {/* 切到全城也要放掉選取。只改本地的 pane 的話，側邊欄寫著 City，而地圖上
-              的白框與筆刷都還在那一區 —— 兩邊各說各話。 */}
+          {/* Switching to city-wide releases the selection too. Changing only the local pane leaves the
+              sidebar saying City while the map's outline and the brush are still on that district. */}
           <button
             class="overview-nav-item"
             classList={{ active: isCity() }}
@@ -210,13 +216,14 @@ export function PolicyModal(props: {
           </button>
           <For each={districts()}>
             {(d) => {
-              // 名字與顏色要透過會追蹤 version() 的 memo 讀。<For> 重用同一個
-              // District 物件，所以這個 body 不會重跑 —— 直接寫 {d.name} 的話，
-              // 改完名字側邊欄還是舊的，直到關掉面板重開。
+              // The name and colour are read through memos that track version(). <For> reuses the
+              // same District object, so this body does not rerun: written as {d.name} directly, the
+              // sidebar keeps the old name after a rename until the panel is closed and reopened.
               const name = () => { version(); gameSignals.tick(); return d.name; };
               const swatch = () => { version(); return swatchCssFor(d.colorIndex); };
-              // 格數是這一列唯一說得出「這一區在地圖上還在不在」的東西。0 格的分區
-              // 在地圖上沒有任何格子可以點，側邊欄是唯一碰得到它的地方。
+              // The cell count is the only thing in the row that says whether the district is still on
+              // the map. A district with 0 cells has nothing to click on the map, and the sidebar is
+              // the only place that reaches it.
               const cells = () => { version(); gameSignals.tick(); return d.cells.size; };
               return (
                 <button
@@ -255,8 +262,9 @@ export function PolicyModal(props: {
               when={!isCity()}
               fallback={<strong style="color:#e0e0e0;font-size:14px">{paneTitle()}</strong>}
             >
-              {/* 名字直接可以改，不用先按一顆編輯鈕 —— 分區的名字是玩家在地圖上
-                  唯一認得出這是哪一區的線索，改名不該是藏起來的功能。 */}
+              {/* The name is editable directly rather than behind an edit button: a district's name is
+                  the player's only cue on the map for which district this is, and renaming should not
+                  be a hidden feature. */}
               <input
                 value={paneTitle()}
                 maxLength={DISTRICT_NAME_MAX}
@@ -267,10 +275,11 @@ export function PolicyModal(props: {
               />
             </Show>
             <span style="font-size:12px;color:#ce93d8;white-space:nowrap">This cycle: ${total()}</span>
-            {/* 刪除放在標題列而不是清單最後面:格子被扣光的分區在地圖上點不到，
-                側邊欄是唯一碰得到它的地方，而那時候唯一想做的事就是刪掉它 ——
-                為此滾過十六條條例是說不過去的。
-                旁邊沒有任何會連按的按鈕，所以不會誤觸。 */}
+            {/* Delete sits in the header rather than at the end of the list: a district with no cells
+                left cannot be clicked on the map, the sidebar is the only place that reaches it, and
+                deleting it is then the only thing anyone wants to do — scrolling past sixteen policies
+                for that is not defensible. Nothing next to it is clicked repeatedly, so it is not hit
+                by accident. */}
             <Show when={!isCity()}>
               <button
                 onClick={removeDistrict}
@@ -284,8 +293,8 @@ export function PolicyModal(props: {
           <div style="font-size:11px;color:#777;margin-bottom:10px">{paneSubtitle()}</div>
 
           <Show when={!isCity()}>
-            {/* 色票。圖層上就是這個顏色 —— 色塊的色相跟圖層算出來的是同一個數字，
-                有測試釘著。 */}
+            {/* The swatch. This is the colour on the overlay: the swatch's hue and the overlay's are the
+                same number, pinned by a test. */}
             <div style="display:flex;align-items:center;gap:6px;margin-bottom:12px">
               <span style="font-size:11px;color:#777">Colour</span>
               <For each={DISTRICT_SWATCHES}>
