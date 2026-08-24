@@ -81,10 +81,11 @@ import { DEFAULT_JOB_RELOCATION_CONFIG } from './core/citizen/JobRelocation';
 import { getTransitSystems } from './core/transport/TransportRegistry';
 
 /**
- * 通勤圖層的滿格值（tick）。
+ * The commute overlay's full-scale value, in ticks.
  *
- * 與換工作的門檻同一個數字：紅色代表「這裡的人已經在想換工作了」。刻度是絕對值
- * 不是相對最大值 —— 相對刻度會讓一座通勤全都很好的城市裡最慢的那一格照樣變紅。
+ * The same number as the job-change threshold: red means these residents are already thinking
+ * about changing jobs. The scale is absolute rather than relative to the maximum, since a
+ * relative scale would redden the slowest cell even in a city with uniformly good commutes.
  */
 const COMMUTE_OVERLAY_MAX = DEFAULT_JOB_RELOCATION_CONFIG.commuteTimeThreshold;
 import { getCoverageService, OVERLAY_SCALE } from './core/overlay/CoverageOverlay';
@@ -185,10 +186,10 @@ const ZONE_PREVIEW_COLORS: Record<string, number> = {
   zone_i: PALETTE.ZONE.IND_PREVIEW, zone_o: PALETTE.ZONE.OFFICE_PREVIEW,
 };
 
-/** 選取中分區的外框顏色。白色 —— 八個色票裡沒有它，不會跟任何一區的顏色混淆。 */
+/** Outline colour of the selected district. White is not one of the eight swatches, so it cannot be mistaken for a district's own colour. */
 const DISTRICT_SELECTION_COLOR = 0xffffff;
 
-/** 分區筆刷三種模式的拖曳預覽顏色。 */
+/** Drag-preview colours for the district brush's three modes. */
 const DISTRICT_PREVIEW_COLORS: Record<DistrictPaintMode, number> = {
   add: 0xab47bc,
   replace: 0x42a5f5,
@@ -293,29 +294,31 @@ export interface SelectedZoneBuilding {
   workerCapacity: number;
   /** Pre-calculated actual tax income for this building. */
   taxIncome: number;
-  // ── 服務這一棟的那一座設施現在多滿 ─────────────────────────────
+  // ── How full the facility serving this building is ────────────────────
   //
-  // **逐格，不是全城平均。** 這五個原本都是 `service.getLoadRatio()` —— 全城總需求
-  // ÷ 全城總容量。於是城市另一頭的醫院爆量，這一棟也跳警告;而隔壁那間爆量、
-  // 全城平均還好時，反而不跳。玩家看到的是「旁邊的國小明明很空，面板卻說教育爆量」
-  //（BUG-362 的後半）。
+  // **Per cell, not a citywide average.** As `service.getLoadRatio()` — citywide demand over
+  // citywide capacity — a hospital overloaded on the far side of the city warns on this
+  // building too, while the one next door overloading raises nothing as long as the citywide
+  // average holds. The player reads "the primary school next door is empty and the panel says
+  // education is overloaded" (the second half of BUG-362).
   //
-  // `> 1` 是剛好滿，`> 2` 是需求兩倍於容量。**`-1` 代表沒有覆蓋** —— 那是灰色圓點
-  // 的事，不該觸發「爆量」警告，所以面板的 `> 1` 判斷天然擋掉了它。
+  // `> 1` is exactly full, `> 2` is demand at twice capacity. **`-1` means no coverage**, which
+  // belongs to the grey dot and must not raise an overload warning; the panel's `> 1` test
+  // rejects it naturally.
 
-  /** 服務這一棟的那座掩埋場多滿。>1 = 溢出。 */
+  /** How full the landfill serving this building is. >1 means overflowing. */
   garbageLoadRatio: number;
-  /** 服務這一棟的那間醫院多滿。 */
+  /** How full the hospital serving this building is. */
   hospitalLoadRatio: number;
-  /** 服務這一棟的那間警局多滿。 */
+  /** How full the police station serving this building is. */
   policeLoadRatio: number;
-  /** 服務這一棟的那間消防隊多滿。 */
+  /** How full the fire station serving this building is. */
   fireLoadRatio: number;
   /**
-   * 服務這一棟的學校裡**最滿的那一間**有多滿（> 1 是超收）。
+   * How full the **fullest** of the schools serving this building is; > 1 is over-enrolled.
    *
-   * 其他四個服務都有這一欄，唯獨教育沒有 —— 於是超收十一倍的高中在建築面板上
-   * 完全看不出來（BUG-364）。
+   * The other four services all carry this field. Without it, a high school enrolled at eleven
+   * times capacity is invisible on the building panel (BUG-364).
    */
   educationLoadRatio: number;
   /** Number of dead bodies at this building awaiting hearse pickup. */
@@ -378,10 +381,10 @@ export interface SelectedEmptyZone {
 export type SelectedBuilding = SelectedZoneBuilding | SelectedInfraBuilding | SelectedTransportStop | SelectedEmptyZone;
 
 /**
- * 服務名稱 → 那個服務物件。
+ * Service name to the service object.
  *
- * 只用來回答「哪一座設施服務這一格」。`getRoadCostOverlay` 那張 switch 回的是
- * 已經算好的資料，拿不到服務本身。
+ * Used only to answer which facility serves a cell. The switch in `getRoadCostOverlay` returns
+ * already-computed data and cannot reach the service itself.
  */
 const SERVICE_BY_NAME: Record<CoverageService, (s: GameState) => {
   getServingFacilityId(x: number, y: number): string | null;
@@ -412,7 +415,7 @@ export class Game {
   private highlightManager!: HighlightManager;
   /** Cached overlay building highlight cells (reapplied every frame). */
   private overlayHighlightCells: { x: number; y: number; color: number }[] = [];
-  /** 上一次重建通勤圖層時的統計版本。見 updateRenderers 的重建判斷。 */
+  /** The stats version at the last commute-overlay rebuild. See the rebuild test in updateRenderers. */
   private lastCommuteStatsVersion = -1;
   private transportRouteRenderer!: TransportRouteRenderer;
   /** Currently selected transfer route label for map overlay (null = none). */
@@ -514,21 +517,21 @@ export class Game {
     canAdvanceThrough(this.state.trafficLights, this.levelCrossingSystem, cur, next, via);
   /** Bound speed limit callback (avoids per-frame closure creation). */
   private readonly _getSpeedLimit = (key: string): number => getSpeedLimitForCell(this.roadLookup ?? this.state.grid, key);
-  /** 渡輪渲染端動畫（純 LERP，不靠 tick） */
+  /** Ferry animation on the render side; pure LERP, independent of ticks. */
   private ferryAnimator = new FerryAnimator();
-  /** 火車渲染端動畫（純 LERP，不靠 tick） */
+  /** Train animation on the render side; pure LERP, independent of ticks. */
   private trainAnimator = new TrainAnimator();
-  /** 飛機起降渲染端動畫 */
+  /** Aircraft takeoff and landing animation on the render side. */
   private airplaneAnimator = new AirplaneAnimator();
   previewCost: number | null = null; // estimated cost during road drag
   activeDistrictId: string | null = null; // currently selected district for painting
-  /** 選取中分區的外框。+/− 改的是這一區，所以它必須在地圖上看得見。 */
+  /** Outline of the selected district. The + and - modes act on this district, so it has to be visible on the map. */
   private districtSelection = new DistrictSelectionRenderer();
   /**
-   * 分區筆刷的模式。
+   * The district brush's mode.
    *
-   * 預設是併入 —— 玩家第一次拿到筆刷時想做的是「把這塊也算進來」，取代與扣除
-   * 是修邊界時才用得到的。
+   * Add by default: the first thing a player reaches for the brush to do is count another
+   * block in, while replace and subtract are for tidying boundaries afterwards.
    */
   districtPaintMode: DistrictPaintMode = 'add';
   currentRotation: Rotation = 0; // infrastructure placement rotation (R key cycles)
@@ -545,9 +548,10 @@ export class Game {
 
     // Audio
     //
-    // **建構子只建，不放。** 環境音改在 `initPhases()` 跑完之後才開始 ——
-    // 建構子裡地形產生就會丟例外（設定不合法時），而那時候音訊已經在響了。
-    // 那個 Game 之後沒有人會再碰它，於是玩家退回主選單，音樂繼續放。
+    // **The constructor builds, it does not play.** Ambient audio starts only once
+    // `initPhases()` has completed: terrain generation in the constructor throws on an invalid
+    // configuration, and nothing touches that Game again, so the player returns to the main
+    // menu with the music still running.
     this.audioManager = new AudioManager();
     this.audioManager.init();
 
@@ -582,8 +586,9 @@ export class Game {
       if (mapConfig) {
         this.mapConfig = mapConfig;
         this.state.budget.funds = STARTING_FUNDS_MAP[mapConfig.startingFunds];
-        // 地圖種子同時當作這座城市的身分:名字都是從流水號算的，沒有這個的話每一
-        // 座城市的第一個市民都同名。`mapConfig` 不在存檔裡，所以抄進 GameState。
+        // The map seed doubles as the city's identity: names are derived from sequence
+        // numbers, so without it every city's first citizen shares a name. `mapConfig` is not
+        // in the save, hence the copy into GameState.
         this.state.citySeed = mapConfig.seed;
       }
     }
@@ -633,9 +638,9 @@ export class Game {
     // Fine-grained building callbacks — incremental O(1) updates,
     // no need to set dirty.buildings (avoids redundant full rebuild)
     this.simLoop.onBuildingAdded = (x, y, zoneType, level) => {
-      // 密度不在回呼裡，但格子上的 buildingId 知道 —— 同一個物件同時帶著
-      // level 與 density（core/building/types.ts）。少了它，辦公區 15 人與
-      // 160 人的建築會用同一個高度渲染（BUG-220）。
+      // Density is not in the callback, but the cell's buildingId knows it: one object carries
+      // both level and density (core/building/types.ts). Without it, office buildings holding
+      // 15 and 160 workers render at the same height (BUG-220).
       const density = getBuildingType(this.state.grid.getCell(x, y)?.buildingId ?? 0)?.density ?? 'LOW';
       this.buildingRenderer.addBuilding(x, y, zoneType, density, level, false);
       this.buildingRenderer.removeZoneOverlay(x, y);
@@ -701,7 +706,7 @@ export class Game {
     this.zoneManager = new ZoneManager(this.state.grid);
     this.zoneManager.setElevationManager(this.elevationManager);
 
-    // 設定渡輪系統的水域網格（A* 水面導航）
+    // Give the ferry system its water grid for A* navigation.
     const grid = this.state.grid;
     this.state.ferry.setWaterGrid({
       width: grid.width,
@@ -780,9 +785,10 @@ export class Game {
     steps.push({ label: 'Building your city...', run: () => {
       this.terrainRenderer.build(this.sceneManager.scene, this.state.grid);
       this.vehicleRenderer.build(this.sceneManager.scene);
-      // 車輛的 mesh 是 frustumCulled = false（`InstancedMesh` 整組共用一個
-      // 包圍盒，three.js 沒辦法逐台判斷），所以逐台的視錐判斷得自己做，
-      // 否則滿載的 2000 台每一台每一幀都要算頂點，即使鏡頭在城市另一頭。
+      // Vehicle meshes run with frustumCulled = false: an `InstancedMesh` shares one bounding
+      // box across the batch, so three.js cannot judge instances individually. Per-vehicle
+      // culling is done here instead; otherwise a full 2000 vehicles each transform vertices
+      // every frame, even with the camera on the far side of the city.
       this.vehicleRenderer.setCullCamera(this.sceneManager.camera);
       this.pedestrianRenderer.build(this.sceneManager.scene);
       this.transportRouteRenderer.build(this.sceneManager.scene);
@@ -854,9 +860,9 @@ export class Game {
       if (result instanceof Promise) await result;
     }
 
-    // 全部跑完了才放音樂。建構子或任何一個 init 步驟丟例外的話，`startGameGuarded`
-    // 會退回主選單，而那個半成品的 Game 沒有人會再碰它 —— 音樂要是已經開始，
-    // 就會在主選單上一直放下去。
+    // Music starts only once everything has run. If the constructor or any init step throws,
+    // `startGameGuarded` returns to the main menu and nothing touches that half-built Game
+    // again, so music already playing would keep playing over the menu.
     this.audioManager.startAmbient();
   }
 
@@ -869,10 +875,10 @@ export class Game {
         this.sceneManager.orbitCamera(e.movementX * CAMERA_INPUT.ORBIT_SENSITIVITY, e.movementY * CAMERA_INPUT.ORBIT_SENSITIVITY);
         return;
       }
-      // 右鍵拖曳，或 space + 左鍵拖曳 → 平移相機。
+      // Right-drag, or space plus left-drag, pans the camera.
       //
-      // 右鍵這條以前只存在於 mousedown 裡一個空的 if 加一句「handled in
-      // mousemove」的註解，而 mousemove 從來沒有處理過它（BUG-236）。
+      // The right-button case is handled here: an empty `if` in mousedown deferring to
+      // mousemove leaves it handled nowhere (BUG-236).
       if ((e.buttons & 2) || (this.spacePanning && (e.buttons & 1))) {
         const view = this.sceneManager.camera.top - this.sceneManager.camera.bottom;
         const p = dragToPan(e.movementX, e.movementY, view, canvas.clientHeight);
@@ -970,8 +976,9 @@ export class Game {
       case 'q': this.sceneManager.rotateCamera(-Math.PI / 4); break;
       case 'e': this.sceneManager.rotateCamera(Math.PI / 4); break;
       case 'escape':
-        // 拿著分區筆刷時 Esc 先放掉選取，不直接跳回 select —— 放掉選取才能開下一區，
-        // 那是這支筆刷上最常做的一件事，不該逼玩家把工具也換掉再換回來。
+        // With the district brush in hand, Esc releases the selection rather than falling back
+        // to select. Releasing the selection is what starts the next district, the most common
+        // action with this brush, and it should not require a round trip through another tool.
         if (this.currentTool === 'district' && this.hasActiveDistrict()) {
           this.clearDistrictSelection();
         } else {
@@ -988,14 +995,14 @@ export class Game {
   }
 
   /**
-   * 對一段格子座標套用目前的工具。
+   * Applies the current tool to a range of cell coordinates.
    *
-   * 公開是因為 `AgentApi` 要從這裡進來 —— 直接呼叫底下的 builder 會跳過這支函式裡
-   * 那一整串失效通知（`markLaneGraphDirty`、`roadCoverageDirty`、
-   * `invalidateZoneBlockers`），城市會安靜地壞掉。
+   * Public because `AgentApi` enters here: calling the underlying builders directly skips the
+   * whole run of invalidations this function performs (`markLaneGraphDirty`,
+   * `roadCoverageDirty`, `invalidateZoneBlockers`) and the city breaks quietly.
    *
-   * 呼叫前要自己把 `currentTool`、`placementMode`、`elevationLevel`、
-   * `currentRotation` 設好 —— `setTool()` 不會幫非拖曳以外的情況全部重設。
+   * The caller sets `currentTool`, `placementMode`, `elevationLevel` and `currentRotation`
+   * beforehand; `setTool()` does not reset all of them outside the drag path.
    */
   handleToolAction(x1: number, y1: number, x2: number, y2: number): void {
     // Only road/rail tools allow endpoint beyond map edge; clamp for everything else
@@ -1012,9 +1019,10 @@ export class Game {
         this.handleSelectClick(x1, y1);
         break;
       case 'demolish': {
-        // 先數，再拆。計數是純函式（`DemolishTally`），拿的是還沒被動過的網格。
-        // 拆除不動錢包也不出聲，所以這一份是 agent 唯一分得出「拆到東西」與
-        // 「白做工」的依據（BUG-366）。
+        // Count first, then demolish. Counting is a pure function (`DemolishTally`) reading the
+        // grid before anything touches it. Demolition moves no money and raises no
+        // notification, so this tally is the only way an agent tells "something was cleared"
+        // from "nothing happened" (BUG-366).
         this.lastDemolishTally = tallyDemolish(this.state.grid, this.elevationManager, x1, y1, x2, y2);
         // Demolish elevated segments first across entire drag area
         const { minX, maxX, minY, maxY } = normalizeRect(x1, y1, x2, y2);
@@ -1036,13 +1044,15 @@ export class Game {
         // Then demolish ground-level items (markAllDirty called inside)
         const demolishedRoadCells = this.collectRoadCells(x1, y1, x2, y2);
         const { evictedCitizenIds, buildingCells } = this.demolish(x1, y1, x2, y2);
-        // 必須呼叫：workplace 距離的路網圖以 commuteCache.roadGeneration 為鍵
-        // 快取（SimulationLoop.getCellGraph），而 ElevationManager 自己沒有
-        // 事件機制。少了這一行，拆掉的橋還留在圖裡，而且是靜默的 —— 市民只是
-        // 「莫名其妙還走得到已經不存在的路」。見
-        // simulation/__tests__/ElevatedRoadInvalidatesGraph.test.ts。
-        // 這一下有沒有拿掉路。沒有的話（純拆建築、拆分區）就沒有任何通勤會因此
-        // 不通 —— 而那正是 `skipUnreachableCheck` 的意思，也讓工作距離表得以續用。
+        // Required: the workplace-distance road graph is cached under
+        // commuteCache.roadGeneration (SimulationLoop.getCellGraph), and ElevationManager has
+        // no event mechanism of its own. Without this call a demolished bridge stays in the
+        // graph, silently — citizens simply keep reaching roads that no longer exist. See
+        // simulation/__tests__/ElevatedRoadInvalidatesGraph.test.ts.
+        //
+        // Whether this pass removed road. If it did not — buildings or zones only — no commute
+        // can become unreachable, which is what `skipUnreachableCheck` means and what lets the
+        // workplace-distance table survive.
         const removedRoad = elevatedKeys.length > 0 || demolishedRoadCells.length > 0;
         this.simLoop.markLaneGraphDirty(
           [...elevatedKeys, ...demolishedRoadCells, ...buildingCells], !removedRoad);
@@ -1070,8 +1080,9 @@ export class Game {
             );
             this.handleBuildResult(result, 'elevated road', () => {
               if (result.affectedCells) {
-                // 必須呼叫：理由同拆除那一處 —— 圖以 roadGeneration 為鍵，
-                // 少了它蓋好的橋不會進圖，市民莫名其妙找不到工作。
+                // Required for the same reason as on the demolish path: the graph is keyed by
+                // roadGeneration, and without this a newly built bridge never enters it and
+                // citizens inexplicably cannot reach jobs.
                 this.simLoop.markLaneGraphDirty(result.affectedCells, true);
                 this.dirty.markElevatedCellsDirty(result.affectedCells);
                 // Ramp connects to ground → update ground road visuals at affected positions
@@ -1259,18 +1270,11 @@ export class Game {
   }
 
   /**
-   * Why an empty zoned cell is not developing, for the overlay tint and the
-   * selection panel.
+   * Whether an elevated segment presses down on this cell.
    *
-   * A cell that can never develop used to be drawn exactly like one waiting its
-   * turn. The information — isPowered / isWatered / road reach / demand — all
-   * existed; nothing carried it to the screen.
-   */
-  /**
-   * 高架壓在這一格上嗎。
-   *
-   * 蓋公共建築、建商長房子、以及「這塊地為什麼不長東西」的診斷，三個地方都問這一
-   * 個問題 —— 各問各的話，總有一個會漏掉，而漏掉的那個就是玩家會撞上的。
+   * Three places ask this question: placing civic buildings, the developer growing buildings,
+   * and the diagnostic explaining why a plot grows nothing. Asked separately, one of them
+   * eventually misses it, and the one that misses is the one the player runs into.
    */
   private elevatedAt = (x: number, y: number): boolean =>
     this.elevationManager.hasElevatedSegment(x, y);
@@ -1286,6 +1290,13 @@ export class Game {
     },
   });
 
+  /**
+   * Why an empty zoned cell is not developing, for the overlay tint and the selection panel.
+   *
+   * A cell that can never develop otherwise renders exactly like one waiting its turn. The
+   * information — isPowered / isWatered / road reach / demand — all exists; nothing carries it
+   * to the screen.
+   */
   private zoneBlockerAt = (x: number, y: number) =>
     getZoneBlocker(this.state.grid, x, y, this.zoneBlockerDeps());
 
@@ -1468,10 +1479,10 @@ export class Game {
   }
 
   /**
-   * 分區筆刷的一次操作。點一下是撿起一個分區，拖一塊才是畫。
+   * One stroke of the district brush. A click picks a district up, a drag paints.
    *
-   * 少了「點一下＝選取」，要換成編輯另一區只剩打開條例面板從側邊選這一條路 ——
-   * 而那一區的名稱與顏色明明就畫在地圖上。
+   * Without click-to-select, switching to another district is only possible through the
+   * ordinance panel's sidebar, while that district's name and colour are drawn on the map.
    */
   private applyDistrictGesture(x1: number, y1: number, x2: number, y2: number): void {
     this.lastDistrictGesture = null;
@@ -1489,8 +1500,9 @@ export class Game {
       this.lastDistrictGesture = 'deselect';
       return;
     }
-    // 取代與扣除改的是「現有的那一區」。手上沒有分區時它們無事可做，而順手開一個
-    // 空分區來扣除只會留下垃圾 —— 工具列也會把這兩顆停用，這裡是第二道。
+    // Replace and subtract act on an existing district. With none in hand they have nothing to
+    // do, and opening an empty district just to subtract from it leaves litter. The toolbar
+    // disables both buttons; this is the second line.
     if (!this.hasActiveDistrict() && this.districtPaintMode !== 'add') {
       this.showNotification('Pick a district first — click one on the map, or press New.', 3);
       return;
@@ -1501,25 +1513,26 @@ export class Game {
   }
 
   /**
-   * 分區筆刷上一筆做了什麼。`null` 是「被擋下來了」。
+   * What the district brush did last. `null` means the stroke was refused.
    *
-   * 這支筆刷**每一筆都會出聲**，那是刻意的（見 `reportDistrictPaint`）—— 所以
-   * 「有沒有通知」分不出成功與失敗，程式呼叫的那一層（`AgentApi.act`）看的是這裡。
+   * The brush **reports every stroke** deliberately (see `reportDistrictPaint`), so the
+   * presence of a notification does not separate success from failure. Programmatic callers
+   * (`AgentApi.act`) read this instead.
    */
   lastDistrictGesture: 'select' | 'deselect' | 'paint' | null = null;
 
-  /** 上一次拆除清掉了什麼。`null` 是「這一輪沒有拆過」。agent API 讀它。 */
+  /** What the last demolish cleared. `null` means nothing was demolished this round. Read by the agent API. */
   lastDemolishTally: DemolishTally | null = null;
 
-  /** 作用中的分區還在嗎。存檔載入或分區被合併掉之後，id 會指向不存在的東西。 */
+  /** Whether the active district still exists. After a load, or after a merge, the id can point at nothing. */
   private hasActiveDistrict(): boolean {
     return !!this.activeDistrictId && !!this.state.districts.getDistrict(this.activeDistrictId);
   }
 
   private paintDistrict(x1: number, y1: number, x2: number, y2: number): void {
-    // 沒有選定的分區就開一個。原本這裡只在 activeDistrictId 是 null 時建立，而它
-    // 建立之後永遠不會被重設，也沒有任何 UI 呼叫 createNewDistrict —— 於是整場
-    // 遊戲只做得出一個分區（BUG-295）。
+    // With no district selected, one is created. Testing `activeDistrictId === null` alone is
+    // not enough: the id is never reset once set and no UI calls createNewDistrict, so a whole
+    // session yields exactly one district (BUG-295).
     if (!this.hasActiveDistrict()) {
       const id = this.createNewDistrict();
       this.showNotification(`Started ${this.state.districts.getDistrict(id)!.name}`, 2);
@@ -1528,20 +1541,21 @@ export class Game {
       this.state.districts, this.activeDistrictId!, x1, y1, x2, y2, this.districtPaintMode);
     this.reportDistrictPaint(result);
     this.dirty.terrain = true;
-    // 外框是照著格子畫的，畫完不重建的話它會停在上一筆的形狀。
+    // The outline is drawn from the cells, so without a rebuild it keeps the previous stroke's
+    // shape.
     this.refreshDistrictSelection();
     // Painting a district brings its build policies to bear on these cells.
     this.invalidateZoneBlockers();
   }
 
   /**
-   * 把筆刷剛才做的事說出來。
+   * Announces what the brush just did.
    *
-   * **每一筆都要說**，不只是有搶到格子的那些。工具列上原本有一格顯示選取中的分區，
-   * 拿掉了 —— 地圖上的白框與名稱已經說了同一件事，而且說在玩家正在看的地方。
-   * 唯一補不上的是選取的分區在畫面外時:選了 Riverside、鏡頭移開、拖一塊，四十格
-   * 就無聲地加了進去。那一句「Riverside +40 cells」講的正是這件事，而且是在剛畫完、
-   * 還來得及扣回去的時候。
+   * **Every stroke reports**, not only the ones that claimed cells. The white outline and the
+   * name on the map already say which district is selected, and they say it where the player
+   * is looking; what they cannot cover is a selection off screen — pick Riverside, move the
+   * camera away, drag a block, and forty cells join it silently. "Riverside +40 cells" says
+   * exactly that, while there is still time to take it back.
    */
   private reportDistrictPaint(result: DistrictPaintResult): void {
     const district = this.state.districts.getDistrict(this.activeDistrictId!);
@@ -1557,7 +1571,8 @@ export class Game {
       : `${others.length} other districts`;
 
     if (this.districtPaintMode === 'subtract') {
-      // 扣除只動選取中的那一區。掃到別區時完全沒有反應，那是這支筆刷最難懂的一件事。
+      // Subtract touches only the selected district. Sweeping across another one does nothing
+      // at all, which is the hardest thing about this brush to work out unaided.
       if (result.removed === 0) {
         this.showNotification(others.length > 0
           ? `Those cells belong to ${whose} — select it to edit it.`
@@ -1570,8 +1585,9 @@ export class Game {
 
     const took = taken > 0 ? ` (${taken} taken from ${whose})` : '';
 
-    // 取代會把矩形外的格子一起丟掉，而那個數字不在 result 裡 —— 報「+N」會漏講
-    // 掉了多少。這個模式要說的本來就是結果:這一區現在有多大。
+    // Replace also drops cells outside the rectangle, and that number is not in `result`, so
+    // "+N" would leave out how much was lost. What this mode reports is the outcome: how large
+    // the district is now.
     if (this.districtPaintMode === 'replace') {
       this.showNotification(`${name} is now ${district.cells.size} cells${took}`, 3);
       return;
@@ -1584,28 +1600,32 @@ export class Game {
     this.showNotification(`${name} +${result.added} cells${took}`, 3);
   }
 
-  /** 之後畫的分區筆刷要套用在哪一區。面板側邊選誰，筆刷就畫誰。 */
+  /** Which district subsequent brush strokes apply to. Whatever the panel's sidebar selects is what the brush paints. */
   setActiveDistrict(id: string | null): void {
     this.activeDistrictId = id;
-    // 沒有選取時模式一律回到併入。取代與扣除改的是「現有的那一區」，手上沒有分區時
-    // 它們無事可做 —— 而工具列會把沒有選取畫成「New 亮著」，等於承諾下一筆會開新的
-    // 分區。停在扣除模式的話那個承諾是假的:拖下去只會拿到「Pick a district first」。
+    // With nothing selected the mode always returns to add. Replace and subtract act on an
+    // existing district and have nothing to do without one, while the toolbar draws no
+    // selection as "New is lit", promising that the next stroke opens a new district. Left in
+    // subtract mode that promise is false: dragging only yields "Pick a district first".
     //
-    // 放在這裡而不是各個呼叫端:刪除分區、關掉圖層、點自己那一區、工具列的 New，
-    // 四條路都走這個方法，漏掉任何一條就會留下同一個矛盾。
+    // It belongs here rather than in each caller: deleting a district, closing the overlay,
+    // clicking the selected district, and the toolbar's New all pass through this method, and
+    // missing any one of them leaves the same contradiction.
     if (id === null) this.districtPaintMode = 'add';
     this.refreshDistrictSelection();
     this.onUIUpdate?.();
   }
 
   /**
-   * 工具列的 New：放掉手上的分區。
+   * The toolbar's New: releases the district in hand.
    *
-   * 這裡不建立任何東西 —— 新分區是「下一筆拖曳」建立的。先開一個空分區的話畫面上
-   * 沒有任何痕跡（它沒有格子，圖層畫不出東西），按下去看起來就是沒反應，而連按
-   * 幾次只會留下一串清不掉的空分區（BUG-297）。
+   * Nothing is created here — the next drag creates the district. Opening an empty district
+   * first leaves no trace on screen (with no cells the overlay draws nothing), so the button
+   * looks dead, and pressing it repeatedly leaves a string of empty districts that cannot be
+   * cleared (BUG-297).
    *
-   * 模式要跟著切回併入:停在扣除模式時手上什麼都沒有，怎麼拖都不會有東西出現。
+   * The mode returns to add along with it: left in subtract mode with nothing in hand, no
+   * amount of dragging produces anything.
    */
   clearDistrictSelection(): void {
     this.districtPaintMode = 'add';
@@ -1615,9 +1635,10 @@ export class Game {
   }
 
   /**
-   * 選取中的分區在地圖上的外框。
+   * The selected district's outline on the map.
    *
-   * 只在拿著分區筆刷時畫 —— 其他工具下那圈白框跟手邊的事沒有關係，只是噪音。
+   * Drawn only while the district brush is in hand; under any other tool that white ring has
+   * nothing to do with the task at hand and is only noise.
    */
   private refreshDistrictSelection(): void {
     const district = this.currentTool === 'district' && this.activeDistrictId
@@ -1636,8 +1657,8 @@ export class Game {
   }
 
   createNewDistrict(name?: string): string {
-    // 挑第一個沒被用掉的號碼，不是「目前幾個分區 + 1」—— 合併會讓數量變少，於是
-    // 合併過一次之後再開新的就可能跟既有的撞名（BUG-296）。
+    // Takes the first unused number rather than "district count + 1": merging reduces the
+    // count, so after one merge a new district can collide with an existing name (BUG-296).
     const existing = this.state.districts.getAllDistricts().map(d => d.name);
     const d = this.state.districts.createDistrict(name ?? nextDistrictName(existing));
     this.setActiveDistrict(d.id);
@@ -1687,8 +1708,9 @@ export class Game {
 
     // Place on grid (multi-cell)
     placeInfraOnGrid(this.state.grid, x, y, type, this.currentRotation);
-    // 讓人行道圖看見這棟樓。蓋設施刻意不呼叫 markLaneGraphDirty（設施不改變
-    // 路網），所以這裡不通知就沒有人會通知 —— 樓沒有門節點，行人穿過它走。
+    // Lets the sidewalk graph see this building. Placing a facility deliberately does not call
+    // markLaneGraphDirty (facilities do not change the road network), so without this nothing
+    // reports it: the building gets no door nodes and pedestrians walk straight through it.
     this.simLoop.applyBuildingChange(footprint);
 
     // Register with service layer at top-left coordinates (matches expandFootprint expectation)
@@ -1715,9 +1737,10 @@ export class Game {
   /**
    * Immediately recalculate road-based coverage after placing/removing a service building.
    *
-   * 電、水、汙水在 switch 外面無條件重算。它們跟其他服務不一樣：這裡問的不是
-   * 「這種設施的服務範圍變了嗎」，而是「剛動過的那一格有沒有水電」—— 蓋任何東西
-   * 都會讓一個新的格子出現，而它不在上一次算好的集合裡（BUG-284）。
+   * Power, water and sewage recompute unconditionally outside the switch. They differ from
+   * the other services: the question is not whether this facility type's service area changed,
+   * but whether the cell just touched has power and water — building anything at all creates a
+   * new cell that was not in the previously computed set (BUG-284).
    */
   private recalculateServiceCoverage(infraType: InfraType): void {
     const grid = this.state.grid;
@@ -1800,13 +1823,15 @@ export class Game {
     // drawn underneath it — BUG-111, in a fourth path.
     this.buildingRenderer.removeZoneOverlay(x, y);
     this.invalidateZoneBlockers();
-    // 站牌在人行道圖裡就是一棟建築的四個門 —— 行人靠門走進去，涵蓋範圍也從門
-    // 往外量。這裡不通知的話，新站牌要等玩家隨手動一次道路才進得了圖，在那之前
-    // 它服務不到任何人。刻意不走 markLaneGraphDirty：設施不改變路網。
+    // In the sidewalk graph a stop is a building with four doors: pedestrians enter through
+    // them and coverage is measured outward from them. Without this call a new stop enters the
+    // graph only when the player happens to touch a road, and serves nobody until then.
+    // Deliberately not markLaneGraphDirty: facilities do not change the road network.
     this.simLoop.applyBuildingChange([`${x},${y}`]);
-    // 面板馬上就會被問「這個站有沒有水電」，而水電是查快取的，六個 tick 才重算
-    // 一次（BUG-284）。刻意不塞進 applyBuildingChange：那支連建商蓋房子也會走，
-    // 每次成長 tick 都多跑一次全圖 BFS 太貴，而玩家沒點任何東西也看不到差別。
+    // The panel is asked whether this stop has power and water straight away, and utilities
+    // come from a cache recomputed every six ticks (BUG-284). Deliberately not folded into
+    // applyBuildingChange: that runs for developer-grown buildings too, and a full-map BFS on
+    // every growth tick is too expensive for a difference nobody sees without clicking.
     this.simLoop.recalculateUtilityCoverage();
     const infraType = airportInfra ?? TRANSPORT_TO_INFRA_TYPE[type]!;
     this.buildingRenderer.addInfrastructure(this.sceneManager.scene, x, y, infraType, ROTATION_RESERVED[this.currentRotation]);
@@ -1853,7 +1878,7 @@ export class Game {
         airportCells.push(`${x + dx},${y + dy}`);
       }
     }
-    // 同 placeInfra：不通知的話這片機場在人行道圖裡不存在。
+    // As in placeInfra: without this call the airport does not exist in the sidewalk graph.
     this.simLoop.applyBuildingChange(airportCells);
     this.simLoop.recalculateUtilityCoverage();
     this.invalidateZoneBlockers();
@@ -1872,12 +1897,13 @@ export class Game {
     if (this.keys.has('a') || this.keys.has('arrowleft')) this.sceneManager.panCamera(-panSpeed, 0);
     if (this.keys.has('d') || this.keys.has('arrowright')) this.sceneManager.panCamera(panSpeed, 0);
 
-    // 縮到遠景就把矮物件與懸挑整層關掉（見 DETAIL_LOD）。每幀的成本是兩個
-    // 比較，狀態沒變時直接返回。
+    // Zoomed out, low props and overhangs are switched off wholesale (see DETAIL_LOD). The
+    // per-frame cost is two comparisons, returning immediately when the state has not changed.
     this.buildingRenderer.updateDetailLOD(
       this.sceneManager.camera.top - this.sceneManager.camera.bottom,
     );
-    // 分區名稱在螢幕上維持固定大小 —— 它是地圖上的標示，不是場景裡的物件。
+    // District names keep a fixed size on screen: they are map annotations, not objects in the
+    // scene.
     this.overlayRenderer.updateLabelScale(this.sceneManager.camera);
 
     // Simulation tick
@@ -1992,9 +2018,10 @@ export class Game {
       this.utilityWarningsDirty = false;
       this.refreshUtilityWarnings();
     }
-    // 通勤圖層畫的是模擬迴圈每隔一段時間算出來的統計，不是格子上的欄位 ——
-    // 沒有任何 dirty 旗標會因為它更新而亮起來。統計換過一版就重建一次，否則
-    // 載入後開圖層拿到的是空快照，而蓋了捷運之後顏色也不會跟著變。
+    // The commute overlay draws statistics the simulation loop computes periodically rather
+    // than cell fields, so no dirty flag lights up when they change. A new stats version
+    // triggers one rebuild; without it, opening the overlay after a load shows an empty
+    // snapshot and colours never follow a newly built metro.
     const commuteVersion = this.simLoop.getCommuteStatsVersion();
     if (
       commuteVersion !== this.lastCommuteStatsVersion
@@ -2202,7 +2229,7 @@ export class Game {
     if (autoOverlay) {
       this.setOverlay(autoOverlay);
     }
-    // 外框只在拿著分區筆刷時畫 —— 換走工具就要收掉。
+    // The outline is drawn only with the district brush in hand, so switching tools clears it.
     this.refreshDistrictSelection();
     this.updatePlacementPreview();
     this.onUIUpdate?.();
@@ -2561,8 +2588,8 @@ export class Game {
         }
       }
     } else if (this.dragStart && this.currentTool === 'district') {
-      // 分區筆刷本來沒有拖曳預覽 —— 玩家是盲畫，放開才知道畫到哪。
-      // 顏色分三種:併入紫、取代藍、扣除紅。
+      // Without a drag preview the district brush paints blind and the result only appears on
+      // release. Three colours: add purple, replace blue, subtract red.
       this.highlightDragRange(DISTRICT_PREVIEW_COLORS[this.districtPaintMode]);
     } else if (this.dragStart && this.isZoneTool()) {
       this.highlightDragRange(ZONE_PREVIEW_COLORS[this.currentTool] ?? 0xffffff);
@@ -2617,12 +2644,12 @@ export class Game {
 
   // ── Coverage highlight (per-building gradient via HighlightManager) ──────
 
-  /** 10-tier gradient: green → yellow → red (pre-computed hex values). */
   /**
-   * 建築高亮的 10 階色帶，綠 → 黃 → 紅。
+   * The 10-tier building-highlight gradient, green to yellow to red, as pre-computed hex
+   * values.
    *
-   * 公開是給 agent 讀的 —— 顏色不能兩邊各算一次（`colorFor` 的註解），所以它
-   * 是被問的那一份，不是被複製的那一份。
+   * Public so agents can read it: colours must not be computed on both sides (see `colorFor`),
+   * so this is the copy that gets asked, never the copy that gets duplicated.
    */
   static readonly COV_GRADIENT = (() => {
     const near = new THREE.Color(0x00e676);
@@ -2730,10 +2757,10 @@ export class Game {
   }
 
   /**
-   * 用同一個圖層重畫一次。
+   * Redraws with the same overlay.
    *
-   * 分區換名字或換顏色之後要叫 —— 圖層是拿分區的顏色與名字畫的，不重畫的話玩家
-   * 在面板上改完，地圖上還是舊的。
+   * Called after a district is renamed or recoloured: the overlay is drawn from the district's
+   * colour and name, so without a redraw the map still shows the old ones after a panel edit.
    */
   refreshOverlay(): void {
     const current = this.overlayRenderer.getOverlay();
@@ -2743,7 +2770,8 @@ export class Game {
   setOverlay(type: OverlayType): void {
     const data = this.buildOverlayData(type);
     const elevated = this.buildElevatedOverlayData(type);
-    // 分區圖層才有名稱標籤 —— 其他圖層畫的是強度，沒有東西可以命名。
+    // Only the district overlay carries name labels; the others draw intensities and have
+    // nothing to name.
     const labels = type === OverlayType.DISTRICT
       ? districtLabelAnchors(this.state.districts.getAllDistricts()).map(a => ({
           name: a.name, x: a.x, y: a.y,
@@ -2752,7 +2780,8 @@ export class Game {
       : undefined;
     this.overlayRenderer.setOverlay(
       type, this.sceneManager.scene, this.state.grid, data, elevated, labels);
-    // 標籤的尺寸是照可視範圍算的。等下一幀才套的話，切圖層的那一幀會閃一下。
+    // Label size is computed from the visible range. Applied a frame later, switching overlays
+    // flickers.
     this.overlayRenderer.updateLabelScale(this.sceneManager.camera);
     this.computeOverlayHighlightCells(type, data);
     this.leaveDistrictEditing(type);
@@ -2761,19 +2790,21 @@ export class Game {
   }
 
   /**
-   * 分區圖層一關掉，選取與筆刷都放下。
+   * Closing the district overlay puts down both the selection and the brush.
    *
-   * 那個圖層是**唯一**看得到分區的地方 —— 顏色、名稱、選取的白框全靠它。關掉它還
-   * 握著筆刷的話，下一筆畫出來的是玩家看不見的東西:選取看不見（第一筆會畫進一個
-   * 早就忘記的分區），新分區也看不見。
+   * That overlay is the **only** place districts are visible: colour, name and the white
+   * selection outline all come from it. Holding the brush with it closed paints things the
+   * player cannot see — an invisible selection, whose first stroke joins a long-forgotten
+   * district, and an invisible new district.
    *
-   * 三件事一起回到一致的狀態，工具列的子選單跟著收起來才是對的 —— 手上已經沒有那
-   * 支筆刷了。
+   * All three return to a consistent state together, and the toolbar's submenu collapsing with
+   * them is correct: the brush is no longer in hand.
    */
   private leaveDistrictEditing(type: OverlayType): void {
     if (type === OverlayType.DISTRICT) return;
     if (this.activeDistrictId) this.setActiveDistrict(null);
-    // `setTool` 只在有對應圖層時才回頭呼叫 `setOverlay`，而 select 沒有 —— 不會遞迴。
+    // `setTool` calls back into `setOverlay` only for tools that have an overlay, and select
+    // has none, so this does not recurse.
     if (this.currentTool === 'district') this.setTool('select');
   }
 
@@ -2786,20 +2817,20 @@ export class Game {
   }
 
   /**
-   * 某一張圖層每一格的值。渲染器拿去畫的就是這一份。
+   * Every cell's value on one overlay. This is what the renderer draws.
    *
-   * 公開是給 agent 讀的。**不需要那張圖層開著** —— 它是從狀態算出來的，
-   * 跟畫面上現在顯示什麼無關。
+   * Public so agents can read it. **The overlay does not have to be open**: it is computed
+   * from state and is unrelated to what the screen currently shows.
    */
   getOverlayData(type: OverlayType): Map<string, number> | undefined {
     return this.buildOverlayData(type);
   }
 
   /**
-   * 某一個服務的走馬路成本圖、預算，以及**逐格的設施負載**。
+   * One service's road-cost map, its budget, and the **per-cell facility load**.
    *
-   * 建築高亮那 10 階就是從這三樣算出來的。少了負載，agent 看到的顏色會跟畫面
-   * 對不起來（BUG-362）。
+   * The ten highlight tiers are computed from those three. Without the load, the colours an
+   * agent reads do not match the screen (BUG-362).
    */
   getCoverageCosts(service: CoverageService): {
     costs: ReadonlyMap<string, number>;
@@ -2818,7 +2849,7 @@ export class Game {
     };
   }
 
-  /** 造成那些顏色的設施本身。畫面上是藍色的那些。 */
+  /** The facilities that produce those colours: the blue ones on screen. */
   getOverlaySourceCells(type: OverlayType): { x: number; y: number }[] {
     if (!hasOverlaySources(type)) return [];
     const stops: { x: number; y: number }[] = [];
@@ -2832,31 +2863,32 @@ export class Game {
     return overlaySourceCells(this.state.grid, ctx, type).map(c => ({ x: c.x, y: c.y }));
   }
 
-  /** 某個數值在那張圖層上的顏色。跟渲染器讀同一支。 */
+  /** A value's colour on that overlay, through the same function the renderer uses. */
   getOverlayColor(type: OverlayType, value: number): number {
     return this.overlayRenderer.colorFor(type, value);
   }
 
-  /** 建築高亮的 10 階色帶。 */
+  /** The 10-tier building-highlight gradient. */
   coverageGradient(): readonly number[] {
     return Game.COV_GRADIENT;
   }
 
   /**
-   * 全城的高架段。
+   * Every elevated segment in the city.
    *
-   * agent API 讀它 —— `ElevationManager` 是 `Game` 的欄位而不是 `GameState` 的，
-   * 所以 `read.cells()`（它吐 `Grid`）永遠看不到橋（BUG-367）。
+   * Read by the agent API: `ElevationManager` is a field of `Game` rather than of `GameState`,
+   * so `read.cells()`, which emits the `Grid`, never sees a bridge (BUG-367).
    */
   getElevatedSegments(): ReturnType<ElevationManager['toJSON']> {
     return this.elevationManager.toJSON();
   }
 
   /**
-   * 路網的格子層圖，含高架與匝道。`null` = 路網 lookup 還沒接上。
+   * The road network's cell-level graph, elevated segments and ramps included. `null` means the
+   * road lookup is not wired up yet.
    *
-   * 轉手 `SimulationLoop` 那份以 `roadGeneration` 為鍵快取的 —— 服務覆蓋與通勤
-   * 可達性走的都是它。
+   * Forwards `SimulationLoop`'s copy, cached under `roadGeneration`: service coverage and
+   * commute reachability both run on it.
    */
   getRoadCellGraph(): ReturnType<SimulationLoop['roadCellGraph']> {
     return this.simLoop.roadCellGraph();
@@ -2865,7 +2897,8 @@ export class Game {
   private buildOverlayData(type: OverlayType): Map<string, number> | undefined {
     if (type === OverlayType.NONE) return undefined;
     const data = new Map<string, number>();
-    // 通勤圖層的資料不在 GameState 上 —— 它是模擬迴圈每隔一段時間算出來的統計。
+    // The commute overlay's data is not on GameState: it is a statistic the simulation loop
+    // computes periodically.
     const ctx: OverlayBuildContext = Object.assign(
       Object.create(this.state) as OverlayBuildContext,
       {
@@ -2913,12 +2946,12 @@ export class Game {
 
   // ── Coverage overlay: building highlight (green→yellow→red gradient) ──
 
-  /** Get road-cost overlay info: cost map + budget for a given overlay type. */
   /**
-   * 一張走馬路成本的圖層要畫什麼。
+   * What a road-cost overlay draws: the cost map, the budget, and the per-cell facility load.
    *
-   * `loadAt` 回的是**服務那一格的那一座設施**現在多滿。圖層的顏色不能只看成本 ——
-   * 緊鄰一間爆到兩倍的醫院會被畫成最綠的（BUG-362）。
+   * `loadAt` returns how full **the facility serving that cell** currently is. Colour cannot
+   * follow cost alone: a cell next door to a hospital at twice capacity would be drawn the
+   * greenest of all (BUG-362).
    */
   private getRoadCostOverlay(overlayType: OverlayType): {
     costMap: ReadonlyMap<string, number>;
@@ -2940,9 +2973,10 @@ export class Game {
   /**
    * Compute and cache overlay building highlight cells. Applied every frame by reapplyOverlayHighlight().
    *
-   * 兩層:先是這張圖層的**結果**（誰被涵蓋、誰通勤很久、誰沒電），再蓋上影響的
-   * **製造點**。製造點畫在後面是因為 `hoverHighlightGradient` 的格子表是後寫贏 ——
-   * 消防局自己也在自己的涵蓋範圍裡，先畫的話那一格會是漸層的綠色，不是藍色。
+   * Two layers: this overlay's **results** first (who is covered, who commutes far, who has
+   * no power), then the **sources of influence** on top. Sources come second because
+   * `hoverHighlightGradient`'s cell table is last-write-wins: a fire station sits inside its
+   * own coverage, and drawn first that cell would be gradient green rather than blue.
    */
   private computeOverlayHighlightCells(
     overlayType: OverlayType,
@@ -2954,13 +2988,15 @@ export class Game {
   }
 
   /**
-   * 影響的製造點:藍色。
+   * Sources of influence, in blue.
    *
-   * 圖層畫的是結果，而結果不會說該去動哪一棟建築 —— 一片沒有涵蓋的紅色，可能是
-   * 缺一座新的局，也可能是既有那一座蓋得太遠。藍色標的就是那些顏色的來源。
+   * An overlay draws results, and a result does not say which building to act on: a patch of
+   * uncovered red may mean a missing station or an existing one placed too far away. Blue marks
+   * where those colours come from.
    *
-   * 通勤圖層的站牌先用了這個語彙，這裡把它推到每一張有設施可指的圖層。哪些圖層
-   * 有、指哪一批設施，都在 `OverlaySources`。
+   * The commute overlay's stop markers established the vocabulary; it covers every overlay with
+   * facilities to point at. Which overlays those are, and which facilities they name, live in
+   * `OverlaySources`.
    */
   private appendOverlaySourceHighlights(overlayType: OverlayType): void {
     if (!hasOverlaySources(overlayType)) return;
@@ -2968,8 +3004,8 @@ export class Game {
     for (const { system } of getTransitSystems(this.state)) {
       for (const stop of system.getStops()) stops.push({ x: stop.x, y: stop.y });
     }
-    // 站牌散在各個運輸系統裡，不是 GameState 上的一個欄位 —— 跟 buildOverlayData
-    // 的通勤統計一樣，掛在 state 前面補上去。
+    // Stops are spread across the transport systems rather than being a field on GameState, so
+    // like buildOverlayData's commute statistics they are attached in front of state.
     const ctx = Object.assign(
       Object.create(this.state) as OverlaySourceContext,
       { transitStops: stops },
@@ -2985,14 +3021,15 @@ export class Game {
     data?: ReadonlyMap<string, number>,
   ): void {
     /**
-     * 用地與土地價值：建築拿它腳下那一格的顏色。
+     * Land use and land value: a building takes the colour of the cell it stands on.
      *
-     * 這兩張圖層的資訊全在地面上，而建築正好蓋在地面上 —— 蓋滿房子的街廓只看得到
-     * 屋頂。色塊還沒對位的時候勉強看得出來（顏色露在建築的東南邊半格），對位修好
-     * 之後就整片被蓋住了。
+     * Both overlays carry their information on the ground, and buildings stand on the ground,
+     * so a fully built block shows only rooftops. With the colour patches aligned to their
+     * cells, the ground is covered entirely.
      *
-     * 顏色跟地面同一套，由 `OverlayRenderer.colorFor` 給:各算各的話，改了色階就
-     * 會有一邊沒跟上。數值直接用圖層算好的那一份，不重跑一次全圖。
+     * The colours come from `OverlayRenderer.colorFor`, the same source the ground uses:
+     * computed separately, a change to the scale would leave one side behind. The values come
+     * from the overlay's own computed map rather than a second pass over the whole map.
      */
     if (overlayType === OverlayType.ZONE || overlayType === OverlayType.LAND_VALUE) {
       if (!data) return;
@@ -3012,10 +3049,11 @@ export class Game {
     }
 
     /**
-     * 通勤圖層：住宅**建築**依住戶的平均通勤時間上色，與警消覆蓋同一套語彙。
+     * Commute overlay: residential **buildings** are coloured by their residents' average
+     * commute, in the same vocabulary as police and fire coverage.
      *
-     * 畫在建築上而不是地面上，是因為地面會被建築本身擋住 —— 密集住宅區看到的
-     * 是屋頂，不是地上的顏色。
+     * Drawn on the buildings rather than the ground because the buildings hide the ground: a
+     * dense residential block shows rooftops, not the colour beneath them.
      */
     if (overlayType === OverlayType.COMMUTE) {
       const byHome = this.simLoop.getCommuteStats().byHome;
@@ -3047,7 +3085,8 @@ export class Game {
         } else {
           if (!isZoneBuilding(cell.buildingId) && !isInfrastructureBuilding(cell.buildingId)) continue;
         }
-        // 距離與負載取比較糟的那一個。只看距離的話，爆量的設施旁邊會是一片綠。
+        // Distance and load, whichever is worse. On distance alone, the ground beside an
+        // overloaded facility would be all green.
         const severity = serviceSeverity(cost / budget, loadAt(cx, cy));
         const tier = Math.min(9, Math.floor(severity * 10));
         this.overlayHighlightCells.push({ x: cx, y: cy, color: Game.COV_GRADIENT[tier]! });
@@ -3088,8 +3127,8 @@ export class Game {
       // not where to go instead. Selecting the water tool opens this overlay
       // (TOOL_TO_OVERLAY), so this is where the answer belongs.
       if (water.getPlants().length === 0) {
-        // 用製造點的藍色 —— 這裡指的正是「淨水廠可以蓋在哪」，跟其他圖層上的
-        // 藍色是同一件事，只是那座廠還不存在。
+        // The source blue: this marks where a water plant can go, the same thing blue means on
+        // every other overlay, except that the plant does not exist yet.
         const sites = findWaterPlantSites(this.state.grid);
         for (const s of sites) {
           this.overlayHighlightCells.push({ x: s.x, y: s.y, color: OVERLAY_SOURCE_COLOR });
@@ -3196,10 +3235,10 @@ export class Game {
   }
 
   /**
-   * 服務 (x, y) 的那幾座設施現在各自多滿。
+   * How full each of the facilities serving (x, y) currently is.
    *
-   * 算式在 `ServiceLoadAt.ts` —— `Game` 載入 Three.js，單元測試載不動它，
-   * 留在這裡的邏輯等於沒有測試在看。
+   * The arithmetic lives in `ServiceLoadAt.ts`: `Game` loads Three.js and unit tests cannot
+   * load it, so logic kept here would have no test watching it.
    */
   private serviceLoadAt(x: number, y: number): ServiceLoadRatios {
     return serviceLoadRatiosAt(this.state, x, y);
@@ -3507,27 +3546,28 @@ export class Game {
     this.onUIUpdate?.();
   }
 
-  /** 全城通勤統計（圖層與總覽面板共用同一份）。 */
   /**
-   * 分區的計費資料:道路格數與付費的駕駛人數。
+   * Per-district billing data: road cell counts and how many drivers pay.
    *
-   * 委派而不是把 simLoop 開出去 —— 帳本面板要的是這一份，跟結帳用的是同一個
-   * 來源。各算各的話，明細裡的過路費會跟市庫實際入帳的對不起來。
+   * Delegated rather than exposing simLoop, so the ledger panel reads the same source the
+   * charge itself uses. Computed separately, the tolls in the breakdown would not match what
+   * the treasury receives.
    */
   getBillableDistricts() {
     return this.simLoop.billableDistricts();
   }
 
+  /** Citywide commute statistics, shared by the overlay and the overview panel. */
   getCommuteStats() {
     return this.simLoop.getCommuteStats();
   }
 
-  /** 通勤圖層的滿格值，也是換工作的門檻 —— 面板要拿它標示「已經在想換工作」。 */
+  /** The commute overlay's full-scale value, which is also the job-change threshold; the panel labels "already thinking about changing jobs" from it. */
   get commuteThreshold(): number {
     return COMMUTE_OVERLAY_MAX;
   }
 
-  /** 把鏡頭移到某一格（面板點擊「最糟的住宅區」時用）。 */
+  /** Moves the camera to a cell; used when the panel's "worst residential area" is clicked. */
   focusCell(x: number, y: number): void {
     this.sceneManager.setCameraTarget(x, y);
   }
