@@ -126,7 +126,7 @@ const holdingDistrictBrush = () => gameSignals.currentTool() === 'district';
 function activeDistrict() {
   const id = gameSignals.activeDistrictId();
   if (!id) return undefined;
-  gameSignals.tick();   // 一邊畫一邊看格數，數字要跟著動
+  gameSignals.tick();   // the cell count is watched while painting, so it has to move
   return getGame().getState().districts.getDistrict(id);
 }
 
@@ -206,10 +206,11 @@ function ToolGroupComponent(props: {
         )}
         {props.group.id === 'district' && (
           <>
-            {/* New 是四個動詞裡的第一個，不是一顆「按了會做事」的按鈕:點了它就
-                亮著等你拖，拖完分區成立、選取跟著成立，亮的自然跑到 Add。
+            {/* New is the first of the four verbs rather than a button that acts when pressed: pressing
+                it leaves it lit awaiting a drag, and once the drag creates the district and selects it,
+                the lit button moves to Add on its own.
 
-                所以它不停用 —— 沒有選取的時候它正是現在生效的那個模式。 */}
+                So it is never disabled: with no selection it is precisely the mode in effect. */}
             <button
               class="tb-btn"
               classList={{ active: holdingDistrictBrush() && !activeDistrict() }}
@@ -219,10 +220,12 @@ function ToolGroupComponent(props: {
               <span class="tb-icon">{'\u2795'}</span>
               <span style={{ color: '#ab47bc' }}>New</span>
             </button>
-            {/* 其餘三個動詞改的都是「選取中的那一區」，沒有選取時無事可做。停用
-                而不是讓它們能按 —— 按了什麼都不會發生，比按不下去更難懂。
+            {/* The other three verbs all act on the selected district and have nothing to do without a
+                selection. Disabled rather than enabled: a press that does nothing is harder to read
+                than a button that cannot be pressed.
 
-                取代與扣除是修邊界用的:少了它們，畫錯一次只能重開一局。 */}
+                Replace and subtract are for correcting boundaries; without them, one mistake means
+                starting over. */}
             <For each={DISTRICT_MODES}>
               {(m) => {
                 const off = () => !holdingDistrictBrush() || !activeDistrict();
@@ -247,9 +250,10 @@ function ToolGroupComponent(props: {
               }}
             </For>
             <div class="tb-sep-v" />
-            {/* 一顆就夠。全城與分區是同一件事的兩個層級，開的本來就是同一個面板，
-                只是停在不同的範圍上 —— 而那個範圍面板自己會挑:選取中的分區優先，
-                沒有選取就停在全城。兩顆按鈕等於逼玩家先決定一件面板會替他決定的事。 */}
+            {/* One button is enough. City-wide and district are two levels of one thing and open the
+                same panel, differing only in the scope it rests on — and the panel picks that scope
+                itself: the selected district first, city-wide with no selection. Two buttons force the
+                player to decide something the panel decides for them. */}
             <button class="tb-btn" onClick={(e) => { e.stopPropagation(); props.onOpenModal?.('district'); }}>
               <span class="tb-icon">{'\u{1F4CB}'}</span>
               <span style={{ color: '#ab47bc' }}>Policies</span>

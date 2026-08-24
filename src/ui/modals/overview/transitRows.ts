@@ -1,15 +1,16 @@
 /**
- * 大眾運輸面板那張表的數字。
+ * The numbers in the transit panel's table.
  *
- * 抽出來是因為面板自己算過一次運能，而且算錯了單位:`車輛數 × 座位數` 是**瞬間**
- * 的座位數，卻拿去比 `smoothedDailyRiders`（一整天的累計人次）。
- * `computeDailyCapacity()` 的說明裡寫的就是這個錯 —— 模擬那邊修好了，面板沒跟上。
+ * Extracted because the panel computed capacity a second time and got the units wrong: `vehicles x
+ * seats` is an **instantaneous** seat count, compared against `smoothedDailyRiders`, a whole day's
+ * accumulated trips. That is the mistake `computeDailyCapacity()` documents — fixed in the
+ * simulation, not in the panel.
  *
- * 玩家 12 500 人的存檔回報:同一條公車路線、同一個時刻，面板上有三個數字 ——
- * 收合列 100%（`Math.min` 夾住的）、展開列 5 246%（單位錯的）、模擬自己的公式
- * 30 853%。
+ * In a 12,500-person save, one bus route at one moment showed three numbers: 100% on the collapsed
+ * row, clamped by `Math.min`; 5,246% on the expanded row, with the wrong units; and 30,853% from the
+ * simulation's own formula.
  *
- * 現在收合列與展開列走同一條路徑，用的是模擬那組函式。
+ * The collapsed and expanded rows now take one path, through the simulation's functions.
  */
 
 import {
@@ -19,20 +20,21 @@ import {
 import { getRouteRiders } from '../../../core/transport/TransitAvailability';
 
 /**
- * 系統那一列的狀態。
+ * A system row's status.
  *
- * 比路線多一種:`'none'` —— **一條路線都沒有**。那不是載重的某一段，是「沒有東西在
- * 跑」，所以不從 `routeLoadStatus()` 來，也永遠不會出現在路線那一列。
+ * One more than a route's: `'none'`, meaning **no routes at all**. That is not a band of the load
+ * factor but the absence of anything running, so it does not come from `routeLoadStatus()` and never
+ * appears on a route row.
  */
 export type SystemStatus = RouteLoadStatus | 'none';
 import type { TransportRoute, TransportStop, TransportType } from '../../../core/transport/types';
 
-/** 面板需要一個運輸系統提供的東西。只有這些，不是整個 `BaseTransportSystem`。 */
+/** What the panel needs from a transport system. Only this, not the whole `BaseTransportSystem`. */
 export interface TransitSystemSource {
   type: TransportType;
   routes: readonly TransportRoute[];
   stops: readonly TransportStop[];
-  /** 每台車幾個座位。0 代表這個系統不受運能限制。 */
+  /** Seats per vehicle. 0 means the system has no capacity limit. */
   seatsPerVehicle: number;
   speed: number;
   vehicleCount: number;
@@ -44,9 +46,9 @@ export interface TransitRouteRow {
   id: number;
   stops: number;
   vehicles: number;
-  /** 每日人次。 */
+  /** Daily trips. */
   riders: number;
-  /** 每日人次的運能 —— 座位數 × 一天跑幾圈。 */
+  /** Daily capacity in trips: seats times round trips per day. */
   capacity: number;
   loadFactor: number;
   usage: string;
@@ -70,11 +72,13 @@ export interface TransitSystemRow {
 }
 
 /**
- * 搭乘量走模擬那支 —— 面板自己數的話，兩邊會靜靜地分家。
+ * Ridership comes from the simulation's function; counted again in the panel, the two silently part
+ * company.
  *
- * 差別不是理論上的:`getRouteRiders()` 取「今日累計」與「跨日平滑」的**較大者**
- * （`dailyRiders` 每天歸零，直接拿它當載重的話每天早上每條路線看起來都是空的）。
- * 面板原本只讀平滑值，於是白天累計量超過平滑值的時候，顯示的 % 比模擬實際採用的低。
+ * The difference is not theoretical: `getRouteRiders()` takes the **greater** of today's running
+ * total and the cross-day smoothed value, because `dailyRiders` resets each day and taken alone would
+ * make every route look empty each morning. Reading the smoothed value alone, the panel showed a
+ * lower percentage than the simulation used whenever the day's total ran past it.
  */
 function ridersOf(stops: readonly TransportStop[]): number {
   return getRouteRiders({ stops });
@@ -86,7 +90,7 @@ export function buildTransitRows(
   return systems.map((sys) => {
     const routeRows: TransitRouteRow[] = sys.routes.map((route) => {
       const riders = ridersOf(route.stops);
-      // 停駛的路線照樣列出來 —— 它還在收玩家的錢。
+      // A suspended route is still listed: it is still costing the player money.
       const cycleTime = computeCycleTime(
         route.stops, sys.segmentDistances(route.id), sys.speed);
       const capacity = computeDailyCapacity(
@@ -109,11 +113,12 @@ export function buildTransitRows(
     const totalRiders = ridersOf(sys.stops);
     const totalCapacity = routeRows.reduce((s, r) => s + r.capacity, 0);
     const loadFactor = computeLoadFactor(totalRiders, totalCapacity);
-    // 一條路線都沒有的系統沒有載重可言。
+    // A system with no routes has no load factor.
     //
-    // 站牌被留下來的時候（玩家刪掉路線但沒拆站）它們還記著昨天的搭乘量，而運能是 0
-    // —— `computeLoadFactor` 依定義回 Infinity，狀態就是 hopeless，紅到重新開線為止。
-    // 「沒有東西在跑」跟「跑的東西擠爆了」是兩件事（BUG-349）。
+    // Where stops are left behind — the player deletes the routes but not the stops — they still
+    // remember yesterday's ridership against a capacity of 0, and `computeLoadFactor` returns
+    // Infinity by definition, leaving the status hopeless and red until a route is opened again.
+    // Nothing running and everything running full are two different things (BUG-349).
     const status: SystemStatus = sys.routes.length === 0 ? 'none' : routeLoadStatus(loadFactor);
 
     return {

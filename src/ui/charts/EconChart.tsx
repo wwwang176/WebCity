@@ -6,18 +6,20 @@ import { drawChartTooltip, drawChartCursor, hoveredIndex } from './chartTooltip'
 
 
 /**
- * 資金與收支的歷史。
+ * The history of funds and cash flow.
  *
- * **兩種量分開畫，因為它們是兩種東西。** 資金是存量（現在有多少錢），一條線把它
- * 的走向講清楚;收支是每一期的流量（這一期進來多少、出去多少），那是一格一格的離散
- * 數字，用長條才讀得出「這一期」。三條線擠在同一個框裡的版本，收支被壓進下面三分之一
- * 又互相重疊，實際上只看得出「有在動」。
+ * **The two quantities are drawn separately because they are two different things.** Funds are a
+ * stock, how much money there is now, and a line states its direction. Income and expenses are a flow
+ * per period, discrete figures one bucket at a time, and only bars make a single period readable.
+ * With all three as lines in one frame, the flows are squeezed into the bottom third and overlap,
+ * showing little beyond movement.
  *
- * 收支畫成以零線為中心的對稱長條:收入往上、支出往下，中間那道空隙就是淨額。玩家在
- * 這張圖上真正要回答的問題是「我這一期是賺還是賠」，而那個答案在這個編碼裡不用算。
+ * The flows are drawn as bars symmetrical about the zero line: income up, expenses down, and the gap
+ * between them is the net. The question this chart really answers is whether this period made or lost
+ * money, and in this encoding that answer needs no arithmetic.
  */
 
-/** 上半:資金。下半:收支。中間留一條空隙分開兩者。 */
+/** Funds on the top half, flows on the bottom, with a gap separating the two. */
 const LEGEND_H = 14;
 const FUNDS_RATIO = 0.55;
 const BAND_GAP = 6;
@@ -28,7 +30,8 @@ export function EconChart(props: { history: ChartHistory; range: ChartRange }) {
 
   const draw = () => {
     if (!canvas) return;
-    // 點陣圖尺寸要對齊畫面上的實際大小，否則瀏覽器直接放大那張圖，文字就糊了。
+    // The bitmap's size has to match its size on screen, or the browser scales the image up and the
+    // text blurs.
     const fit = fitCanvas(canvas);
     if (!fit) return;
     const { ctx, w, h } = fit;
@@ -49,7 +52,7 @@ export function EconChart(props: { history: ChartHistory; range: ChartRange }) {
     const flowH = h - flowTop;
     const zeroY = flowTop + flowH / 2;
 
-    // ── 資金:一條線 ────────────────────────────────────────────────
+    // ── Funds: one line ────────────────────────────────────────────
     const maxFunds = Math.max(1000, ...series.funds);
     const minFunds = Math.min(0, ...series.funds);
     const fundsRange = maxFunds - minFunds || 1;
@@ -65,11 +68,12 @@ export function EconChart(props: { history: ChartHistory; range: ChartRange }) {
     }
     ctx.stroke();
 
-    // ── 收支:以零線為中心的長條 ────────────────────────────────────
+    // ── Flows: bars about the zero line ────────────────────────────
     const maxFlow = Math.max(1, ...series.income, ...series.expenses);
     const half = flowH / 2;
     const slot = w / series.income.length;
-    // 每格之間留一點縫。太窄就不留 —— 一像素的縫會讓整排看起來像雜訊。
+    // A gap between buckets, dropped where they are too narrow: a one-pixel gap makes the row look
+    // like noise.
     const barW = Math.max(1, slot > 3 ? slot - 1.5 : slot);
 
     for (let i = 0; i < series.income.length; i++) {
@@ -82,7 +86,7 @@ export function EconChart(props: { history: ChartHistory; range: ChartRange }) {
       ctx.fillRect(x, zeroY, barW, down);
     }
 
-    // 零線畫在長條上面 —— 被長條蓋住的話就沒有基準可以比了。
+    // The zero line is drawn over the bars: covered by them, there is no baseline to read against.
     ctx.strokeStyle = 'rgba(180, 200, 230, 0.35)';
     ctx.lineWidth = 1;
     ctx.beginPath();
@@ -90,7 +94,8 @@ export function EconChart(props: { history: ChartHistory; range: ChartRange }) {
     ctx.lineTo(w, zeroY + 0.5);
     ctx.stroke();
 
-    // 讀數畫在最後，蓋在線與長條上面。原本三個名字寫在左上角，線就從字上面穿過去。
+    // The readout is drawn last, over the line and the bars. With the three names in the top-left
+    // corner, the line runs across the text.
     const at = hover();
     const i = hoveredIndex(at?.x ?? null, w, series.funds.length) ?? series.funds.length - 1;
     if (at) drawChartCursor(ctx, i * slot + slot / 2, h);
@@ -104,13 +109,15 @@ export function EconChart(props: { history: ChartHistory; range: ChartRange }) {
 
   onMount(() => {
     draw();
-    // 視窗大小或螢幕的裝置像素比變了，點陣圖就對不上了 —— 而重畫只由資料、
-    // 範圍與游標觸發，遊戲暫停時三者都不會動，圖會一直糊著。
+    // A change of window size or device pixel ratio leaves the bitmap out of step, and a redraw is
+    // triggered only by data, range and cursor — none of which move while the game is paused, leaving
+    // the chart blurred.
     window.addEventListener('resize', draw);
     onCleanup(() => window.removeEventListener('resize', draw));
   });
   createEffect(() => {
-    // 追蹤:歷史整包換掉（每天一次）、範圍切換、游標移動都要重畫。
+    // Tracked: the history being replaced once a day, a change of range, and cursor movement all
+    // redraw.
     props.history;
     props.range;
     hover();
@@ -122,7 +129,7 @@ export function EconChart(props: { history: ChartHistory; range: ChartRange }) {
     setHover({ x: e.clientX - r.left, y: e.clientY - r.top });
   };
 
-  // 尺寸由 CSS 決定，點陣圖由 `fitCanvas` 對齊。
+  // The size comes from CSS and `fitCanvas` matches the bitmap to it.
   return (
     <canvas
       ref={canvas}
