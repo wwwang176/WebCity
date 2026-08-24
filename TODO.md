@@ -2997,3 +2997,23 @@ BUG-219（升級把庭院的樹一起拉高 1.75 倍）、BUG-220（辦公區 15
 - [ ] **範圍是按樣本數裁的，不是按日曆天**。`bucketChartSeries` 把 `spec.days` 當成
   「最後 N 筆」，而 `history.days` 的實際值不參與判斷。目前採樣每幀都跑、天數不會跳，
   所以碰不到;但如果之後改成節流或背景分頁採樣，Week 就可能裝著幾十天前的資料。
+
+## 音訊預設（2026-08-25）
+
+- [x] **音樂預設關閉，音效維持開啟**。`AudioManager.musicMuted` 初值改 `true`，
+  `startBGM()` 在靜音時直接不建圖 —— 和弦迴圈每幾秒重建一次震盪器，在預設情況下
+  跑一輪 gain 0 純粹是燒 CPU。`toggleMusicMute()` / `toggleMute()` 解除靜音時
+  才補叫 `startBGM()`。
+- [x] **環境音改歸音效管**（BUG-373）。
+- [x] **設定面板的標籤改成每次開啟重讀混音器**（BUG-372）。
+- [x] **`AudioManager` 補上第一個測試檔**。`src/audio/__tests__/AudioManager.test.ts`，
+  13 條。測試環境是 node，`new AudioContext()` 會拋 —— 那條路徑下每個 gain 斷言都會
+  假綠，所以測試自己裝了一個 Web Audio stub。
+
+### 這一輪留下的、沒有處理的
+- [ ] **音訊偏好不會存**。關掉音樂、重開遊戲，它還是關的（因為預設就是關的）;但
+  玩家把音樂打開之後重開，又會變回關閉。三個開關（master / sfx / music）都沒有寫進
+  IndexedDB 或 localStorage。要修的話是一個獨立於存檔的偏好層 —— 換一份存檔不該
+  把音量換掉。
+- [ ] **音量沒有滑桿**。`setMasterVolume` / `setMusicVolume` / `setSfxVolume` 都在，
+  UI 上只有開關，沒有任何地方叫得到它們。

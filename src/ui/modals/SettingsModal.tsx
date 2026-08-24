@@ -1,4 +1,4 @@
-import { createSignal } from 'solid-js';
+import { createEffect, createSignal } from 'solid-js';
 import { getGame } from '../store/gameStore';
 import { settingsOpen, closeSettings } from '../components/SettingsMenu';
 import { listSaves } from '../../core/save/SaveManager';
@@ -13,6 +13,17 @@ export function SettingsModal(props: { onOpenDebug?: () => void }) {
   const [saveName, setSaveName] = createSignal('');
   const [sfxOff, setSfxOff] = createSignal(false);
   const [musicOff, setMusicOff] = createSignal(false);
+
+  // These labels used to be seeded with a hardcoded false and only ever updated by their own
+  // click handler, so they described the toggles the player had pressed rather than the state
+  // of the mixer. Music now starts muted, which made "Music: ON" a plain lie on first open.
+  // Re-read the AudioManager every time the panel opens instead.
+  createEffect(() => {
+    if (!settingsOpen()) return;
+    const audio = getGame().getAudioManager();
+    setSfxOff(audio.isSfxMuted());
+    setMusicOff(audio.isMusicMuted());
+  });
 
   const close = () => {
     closeSettings();

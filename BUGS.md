@@ -31,6 +31,31 @@
 
 ## 待修問題
 
+### BUG-373: 關掉音樂會連鳥叫和車流一起關掉 ✅ 已修復
+- **位置**: `src/audio/AudioManager.ts` `startAmbient()` / `updateAmbientState()`
+- **問題**: 環境音（brown noise 城市底噪、鳥叫、車流嗡鳴）的 gain 判斷寫的是
+  `this.muted || this.musicMuted`。設定面板上只有兩個開關，環境音卻掛在「Music」
+  那一個底下。
+- **後果**: 玩家關掉音樂想留下遊戲音效，整座城市會一起靜下來 —— 而「Sound Effects」
+  仍然顯示 ON。點下去的那個開關和實際被關掉的東西對不上。
+- **修法**: 新增 `ambientOff()`（`muted || sfxMuted`），環境音四處判斷改用它，
+  `toggleSfxMute()` 補上 `applyAmbientGain()`。BGM 的 gain 留在 `applyMusicGain()`，
+  兩條線從此各管各的。
+- **嚴重性**: 中
+- **狀態**: ✅ 已修復
+
+### BUG-372: 設定面板的音訊標籤是自己記的，不是讀混音器的 ✅ 已修復
+- **位置**: `src/ui/modals/SettingsModal.tsx`
+- **問題**: `sfxOff` / `musicOff` 兩個 signal 初值寫死 `false`，之後只由自己的
+  click handler 更新。它們描述的是「玩家在這個面板上按過幾次」，不是 AudioManager
+  的實際狀態。
+- **後果**: 只要靜音狀態不是由這個面板造成的，標籤就是錯的。音樂改成預設關閉之後，
+  第一次打開設定會看到「Music: ON」，而音樂根本沒響。
+- **修法**: 加 `createEffect`，`settingsOpen()` 每次變 true 就從
+  `getAudioManager()` 重讀一次。
+- **嚴重性**: 低
+- **狀態**: ✅ 已修復
+
 ### BUG-371: 停駛的路線照樣被推薦給通勤者 ✅ 已修復
 - **位置**: `src/core/transport/TransitAvailability.ts` `findAvailableTransit()`
 - **問題**: 「停駛」是路線的道路被拆斷、車子沒在跑（`BusSystem.onRoadChanged` 設

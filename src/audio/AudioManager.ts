@@ -59,7 +59,11 @@ export class AudioManager {
   private sfxVolume: number = AUDIO.VOLUME.SFX;
   private muted = false;
   private sfxMuted = false;
-  private musicMuted = false;
+  // Music is off until the player asks for it. A generated chord pad looping from the
+  // first frame is the kind of thing players reach for the mute button to stop, so the
+  // quiet default is the one that needs no undo. Sound effects and ambient city noise
+  // are feedback, not soundtrack, and stay on.
+  private musicMuted = true;
   private bgmOscillators: OscillatorNode[] = [];
   private bgmGainNode: GainNode | null = null;
   private bgmPlaying = false;
@@ -85,6 +89,10 @@ export class AudioManager {
 
   startBGM(): void {
     if (this.bgmPlaying) return;
+    // Nothing is built while music is off. The chord loop rebuilds oscillators every few
+    // seconds; running that at gain 0 from the first frame burns CPU for silence, and with
+    // music muted by default that would be the normal case rather than the exception.
+    if (this.muted || this.musicMuted) return;
     const ctx = this.getContext();
     if (!ctx) return;
 
@@ -188,18 +196,18 @@ export class AudioManager {
 
     // Master ambient gain
     this.ambientGainNode = ctx.createGain();
-    this.ambientGainNode.gain.value = (this.muted || this.musicMuted) ? 0 : this.masterVolume * AUDIO.AMBIENT.GAIN;
+    this.ambientGainNode.gain.value = this.ambientOff() ? 0 : this.masterVolume * AUDIO.AMBIENT.GAIN;
     this.ambientGainNode.connect(ctx.destination);
 
     this.startCityNoise(ctx);
 
     this.birdIntervalId = setInterval(() => {
-      if (this.muted || this.musicMuted || !this.ambientPlaying) return;
+      if (this.ambientOff() || !this.ambientPlaying) return;
       if (Math.random() < AUDIO.AMBIENT.BIRD_CHANCE) this.playBirdChirp(ctx);
     }, AUDIO.AMBIENT.BIRD_INTERVAL_BASE_MS + Math.random() * AUDIO.AMBIENT.BIRD_INTERVAL_RANGE_MS);
 
     this.trafficIntervalId = setInterval(() => {
-      if (this.muted || this.musicMuted || !this.ambientPlaying) return;
+      if (this.ambientOff() || !this.ambientPlaying) return;
       if (this.ambientVehicles > AUDIO.AMBIENT.TRAFFIC_VEHICLE_THRESHOLD) this.playTrafficHum(ctx);
     }, AUDIO.AMBIENT.TRAFFIC_INTERVAL_MS);
   }
@@ -229,7 +237,7 @@ export class AudioManager {
     this.ambientVehicles = vehicleCount;
 
     // Adjust ambient noise volume based on city size
-    if (this.ambientGainNode && !this.muted && !this.musicMuted) {
+    if (this.ambientGainNode && !this.ambientOff()) {
       const popFactor = Math.min(1, population / AUDIO.AMBIENT.POP_SCALE_MAX);
       this.ambientGainNode.gain.value = this.masterVolume * AUDIO.AMBIENT.GAIN * (AUDIO.AMBIENT.POP_GAIN_MIN + popFactor * AUDIO.AMBIENT.POP_GAIN_RANGE);
     }
@@ -329,29 +337,54 @@ export class AudioManager {
 
   toggleMute(): boolean {
     this.muted = !this.muted;
+    // startBGM() checks both mute flags itself, so this is a no-op when music stays off.
+    if (!this.muted) this.startBGM();
     this.applyMusicGain();
+    this.applyAmbientGain();
     return this.muted;
   }
 
   toggleSfxMute(): boolean {
     this.sfxMuted = !this.sfxMuted;
+    this.applyAmbientGain();
     return this.sfxMuted;
   }
 
   toggleMusicMute(): boolean {
     this.musicMuted = !this.musicMuted;
+    if (!this.musicMuted) this.startBGM();
     this.applyMusicGain();
     return this.musicMuted;
   }
 
   private applyMusicGain(): void {
+    if (!this.bgmGainNode) return;
     const off = this.muted || this.musicMuted;
-    if (this.bgmGainNode) {
-      this.bgmGainNode.gain.value = off ? 0 : this.masterVolume * this.musicVolume * AUDIO.BGM.GAIN;
-    }
-    if (this.ambientGainNode) {
-      this.ambientGainNode.gain.value = off ? 0 : this.masterVolume * AUDIO.AMBIENT.GAIN;
-    }
+    this.bgmGainNode.gain.value = off ? 0 : this.masterVolume * this.musicVolume * AUDIO.BGM.GAIN;
+  }
+
+  /**
+   * Ambient birds and traffic hum are sound effects, so they follow the SFX switch.
+   * They used to follow the music switch, which meant turning the soundtrack off also
+   * emptied the city of every environmental sound.
+   */
+  private ambientOff(): boolean {
+    return this.muted || this.sfxMuted;
+  }
+
+  private applyAmbientGain(): void {
+    if (!this.ambientGainNode) return;
+    this.ambientGainNode.gain.value = this.ambientOff() ? 0 : this.masterVolume * AUDIO.AMBIENT.GAIN;
+  }
+
+  /** Current BGM output level; 0 when muted. Exposed for tests and debug tooling. */
+  getBgmGain(): number {
+    return this.bgmGainNode?.gain.value ?? 0;
+  }
+
+  /** Current ambient output level; 0 when muted. Exposed for tests and debug tooling. */
+  getAmbientGain(): number {
+    return this.ambientGainNode?.gain.value ?? 0;
   }
 
   isMuted(): boolean {
@@ -364,5 +397,9 @@ export class AudioManager {
 
   isMusicMuted(): boolean {
     return this.musicMuted;
+  }
+
+  isBgmPlaying(): boolean {
+    return this.bgmPlaying;
   }
 }
