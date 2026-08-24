@@ -6,24 +6,28 @@ import { SCENE } from '../SceneManager';
 import { Grid } from '../../core/grid/Grid';
 
 /**
- * 分區的名稱標籤會被高樓蓋掉。
+ * District name labels are covered by tall buildings.
  *
- * 標籤的材質已經是 `depthTest: false` 了 —— 直覺上那就該永遠畫在最上面。不是的:
- * 關掉深度測試只保證它不會被**先畫**的東西擋住，擋不住**後畫**的東西塗回來。
+ * The label material is already `depthTest: false`, which intuitively should keep it on top. It
+ * does not: disabling the depth test only guarantees nothing drawn **earlier** covers it, and does
+ * not stop something drawn **later** painting over it.
  *
- * 而建築的材質是 `transparent: true`，跟標籤在同一條透明佇列裡，兩者的 `renderOrder`
- * 又都是 0，於是先後完全由 three.js 的深度排序決定 —— 而那個排序用的是**物件原點**
- * 的視空間深度，不是實際佔的範圍。整座城市是一個 InstancedMesh，原點在世界原點，
- * 所以它排在「地圖原點那麼遠」的位置:比原點更遠的標籤先畫，接著整座城市塗上去。
+ * The building material is `transparent: true` and shares the label's transparent queue, and with
+ * both at `renderOrder` 0 the order falls entirely to three.js's depth sort — which uses an
+ * **object's origin** in view space rather than the range it occupies. The whole city is one
+ * InstancedMesh whose origin is the world origin, so it sorts as far away as the map's origin:
+ * labels beyond that origin draw first and the whole city paints over them.
  *
- * 這解釋了為什麼地圖越大越明顯 —— 離原點越遠的那半邊，標籤全部被蓋掉。
+ * That is why it worsens with map size: on the half further from the origin, every label is
+ * covered.
  */
 
 /**
- * 標籤是畫在 canvas 上再貼成貼圖的，而測試跑在 node 環境。
+ * Labels are drawn on a canvas and turned into a texture, and these tests run under node.
  *
- * 這裡只要「有沒有 sprite、排在哪裡」，貼圖的內容不重要 —— 給一個什麼都不做的
- * 2D context 就夠了。用 jsdom 反而不行:它的 `getContext('2d')` 沒有實作，回 null。
+ * Only whether a sprite exists and where it sorts matters here, not the texture's content, so a
+ * do-nothing 2D context suffices. jsdom does not work: its `getContext('2d')` is unimplemented and
+ * returns null.
  */
 const noop = (): void => {};
 beforeAll(() => {
@@ -45,11 +49,12 @@ afterAll(() => { delete (globalThis as { document?: unknown }).document; });
 const MAP = 200;
 
 /**
- * three.js 實際的透明物件繪製順序。
+ * three.js's actual draw order for transparent objects.
  *
- * 抄的是 `WebGLRenderLists` 的 `reversePainterSortStable` 與 `projectObject` 裡
- * 算 `z` 的方式:物件**世界座標原點**投影後的 NDC z。用真的排序規則，才測得到
- * 「排序依位置而變」這件事 —— 只斷言 renderOrder 大小的話，等於把實作抄一遍。
+ * It reproduces `WebGLRenderLists`'s `reversePainterSortStable` and how `projectObject` computes
+ * `z`: an object's **world origin** projected to NDC z. Using the real sort rule is what makes "the
+ * order changes with position" testable; asserting renderOrder values alone would copy the
+ * implementation.
  */
 function transparentDrawOrder(scene: THREE.Scene, camera: THREE.Camera): THREE.Object3D[] {
   camera.updateMatrixWorld();
@@ -73,7 +78,7 @@ function transparentDrawOrder(scene: THREE.Scene, camera: THREE.Camera): THREE.O
   return items.map(i => i.obj);
 }
 
-/** 遊戲的等角正交相機，對準地圖中心，方位角自訂。 */
+/** The game's isometric orthographic camera, aimed at the map's centre with a chosen azimuth. */
 function isoCamera(angle = SCENE.CAMERA_ANGLE): THREE.OrthographicCamera {
   const f = SCENE.FRUSTUM_SIZE;
   const cam = new THREE.OrthographicCamera(-f, f, f / 2, -f / 2, SCENE.NEAR_CLIP, SCENE.FAR_CLIP);
@@ -90,12 +95,14 @@ function isoCamera(angle = SCENE.CAMERA_ANGLE): THREE.OrthographicCamera {
 }
 
 /**
- * 場景裡會蓋到標籤的東西，兩種都要有 —— 它們的排序位置完全不同:
+ * The things in the scene that can cover a label. Both kinds are needed, because they sort from
+ * completely different places:
  *
- *  - 分區建築是一個 `InstancedMesh`，物件原點留在**世界原點**（地圖西北角），
- *    實例散在整張圖上。所以整座城市是用西北角的深度排序的。
- *  - 基礎設施是 `Group`，`position` 設在自己那一格（`BuildingRenderer` 的
- *    `group.position.set(centerX, 0, centerZ)`），照真實位置排序。
+ *  - Zoned buildings are one `InstancedMesh` whose object origin stays at the **world origin**, the
+ *    map's north-west corner, with its instances spread across the map. So the whole city sorts by
+ *    that corner's depth.
+ *  - Infrastructure is a `Group` with `position` set to its own cell (`group.position.set(centerX,
+ *    0, centerZ)` in `BuildingRenderer`) and sorts by its real location.
  */
 function cityObjects(): THREE.Object3D[] {
   const mat = getBuildingMaterial();
@@ -116,7 +123,7 @@ function cityObjects(): THREE.Object3D[] {
   return out;
 }
 
-/** 四個角落各一個分區 —— 不管相機朝哪，都有標籤落在城市原點的後面。 */
+/** One district in each corner, so whichever way the camera faces some label sorts behind the city's origin. */
 const CORNERS = [
   { x: 12, y: 12, name: 'Northwest', value: 20 },
   { x: 12, y: 188, name: 'Southwest', value: 40 },
@@ -141,17 +148,19 @@ function districtScene() {
 
 describe('分區名稱要蓋在城市上面', () => {
   it('fixture sanity: buildings really are in the transparent queue', () => {
-    // 建築如果是不透明的，它會在透明佇列之前整批畫完，標籤怎麼排都蓋得住 ——
-    // 那樣這支測試就沒有意義了，要先知道。
+    // If the buildings were opaque they would draw in full before the transparent queue and cover
+    // the labels whatever their order, which would leave this file meaningless — worth knowing
+    // first.
     expect(getBuildingMaterial().transparent,
       '建築材質不再是 transparent —— 這支測試的前提沒了，去看它現在畫在哪一趟')
       .toBe(true);
   });
 
   it('should keep the label out of the depth test as well', () => {
-    // 上面那條模擬的是**繪製順序**，看不到深度緩衝 —— 把 `depthTest` 打開它照樣
-    // 全綠，但畫面上標籤會被先畫進深度的樓擋掉。順序與深度是兩道獨立的關卡，
-    // 兩道都要過，所以這一條直接釘材質。
+    // The case above simulates the **draw order** and cannot see the depth buffer: turning
+    // `depthTest` on leaves it green while on screen the labels are hidden by buildings already
+    // written into depth. Order and depth are two independent gates and both have to pass, so this
+    // pins the material directly.
     const { labels } = districtScene();
     for (const l of labels) {
       expect(l.material.depthTest, '標籤會被深度緩衝裡的樓擋掉').toBe(false);
@@ -159,8 +168,9 @@ describe('分區名稱要蓋在城市上面', () => {
   });
 
   it('should draw every label after the city, from every camera angle', () => {
-    // 掃過一圈，不是只看預設角度:深度排序的結果隨相機轉動而變，預設角度剛好
-    // 讓城市的原點（地圖西北角）排在最遠，標籤僥倖贏 —— 轉到 135° 就輸了。
+    // It sweeps a full circle rather than testing the default angle alone: the depth sort's result
+    // changes as the camera turns, and at the default angle the city's origin, the map's north-west
+    // corner, happens to sort furthest and the labels win by luck — at 135 degrees they lose.
     const { scene, labels } = districtScene();
     for (let turn = 0; turn < 8; turn++) {
       const deg = Math.round((turn / 8) * 360);

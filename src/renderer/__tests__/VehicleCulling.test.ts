@@ -3,24 +3,27 @@ import * as THREE from 'three';
 import { VehicleRenderer, type VehicleData } from '../VehicleRenderer';
 
 /**
- * 看不到的車不要送進 GPU。
+ * Vehicles that cannot be seen are not sent to the GPU.
  *
- * 車輛的 mesh 全都設了 `frustumCulled = false` —— 對 `InstancedMesh` 來說那是
- * 對的（整組共用一個包圍盒，three.js 沒辦法逐台判斷），但代價是滿載的 2000 台
- * 每一台每一幀都要算頂點，即使鏡頭在城市的另一頭。一台車 120 個三角形，2000 台
- * 就是 24 萬，比整張場景其餘部分加起來還多。
+ * Every vehicle mesh sets `frustumCulled = false`, which is correct for an `InstancedMesh` — the
+ * batch shares one bounding box and three.js cannot judge instances individually — at the cost of
+ * a full 2000 vehicles each transforming vertices every frame, even with the camera on the far side
+ * of the city. At 120 triangles per vehicle that is 240,000, more than the rest of the scene
+ * combined.
  *
- * 剔除的判準是**鏡頭的視錐**，不是離鏡頭目標的固定距離。行人那邊用的是固定
- * 半徑 15（`cullPedestrians`），照抄的話鏡頭一拉遠，車就只出現在畫面中央一小圈
- * —— 那比原本的問題還糟。
+ * The criterion is **the camera's frustum** rather than a fixed distance from its target.
+ * Pedestrians use a fixed radius of 15 (`cullPedestrians`), and copying that leaves vehicles
+ * appearing only in a small circle at the screen's centre as soon as the camera pulls back — worse
+ * than the original problem.
  *
- * 剔除只發生在渲染端。模擬完全不知道有這回事：被剔掉的車照樣在跑、照樣佔位，
- * 只是不畫 —— 而它在畫面外，所以「一台車對著空白煞車」不會回來（BUG-262）。
+ * Culling happens on the rendering side only. The simulation knows nothing of it: a culled vehicle
+ * still drives and still occupies its place and is merely not drawn — and it is off screen, so
+ * "a vehicle braking for empty road" does not come back (BUG-262).
  */
 
 const ASPECT = 16 / 9;
 
-/** 等角鏡頭，對準 `target`，視野高度 `frustumSize` 格。 */
+/** An isometric camera aimed at `target`, with a visible height of `frustumSize` cells. */
 function isoCamera(target: { x: number; z: number }, frustumSize: number): THREE.OrthographicCamera {
   const cam = new THREE.OrthographicCamera(
     -frustumSize * ASPECT / 2, frustumSize * ASPECT / 2,
@@ -44,7 +47,7 @@ function car(id: number, x: number, z: number): VehicleData {
   return { id, x, y: z, heading: 0, type: 'car', laneOffset: 0 };
 }
 
-/** 一片 n×n 的車陣，中心在 (cx, cz)，間距 1 格。 */
+/** An n-by-n block of vehicles centred at (cx, cz), one cell apart. */
 function block(idBase: number, cx: number, cz: number, n: number): VehicleData[] {
   const out: VehicleData[] = [];
   for (let i = 0; i < n; i++) {
@@ -75,7 +78,7 @@ function drawnCount(scene: THREE.Scene): number {
   return bodyMeshes(scene).reduce((n, m) => n + effective(m), 0);
 }
 
-/** 畫出來的每個實例的世界座標。 */
+/** Every drawn instance's world position. */
 function drawnPositions(scene: THREE.Scene): Array<{ x: number; z: number }> {
   const m = new THREE.Matrix4();
   const p = new THREE.Vector3();
@@ -99,7 +102,7 @@ function setup(): { scene: THREE.Scene; renderer: VehicleRenderer } {
 
 describe('車輛的視錐剔除', () => {
   it('should draw everything when no camera has been set', () => {
-    // 展示區與其他不帶鏡頭的呼叫端不能因為這條而少畫東西。
+    // The showcase and other callers with no camera must not lose anything to this.
     const { scene, renderer } = setup();
     const list = [...block(1, 0, 0, 10), ...block(1000, 400, 400, 10)];
     renderer.update(list);
@@ -117,8 +120,9 @@ describe('車輛的視錐剔除', () => {
   });
 
   it('should draw the vehicles it keeps at the right places', () => {
-    // 跳過中間某幾台之後，剩下的必須連續地填回實例索引 —— 留洞的話會有車
-    // 停在原點，或是某一台的矩陣被下一台蓋掉。
+    // With some skipped in the middle, the rest have to refill the instance indices contiguously:
+    // a hole leaves a vehicle parked at the origin, or one vehicle's matrix overwritten by the
+    // next.
     const { scene, renderer } = setup();
     renderer.setCullCamera(isoCamera({ x: 0, z: 0 }, 40));
     const list = [
@@ -139,8 +143,9 @@ describe('車輛的視錐剔除', () => {
   });
 
   it('should reveal more vehicles as the camera zooms out', () => {
-    // 這一條擋的是「照抄行人的固定半徑」。固定半徑下，拉遠鏡頭看到的台數
-    // 完全不變 —— 畫面變大了，車卻只出現在中央一小圈。
+    // This guards against copying the pedestrians' fixed radius. At a fixed radius, pulling the
+    // camera back changes the count not at all: the view grows while the vehicles stay in a small
+    // circle at its centre.
     const { scene, renderer } = setup();
     const spread = block(1, 0, 0, 40);   // 40×40 格，遠大於任何一個視野
 
@@ -179,13 +184,14 @@ describe('車輛的視錐剔除', () => {
   });
 
   it('should keep a margin so vehicles do not pop at the screen edge', () => {
-    // 剛好卡在邊界上的車要留著。視錐是**畫面**的邊界，而車有體積、還會投影
-    // —— 邊界外一點點的車，它的影子可能落在畫面裡。
+    // A vehicle right on the boundary is kept. The frustum is the **screen's** boundary, and a
+    // vehicle has volume and casts a shadow: one just outside can have its shadow inside.
     const { scene, renderer } = setup();
     const cam = isoCamera({ x: 0, z: 0 }, 40);
 
-    // 精確的畫面邊界：沿 +x 最後一個仍落在視錐裡的位置。這一段自己算，不問
-    // 渲染器 —— 拿渲染器自己的判準當門檻的話，餘裕設成 0 也會是綠的。
+    // The exact screen boundary: the last position along +x still inside the frustum. Computed here
+    // rather than asked of the renderer — using the renderer's own criterion as the threshold stays
+    // green with the margin set to 0.
     const frustum = new THREE.Frustum().setFromProjectionMatrix(
       new THREE.Matrix4().multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse),
     );
@@ -209,8 +215,8 @@ describe('車輛的視錐剔除', () => {
   });
 
   it('should light only the vehicles it draws', () => {
-    // 頭尾燈的數量是照**全部**車算的話，剔除就白做了 —— 燈比車還多，而且
-    // 多出來的那些畫在畫面外。
+    // Counting the lights over **all** vehicles wastes the culling: there are then more lights than
+    // vehicles, and the extras draw off screen.
     const { scene, renderer } = setup();
     renderer.setCullCamera(isoCamera({ x: 0, z: 0 }, 40));
     const near = block(1, 0, 0, 6);

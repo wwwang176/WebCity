@@ -12,23 +12,24 @@ import { ZoneType } from '../../core/grid/types';
 
 const HALF_ENVELOPE = MAX_BUILDING_WIDTH_M / METRES_PER_CELL / 2;
 
-/** 高過這個高度的綠化才算「樹」。樹籬 1 m、修剪灌木球 1.5 m 都不算。 */
+/** Planting above this height counts as a tree. A 1 m hedge and a 1.5 m topiary do not. */
 const TREE_MIN_Y = 2.0 / METRES_PER_CELL;
 
-/** 一個點靠哪一邊。與 decals 的 `SIDE_AXIS` 同一套約定。 */
+/** Which side a point is on. The same convention as decals' `SIDE_AXIS`. */
 function sideOf(x: number, z: number): Side {
   return Math.abs(z) >= Math.abs(x) ? (z < 0 ? 'n' : 's') : (x > 0 ? 'e' : 'w');
 }
 
 /**
- * 高處綠化的分群中心 —— 一叢就是一棵樹。
+ * Cluster centres of the high planting: one cluster is one tree.
  *
- * 逐頂點判斷靠哪一邊會誤判：一棵放在 t = 0.3、離心 0.329 的樹，樹冠最外側的
- * 頂點是 (0.358, 0.271)，|x| 比 |z| 大 —— 那個頂點會被算成隔壁那一邊的。
- * 群心不會，因為它就是樹幹的位置。
+ * Deciding a side per vertex misidentifies them: for a tree at t = 0.3 and 0.329 from the centre,
+ * the crown's outermost vertex is (0.358, 0.271), where |x| exceeds |z|, and that vertex counts as
+ * belonging to the neighbouring side. A cluster centre does not, because it is the trunk's
+ * position.
  *
- * 單一連結分群，門檻取樹冠直徑的兩倍：樹與樹之間至少隔 0.4 格，樹冠半徑
- * 最大 0.06 格，兩者差一個量級。
+ * Single-linkage clustering with a threshold of twice the crown diameter: trees are at least
+ * 0.4 cells apart and a crown radius is at most 0.06 cells, an order of magnitude apart.
  */
 function treeClusters(geo: THREE.BufferGeometry): Array<{ x: number; z: number }> {
   const pos = geo.getAttribute('position');
@@ -68,14 +69,14 @@ describe('yardRing', () => {
   it('should give the low-density house a yard worth looking at', () => {
     const ring = yardRing(ZoneType.RESIDENTIAL_LOW, 'LOW', 1);
     expect(ring).not.toBeNull();
-    // 1 m 以上才放得下看得見的樹籬與樹。
+    // Above 1 m there is room for a visible hedge and tree.
     expect((ring!.outer - ring!.inner) * METRES_PER_CELL).toBeGreaterThan(1.0);
   });
 
   it('should give every zone a yard now that the buildings made room', () => {
-    // 階段 2B 時只有住宅低過關；階段 2B-2 縮寬之後每個分區都有 0.4 m 以上。
-    // 這一條以前是「鋪滿基地的分區沒有院子」，用「寬度 == 9.8」當篩選條件 ——
-    // 寬度一改就一個也選不中，測試從此空轉。
+    // With buildings narrowed, every zone now has at least 0.4 m. As "plot-filling zones have no
+    // yard" filtered on width == 9.8, one change to the width selects nothing and the case runs
+    // empty from then on.
     for (const key of Object.keys(TARGET_WIDTHS_M)) {
       const [zs, ds] = key.split(':');
       for (const level of LEVELS) {
@@ -96,11 +97,13 @@ describe('yardRing', () => {
   });
 
   it('should start the yard outside the widest the building can jitter to', () => {
-    // 內緣若只用目標寬度而不含抖動，抖到最寬的那些房子會長進樹籬裡。
+    // With the inner edge taken from the target width alone, houses jittered to their widest grow
+    // into the hedge.
     for (const key of Object.keys(TARGET_HEIGHTS_M)) {
       const [zs, ds] = key.split(':');
-      // 內緣現在是量出來的（八個變體裡最寬的那一個），不再是目標寬乘抖動
-      // 係數。基地在 85%–100% 之間取，所以最寬的那個仍不低於目標的 85%。
+      // The inner edge is measured — the widest of the eight variants — rather than target width
+      // times a jitter factor. Footprints take 85% to 100% of the target, so the widest is still at
+      // least 85% of it.
       for (const level of LEVELS) {
         const ring = yardRing(Number(zs), ds as Density, level);
         if (!ring) continue;
@@ -129,7 +132,7 @@ describe('ground prop geometry', () => {
   }
 
   it('should keep every prop inside the pedestrian envelope', () => {
-    // 外側越界 = 行人穿過樹籬。
+    // Crossing the outer bound means pedestrians walk through the hedge.
     eachProp((geo, label) => {
       geo.computeBoundingBox();
       const b = geo.boundingBox!;
@@ -141,8 +144,8 @@ describe('ground prop geometry', () => {
   });
 
   it('should not put anything inside the house footprint', () => {
-    // 每個頂點都必須滿足 max(|x|,|z|) >= inner —— 只看包圍盒會漏掉
-    // 「一棵樹橫跨房子」這種情形。
+    // Every vertex has to satisfy max(|x|,|z|) >= inner: a bounding box alone misses a tree lying
+    // across the house.
     for (const level of LEVELS) {
       const ring = yardRing(ZoneType.RESIDENTIAL_LOW, 'LOW', level)!;
       for (const build of getGroundPropVariants(ZoneType.RESIDENTIAL_LOW, 'LOW', level)) {
@@ -172,7 +175,7 @@ describe('ground prop geometry', () => {
   });
 
   it('should never tag a prop as wall — walls grow windows', () => {
-    // PART_WALL 會走 shader 的立面分支，樹幹會長出一格一格的窗。
+    // PART_WALL takes the shader's facade branch and a trunk grows a grid of windows.
     eachProp((geo, label) => {
       const col = geo.getAttribute('color');
       for (let i = 0; i < col.count; i++) {
@@ -182,10 +185,11 @@ describe('ground prop geometry', () => {
   });
 
   it('should make the residential garden greener with every level', () => {
-    // 規格修訂 4：等級要看得出更高級。素土院子 -> 樹籬 -> 修剪庭園。
+    // Spec revision 4: a level has to read as better. Bare yard, then hedge, then tended garden.
     //
-    // 量綠化而不是量三角形總數：L1 的四道木柵柱子多但便宜，L2 換成樹之後
-    // 總數反而更低 —— 三角形數不是「豪華」的代理，綠化面積才是。
+    // It measures planting rather than total triangles: L1's four picket runs are many cheap posts,
+    // and swapping them for a tree at L2 lowers the total. Triangle count is not a proxy for
+    // richness; planted area is.
     const foliage = (level: number) =>
       getGroundPropVariants(ZoneType.RESIDENTIAL_LOW, 'LOW', level)
         .map((b) => {
@@ -204,8 +208,9 @@ describe('ground prop geometry', () => {
   });
 
   it('should make every zone richer with every level', () => {
-    // 非住宅分區的「更高級」不是更綠，是更多街道家具。用同一等級裡最豐富的
-    // 那個組合來比 —— 用總和會被「零件多但便宜」的組合帶偏。
+    // For non-residential zones, better means more street furniture rather than more planting. The
+    // comparison uses the richest recipe at each level; a sum is skewed by recipes with many cheap
+    // pieces.
     for (const key of Object.keys(TARGET_HEIGHTS_M)) {
       const [zs, ds] = key.split(':');
       const richest = (level: number) => Math.max(
@@ -218,7 +223,7 @@ describe('ground prop geometry', () => {
   });
 
   it('should offer at least four yards per level', () => {
-    // 兩個變體配四向旋轉是 8 種面貌，一個 8x8 街廓看得出重複。
+    // Two variants across four rotations give 8 faces, and an 8x8 block shows the repetition.
     for (const level of LEVELS) {
       expect(getGroundPropVariants(ZoneType.RESIDENTIAL_LOW, 'LOW', level).length,
         `L${level}`).toBeGreaterThanOrEqual(4);
@@ -226,7 +231,8 @@ describe('ground prop geometry', () => {
   });
 
   it('should give every zone something standing on the ground', () => {
-    // 階段 2B-2 縮寬的目的：不再只有住宅區有立體小物。
+    // The point of narrowing the buildings: three-dimensional props are no longer residential
+    // only.
     for (const key of Object.keys(TARGET_HEIGHTS_M)) {
       const [zs, ds] = key.split(':');
       for (const level of LEVELS) {
@@ -237,8 +243,9 @@ describe('ground prop geometry', () => {
   });
 
   it('should use a vocabulary wider than a handful of shapes', () => {
-    // 「類型太少」的機器可檢查形式。不同零件的三角形數不同，所以把所有
-    // 變體的三角形數集合起來，集合大小是詞彙量的下界。
+    // A machine-checkable form of "too few types". Different pieces have different triangle counts,
+    // so collecting every variant's count gives a set whose size is a lower bound on the
+    // vocabulary.
     const sizes = new Set<number>();
     for (const key of Object.keys(TARGET_HEIGHTS_M)) {
       const [zs, ds] = key.split(':');
@@ -250,15 +257,15 @@ describe('ground prop geometry', () => {
         }
       }
     }
-    // 8 是階段 2B-2 訂的。工業補上管架、氣瓶、棧板之後實測 24 —— 16 把這一輪
-    // 的擴充鎖住，同時留下合併掉幾種尺寸的餘裕。
+    // With pipe racks, gas bottles and pallets added to industry the measured value is 24. 16 locks
+    // in that expansion while leaving room for a few sizes to merge.
     expect(sizes.size, '所有庭院組合只有 ' + sizes.size + ' 種三角形數')
       .toBeGreaterThanOrEqual(16);
   });
 
   it('should keep every zone inside its own band, not just residential', () => {
-    // 其他分區的帶子只有 0.4 m，比住宅低的 1.45 m 窄得多 —— 沿用住宅的
-    // 尺寸會直接穿牆。
+    // Other zones' bands are 0.4 m, far narrower than low-density residential's 1.45 m, and reusing
+    // the residential sizes goes straight through the wall.
     for (const key of Object.keys(TARGET_HEIGHTS_M)) {
       const [zs, ds] = key.split(':');
       for (const level of LEVELS) {
@@ -293,8 +300,8 @@ describe('ground prop geometry', () => {
   });
 
   it('should stand every tree on a lawn, never on tarmac', () => {
-    // 樹長在草地上。前庭那一層已經標好哪幾邊是綠地了 —— 樹站在別的邊上，
-    // 畫面上就是一棵從柏油裡長出來的樹。
+    // Trees grow on grass. The forecourt layer already states which sides are grass, and a tree on
+    // any other side is a tree growing out of asphalt.
     for (const key of Object.keys(TARGET_HEIGHTS_M)) {
       const [zs, ds] = key.split(':');
       for (const level of LEVELS) {
@@ -313,8 +320,8 @@ describe('ground prop geometry', () => {
   });
 
   it('should put a tree on the lawn wherever the forecourt lays one', () => {
-    // 上一條的反向。少了它，「一棵樹都不種」也會過 —— 而畫面上看到的正是
-    // 高密度與辦公區腳下那一塊空蕩蕩的草皮。
+    // The converse of the case above. Without it, planting no trees at all passes — and what shows
+    // on screen is the empty lawn at the foot of the high-density and office zones.
     for (const key of Object.keys(TARGET_HEIGHTS_M)) {
       const [zs, ds] = key.split(':');
       for (const level of LEVELS) {
@@ -334,10 +341,11 @@ describe('ground prop geometry', () => {
   });
 
   it('should give the industrial yard more kit than a commercial pavement', () => {
-    // 「工業不像工業」的機器可檢查形式。工業的等級階梯不表現在高度上
-    // （現代廠房都是單層挑高），所以它全靠設備：管架、氣瓶、棧板、油桶。
-    // 而在這一版之前，工業 L1 的零件量比商業還少 —— 一個矮盒子配兩個油桶，
-    // 讀起來就是一棟比較樸素的商業建築。
+    // A machine-checkable form of "industry does not look industrial". Industry's level ladder does
+    // not show in height, since modern plants are single-storey with high ceilings, so it rests
+    // entirely on equipment: pipe racks, gas bottles, pallets, drums. With fewer pieces at
+    // industrial L1 than at commercial — a low box and two drums — it reads as a plainer commercial
+    // building.
     const richest = (z: number, level: number) => Math.max(
       ...getGroundPropVariants(z, 'LOW', level)
         .map(b => { const g = b(); const n = triangleCount(g); g.dispose(); return n; }),

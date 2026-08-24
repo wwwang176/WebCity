@@ -13,13 +13,14 @@ import { RailType } from '../../core/rail/types';
 import { ViewMode } from '../../core/ViewMode';
 
 /**
- * 進 focus 模式時，地面上的東西會被壓成半透明白模。
+ * Entering a focus mode flattens everything on the ground into a translucent white model.
  *
- * 兩件事在這裡把關：
- *  1. **切回來要真的切回來。** 壓白模是直接改材質的 `color`，而顏色的定義只有
- *     建構材質那一行 —— 沒有人記住原色的話，還原時就沒東西可以寫回去。
- *  2. **高架要跟著地面一起變。** 高架路是獨立的一組 renderer，漏掉它的話，
- *     地下模式會被一整層不透明的高架橋蓋住。
+ * Two things are guarded here:
+ *  1. **Switching back really switches back.** Whitening writes the material's `color` directly, and
+ *     the colour is defined only on the line that constructs the material: with nothing recording
+ *     the original, there is nothing to write back on restore.
+ *  2. **Elevated follows the ground.** Elevated roads are a separate set of renderers, and missing
+ *     them leaves underground mode covered by a whole layer of opaque viaduct.
  */
 
 interface RoadInternals {
@@ -38,7 +39,7 @@ const ROAD_MESH_KEYS = [
   'curvedCLMesh', 'crosswalkMesh', 'stopLineMesh', 'lampMesh',
 ] as const;
 
-/** 一條東西向的地面道路，鋪滿一整列。 */
+/** One east-west ground road filling a whole row. */
 function makeRoadRenderer() {
   const scene = new THREE.Scene();
   const grid = new Grid(8, 8);
@@ -79,7 +80,7 @@ interface ElevatedInternals {
   levels: Map<number, ElevatedLevel>;
 }
 
-/** 一條高架道路（含一段鐵軌，這樣護欄材質也會被用到）。 */
+/** One elevated road, including a stretch of rail so the parapet material is used too. */
 function makeElevatedRenderer(build = true) {
   const scene = new THREE.Scene();
   const grid = new Grid(8, 8);
@@ -108,7 +109,8 @@ describe('地面道路：切回正常視角要還原顏色', () => {
     const before = ROAD_MESH_KEYS.map(k => matOf(internals[k]).color.getHex());
 
     renderer.setViewMode(ViewMode.UNDERGROUND);
-    // 中間這一段必須真的變過，否則下面的還原斷言等於在測一個沒發生的事。
+    // The middle step has to actually change something, or the restore assertion below tests
+    // something that never happened.
     expect(matOf(internals.roadMesh).opacity, '進地下模式沒有變半透明').toBeLessThan(1);
 
     renderer.setViewMode(ViewMode.NORMAL);
@@ -118,8 +120,9 @@ describe('地面道路：切回正常視角要還原顏色', () => {
   });
 
   it('should not collapse the road meshes onto one shared colour', () => {
-    // 路面 0x3a3a3a、人行道 0x707070、標線 0xaaaaaa…… 各自不同。全部還原成
-    // 同一個值也能騙過「有還原」的斷言，所以這裡盯住它們仍然是好幾種顏色。
+    // Road surface 0x3a3a3a, sidewalk 0x707070, markings 0xaaaaaa and so on all differ. Restoring
+    // them all to one value would still satisfy "it restored", so this watches that several colours
+    // remain.
     const { renderer, internals } = makeRoadRenderer();
     renderer.setViewMode(ViewMode.UNDERGROUND);
     renderer.setViewMode(ViewMode.NORMAL);
@@ -149,7 +152,7 @@ interface SignalInternals {
 
 const SIGNAL_MESH_KEYS = ['poleMesh', 'armMesh', 'lightMesh'] as const;
 
-/** 一個四向路口的號誌。 */
+/** One four-way junction's signals. */
 function trafficLight(x: number, y: number): TrafficLight {
   return {
     x, y, phase: 0, timer: 10, phaseDuration: 10, clearing: false,
@@ -172,7 +175,7 @@ interface BuildingInternals {
   _whiteModelMesh: THREE.Mesh | null;
 }
 
-/** 一個公車站、一個火車站、一座警察局。 */
+/** A bus stop, a train station and a police station. */
 function makeBuildingRenderer() {
   const scene = new THREE.Scene();
   const renderer = new BuildingRenderer();
@@ -191,9 +194,10 @@ function whiteModelVertexCount(internals: BuildingInternals): number {
 
 describe('白模', () => {
   it('should actually bake a white model when the city has infrastructure', () => {
-    // 原本的實作把所有幾何原封不動丟給 mergeGeometries。基礎設施的模型有的帶
-    // uv、有的不帶，有的有 index、有的沒有 —— 合併會回 null，而那時候真正的
-    // 建築早就 visible = false 了。結果不是「白模化」，是整座城市消失。
+    // Handing every geometry to mergeGeometries untouched fails: infrastructure models variously
+    // carry uvs or not and are indexed or not, so the merge returns null — by which point the real
+    // buildings are already visible = false. The result is not a white model but the city
+    // disappearing.
     const { renderer, internals, scene } = makeBuildingRenderer();
 
     renderer.setViewMode(ViewMode.UNDERGROUND, scene);
@@ -204,7 +208,7 @@ describe('白模', () => {
   });
 
   it('should bake zone buildings and infrastructure together', () => {
-    // 兩者的幾何屬性不一樣，混在一起才是真正的城市。
+    // The two have different geometry attributes, and mixed together they are a real city.
     const scene = new THREE.Scene();
     const renderer = new BuildingRenderer();
     renderer.build(scene, new Grid(16, 16));
@@ -239,7 +243,8 @@ describe('聚焦中的那一種站點要保持原樣', () => {
   });
 
   it('should leave the focused stop out of the white model', () => {
-    // 留著原色又同時烘進白模的話，同一個站會有兩份幾何疊在一起互相閃爍。
+    // Keeping the original colours while also baking into the white model leaves one station with
+    // two geometries stacked and flickering against each other.
     const bus = makeBuildingRenderer();
     bus.renderer.setViewMode(ViewMode.BUS_FOCUS, bus.scene);
     const rail = makeBuildingRenderer();
@@ -264,8 +269,8 @@ describe('聚焦中的那一種站點要保持原樣', () => {
 
 describe('路口號誌：地下模式要跟著半透明', () => {
   it('should dim the poles, arms and lamp heads', () => {
-    // 號誌是路邊的家具，跟路燈同一類 —— 地面壓成白模之後它們還是實心的話，
-    // 地下模式會看到一排浮在半透明馬路上的紅綠燈。
+    // Signals are street furniture like street lamps: left solid once the ground is whitened,
+    // underground mode shows a row of traffic lights floating over a translucent road.
     const { renderer, internals } = makeSignalRenderer();
 
     renderer.setViewMode(ViewMode.UNDERGROUND);
@@ -293,7 +298,7 @@ describe('路口號誌：地下模式要跟著半透明', () => {
   });
 
   it('should dim signals rebuilt while already underground', () => {
-    // 改動路口會整個重建號誌，材質全是新的。
+    // Changing a junction rebuilds the signals entirely, with fresh materials.
     const { renderer, internals, scene, lights } = makeSignalRenderer(false);
     renderer.setViewMode(ViewMode.UNDERGROUND);
     renderer.build(scene, lights);
@@ -317,8 +322,8 @@ describe('高架道路：地下模式要跟著半透明', () => {
   });
 
   it('should dim pillars and railings too', () => {
-    // 橋墩與護欄是每格一個獨立 mesh，共用一份材質 —— 走的不是 InstancedMesh
-    // 那條路，漏掉的話地下模式會看到一排實心的柱子。
+    // Piers and parapets are one mesh per cell sharing a material, not the InstancedMesh path;
+    // missed, underground mode shows a row of solid columns.
     const { renderer, internals } = makeElevatedRenderer();
     const ld = levelOne(internals);
     expect(ld.pillarMeshes.size, '沒有橋墩，這組情境等於沒測').toBeGreaterThan(0);
@@ -350,8 +355,9 @@ describe('高架道路：地下模式要跟著半透明', () => {
   });
 
   it('should dim a deck that is built while already underground', () => {
-    // 蓋一段高架路會整個重建 renderer，材質全部是新的。重建不重新套用視角的話，
-    // 玩家在地下模式蓋出來的那一段會是唯一不透明的東西。
+    // Building a stretch of elevated road rebuilds the renderer entirely with fresh materials.
+    // Without reapplying the view mode, the stretch a player builds in underground mode is the only
+    // opaque thing there.
     const { renderer, scene, grid, em } = makeElevatedRenderer(false);
     renderer.setViewMode(ViewMode.UNDERGROUND);
     renderer.build(scene, grid, em);
@@ -362,8 +368,9 @@ describe('高架道路：地下模式要跟著半透明', () => {
   });
 
   it('should dim pillars and railings added to an existing deck while underground', () => {
-    // 在已經蓋好的那一層旁邊再接一格，走的是 updateCells —— 這一層早就存在，
-    // 不會再經過 ensureLevel，所以新生出來的橋墩與護欄得自己知道現在是白模狀態。
+    // Adding one cell beside an existing level goes through updateCells: that level already exists
+    // and does not pass through ensureLevel again, so the new piers and parapets have to know the
+    // white-model state for themselves.
     const { renderer, internals, scene, grid, em } = makeElevatedRenderer();
     renderer.setViewMode(ViewMode.UNDERGROUND);
 
@@ -379,12 +386,14 @@ describe('高架道路：地下模式要跟著半透明', () => {
   });
 
   it('should keep the lamp glow dark while dimmed', () => {
-    // 燈光是加色混合的光暈，半透明蓋不住它 —— 地下模式會看到一排飄在空中的光點。
+    // The lights are additive glows that translucency cannot hide: underground mode shows a row of
+    // points of light floating in the air.
     const { renderer, internals } = makeElevatedRenderer();
     const ld = levelOne(internals);
 
     renderer.setViewMode(ViewMode.UNDERGROUND);
-    // 切換當下就要滅掉，不能等下一次 update() —— 中間那幾個影格也是玩家看得到的。
+    // They go out at the moment of switching rather than at the next update(): the frames in
+    // between are visible to the player too.
     expect(ld.lampGlowMesh.visible, '切進地下模式的瞬間光暈還亮著').toBe(false);
 
     renderer.update(0);   // 半夜，路燈全開

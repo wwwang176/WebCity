@@ -5,8 +5,9 @@ import { volumesFor, VARIANT_COUNT } from '../geometry/buildings/massing';
 import { maxAbsOf } from '../geometry/buildings/massing/volume';
 
 /**
- * 這一桶最窄的那一個變體的牆面 —— 自己算，不呼叫 `narrowestBuildingEdge`。
- * 鋪面的幾何就是用那個函式建的，拿它當基準等於用實作驗證實作（BUG-226）。
+ * The narrowest variant's wall in this bucket, computed here rather than through
+ * `narrowestBuildingEdge`. The paving geometry is built from that function, and using it as the
+ * reference verifies the implementation against itself (BUG-226).
  */
 function narrowestOf(z: number, d: Density, level: number): number {
   let lo = Infinity;
@@ -45,11 +46,11 @@ function eachDecal(fn: (geo: THREE.BufferGeometry, label: string) => void) {
 interface Rect { x0: number; x1: number; z0: number; z1: number }
 
 /**
- * 依高度分組的四邊形。
+ * The quads grouped by height.
  *
- * 每塊 `PlaneGeometry` 是連續的四個頂點，`mergeGeometries` 依序串接，所以
- * 四個一組就是一塊。不同高度的兩塊本來就該疊（標線疊在鋪面上），同高度的
- * 不該。
+ * Each `PlaneGeometry` is four consecutive vertices and `mergeGeometries` concatenates them in
+ * order, so each group of four is one quad. Two at different heights are meant to stack, since
+ * markings sit over paving; two at the same height are not.
  */
 function quadsByHeight(geo: THREE.BufferGeometry): Map<number, Rect[]> {
   const pos = geo.getAttribute('position');
@@ -70,7 +71,7 @@ function quadsByHeight(geo: THREE.BufferGeometry): Map<number, Rect[]> {
   return out;
 }
 
-/** 兩個矩形的重疊面積。共邊（面積 0）不算重疊。 */
+/** Two rectangles' overlap area. Sharing an edge, which is zero area, is not an overlap. */
 function overlapArea(a: Rect, b: Rect): number {
   const w = Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0);
   const d = Math.min(a.z1, b.z1) - Math.max(a.z0, b.z0);
@@ -79,7 +80,7 @@ function overlapArea(a: Rect, b: Rect): number {
 
 describe('decal geometry', () => {
   it('should exist for every zone at every level', () => {
-    // 本階段的驗收條件：沒有哪個分區是光禿的。
+    // The acceptance condition: no zone is left bare.
     eachBucket((z, d, key) => {
       for (const level of LEVELS) {
         expect(getDecalVariants(z, d, level).length, `${key} L${level}`)
@@ -89,7 +90,7 @@ describe('decal geometry', () => {
   });
 
   it('should lie flat on the ground', () => {
-    // 有厚度的「貼片」會在側面長出牆，而牆會長出窗戶。
+    // A decal with thickness grows walls on its sides, and walls grow windows.
     eachDecal((geo, label) => {
       geo.computeBoundingBox();
       const b = geo.boundingBox!;
@@ -99,9 +100,9 @@ describe('decal geometry', () => {
   });
 
   it('should use exactly two heights — paving and markings', () => {
-    // 停車格線本來就疊在柏油上，所以兩層是必要的。但更多層就代表底層彼此
-    // 也在疊 —— 兩塊同高同位的四邊形會 z-fighting，靜態截圖看不出來、
-    // 一移動鏡頭就整片閃爍。
+    // Parking bay lines lie over asphalt by nature, so two layers are necessary. More than two
+    // means base layers are stacking on each other, and two quads at the same height and position
+    // z-fight: invisible in a static screenshot, a flickering sheet as soon as the camera moves.
     eachDecal((geo, label) => {
       const pos = geo.getAttribute('position');
       const ys = new Set<number>();
@@ -116,12 +117,13 @@ describe('decal geometry', () => {
   });
 
   it('should never lay two quads on top of each other', () => {
-    // 「一個邊只能有一種鋪面」擋得住同一邊疊兩層，擋不住相鄰兩邊在**角落**
-    // 互疊：四邊都鋪滿時，北側與東側各自跨滿整條邊，交出四塊 1.5 m 見方的
-    // 重疊角。兩塊同高同位的四邊形會 z-fighting —— 靜態截圖看不出來，
-    // 一移動鏡頭就整片閃爍，而這一層鋪在每一棟建築腳下。
+    // "One surface per side" prevents two stacking on one side but not adjacent sides overlapping
+    // at a **corner**: with all four paved, the north and east sides each span their full edge and
+    // meet in four 1.5 m square overlaps. Two quads at the same height and position z-fight —
+    // invisible in a static screenshot, a flickering sheet as soon as the camera moves — and this
+    // layer lies at the foot of every building.
     //
-    // 上一版的計數式檢查（底層不超過四塊）看的是數量，看不到位置。
+    // A counting check, no more than four base quads, reads the number and not the positions.
     eachDecal((geo, label) => {
       for (const [y, rects] of quadsByHeight(geo)) {
         for (let i = 0; i < rects.length; i++) {
@@ -137,27 +139,27 @@ describe('decal geometry', () => {
   });
 
   it('should never pave the same side twice', () => {
-    // 底層的重疊在幾何合併之後看不出來，所以要在結構上擋住：一個邊只能有
-    // 一種鋪面。這一條盯的是「底層四邊形的數量不超過四塊」。
+    // A base overlap is invisible once the geometry is merged, so it is prevented structurally: one
+    // surface per side. This watches that there are no more than four base quads.
     eachDecal((geo, label) => {
       const pos = geo.getAttribute('position');
       let baseVerts = 0;
       for (let i = 0; i < pos.count; i++) {
         if (Math.abs(pos.getY(i) - DECAL_Y) < 1e-9) baseVerts++;
       }
-      // 每塊 PlaneGeometry 是 4 個頂點。
+      // Each PlaneGeometry is 4 vertices.
       expect(baseVerts / 4, `${label} 底層有 ${baseVerts / 4} 塊`).toBeLessThanOrEqual(4);
     });
   });
 
   it('should sit just above the ground, not visibly floating', () => {
-    // 太低會與地面 z-fighting，太高會看出浮空。
+    // Too low it z-fights with the ground; too high it visibly floats.
     expect(DECAL_Y).toBeGreaterThan(0);
     expect(DECAL_Y).toBeLessThan(0.03);
   });
 
   it('should face up', () => {
-    // 面朝下的話從上面看是黑的。
+    // Facing down, it is black seen from above.
     eachDecal((geo, label) => {
       const n = geo.getAttribute('normal');
       for (let i = 0; i < n.count; i++) {
@@ -187,7 +189,7 @@ describe('decal geometry', () => {
   });
 
   it('should only use the ground or foliage tags', () => {
-    // 標成 PART_WALL 會長出窗戶；標成 PART_ROOF 會拿到屋瓦顏色。
+    // Tagged PART_WALL it grows windows; tagged PART_ROOF it takes roof tile colours.
     eachDecal((geo, label) => {
       const col = geo.getAttribute('color');
       for (let i = 0; i < col.count; i++) {
@@ -215,7 +217,8 @@ describe('decal geometry', () => {
   });
 
   it('should make the forecourt better with every level', () => {
-    // 規格修訂 4：等級要看得出更高級。素土 -> 鋪面 -> 廣場／標線。
+    // Spec revision 4: a level has to read as better. Bare ground, then paving, then a plaza with
+    // markings.
     eachBucket((z, d, key) => {
       const tri = (lv: number) => getDecalVariants(z, d, lv)
         .map(b => { const g = b(); const n = triangleCount(g); g.dispose(); return n; })
@@ -226,8 +229,8 @@ describe('decal geometry', () => {
   });
 
   it('should give industrial the darkest forecourt and commercial a paler one', () => {
-    // 柏油廠區與磚鋪商業街是兩種完全不同的觀感。兩者若一樣，
-    // 這一層就只是替所有分區加了同一塊灰色地毯。
+    // An asphalt industrial site and a brick shopping street look nothing alike. Equal, this layer
+    // merely lays the same grey carpet under every zone.
     const meanShade = (z: number, d: Density) => {
       const geo = getDecalVariants(z, d, 3)[0]!();
       const col = geo.getAttribute('color');
