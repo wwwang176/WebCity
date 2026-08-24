@@ -8,30 +8,30 @@ import { getAirportDimensions, type Airport, type AirportSize }
 import type { TransportVehicleRenderData } from '../core/transport/collectTransportVehicles';
 
 /**
- * 展示區的飛機起降動畫。
+ * The showcase's aircraft arrival and departure animation.
  *
- * 展示區要有飛機動畫才比較得出來。比較的對象是**貼片** —— 飛機真的落在
- * 跑道上嗎、真的沿著滑行道走嗎、真的停進機位嗎。那三件事
- * 只有讓飛機真的動起來才看得出來，而 BUG-239 正是靠肉眼以外的方式抓到的。
+ * Aircraft animation is what makes the comparison possible, and what it is compared against is the
+ * **painted markings**: does the aircraft land on the runway, follow the taxiway, park at the gate.
+ * Those three are visible only with the aircraft actually moving.
  *
- * 它跑的是**遊戲裡同一個** `AirplaneAnimator`，不是另寫一份：另寫一份的話，
- * 展示區看到的對齊與遊戲裡的對齊會是兩件事，而展示區的唯一價值就是「這裡
- * 看到的就是出貨的東西」。
+ * It runs the **same** `AirplaneAnimator` the game does rather than a second copy: with a second
+ * copy the alignment seen in the showcase and the alignment in game are two different things, and
+ * the showcase's only value is that what it shows is what ships.
  */
 
-/** 展示區裡一座機場的位置。 */
+/** One airport's position in the showcase. */
 export interface PlaneField {
   size: AirportSize;
-  /** 佔地中心（格），與 `civicLayout` 的 slot 同一套座標。 */
+  /** The footprint's centre in cells, the same coordinates as `civicLayout`'s slots. */
   x: number;
   z: number;
 }
 
 /**
- * 一次最多同時畫幾架。
+ * How many aircraft may be drawn at once.
  *
- * `AirplaneAnimator` 的 `MAX_ACTIVE` 是小 1、中 1、大 2 —— 三座加起來 4。
- * 開到 8 是為了讓池子永遠不必在飛行中重建（重建會讓飛機閃一下）。
+ * `AirplaneAnimator`'s `MAX_ACTIVE` is 1 small, 1 medium and 2 large, 4 across the three airports.
+ * The pool is 8 so that it never has to be rebuilt mid-flight, which makes the aircraft flicker.
  */
 const POOL_SIZE = 8;
 
@@ -44,9 +44,9 @@ export class ShowcasePlanes {
 
   constructor(private readonly scene: THREE.Scene) {
     const material = createVehicleMaterial();
-    // 機身與尾翼合併成一份 —— 它們一起動，分開只是多一次 draw call。
-    // 幾何與**停在停機坪上的那幾架**是同一份（`civicVehicleGeometry`），
-    // 所以天上飛的與地上停的塗裝一致。
+    // The fuselage and tail are merged into one: they move together, and separating them only costs
+    // a draw call. The geometry is the same as the **aircraft parked on the apron**
+    // (`civicVehicleGeometry`), so those in the air and those on the ground share a livery.
     const geo = civicVehicleGeometry('airplane');
     for (let i = 0; i < POOL_SIZE; i++) {
       const mesh = new THREE.Mesh(geo, material);
@@ -59,11 +59,11 @@ export class ShowcasePlanes {
   }
 
   /**
-   * 設定這一輪要跑動畫的機場。
+   * Sets which airports run animations this round.
    *
-   * `AirplaneAnimator` 從 `airport.x + (w − 1) / 2` 算佔地中心（`airport.x`
-   * 是左上角的格索引），所以這裡要反推回去 —— 直接把 slot 的中心填進 `x`
-   * 的話，飛機會整批偏掉半座機場。
+   * `AirplaneAnimator` derives the footprint's centre as `airport.x + (w - 1) / 2`, where `airport.x`
+   * is the top-left cell index, so the value is converted back here. Putting a slot's centre straight
+   * into `x` offsets every aircraft by half an airport.
    */
   setFields(fields: readonly PlaneField[]): void {
     this.airports = fields.map((f, id): Airport => {
@@ -75,13 +75,13 @@ export class ShowcasePlanes {
         y: f.z - (h - 1) / 2,
         size: f.size,
         rotation: 0,
-        // 展示區沒有模擬，這四個值只是為了滿足型別。
+        // The showcase has no simulation; these four values only satisfy the type.
         noisePollution: 0, touristsPerTick: 0, cargoPerTick: 0, operatingCost: 0,
       };
     });
   }
 
-  /** 推進一幀。`dt` 是秒。 */
+  /** Advances one frame. `dt` is in seconds. */
   update(dt: number): void {
     this.out.length = 0;
     this.animator.update(dt, 1, this.system, this.out);
@@ -94,8 +94,8 @@ export class ShowcasePlanes {
       }
       mesh.visible = true;
       mesh.position.set(v.x, v.altitude ?? 0.09, v.y);
-      // 與 `VehicleRenderer` 同一套：先繞 y 轉航向，再在**局部**空間套
-      // roll（繞 x）與 pitch（繞 z）。順序反了的話爬升中的飛機會側著飛。
+      // The same order as `VehicleRenderer`: the heading about y first, then roll (about x) and
+      // pitch (about z) in **local** space. Reversed, a climbing aircraft flies on its side.
       mesh.rotation.set(0, 0, 0);
       mesh.rotateY(v.heading);
       if (v.roll) mesh.rotateX(v.roll);
@@ -105,7 +105,7 @@ export class ShowcasePlanes {
     }
   }
 
-  /** 清掉場上的飛機（切換檢視模式時）。 */
+  /** Clears the aircraft from the scene, on a change of view mode. */
   clear(): void {
     this.airports = [];
     this.out.length = 0;

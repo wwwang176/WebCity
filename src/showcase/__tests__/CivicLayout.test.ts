@@ -6,23 +6,24 @@ import { civicTypesDone } from '../../renderer/geometry/civic/registry';
 import { getInfraConfig, type InfraType } from '../../core/building/InfraConfig';
 
 /**
- * 展示區把**全部**公共建築一次排出來。
+ * The showcase lays **every** civic building out at once.
  *
- * 公共建築模式直接把全部一起顯示出來。逐一切換的問題不只是麻煩 —— 十九種建築的**相互關係**（顏色分不分
- * 得開、高度差合不合理、街道家具的密度一不一致）只有並排時看得出來，而那
- * 正是這次改造要驗收的東西。
+ * Switching through them one at a time is not merely tedious: the **relationships** among the
+ * nineteen — whether the colours separate, whether the height differences are reasonable, whether
+ * the street furniture's density is consistent — are visible only side by side, and they are exactly
+ * what needs reviewing.
  */
 
 /**
- * 一份混了各種尺寸、跨好幾列的清單。
+ * A list mixing sizes and spanning several rows.
  *
- * **不是** `civicTypesDone()`：那張表是逐批填滿的，一開始只有一棟 —— 而
- * 「兩兩不重疊」「列與列之間留白」在單筆資料上是空的敘述。實際踩到過：
- * 把換行的 `rowZ += rowDepth + GAP` 改成 `rowZ += GAP`（列與列直接壓在
- * 一起）時，全部測試仍然是綠的。
+ * **Not** `civicTypesDone()`: that table is filled in batches and began with a single building, and
+ * "no two overlap" and "rows are separated" say nothing about one entry. Changing the wrap's
+ * `rowZ += rowDepth + GAP` to `rowZ += GAP`, stacking the rows straight on top of each other, left
+ * every test green.
  *
- * 深度刻意不一致（6 / 3 / 1 / 4 …）：同一列裡最深的那一棟決定下一列從哪裡
- * 開始，用清一色 2×2 的清單測不出這件事。
+ * The depths are deliberately uneven (6 / 3 / 1 / 4 ...): the deepest building in a row decides
+ * where the next row starts, which a list of uniform 2x2 entries cannot test.
  */
 const MIXED: InfraType[] = [
   'airport_l', 'airport_l', 'police', 'hospital', 'bus_stop',
@@ -35,7 +36,7 @@ const foot = (t: InfraType) => {
   return { w: c.width, h: c.height };
 };
 
-/** 一棟建築佔的矩形（格）。 */
+/** The rectangle one building occupies, in cells. */
 function rect(slot: { type: InfraType; x: number; z: number }) {
   const f = foot(slot.type);
   return {
@@ -44,7 +45,7 @@ function rect(slot: { type: InfraType; x: number; z: number }) {
   };
 }
 
-/** 兩兩之間的最小留白（負值 = 重疊多少）。 */
+/** The smallest clearance between any pair; negative is the amount of overlap. */
 function closestPair(types: InfraType[]): { gap: number; who: string } {
   const slots = civicLayout(types);
   let gap = Infinity;
@@ -52,7 +53,8 @@ function closestPair(types: InfraType[]): { gap: number; who: string } {
   for (let i = 0; i < slots.length; i++) {
     for (let j = i + 1; j < slots.length; j++) {
       const a = rect(slots[i]!), b = rect(slots[j]!);
-      // 兩軸取大：只要有一軸分得開，兩個矩形就分得開。
+      // The larger of the two axes: two rectangles are separated as soon as one axis separates
+      // them.
       const d = Math.max(
         Math.max(a.x0 - b.x1, b.x0 - a.x1),
         Math.max(a.z0 - b.z1, b.z0 - a.z1),
@@ -71,36 +73,36 @@ describe.each([
   ['混合尺寸的合成清單', () => MIXED],
 ])('公共建築的排版（%s）', (_label, listOf) => {
   it('should place every type exactly once, in the order given', () => {
-    // 少一棟的話畫面上只表現為「我做的那棟沒出現」—— 而那與「還沒做」
-    // 長得一模一樣。
+    // One missing shows only as the building someone just made not appearing, which looks exactly
+    // like not having made it.
     expect(civicLayout(listOf()).map(s => s.type)).toEqual(listOf());
   });
 
   it('should never let two buildings overlap', () => {
-    // 這是排版唯一真正的正確性條件。重疊的兩棟會互相穿插，而且沒有任何
-    // 錯誤訊息 —— 看起來像某一棟自己畫壞了。
+    // The layout's one real correctness condition. Two overlapping buildings interpenetrate with no
+    // error at all, and it reads as one of them being drawn wrong.
     const { gap, who } = closestPair(listOf());
     expect(gap, `${who} 重疊`).toBeGreaterThan(0);
   });
 
   it('should keep a walkable gap between neighbours', () => {
-    // 只測「不重疊」的話，把間距寫成 0 也會通過 —— 而十九棟貼在一起是
-    // 一整片沒有邊界的建築群，分不出哪裡是哪一棟的基地。
+    // Testing only for no overlap, a gap of 0 would pass — and nineteen buildings touching form one
+    // mass with no boundaries, where no plot can be told from the next.
     const { gap, who } = closestPair(listOf());
     expect(gap, `${who} 之間沒有留白`).toBeGreaterThanOrEqual(CIVIC_LAYOUT_GAP - 1e-9);
   });
 
   it('should wrap into rows instead of one endless line', () => {
-    // 十九棟排成一列的話總長超過 60 格 = 720 m，鏡頭要拉到看不見細節的
-    // 高度才裝得下。
+    // Nineteen in one row run past 60 cells = 720 m, and the camera has to pull back beyond any
+    // visible detail to fit them.
     const rs = civicLayout(listOf()).map(rect);
     const width = Math.max(...rs.map(r => r.x1)) - Math.min(...rs.map(r => r.x0));
     expect(width).toBeLessThanOrEqual(CIVIC_LAYOUT_ROW_LIMIT + 1e-9);
   });
 
   it('should centre the whole layout on the origin', () => {
-    // 展示區的鏡頭預設對著原點。整批偏在正象限的話，開啟時看到的是空地
-    // ——「矩陣模式」就踩過這個坑。
+    // The showcase's camera points at the origin by default. With the whole set off in the positive
+    // quadrant it opens on empty ground, which the matrix mode hit.
     const rs = civicLayout(listOf()).map(rect);
     const cx = (Math.min(...rs.map(r => r.x0)) + Math.max(...rs.map(r => r.x1))) / 2;
     const cz = (Math.min(...rs.map(r => r.z0)) + Math.max(...rs.map(r => r.z1))) / 2;
@@ -111,16 +113,16 @@ describe.each([
 
 describe('公共建築的排版', () => {
   it('should start a new row when the next building would not fit', () => {
-    // 兩座大型機場並排是 9 + 2 + 9 = 20 格，超過上限 —— 必須換行，
-    // 而不是硬擠出去。
+    // Two large airports side by side are 9 + 2 + 9 = 20 cells, past the limit: they wrap rather
+    // than being forced out.
     const slots = civicLayout(['airport_l', 'airport_l']);
     expect(slots[0]!.z, '第二棟沒有換行').not.toBeCloseTo(slots[1]!.z, 6);
   });
 
   it('should keep the batch order so related buildings stand together', () => {
-    // 順序取自 `civicTypesDone()`（= `CIVIC_MODELS` 的宣告順序，逐批排的）。
-    // 按大小重排的話，警局與消防局不會相鄰 —— 而「藍的紅的分不分得開」
-    // 正是要並排才看得出來的東西。
+    // The order comes from `civicTypesDone()`, which is `CIVIC_MODELS`' declaration order and groups
+    // related kinds together. Sorted by size, the police and fire stations are not adjacent, and
+    // whether their blue and red separate is exactly what side-by-side placement shows.
     const asked: InfraType[] = ['park', 'airport_l', 'police'];
     expect(civicLayout(asked).map(s => s.type)).toEqual(asked);
   });
@@ -131,7 +133,8 @@ describe('公共建築的排版', () => {
   });
 
   it('should measure the extent including the footprints, not just the centres', () => {
-    // 只量中心的話，邊緣那一棟會有一半在畫面外 —— 而鏡頭就是照這個數字拉的。
+    // Measured on centres alone, half of the outermost building falls off screen — and this number
+    // is what the camera is framed by.
     const slots = civicLayout(['airport_l']);
     expect(civicLayoutExtent(slots)).toEqual({ w: 9, h: 6 });
   });

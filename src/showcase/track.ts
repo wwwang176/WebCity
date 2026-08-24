@@ -4,30 +4,32 @@ import { RailType, TrackDirection } from '../core/rail/types';
 import { TrackRenderer } from '../renderer/TrackRenderer';
 
 /**
- * 展示區裡穿過火車站的那條**真的**軌道。
+ * The **real** track running through the train station in the showcase.
  *
- * 火車站蓋在軌道**上**：`canPlaceTransportStop` 要求那一格 `railType ≠ 0`，
- * 而 `placeTransportStopOnGrid` 只改 buildingId／reserved／zoneType —— 軌道
- * 原封不動留在格子裡，`TrackRenderer` 照樣在同一格畫出碴床、枕木與鋼軌，
- * 貼著格心。所以遊戲裡的鋼軌本來就貫穿車站。
+ * A station is built **on** track: `canPlaceTransportStop` requires `railType != 0` on the cell, and
+ * `placeTransportStopOnGrid` changes only buildingId, reserved and zoneType — the track stays
+ * untouched in the cell and `TrackRenderer` still draws the ballast, sleepers and rails there, hugging
+ * the cell centre. So in game the rails do run through the station.
  *
- * 看不到的是**展示區**：那一頁只放建築，沒有 `TrackRenderer`，於是車站中間
- * 那條走廊是一片空的灰帶 —— 而那讓「這一格不畫自己的鐵軌」（BUG-241）
- * 看起來像是漏畫的。
+ * What lacks them is the **showcase**: that page holds buildings only, with no `TrackRenderer`, so
+ * the corridor through the middle of the station is an empty grey band — which makes the station not
+ * drawing rails of its own (BUG-241) look like an omission.
  *
- * 補的是展示區，不是建築：這一格仍然不准自己畫鋼軌，兩份鋼軌永遠對不齊。
+ * The showcase is what gets the track, not the building: the station still may not draw rails of its
+ * own, as two sets of rails would never line up.
  */
 
 /**
- * 鋪幾格。奇數，車站落在正中央那一格。
+ * How many cells of track are laid. Odd, so the station falls on the middle cell.
  *
- * 三格是下限也是上限：兩端各多一格才看得出軌道**穿過去**而不是停在佔地
- * 邊界，而展示區的間距只有 `CIVIC_LAYOUT_GAP`（2 格）—— 再長一格，
- * 連同兩端的延伸段就會有一條鐵軌從隔壁那一棟的屋頂穿出來。
+ * Three is both the floor and the ceiling: one extra cell at each end is what shows the track running
+ * **through** rather than stopping at the footprint's edge, and the showcase's spacing is only
+ * `CIVIC_LAYOUT_GAP`, 2 cells — one cell longer and the extensions send a rail out through the roof
+ * of the building next door.
  */
 export const TRACK_CELLS = 3;
 
-/** 一條東西向的直線軌道。中間那一格就是車站站的地方。 */
+/** A straight east-west track. The middle cell is where the station stands. */
 export function showcaseTrackGrid(): Grid {
   const grid = new Grid(TRACK_CELLS, 1);
   for (let x = 0; x < TRACK_CELLS; x++) {
@@ -40,10 +42,11 @@ export function showcaseTrackGrid(): Grid {
 }
 
 /**
- * 一組畫好的軌道，中間那一格對準 `slot`。
+ * A drawn length of track whose middle cell lines up with `slot`.
  *
- * `TrackRenderer` 直接拿格座標當世界座標（格心在整數上），所以整組要往回
- * 位移半條線，中間那一格才落在建築的位置上。
+ * `TrackRenderer` uses cell coordinates as world coordinates directly, with cell centres on integers,
+ * so the whole group is shifted back by half its length to put the middle cell at the building's
+ * position.
  */
 export function createShowcaseTrack(
   slot: { x: number; z: number } = { x: 0, z: 0 },

@@ -6,17 +6,19 @@ import { CIVIC_LAYOUT_GAP } from '../civicLayout';
 import { trainStationPlan } from '../../renderer/geometry/civic/models/transit';
 
 /**
- * 展示區要畫**真的**那條軌道。
+ * The showcase draws the **real** track.
  *
- * 火車站蓋在軌道**上**：`canPlaceTransportStop` 要求那一格 `railType ≠ 0`，
- * 而 `placeTransportStopOnGrid` 只改 buildingId／reserved／zoneType —— 軌道
- * 原封不動留在格子裡，`TrackRenderer` 照樣在同一格畫出碴床、枕木與鋼軌。
+ * A station is built **on** track: `canPlaceTransportStop` requires `railType != 0` on the cell, and
+ * `placeTransportStopOnGrid` changes only buildingId, reserved and zoneType — the track stays
+ * untouched in the cell and `TrackRenderer` still draws the ballast, sleepers and rails there.
  *
- * 所以遊戲裡的鋼軌本來就貫穿車站。看不到的是**展示區**：那一頁只放建築，
- * 沒有 `TrackRenderer`，於是車站中間那條走廊是一片空的灰帶 —— 而那讓
- * 「這一格不畫自己的鐵軌」（BUG-241）看起來像是漏畫。
+ * So in game the rails do run through the station. What lacks them is the **showcase**: that page
+ * holds buildings only, with no `TrackRenderer`, so the corridor through the middle of the station is
+ * an empty grey band — which makes the station not drawing rails of its own (BUG-241) look like an
+ * omission.
  *
- * 補的是展示區，不是建築：這一格仍然不准自己畫鋼軌。
+ * The showcase is what gets the track, not the building: the station still may not draw rails of its
+ * own.
  */
 describe('展示區的軌道', () => {
   const mid = (TRACK_CELLS - 1) / 2;
@@ -27,18 +29,20 @@ describe('展示區的軌道', () => {
     expect(cell.railType, '中間那一格沒有軌道').toBe(RailType.STANDARD);
     expect(cell.railFlags & TrackDirection.WEST, '軌道沒有往西接').toBeTruthy();
     expect(cell.railFlags & TrackDirection.EAST, '軌道沒有往東接').toBeTruthy();
-    // 只讓一個方向。十字的話車站的走廊要讓出兩條，四個角各剩 4 m。
+    // One direction only. A crossing would take two corridors out of the station and leave 4 m in
+    // each of the four corners.
     expect(cell.railFlags & TrackDirection.NORTH, '軌道還往北接').toBe(0);
     expect(cell.railFlags & TrackDirection.SOUTH, '軌道還往南接').toBe(0);
   });
 
   it('should run the track out past both ends of the building', () => {
-    // 只鋪車站那一格的話，軌道會在佔地邊界斷掉 —— 那讀起來是一段月台旁邊的
-    // 裝飾，不是一條穿過去的線。
+    // Laid on the station's cell alone, the track stops at the footprint's edge and reads as
+    // decoration beside a platform rather than a line running through.
     expect(TRACK_CELLS, '軌道只有車站那一格').toBeGreaterThanOrEqual(3);
-    // 但也不能鋪太長：展示區的間距是 `CIVIC_LAYOUT_GAP`（2 格），所以隔壁
-    // 那一棟的邊緣離車站的格心只有 2.5 格 —— 軌道連同兩端的延伸段
-    // （`EDGE_EXTEND`，各 0.5 格）壓過去的話，會有一條鐵軌從別人的屋頂穿出來。
+    // Nor too long: the showcase's spacing is `CIVIC_LAYOUT_GAP`, 2 cells, so the neighbouring
+    // building's edge is only 2.5 cells from the station's cell centre — and track reaching past that
+    // with its end extensions (`EDGE_EXTEND`, 0.5 cells each) sends a rail out through someone's
+    // roof.
     const reach = TRACK_CELLS / 2 + 0.5;
     expect(reach, `軌道伸出 ${reach} 格，會壓到隔壁`)
       .toBeLessThan(1 / 2 + CIVIC_LAYOUT_GAP);
@@ -52,7 +56,8 @@ describe('展示區的軌道', () => {
   it('should centre the track on the building', () => {
     const group = createShowcaseTrack();
     expect(group.children.length, '沒有畫出任何軌道').toBeGreaterThan(0);
-    // 格心在整數座標上，所以整組要往回位移半條線，中間那一格才落在原點。
+    // Cell centres are on integer coordinates, so the whole group shifts back by half its length to
+    // put the middle cell on the origin.
     expect(group.position.x, '軌道沒有對準建築').toBeCloseTo(-mid, 9);
     expect(group.position.z, '軌道偏離了格心').toBeCloseTo(0, 9);
   });
@@ -64,7 +69,8 @@ describe('展示區的軌道', () => {
   });
 
   it('should still leave the corridor to the real track', () => {
-    // 展示區畫得出來，不代表這一格可以自己畫。兩份鋼軌永遠對不齊。
+    // The showcase drawing it does not license the station to draw its own: two sets of rails would
+    // never line up.
     expect(trainStationPlan.props.filter(v => v.tag === 'rail').length,
       '火車站又自己畫了鋼軌').toBe(0);
     const corridor = trainStationPlan.decals.find(d => d.tag === 'corridor')!;
