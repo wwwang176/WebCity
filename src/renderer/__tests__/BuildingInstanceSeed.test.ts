@@ -10,9 +10,10 @@ import { Grid } from '../../core/grid/Grid';
 import { ZoneType } from '../../core/grid/types';
 
 /**
- * InstancedMesh 的移除是 swap-with-last，所以每次移除都在搬動別人的索引。
- * 桶的數量在第二階段會從 17 成長到 144，索引搬錯的機會跟著變多，而畫面上
- * 只會表現成「某棟樓忽然變成別的樣子」，很難追。這裡把不變式釘住。
+ * An InstancedMesh removes by swap-with-last, so every removal moves somebody else's index. The
+ * bucket count grows from 17 to 144, multiplying the chances of a mis-moved index, and on screen it
+ * shows only as "that building suddenly looks like something else", which is hard to track down.
+ * This pins the invariants.
  */
 const ZONE = ZoneType.RESIDENTIAL_LOW;
 
@@ -21,7 +22,7 @@ interface Internals {
   variantMeshes: Map<string, THREE.InstancedMesh>;
 }
 
-/** 一個真的、空的 Grid —— 比假物件安全，也不需要 `as never`。 */
+/** A real, empty Grid: safer than a fake and needing no `as never`. */
 function freshRenderer(): { renderer: BuildingRenderer; internals: Internals } {
   const renderer = new BuildingRenderer();
   renderer.build(new THREE.Scene(), new Grid(1, 1));
@@ -38,8 +39,9 @@ function expectedAppearance(x: number, y: number) {
 
 describe('instance bookkeeping', () => {
   it('should put every building in the bucket appearanceOf names', () => {
-    // 掃一整片而不是抽一格：住宅低密度只有三個變體，任何一格都有三分之一
-    // 的機會讓舊雜湊與新雜湊剛好選到同一個，單格斷言會巧合通過。
+    // It sweeps an area rather than sampling one cell: low-density residential has three variants, so
+    // any one cell has a one-in-three chance of the old and new hashes picking the same one, and a
+    // single-cell assertion passes by coincidence.
     const { renderer, internals } = freshRenderer();
     for (let x = 0; x < 10; x++) {
       for (let y = 0; y < 10; y++) renderer.addBuilding(x, y, ZONE, 'LOW', 1, false);
@@ -65,7 +67,7 @@ describe('instance bookkeeping', () => {
         alive.push([x, y]);
       }
     }
-    // 移除三分之一，逼出 swap-with-last
+    // Remove a third, forcing swap-with-last.
     for (let i = alive.length - 1; i >= 0; i -= 3) {
       const [x, y] = alive[i]!;
       renderer.removeBuilding(x, y);
@@ -103,15 +105,15 @@ describe('aSeed', () => {
     const attr = internals.variantMeshes.get(entry.key)!.geometry.getAttribute('aSeed');
     const expected = expectedAppearance(6, 2).facadeSeed;
 
-    // aSeed.x 不再是 facadeSeed[0]：樓層節奏由變體決定，好讓窗戶橫列對齊
-    // 真正的樓板線（階段 2C-1）。相位與材質偏好仍然逐格。
+    // aSeed.x is not facadeSeed[0]: the floor rhythm comes from the variant so the window rows align
+    // with the real floor lines. Phase and material preference stay per cell.
     expect(attr.getY(entry.idx)).toBeCloseTo(expected[1], 6);
     expect(attr.getZ(entry.idx)).toBeCloseTo(expected[2], 6);
   });
 
   it('should follow the building when swap-with-last moves it', () => {
-    // aOccupancy 已經有搬移邏輯，aSeed 漏搬的話，被搬動的那棟樓會戴上
-    // 另一棟樓的立面 —— 而且只在玩家拆除建築之後才發生。
+    // aOccupancy already has move logic; with aSeed left behind, the moved building wears another
+    // building's facade — and only after the player demolishes something.
     const { renderer, internals } = freshRenderer();
 
     const cells: Array<[number, number]> = [];
@@ -127,16 +129,16 @@ describe('aSeed', () => {
       const entry = internals.positionToInstance.get(`${x},${y}`)!;
       const attr = internals.variantMeshes.get(entry.key)!.geometry.getAttribute('aSeed');
       const expected = expectedAppearance(x, y).facadeSeed;
-      // aSeed.x 不再是 facadeSeed[0]：樓層節奏由變體決定，好讓窗戶橫列對齊
-      // 真正的樓板線（階段 2C-1）。相位與材質偏好仍然逐格。
+      // aSeed.x is not facadeSeed[0]: the floor rhythm comes from the variant so the window rows
+      // align with the real floor lines. Phase and material preference stay per cell.
       expect(attr.getY(entry.idx), `aSeed.y wrong at ${x},${y}`).toBeCloseTo(expected[1], 6);
       expect(attr.getZ(entry.idx), `aSeed.z wrong at ${x},${y}`).toBeCloseTo(expected[2], 6);
     }
   });
 
   it('should hand the shader the floor height its variant was built with', () => {
-    // aSeed.x 以前是逐格雜湊 —— 窗戶橫列與樓板各畫各的，最上面那一排窗會被
-    // 屋頂切掉一半，而那不會有任何東西報錯。
+    // As a per-cell hash, aSeed.x leaves the window rows and the floors drawn independently and the
+    // top row of windows cut in half by the roof, with nothing reporting it.
     const scene = new THREE.Scene();
     const renderer = new BuildingRenderer();
     renderer.build(scene, new Grid(1, 1));
@@ -151,7 +153,7 @@ describe('aSeed', () => {
     const seed = mesh.geometry.getAttribute('aSeed') as THREE.InstancedBufferAttribute;
     const rhythm = (seed.array as Float32Array)[entry.idx * 3]!;
 
-    // shader 的 floorHeight = mix(MIN, MAX, aSeed.x)
+    // The shader's floorHeight = mix(MIN, MAX, aSeed.x).
     const shaderFloor = FLOOR_HEIGHT_UNITS.MIN
       + (FLOOR_HEIGHT_UNITS.MAX - FLOOR_HEIGHT_UNITS.MIN) * rhythm;
     const vi = Number(entry.key.split('_')[3]);

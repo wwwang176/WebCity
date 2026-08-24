@@ -8,15 +8,15 @@ import { placeCivicPlan } from '../geometry/civic/place';
 import type { InfraType } from '../../core/building/InfraConfig';
 
 /**
- * 十九種公共建築在**遊戲裡**也走同一條路。
+ * All nineteen civic buildings take the same path **in the game** too.
  *
- * 它們原本只在 showcase 看得到：遊戲裡的 `BuildingRenderer` 走的是另一條
- * 完全獨立的路徑 —— 手寫的 `MeshLambertMaterial` 加實心 `BoxGeometry`，
- * 沒有窗戶、沒有夜間亮窗、沒有自發光（BUG-238）。同一棟建築在兩個地方
- * 長得不一樣，而「展示區看到的就是出貨的東西」是展示區唯一的價值。
+ * Visible only in the showcase, the game's `BuildingRenderer` takes a completely separate path:
+ * hand-written `MeshLambertMaterial` over solid `BoxGeometry`, with no windows, no lit windows at
+ * night and no emissive (BUG-238). One building looks different in the two places, and "what the
+ * showcase shows is what ships" is the showcase's only value.
  *
- * 這一組測的是**接上去了**，不是幾何本身 —— 幾何的驗收在
- * `civic/__tests__/CivicPlans.test.ts` 與各批的 model 測試裡。
+ * This group tests **that it is wired in**, not the geometry itself, whose acceptance lives in
+ * `civic/__tests__/CivicPlans.test.ts` and each batch's model tests.
  */
 
 const TYPES = civicTypesDone();
@@ -29,7 +29,8 @@ function meshesOf(root: THREE.Object3D): THREE.Mesh[] {
 
 describe('公共建築的遊戲內模型', () => {
   it('should have a plan for every infrastructure type', () => {
-    // 少一種就是那一種在遊戲裡仍然是一個手寫的方塊，而畫面上它「有東西」。
+    // One missing type is one still drawn in the game as a hand-written box, which on screen looks
+    // like something is there.
     expect(TYPES.length, '還有種類沒有 plan').toBe(19);
   });
 
@@ -44,11 +45,11 @@ describe('公共建築的遊戲內模型', () => {
   });
 
   /**
-   * 逐實例屬性要真的寫進去。
+   * The per-instance attributes are actually written.
    *
-   * 非實例化的 `Mesh` 上那些 attribute **完全不存在**，而 WebGL 對沒有繫結的
-   * attribute 一律餵 0 —— `aOccupancy = 0` 的意思是「沒有人」，所以一扇燈都
-   * 不會亮。這正是 BUG-238 的現象，而它不會報錯。
+   * On a non-instanced `Mesh` those attributes **do not exist at all**, and WebGL feeds 0 for every
+   * unbound attribute: `aOccupancy = 0` means "nobody here", so not one window lights. That is
+   * BUG-238's symptom, and it reports nothing.
    */
   it.each(TYPES)('should stamp the attributes the shader reads on %s', (type) => {
     const group = new THREE.Group();
@@ -75,9 +76,9 @@ describe('公共建築的遊戲內模型', () => {
   });
 
   it('should keep the ground under the building, not float it', () => {
-    // 舊路徑的幾何底部寫在 0.05（路面高度），所以每一棟都浮空 0.6 m，
-    // 而 `snapToGround` 是為了那件事存在的。plan 的幾何自己就貼著地面，
-    // 所以對齊之後不該再被推上去。
+    // The older path wrote geometry bottoms at 0.05, the road height, floating every building 0.6 m
+    // up, which is why `snapToGround` exists. A plan's geometry already sits on the ground, so
+    // aligning must not push it up again.
     const scene = new THREE.Scene();
     new BuildingRenderer().addInfrastructure(scene, 0, 0, 'police', 0);
     const group = scene.children.find(c => c instanceof THREE.Group) as THREE.Group;
@@ -88,15 +89,15 @@ describe('公共建築的遊戲內模型', () => {
 });
 
 /**
- * 高亮不准 clone 材質。
+ * Highlighting must not clone materials.
  *
- * 舊的 `applyTintToGroup` 只認得 `MeshLambertMaterial` 與 `MeshBasicMaterial`
- * —— 公共建築改走 `ShaderMaterial` 之後兩個分支都不中，高亮會**靜默失效**。
- * 而就算補上第三個分支也還是錯的：clone 出來的材質收不到 `uTime`，被高亮過
- * 的那一棟窗戶會凍結在某個亮燈狀態，而且再也不會動。
+ * `applyTintToGroup` recognises `MeshLambertMaterial` and `MeshBasicMaterial` only, so once civic
+ * buildings use a `ShaderMaterial` neither branch matches and highlighting **fails silently**. A
+ * third branch would still be wrong: a cloned material never receives `uTime`, and a highlighted
+ * building's windows freeze in one lit state and never move again.
  *
- * 建築 shader 本來就吃 `aHighlight` / `aHighlightColor`，分區建築走的就是
- * 那條路。公共建築照做即可 —— 不必碰材質。
+ * The building shader already reads `aHighlight` and `aHighlightColor`, which is the path zoned
+ * buildings take. Civic buildings do the same, and no material is touched.
  */
 describe('公共建築的高亮', () => {
   function setup() {
@@ -110,8 +111,8 @@ describe('公共建築的高亮', () => {
 
   it('should tint a civic building without cloning its material', () => {
     const { group, hm } = setup();
-    // 停放的車輛走 `MeshLambertMaterial`，它本來就是 clone 那條路 ——
-    // 這一條顧的是走建築 shader 的那幾層。
+    // Parked vehicles use `MeshLambertMaterial` and take the cloning path by design; this case
+    // guards the layers that use the building shader.
     const before = meshesOf(group).filter(m => m.material === getBuildingMaterial());
     expect(before.length, '這一棟沒有任何一層走建築 shader').toBeGreaterThan(0);
 

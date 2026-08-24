@@ -17,26 +17,27 @@ export const SCENE = {
   HEMISPHERE_GROUND: 0x556633,
   SHADOW_MAP_SIZE: 2048,
   /**
-   * 深度空間的偏移。**世界距離要乘上 (far - near)** —— 這是它最容易被低估
-   * 的地方：原本的 -0.0005 配上寫死的 near 1 / far 200，等於沿光軸推
-   * `0.0005 × 199 = 0.1 格 = 1.2 公尺`，而陰影因此在地面上退開 2 公尺以上
-   * （BUG-234 第一次只修了 normalBias，那一項其實只佔不到一成）。
+   * The offset in depth space. **A world distance takes it times (far - near)**, which is where it
+   * is most easily underestimated: -0.0005 with a hard-coded near 1 and far 200 pushes
+   * `0.0005 x 199 = 0.1 cells = 1.2 m` along the light axis, sending the shadow more than 2 m away
+   * on the ground. Fixing `normalBias` alone leaves that untouched, and it accounts for under a
+   * tenth of the offset.
    *
-   * 現在 near/far 每幀跟著陰影相機收（見 `shadowFit.shadowDepthRange`），
-   * 而這個值本身也降到 three.js 文件建議的量級以下。防 acne 的工作交給
-   * `normalBias` —— 那是比較新、也比較不會造成 peter-panning 的做法。
+   * near and far now shrink with the shadow camera each frame (see `shadowFit.shadowDepthRange`),
+   * and this value itself is below the magnitude three.js's documentation suggests. Preventing acne
+   * is `normalBias`'s job, which is newer and far less prone to peter-panning.
    */
   SHADOW_BIAS: -0.00002,
   /**
-   * 接收面沿法線推出去的距離，單位是**世界單位**（1 單位 = 12 公尺）。
+   * How far a receiving surface is pushed along its normal, in **world units** where 1 unit is 12 m.
    *
-   * 原本是 0.02 —— three.js 範例的常見值，但那些場景是 1 單位 = 1 公尺，
-   * 在那裡它等於 2 公分。搬到這裡就是 **24 公分**，而地面法線朝上，陰影
-   * 因此沿地面平移 `0.24 / tan(48.5°) ≈ 21 公分`：比路燈柱子本身
-   * （直徑 14–18 公分）還粗，所以陰影看起來與燈桿底部分家（BUG-234）。
+   * 0.02 is a common value in three.js examples, but those scenes use 1 unit per metre, where it is
+   * 2 cm. Here it is **24 cm**, and with the ground's normal pointing up the shadow slides along it
+   * by `0.24 / tan(48.5 degrees)` ~ 21 cm: wider than a street lamp's post itself, which is 14 to
+   * 18 cm across, so the shadow visibly separates from the post's foot (BUG-234).
    *
-   * 0.005 = 6 公分，地面位移約 5 公分。不能歸零 —— 那會讓平坦地面長出
-   * 自我遮蔽的條紋（shadow acne）。
+   * 0.005 is 6 cm, for a ground offset of about 5 cm. It cannot be zero, which grows self-shadowing
+   * stripes — shadow acne — across flat ground.
    */
   SHADOW_NORMAL_BIAS: 0.005,
   SHADOW_NEAR: 1,
@@ -209,10 +210,12 @@ export class SceneManager {
   }
 
   /**
-   * 鏡頭的完整狀態:看向哪一格、畫面裝得下幾格、方位角與俯角。
+   * The camera's complete state: which cell it looks at, how many cells fit on screen, and its
+   * azimuth and elevation.
    *
-   * `size` 是**正交視錐的高度**，不是相機距離 —— 這是正交投影，`cameraDistance` 改了
-   * 幾乎不影響畫面大小，只影響裁切平面。
+   * `size` is the **orthographic frustum's height**, not a camera distance: this is an orthographic
+   * projection, and changing `cameraDistance` barely affects the visible size and only moves the
+   * clipping planes.
    */
   getCameraState(): { x: number; y: number; size: number; angle: number; elevation: number } {
     const t = this.cameraTarget;
@@ -226,10 +229,10 @@ export class SceneManager {
   }
 
   /**
-   * 設鏡頭。省略的項目不動。
+   * Sets the camera. Omitted fields are left alone.
    *
-   * 夾限刻意跟玩家自己操作時一樣（`zoomCamera` 的 3~200、`orbitCamera` 的
-   * π/18 ~ 4π/9）—— 程式拍得到的角度，玩家自己也拍得到。
+   * The clamps deliberately match what a player's own controls allow — `zoomCamera`'s 3 to 200 and
+   * `orbitCamera`'s pi/18 to 4pi/9 — so any angle a program can frame is one a player can reach.
    */
   setCameraState(t: { x?: number; y?: number; size?: number; angle?: number; elevation?: number }): void {
     if (t.size !== undefined) {
@@ -285,9 +288,10 @@ export class SceneManager {
     sc.top = padded;
     sc.bottom = -padded;
 
-    // 深度範圍也要跟著收。`shadow.bias` 是 [0, 1] 深度空間的值，世界距離是
-    // bias × (far - near) —— 範圍開得越寬，陰影被推得離物體越遠。寫死的
-    // 1 / 200 給了 199 格 = 2388 公尺，而光源距焦點只有約 107 格。
+    // The depth range shrinks with it. `shadow.bias` is a value in [0, 1] depth space and a world
+    // distance is bias times (far - near): the wider the range, the further the shadow is pushed
+    // from its object. A hard-coded 1 / 200 gives 199 cells = 2388 m while the light is only about
+    // 107 cells from the focus.
     const { near, far } = shadowDepthRange(this.sunOffset.length(), padded);
     sc.near = near;
     sc.far = far;

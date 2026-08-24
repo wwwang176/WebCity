@@ -17,13 +17,13 @@ function eachBucket(fn: (z: number, d: Density, key: string) => void) {
 
 const LEVELS = [1, 2, 3] as const;
 const MID_FLOOR = (FLOOR_HEIGHT_UNITS.MIN + FLOOR_HEIGHT_UNITS.MAX) / 2;
-/** 高樓的桶。百分比咬得住，等級區間必須互不重疊。 */
+/** The tall buckets. A percentage bites there, so the levels' ranges must not overlap. */
 const TALL = ['2:HIGH', '4:HIGH', '6:HIGH'];
 
 describe('variantRng', () => {
   it('should give the same stream for the same variant', () => {
-    // 幾何在遊戲啟動時生成，存檔前後必須逐頂點相同 —— 亂數一旦洩漏，
-    // 讀檔之後整座城市會換一批形狀。
+    // Geometry is generated at game start and has to be vertex-identical across a save: any leaked
+    // randomness gives the whole city a new set of shapes after a load.
     const a = variantRng(1, 'LOW', 2, 3);
     const b = variantRng(1, 'LOW', 2, 3);
     for (let i = 0; i < 20; i++) expect(a()).toBe(b());
@@ -36,7 +36,8 @@ describe('variantRng', () => {
         for (let vi = 0; vi < VARIANT_COUNT; vi++) seen.add(variantRng(z, d, lv, vi)());
       }
     });
-    // 7 桶 × 3 等級 × 8 變體 = 168。撞值代表輸入的某個維度沒有進雜湊。
+    // 7 buckets x 3 levels x 8 variants = 168. A collision means one input dimension never reached
+    // the hash.
     expect(seen.size).toBe(168);
   });
 
@@ -52,7 +53,8 @@ describe('variantRng', () => {
 
 describe('heightOptions', () => {
   it('should never come back empty for any bucket in the table', () => {
-    // 空清單代表這個目標高度湊不出整數層 —— 生成器會沒有東西可挑。
+    // An empty list means this target height reaches no integer number of storeys, leaving the
+    // generator nothing to pick.
     eachBucket((z, d, key) => {
       for (const lv of LEVELS) {
         expect(heightOptions(M(TARGET_HEIGHTS_M[key]![lv - 1]!)).length,
@@ -62,8 +64,9 @@ describe('heightOptions', () => {
   });
 
   it('should widen the window to at least one storey', () => {
-    // 固定百分比在矮建築上會塌成一個選項：住宅低 L1 目標 5 m，±10% 只容得下
-    // 「2 層 × 2.64 m」。一層樓的容差才是整數層世界裡有意義的下限。
+    // A fixed percentage collapses to one option on low buildings: low-density residential L1 targets
+    // 5 m, and +/-10% holds only 2 storeys of 2.64 m. One storey is the meaningful lower bound in a
+    // world of integer storeys.
     const floors = new Set(heightOptions(M(5)).map(o => o.floors));
     expect(floors.size, '住宅低 L1 只有一種樓層數').toBeGreaterThanOrEqual(2);
   });
@@ -85,7 +88,7 @@ describe('heightOptions', () => {
   });
 
   it('should give the tall buckets real height variety', () => {
-    // 矮建築的變化來自屋頂與偏屋，高樓的變化就該來自樓層數。
+    // Low buildings vary through roofs and wings; tall ones should vary through floor count.
     for (const key of TALL) {
       for (const lv of LEVELS) {
         expect(heightOptions(M(TARGET_HEIGHTS_M[key]![lv - 1]!)).length,
@@ -102,8 +105,8 @@ describe('heightOptions', () => {
   });
 
   it('should still find options for a target far below one storey', () => {
-    // 容差有一層樓的下限，所以「1 層 × 最低樓高」永遠落得進去 —— 這條
-    // 確認那個下限真的兜得住極端輸入，而不是靠 fallback 補。
+    // The tolerance is floored at one storey, so one storey at the minimum height always fits. This
+    // confirms that floor really covers an extreme input rather than a fallback covering for it.
     const opts = heightOptions(M(0.5));
     expect(opts.length).toBeGreaterThan(0);
     for (const o of opts) expect(o.floors).toBe(1);
@@ -117,14 +120,14 @@ describe('dimensionsFor', () => {
   });
 
   it('should use every height option across the eight variants', () => {
-    // 「分層鋪滿」的意思：八個變體要覆蓋所有可行組合，不是隨機取樣。
-    // 隨機取樣有可能八個都擠在中間。
+    // "Spread in layers" means the eight variants cover every feasible combination rather than
+    // sampling at random, which can crowd all eight into the middle.
     eachBucket((z, d, key) => {
       for (const lv of LEVELS) {
         const opts = heightOptions(M(TARGET_HEIGHTS_M[key]![lv - 1]!));
-        // 用 (樓層數, 樓高) 而不是高度來認選項：不同的組合可以湊出同一個
-        // 高度（5 × 0.24 = 4 × 0.30），但 4 層 3.6 m 與 5 層 2.88 m 是兩棟
-        // 不同的建築 —— 窗戶橫列數不一樣。
+        // Options are identified by (floor count, storey height) rather than by height: different
+        // combinations reach the same height (5 x 0.24 = 4 x 0.30), but 4 storeys of 3.6 m and 5 of
+        // 2.88 m are two different buildings with different numbers of window rows.
         const used = new Set<string>();
         for (let vi = 0; vi < VARIANT_COUNT; vi++) {
           const dim = dimensionsFor(z, d, lv, vi)!;
@@ -137,7 +140,8 @@ describe('dimensionsFor', () => {
   });
 
   it('should keep the mean height climbing with level', () => {
-    // 等級階梯活在平均值裡，不在極值裡 —— 矮建築的容差寬到區間會重疊。
+    // The level ladder lives in the means rather than the extremes: on low buildings the tolerance is
+    // wide enough for the ranges to overlap.
     eachBucket((z, d, key) => {
       const mean = (lv: number) => {
         let s = 0;
@@ -150,7 +154,8 @@ describe('dimensionsFor', () => {
   });
 
   it('should keep the tall buckets levels from overlapping at all', () => {
-    // 高樓那一端百分比咬得住，所以階梯可以要求得更嚴：區間完全不重疊。
+    // At the tall end a percentage bites, so the ladder can be required more strictly: the ranges do
+    // not overlap at all.
     for (const key of TALL) {
       const [zs, ds] = key.split(':');
       const range = (lv: number) => {
@@ -166,8 +171,8 @@ describe('dimensionsFor', () => {
   });
 
   it('should keep the footprint inside the pedestrian envelope', () => {
-    // 越過包絡線就是行人穿牆（BUG-221）。這裡擋的是「基地本身」，
-    // 組合器把量體推出去的情形由組合器的測試擋。
+    // Crossing the envelope means pedestrians walk through walls (BUG-221). This guards the footprint
+    // itself; a composer pushing a mass out is guarded by the composers' tests.
     eachBucket((z, d, key) => {
       for (const lv of LEVELS) {
         for (let vi = 0; vi < VARIANT_COUNT; vi++) {
@@ -180,7 +185,7 @@ describe('dimensionsFor', () => {
   });
 
   it('should vary the footprint between variants', () => {
-    // 基地全一樣的話，矮建築就只剩屋頂形式可以變。
+    // With identical footprints, low buildings vary only through roof form.
     const widths = new Set<number>();
     for (let vi = 0; vi < VARIANT_COUNT; vi++) {
       widths.add(Math.round(dimensionsFor(3, 'LOW', 2, vi)!.w * 1e6));
@@ -189,7 +194,8 @@ describe('dimensionsFor', () => {
   });
 
   it('should never shrink the footprint below 85% of the target', () => {
-    // 太窄的話前庭鋪面與矮物件帶會被拉開，牆腳露出一圈裸地（BUG-226 的成因）。
+    // Too narrow, the forecourt paving and the low-prop band pull apart and a ring of bare ground
+    // shows at the wall's foot, which is the cause of BUG-226.
     eachBucket((z, d, key) => {
       const target = M(TARGET_WIDTHS_M[key]!);
       for (const lv of LEVELS) {

@@ -1,36 +1,41 @@
 /**
- * 遠景時要不要畫矮物件與懸挑。
+ * Whether low props and overhangs draw when zoomed out.
  *
- * 鏡頭是正交的，所以沒有「遠處的建築」—— 全畫面同一個距離，逐棟算距離
- * 沒有意義。唯一有效的訊號是視錐高度（`camera.top - camera.bottom`，單位是
- * 格；`zoomCamera` 的範圍是 3–200）。整件事因此只是一個全域布林翻兩層的
- * `visible`：零逐實例成本，不需要簡化幾何，也不需要每幀掃格子。
+ * The camera is orthographic, so there is no such thing as a distant building: the whole screen is
+ * at one distance and a per-building distance means nothing. The only effective signal is the
+ * frustum height (`camera.top - camera.bottom`, in cells; `zoomCamera` ranges 3 to 200). The whole
+ * thing is therefore one global boolean flipping two layers' `visible`: no per-instance cost, no
+ * simplified geometry, and no per-frame sweep over the cells.
  *
- * 自成一個模組而不是留在 `BuildingRenderer` 裡：展示區也要用同一套門檻，
- * 而它畫的是普通 `Mesh`、刻意不載入遊戲。從 `BuildingRenderer` 匯入會把
- * `Grid` 與整個渲染器拖進展示區的相依圖。這裡不 import Three.js，是純算術。
+ * A module of its own rather than part of `BuildingRenderer`: the showcase uses the same
+ * thresholds, draws plain `Mesh` objects and deliberately does not load the game. Importing from
+ * `BuildingRenderer` would drag `Grid` and the whole renderer into the showcase's dependency graph.
+ * Nothing here imports Three.js; it is pure arithmetic.
  *
- * 各寫一份的下場已經示範過了 —— 展示區的地板顏色（BUG-231）。
+ * A second copy is the mistake behind the showcase's floor colour (BUG-231).
  */
 
 export const DETAIL_LOD = {
   /**
-   * 一格 12 m，視錐 90 格 = 1080 m。1080p 的畫面上 1 公尺剛好約一像素，
-   * 而矮物件多半是 1–4 m 的東西 —— 過了這條線它們本來就只是雜訊，但仍然
-   * 吃滿三角形（單棟上限 320，量體才 400/800）而且每一個都要投影。
+   * At 12 m per cell, a 90-cell frustum is 1080 m. On a 1080p screen that is about one pixel per
+   * metre, and low props are mostly 1 to 4 m things: past this line they are already noise, while
+   * still spending their full triangle allowance — 320 per building against the massing's 400 and
+   * 800 — and each casting a shadow.
    */
   HIDE_ABOVE: 90,
   /**
-   * 兩條線之間留 15 格的遲滯。只有一條的話，滾輪停在門檻上會讓整層每幀
-   * 開關一次 —— 那比不做還糟，因為畫面在閃。預設視錐是 60，落在這條線
-   * 以下，所以正常遊玩看得到全部細節，要主動縮出去才會掉。
+   * 15 cells of hysteresis between the two lines. With a single line, a wheel resting on it switches
+   * the whole layer on and off every frame — worse than doing nothing, because the screen flickers.
+   * The default frustum is 60, below this line, so normal play shows every detail and the drop takes
+   * a deliberate zoom out.
    */
   SHOW_BELOW: 75,
 } as const;
 
 /**
- * 這個視錐高度下該不該藏細節。`wasHidden` 是上一幀的答案 —— 遲滯需要它，
- * 所以這個函式對同一個輸入會給出兩種答案，那是刻意的。
+ * Whether detail should be hidden at this frustum height. `wasHidden` is the previous frame's
+ * answer, which the hysteresis needs, so this function deliberately gives two answers for one
+ * input.
  */
 export function detailHidden(frustumHeight: number, wasHidden: boolean): boolean {
   return wasHidden

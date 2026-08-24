@@ -1,11 +1,11 @@
 /**
- * TrainAnimator — 火車渲染端動畫（每幀推進，不靠 tick）。
+ * TrainAnimator — train animation on the render side, advanced per frame rather than per tick.
  *
- * 與地鐵 (MetroTunnelRenderer + advanceTrain) 相同模式：
- * - 從 routePaths 建構完整來回路徑（A→B→A 或 A→B→C→A）
- * - 沿路徑做距離插值，到站時暫停固定秒數
- * - heading 直接取自路徑切線方向（不做 LERP）
- * - 每列火車渲染 3 節車廂（機車頭 + 2 客車廂）
+ * The same pattern as the metro (MetroTunnelRenderer plus advanceTrain):
+ * - builds a full round-trip path from routePaths (A to B to A, or A to B to C to A)
+ * - interpolates by distance along it, pausing a fixed number of seconds at each station
+ * - takes heading straight from the path's tangent, with no LERP
+ * - renders 3 cars per train: a locomotive plus 2 carriages
  */
 import {
   buildFerryPathInfo,
@@ -15,39 +15,39 @@ import {
 import type { VehicleAnimator } from './VehicleAnimator';
 import type { TransportVehicleRenderData } from '../core/transport/collectTransportVehicles';
 
-/** 火車視覺移動速度（世界單位/秒） */
+/** A train's visual speed, in world units per second. */
 const TRAIN_VISUAL_SPEED = 4.5;
-/** 火車 ID 偏移量（對應 collectTransportVehicles） */
+/** The train id offset, matching collectTransportVehicles. */
 const RAIL_ID_OFFSET = 400_000;
-/** 車廂中心間距（世界單位） */
+/** Centre-to-centre spacing between cars, in world units. */
 const CARRIAGE_SPACING = 0.33;
-/** 每列火車車廂數（機車頭 + 拖車） */
+/** Cars per train: a locomotive plus its trailers. */
 const CARRIAGES_PER_TRAIN = 3;
-/** 到站視覺停留秒數（與地鐵相同模式） */
+/** Seconds a train visibly waits at a station, the same pattern as the metro. */
 const STATION_WAIT_TIME = 1.2;
-/** 轉角圓弧插值點數 */
+/** How many points a corner's arc is interpolated with. */
 const ARC_POINTS = 6;
-/** 外部火車生成間隔（秒） */
+/** The interval between external train spawns, in seconds. */
 const EXTERNAL_TRAIN_INTERVAL = 12.0;
-/** 外部火車 ID 起始偏移 */
+/** The starting id offset for external trains. */
 const EXTERNAL_TRAIN_ID = 900_000;
 
 interface TrainAnimState {
-  /** 完整來回路徑（A→B→A 串接） */
+  /** The full round-trip path, A to B to A concatenated. */
   pathInfo: FerryPathInfo;
-  /** 路徑上各站的距離 */
+  /** Each station's distance along the path. */
   stationDistances: number[];
-  /** 目前在路徑上的距離 */
+  /** The current distance along the path. */
   distance: number;
-  /** 正在停站 */
+  /** Currently stopped at a station. */
   atStation: boolean;
-  /** 停站倒數（秒） */
+  /** The remaining station wait, in seconds. */
   waitTimer: number;
-  /** 下一站索引 */
+  /** The next station's index. */
   nextStationIdx: number;
-  /** 所屬路線 ID（偵測路線變更） */
+  /** The route id this belongs to, used to detect a route change. */
   routeId: number;
-  /** 建立動畫時的路段數量（偵測站點增減） */
+  /** The segment count when the animation was created, used to detect stations being added or removed. */
   segmentCount: number;
 }
 
@@ -72,8 +72,8 @@ interface ExternalTrainAnim {
 }
 
 /**
- * 將直角轉彎替換為圓弧插值點，使火車沿弧線行駛。
- * 直線段保持不變，僅在相鄰方向變化時插入四分之一圓弧。
+ * Replaces right-angle turns with arc points so a train follows a curve. Straight sections are
+ * unchanged, and a quarter arc is inserted only where the direction changes between segments.
  */
 export function smoothTrackPath(
   points: ReadonlyArray<{ x: number; y: number }>,
@@ -120,8 +120,8 @@ export function smoothTrackPath(
 }
 
 /**
- * 從路線的各段路徑建構完整來回路徑。
- * 例如 2 站: segments = [A→B, B→A] → 串接為 A→...→B→...→A
+ * Builds one full round-trip path from a route's segments.
+ * With 2 stations, segments = [A to B, B to A] concatenates into A ... B ... A.
  */
 function buildFullPath(segments: ReadonlyArray<ReadonlyArray<{ x: number; y: number }>>): {
   pathInfo: FerryPathInfo;
@@ -137,16 +137,17 @@ function buildFullPath(segments: ReadonlyArray<ReadonlyArray<{ x: number; y: num
     const seg = segments[s]!;
     if (seg.length < 2) return null;
 
-    // 平滑此段路徑（轉角→圓弧）
+    // Smooth this segment, turning corners into arcs.
     const smoothed = smoothTrackPath(seg);
 
-    // 第一段全部加入，後續段跳過第一點（與前段終點重複）
+    // The first segment is added whole; later ones skip their first point, which repeats the
+    // previous segment's end.
     const startIdx = s === 0 ? 0 : 1;
     for (let i = startIdx; i < smoothed.length; i++) {
       fullPoints.push(smoothed[i]!);
     }
 
-    // 計算平滑後的段長度
+    // Compute the smoothed segment's length.
     let segLen = 0;
     for (let i = 1; i < smoothed.length; i++) {
       const dx = smoothed[i]!.x - smoothed[i - 1]!.x;
@@ -155,7 +156,8 @@ function buildFullPath(segments: ReadonlyArray<ReadonlyArray<{ x: number; y: num
     }
     cumDist += segLen;
 
-    // 此段終點 = 下一站（最後一段的終點 = 起點站，由 wrap 處理，不加入）
+    // This segment's end is the next station. The last segment's end is the starting station, handled
+    // by the wrap and not added here.
     if (s < segments.length - 1) {
       stationDistances.push(cumDist);
     }
@@ -210,8 +212,8 @@ export class TrainAnimator implements VehicleAnimator {
   private externalSpawnTimer = EXTERNAL_TRAIN_INTERVAL * 0.5; // first one sooner
 
   /**
-   * 每幀推進火車動畫，並覆蓋 transportVehicles 中 rail_train 的位置/heading。
-   * 同時為每列火車追加尾隨車廂（rail_carriage）。
+   * Advances the train animations for one frame and overwrites the position and heading of every
+   * rail_train in transportVehicles, appending each train's trailing carriages (rail_carriage).
    */
   update(
     dt: number,
@@ -219,7 +221,7 @@ export class TrainAnimator implements VehicleAnimator {
     railSystem: RailSystemLike,
     transportVehicles: TransportVehicleRenderData[],
   ): void {
-    // ── 建立 / 清理動畫 ──
+    // ── Create and clean up animations ──
     const activeTrainIds = this.activeIds;
     activeTrainIds.clear();
     for (const train of railSystem.getTrains()) {
@@ -254,14 +256,14 @@ export class TrainAnimator implements VehicleAnimator {
       }
     }
 
-    // 移除已不存在的火車動畫
+    // Remove animations for trains that no longer exist.
     for (const trainId of this.anims.keys()) {
       if (!activeTrainIds.has(trainId)) {
         this.anims.delete(trainId);
       }
     }
 
-    // ── 推進動畫（與地鐵 advanceTrain 相同邏輯）──
+    // ── Advance the animations, the same logic as the metro's advanceTrain ──
     for (const [, anim] of this.anims) {
       if (dt <= 0) continue;
 
@@ -276,12 +278,12 @@ export class TrainAnimator implements VehicleAnimator {
       const prevDist = anim.distance;
       anim.distance += TRAIN_VISUAL_SPEED * dt * speed;
 
-      // 目標距離：下一站
+      // Target distance: the next station.
       const targetDist = anim.nextStationIdx === 0
         ? anim.pathInfo.totalLength
         : anim.stationDistances[anim.nextStationIdx]!;
 
-      // 是否跨越下一站
+      // Whether it passed the next station.
       if (prevDist < targetDist && anim.distance >= targetDist) {
         anim.distance = anim.nextStationIdx === 0 ? 0 : targetDist;
         anim.atStation = true;
@@ -289,13 +291,13 @@ export class TrainAnimator implements VehicleAnimator {
         anim.nextStationIdx = (anim.nextStationIdx + 1) % anim.stationDistances.length;
       }
 
-      // 安全 wrap
+      // Safe wrap.
       if (anim.distance >= anim.pathInfo.totalLength) {
         anim.distance -= anim.pathInfo.totalLength;
       }
     }
 
-    // ── 覆蓋 rail_train 位置 + 追加尾隨車廂 ──
+    // ── Overwrite rail_train positions and append trailing carriages ──
     // Push carriages directly to transportVehicles (no intermediate array).
     // Iterate only the original range to avoid processing just-added carriages.
     const originalLen = transportVehicles.length;
@@ -308,7 +310,7 @@ export class TrainAnimator implements VehicleAnimator {
       const anim = this.anims.get(trainId);
 
       if (anim) {
-        // 機車頭位置
+        // The locomotive's position.
         const pos = interpolateFerryPath(anim.pathInfo, anim.distance);
         if (pos) {
           vd.x = pos.x;
@@ -316,7 +318,7 @@ export class TrainAnimator implements VehicleAnimator {
           vd.heading = pos.heading;
         }
 
-        // 尾隨車廂沿路徑往後排列
+        // The trailing carriages are laid out back along the path.
         for (let c = 1; c < CARRIAGES_PER_TRAIN; c++) {
           const cDist = anim.distance - c * CARRIAGE_SPACING;
           const wrappedDist = cDist >= 0
@@ -335,7 +337,7 @@ export class TrainAnimator implements VehicleAnimator {
           }
         }
       } else {
-        // 無動畫 → 車廂沿 heading 反方向排列
+        // With no animation, the carriages line up opposite the heading.
         for (let c = 1; c < CARRIAGES_PER_TRAIN; c++) {
           transportVehicles.push({
             id: vd.id + c * 10000,
