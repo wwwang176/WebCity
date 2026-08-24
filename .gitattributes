@@ -1,7 +1,7 @@
-# shader 基準 fixture 必須是 LF。
+# The shader baseline fixture has to be LF.
 #
-# `BUILDING_FRAG` 是模板字面值，而 ECMAScript 規定模板字面值的內容會把
-# CRLF 正規化成 LF —— 所以不論 .ts 檔在磁碟上是什麼行尾，字串永遠是 LF。
-# 這台機器的 core.autocrlf 是 true，沒有這一條的話 fixture 會被檢出成 CRLF，
-# 逐字元比對就會在一個與 shader 無關的理由上失敗。
+# `BUILDING_FRAG` is a template literal, and ECMAScript normalises CRLF to LF inside one, so the
+# string is always LF whatever line endings the .ts file has on disk. With core.autocrlf true on this
+# machine, the fixture would be checked out as CRLF without this line and the byte-for-byte
+# comparison would fail for a reason unrelated to the shader.
 *.glsl text eol=lf

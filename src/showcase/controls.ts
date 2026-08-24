@@ -55,12 +55,12 @@ export interface ControlState {
 }
 
 const ZONE_NAMES: Record<number, string> = {
-  1: '住宅低密度', 2: '住宅高密度', 3: '商業低密度',
-  4: '商業高密度', 5: '工業', 6: '辦公',
+  1: 'Residential low', 2: 'Residential high', 3: 'Commercial low',
+  4: 'Commercial high', 5: 'Industrial', 6: 'Office',
 };
 
 const MODE_NAMES: Record<ViewMode, string> = {
-  single: '單體', block: '街廓', matrix: '矩陣', civic: '公共建築',
+  single: 'Single', block: 'Block', matrix: 'Matrix', civic: 'Civic',
 };
 
 export function mountControls(
@@ -94,7 +94,7 @@ export function mountControls(
     modeSel.appendChild(o);
   }
   modeSel.value = state.mode;
-  row('檢視模式', modeSel, false);
+  row('View mode', modeSel, false);
 
   const syncModeVisibility = () => {
     const civic = state.mode === 'civic';
@@ -114,7 +114,7 @@ export function mountControls(
     zoneSel.appendChild(o);
   }
   zoneSel.value = String(state.zoneType);
-  row('分區', zoneSel);
+  row('Zone', zoneSel);
 
   // Only offices have buildings at both densities; the other zones have no height table for the
   // second one.
@@ -122,12 +122,12 @@ export function mountControls(
   for (const d of ['LOW', 'HIGH'] as Density[]) {
     const o = document.createElement('option');
     o.value = d;
-    o.textContent = d === 'LOW' ? '低密度' : '高密度';
+    o.textContent = d === 'LOW' ? 'Low density' : 'High density';
     densitySel.appendChild(o);
   }
   densitySel.value = state.density;
   densitySel.onchange = () => { state.density = densitySel.value as Density; onChange(); };
-  row('密度（僅辦公區兩者皆有）', densitySel);
+  row('Density (offices alone have both)', densitySel);
 
   /**
    * Replaces a density the selected zone does not have.
@@ -152,12 +152,12 @@ export function mountControls(
   for (const lv of LEVELS) {
     const o = document.createElement('option');
     o.value = String(lv);
-    o.textContent = `${lv} 級`;
+    o.textContent = `Level ${lv}`;
     levelSel.appendChild(o);
   }
   levelSel.value = String(state.level);
   levelSel.onchange = () => { state.level = Number(levelSel.value); onChange(); };
-  row('等級', levelSel);
+  row('Level', levelSel);
 
   const variantSel = document.createElement('select');
   const variantOptions: Array<number | null> = [null];
@@ -165,7 +165,7 @@ export function mountControls(
   for (const v of variantOptions) {
     const o = document.createElement('option');
     o.value = v === null ? 'auto' : String(v);
-    o.textContent = v === null ? '自動（依座標）' : `變體 ${v}`;
+    o.textContent = v === null ? 'Auto (by coordinate)' : `Variant ${v}`;
     variantSel.appendChild(o);
   }
   variantSel.value = state.variantOverride === null ? 'auto' : String(state.variantOverride);
@@ -173,21 +173,21 @@ export function mountControls(
     state.variantOverride = variantSel.value === 'auto' ? null : Number(variantSel.value);
     onChange();
   };
-  row('變體（單體模式）', variantSel);
+  row('Variant (single mode)', variantSel);
 
   const sizeSel = document.createElement('select');
   for (const n of [8, 16, 24, 40]) {
     const o = document.createElement('option');
     o.value = String(n);
-    o.textContent = `${n} × ${n} = ${n * n} 棟`;
+    o.textContent = `${n} x ${n} = ${n * n} buildings`;
     sizeSel.appendChild(o);
   }
   sizeSel.value = String(state.blockSize);
   sizeSel.onchange = () => { state.blockSize = Number(sizeSel.value); onChange(); };
-  row('街廓大小（量效能用）', sizeSel);
+  row('Block size (for measuring performance)', sizeSel);
 
   const timeLabel = document.createElement('label');
-  timeLabel.textContent = '時刻（拖動即接管日夜）';
+  timeLabel.textContent = 'Time (drag to take over the day-night cycle)';
   host.appendChild(timeLabel);
 
   const time = document.createElement('input');
@@ -198,14 +198,14 @@ export function mountControls(
   time.value = '0.3';
   time.oninput = () => {
     state.timeOverride = Number(time.value);
-    timeLabel.textContent = `時刻 ${clockText(state.timeOverride)}`;
+    timeLabel.textContent = `Time ${clockText(state.timeOverride)}`;
   };
   host.appendChild(time);
 
   // Occupancy, the control for night scenes. It makes no visible difference by day, so the label
   // says so.
   const occLabel = document.createElement('label');
-  const occText = () => `住戶比例 ${Math.round(state.occupancy * 100)}%（夜間亮燈）`;
+  const occText = () => `Occupancy ${Math.round(state.occupancy * 100)}% (lights at night)`;
   occLabel.textContent = occText();
   host.appendChild(occLabel);
 
@@ -223,15 +223,15 @@ export function mountControls(
   host.appendChild(occ);
 
   const live = document.createElement('button');
-  live.textContent = '回到自動循環';
+  live.textContent = 'Auto cycle';
   live.onclick = () => {
     state.timeOverride = null;
-    timeLabel.textContent = '時刻（自動循環中）';
+    timeLabel.textContent = 'Time (cycling automatically)';
   };
   host.appendChild(live);
 
   const reroll = document.createElement('button');
-  reroll.textContent = '重新擲種子';
+  reroll.textContent = 'Reroll seed';
   reroll.onclick = () => {
     state.seedByte = (state.seedByte + 1) & 0xff;
     onChange();
@@ -239,18 +239,18 @@ export function mountControls(
   host.appendChild(reroll);
 
   const wire = document.createElement('button');
-  wire.textContent = '線框';
+  wire.textContent = 'Wireframe';
   wire.onclick = () => { state.wireframe = !state.wireframe; onChange(); };
   host.appendChild(wire);
 
   const toggles: Array<[string, 'showDecals' | 'showLowProps' | 'showOverhead']> = [
-    ['貼片（鋪面）', 'showDecals'],
-    ['矮物件（庭院）', 'showLowProps'],
-    ['懸挑（雨遮）', 'showOverhead'],
+    ['Decals', 'showDecals'],
+    ['Ground props', 'showLowProps'],
+    ['Overhangs', 'showOverhead'],
   ];
   for (const [label, key] of toggles) {
     const btn = document.createElement('button');
-    const text = () => `${label}：${state[key] ? '開' : '關'}`;
+    const text = () => `${label}: ${state[key] ? 'on' : 'off'}`;
     btn.textContent = text();
     btn.onclick = () => {
       state[key] = !state[key];

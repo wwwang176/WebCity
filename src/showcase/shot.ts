@@ -46,6 +46,6 @@ sceneManager.zoomCamera(want - (sceneManager.camera.top - sceneManager.camera.bo
 sceneManager.orbitCamera(num('rot', 0), num('el', 0));
 
 document.getElementById('tag')!.textContent =
-  `${cfg?.name ?? type}　${cfg?.width ?? 1}×${cfg?.height ?? 1} 格`;
+  `${cfg?.name ?? type}  ${cfg?.width ?? 1}x${cfg?.height ?? 1} cells`;
 
 sceneManager.start();

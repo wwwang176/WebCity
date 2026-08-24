@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>WebCity — 建築展示區</title>
+    <title>WebCity — Building Showcase</title>
     <style>
       html, body { margin: 0; height: 100%; overflow: hidden; background: #1a1d21; }
       #scene { position: absolute; inset: 0; }
@@ -12,6 +12,10 @@
         background: rgba(20, 22, 26, 0.88); color: #e8e8e8;
         font: 13px/1.5 system-ui, sans-serif; padding: 12px 14px;
         border-radius: 8px; min-width: 240px;
+        /* The panel sits over the buildings, which are the only thing the showcase exists to show,
+           so it is capped and its button row wraps. Without a cap the width follows the longest
+           button row and the panel covers most of the canvas. */
+        max-width: 340px;
       }
       #panel label { display: block; margin: 6px 0 2px; opacity: 0.75; }
       #panel select, #panel input { width: 100%; }

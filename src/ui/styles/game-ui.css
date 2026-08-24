@@ -282,10 +282,10 @@
 #building-panel.visible { display: block; }
 #citizen-detail-panel { min-width: 180px; }
 /*
- * 市民面板的標題是一個**人名**，不是版面上的區塊標籤。
+ * The citizen panel's title is a **person's name**, not a section label in the layout.
  *
- * `.g-panel-title` 的全大寫加 1.2px 字距是給「TRANSFER ROUTE」那種標籤用的，
- * 套在名字上會把它拉得又寬又扁。比照建築面板的標題 —— 那裡放的也是名字。
+ * `.g-panel-title`'s uppercase and 1.2px tracking are for labels such as "TRANSFER ROUTE"; applied to
+ * a name they stretch it wide and flat. It follows the building panel's title, which is also a name.
  */
 #citizen-detail-panel .g-panel-title {
   font-size: 13px; font-weight: 600;
@@ -295,7 +295,7 @@
 #building-panel .bp-title {
   font-size: 14px; font-weight: 600; color: #e4eaf4;
 }
-/* 建築的種類降成副標 —— 名字才是這棟房子，種類是它屬於哪一類。 */
+/* The building's kind is demoted to a subtitle: the name is this building, the kind is what it belongs to. */
 #building-panel .bp-subtitle {
   font-size: 11px; color: #8899b0; margin-bottom: 6px;
 }
@@ -510,23 +510,25 @@
 #mute-btn.muted { color: #ef5350; }
 
 /* ===== Sidebar layout (Overview, Policies) ===== */
-/* 規則掛在版面上而不是某個 modal 的 id —— 條例面板本來漏了這一段，於是整個
-   面板一起捲，側邊頁籤跟著被捲出畫面。條例有十六條，那是天天會遇到的事。 */
+/* Keyed on the layout rather than on one modal's id: the policy panel was left out of this, so the
+   whole panel scrolled and carried the sidebar tabs off screen. There are sixteen policies, which
+   makes that a daily occurrence. */
 .modal-panel:has(.overview-layout) {
   overflow: hidden;
   display: flex; flex-direction: column;
-  /* 高度固定，不隨內容長短伸縮。側邊頁籤切一下面板就跳一次高度，而頁籤本身也
-     跟著上下移動 —— 連點兩個頁籤會點到第三個。短內容底下留白是划算的交換。 */
+  /* A fixed height that does not stretch with the content. Otherwise the panel jumps on every tab
+     switch and the tabs move with it, so two clicks in a row land on a third tab. Whitespace under
+     short content is the better trade. */
   height: 70vh;
 }
 .modal-body:has(.overview-layout) {
   padding: 0;
   display: flex;
-  /* 表頭多高由表頭自己決定，剩下的全給 body。原本寫的是 calc(70vh - 54px)，
-     而表頭實際是 60.7px —— 面板底部有 8px 一直被切掉。 */
+  /* The header decides its own height and the body takes the rest. Written as calc(70vh - 54px)
+     against a header actually 60.7px tall, 8px was cut off the bottom of the panel. */
   flex: 1;
-  /* flex item 的最小高度預設是內容高度。不歸零的話 .overview-content 永遠
-     撐得開，捲軸不會出現。 */
+  /* A flex item's minimum height defaults to its content height. Without zeroing it,
+     .overview-content always stretches and the scrollbar never appears. */
   min-height: 0;
   overflow: hidden;
 }
@@ -536,8 +538,8 @@
 }
 .overview-layout {
   display: flex; width: 100%;
-  /* 不用 height: 100% —— 百分比高度要父層有明確高度，而 .modal-body 現在是
-     flex: 1 撐出來的。跟著用 flex 才吃得到那個高度。 */
+  /* Not height: 100% — a percentage height needs an explicit height on the parent, and .modal-body
+     is now stretched by flex: 1. Using flex here is what picks that height up. */
   flex: 1; min-height: 0;
 }
 .overview-sidebar {
@@ -545,7 +547,8 @@
   border-right: 1px solid rgba(100,180,255,0.08);
   padding: 8px 0;
   display: flex; flex-direction: column; gap: 2px;
-  /* 分區數量沒有上限，多到裝不下時側邊欄自己捲，不牽動右邊的內容。 */
+  /* There is no cap on the number of districts; past what fits, the sidebar scrolls on its own
+     without moving the content beside it. */
   overflow-y: auto;
 }
 .overview-nav-item {
@@ -733,8 +736,8 @@
 }
 #tutorial-overlay .tut-btns .tut-dismiss:hover { background: #444; color: #fff; }
 
-/* 條例面板 —— 沿用 overview 的左右分欄。側邊列的是範圍（全城／各分區），
-   不是頁籤，所以分區多的時候要能捲。 */
+/* The policy panel reuses the overview's two-column split. The sidebar lists scopes — city-wide and
+   each district — rather than tabs, so it has to scroll once there are many districts. */
 #policy-modal .overview-sidebar {
   overflow-y: auto;
   max-height: 60vh;

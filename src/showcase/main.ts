@@ -217,7 +217,7 @@ const state: ControlState = {
 
 /** The table's four layers, named to match `CivicTris`' keys entry for entry. */
 const CIVIC_LAYER_LABELS: Array<[string, keyof CivicTris]> = [
-  ['量體', 'massing'], ['貼片', 'decal'], ['矮物件', 'prop'], ['懸挑', 'overhead'],
+  ['Massing', 'massing'], ['Decals', 'decal'], ['Ground props', 'prop'], ['Overhangs', 'overhead'],
 ];
 
 /**
@@ -235,7 +235,7 @@ function renderCivic(fitCamera: boolean): void {
   const stats = document.getElementById('stats');
   const slots = civicLayout(civicTypesDone());
   if (slots.length === 0) {
-    if (stats) stats.innerHTML = '還沒有任何公共建築改造完成。<br>（見 BUG-238）';
+    if (stats) stats.innerHTML = 'No civic building has been reworked yet.<br>(see BUG-238)';
     return;
   }
 
@@ -275,10 +275,10 @@ function renderCivic(fitCamera: boolean): void {
     const over = CIVIC_LAYER_LABELS
       .filter(([, key]) => report.over[key])
       .map(([label, key]) =>
-        `<span class="over">${label} ${placed.tris[key]}／${report.budget[key]}</span>`);
+        `<span class="over">${label} ${placed.tris[key]}/${report.budget[key]}</span>`);
     rows.push(
-      `${cfg?.name ?? slot.type}（${report.cells} 格）${cells} 三角形`
-      + (over.length > 0 ? `　${over.join('　')}` : ''),
+      `${cfg?.name ?? slot.type} (${report.cells} cell${report.cells === 1 ? '' : 's'}) ${cells} tris`
+      + (over.length > 0 ? `&nbsp; ${over.join('&nbsp; ')}` : ''),
     );
   }
 
@@ -298,8 +298,8 @@ function renderCivic(fitCamera: boolean): void {
   if (stats) {
     const sum = Object.values(total).reduce((a, b) => a + b, 0);
     stats.innerHTML =
-      `${slots.length} 種公共建築｜共 ${sum} 三角形<br>`
-      + CIVIC_LAYER_LABELS.map(([label, key]) => `${label} ${total[key]}`).join('　')
+      `${slots.length} civic kinds | ${sum} tris total<br>`
+      + CIVIC_LAYER_LABELS.map(([label, key]) => `${label} ${total[key]}`).join('&nbsp; ')
       + `<br>` + rows.join('<br>')
       + `<br><span id="fps">—</span>`;
   }
@@ -356,26 +356,26 @@ function render(): void {
   // limits live in their own modules. A field with no limit is left uncoloured rather than measured
   // against someone else's.
   const rows: Array<[string, number, number | null]> = [
-    ['量體', total.massing, state.level === 3 ? TRIANGLE_BUDGET.TOWER : TRIANGLE_BUDGET.HOUSE],
-    ['貼片', total.decal, null],
-    ['矮物件', total.prop, TRIANGLE_BUDGET.PROP],
-    ['懸挑', total.overhead, OVERHEAD_TRIANGLE_BUDGET],
+    ['Massing', total.massing, state.level === 3 ? TRIANGLE_BUDGET.TOWER : TRIANGLE_BUDGET.HOUSE],
+    ['Decals', total.decal, null],
+    ['Ground props', total.prop, TRIANGLE_BUDGET.PROP],
+    ['Overhangs', total.overhead, OVERHEAD_TRIANGLE_BUDGET],
   ];
 
   const stats = document.getElementById('stats');
   if (stats) {
     stats.innerHTML =
-      `${cells.length} 棟<br>`
+      `${cells.length} buildings<br>`
       + rows.map(([label, tris, budget]) => {
         const per = Math.round(tris / n);
         const over = budget !== null && per > budget;
-        const cap = budget === null ? '' : `（上限 ${budget}）`;
-        return `<span class="${over ? 'over' : ''}">${label} ${per} 三角形／棟${cap}</span>`;
+        const cap = budget === null ? '' : ` (limit ${budget})`;
+        return `<span class="${over ? 'over' : ''}">${label} ${per} tris/building${cap}</span>`;
       }).join('<br>')
-      + `<br>總計 ${sum} 三角形<br>`
-      + `變體 ${VARIANT_COUNT} 種｜相鄰同變體 `
+      + `<br>${sum} tris total<br>`
+      + `${VARIANT_COUNT} variants | neighbours sharing a variant `
       + `<span class="${ratio > 0.05 ? 'over' : ''}">${(ratio * 100).toFixed(1)}%</span>`
-      + `（改造前 33.4%）<br>`
+      + ` (33.4% before the rework)<br>`
       + `<span id="fps">—</span>`;
   }
 }
