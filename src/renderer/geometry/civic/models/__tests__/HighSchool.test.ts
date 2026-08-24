@@ -12,10 +12,11 @@ const one = (tag: string) => tagged(tag)[0]!;
 const marks = plan.decals.filter(d => d.layer === 'mark');
 
 /**
- * 共通的驗收在 `CivicPlans.test.ts` 的資料表裡。這裡只寫高中獨有的形狀約束。
+ * The shared acceptance checks live in the table in `CivicPlans.test.ts`. This file holds only the
+ * shape constraints specific to a high school.
  *
- * 辨識特徵：三層教室樓、**橢圓跑道**、司令台。跑道是最強的那一個 ——
- * 城市裡沒有第二種建築的地上有一圈封閉的橢圓。
+ * Recognition features: a three-storey classroom block, a **running track**, and a review stand.
+ * The track is the strongest — no other building in the city has a closed loop on the ground.
  */
 describe('高中', () => {
   it('should occupy 2x3', () => {
@@ -25,8 +26,8 @@ describe('高中', () => {
   });
 
   it('should stand three storeys, taller than an elementary school', () => {
-    // 小學壓在 12 m 以下（`School.test.ts` 釘住的）。高中要明顯高過它，
-    // 否則兩者在遠景是同一棟建築。
+    // A primary school is kept under 12 m, pinned by `School.test.ts`. A high school has to be
+    // clearly taller, or at range the two are one building.
     const top = m(topOf(plan.massing));
     expect(top, '高中不比小學高').toBeGreaterThan(13);
     expect(top).toBeLessThan(20);
@@ -39,11 +40,12 @@ describe('高中', () => {
     }
   });
 
-  // ── 跑道 ──────────────────────────────────────────────────
+  // ── The track ─────────────────────────────────────────────
 
   it('should draw the track as a closed loop', () => {
-    // 一串沒有接起來的短線是虛線，不是跑道。逐段檢查「這一段的尾端接不接得上
-    // 下一段的開頭」—— 只看「有很多段標線」的話，一堆散落的線也會通過。
+    // A run of short lines that do not join is a dashed line, not a track. Each segment's end is
+    // checked against the next one's start; testing only that many markings exist would pass a
+    // pile of scattered lines.
     const lanes = TRACK.lanes;
     expect(lanes.length, '跑道不只一條線').toBeGreaterThanOrEqual(2);
     for (const lane of lanes) {
@@ -52,7 +54,8 @@ describe('高中', () => {
       for (let i = 0; i < lane.length; i++) {
         const a = lane[i]!;
         const b = lane[(i + 1) % lane.length]!;
-        // 一段的末端 = 中心 + 半長 × 方向。方向由 rotationY 決定。
+        // A segment's end is its centre plus half its length along its direction, which comes
+        // from rotationY.
         const end = (s: typeof a, sign: number) => ({
           x: s.x + sign * (s.w / 2) * Math.cos(s.rotationY),
           z: s.z - sign * (s.w / 2) * Math.sin(s.rotationY),
@@ -67,18 +70,19 @@ describe('高中', () => {
   });
 
   /**
-   * 圓角矩形，不是橢圓。
+   * A rounded rectangle, not an ellipse.
    *
-   * 操場是圓角矩形，不是橢圓。真實的操場是**四段直道**
-   * 加四個轉彎；橢圓沒有任何一段是直的，跑起來像一個蛋。
+   * A real running track is **four straights** plus four bends; an ellipse has no straight section
+   * at all and reads as an egg.
    *
-   * 測「有沒有直道」而不是「像不像矩形」：直道的實體就是「好幾段連續的線
-   * 方向完全相同」，而那正是橢圓做不到的事。
+   * This tests for straights rather than for rectangularity: a straight amounts to several
+   * consecutive segments sharing exactly one direction, which is precisely what an ellipse cannot
+   * do.
    */
   it('should have four straights, not be one endless curve', () => {
     const outer = TRACK.lanes[0]!;
     const dirs = outer.map(s => s.rotationY);
-    /** 這個方向上有幾段完全同向。 */
+    /** How many consecutive segments share this exact direction. */
     const runOf = (want: number) =>
       dirs.filter(d => Math.abs(Math.atan2(Math.sin(d - want), Math.cos(d - want)))
         < 1e-6).length;
@@ -91,7 +95,7 @@ describe('高中', () => {
   });
 
   it('should round the corners rather than square them off', () => {
-    // 直角的操場跑不了 —— 而且那是球場不是跑道。
+    // A track with square corners cannot be run, and it is a court rather than a track.
     expect(TRACK.r, '轉角半徑是 0，那是一個方框').toBeGreaterThan(0);
     expect(TRACK.r, '轉角半徑等於半寬，那又變回橢圓了').toBeLessThan(TRACK.b);
     const outer = TRACK.lanes[0]!;
@@ -113,12 +117,13 @@ describe('高中', () => {
   });
 
   it('should nest the lanes without crossing them', () => {
-    // 兩條車道線交叉的話那不是跑道，是一團線。
+    // Two lane lines crossing is not a track but a tangle.
     //
-    // 比的是**到外框的距離**（逐軸），不是到中心的直線距離：圓角矩形上
-    // 「離中心最遠」的點在角上、「最近」的點在直道中央，所以內圈直道上的點
-    // 比外圈轉角上的點更靠近中心 —— 用直線距離比，一條正確的內圈會被判成
-    // 「跑到外面去了」。
+    // The comparison is against the **distance to the outline, per axis**, not the straight-line
+    // distance to the centre: on a rounded rectangle the furthest points from the centre are the
+    // corners and the nearest are the middles of the straights, so a point on the inner straight
+    // is closer to the centre than a point on the outer bend. Compared by straight-line distance,
+    // a correct inner lane would be judged as having run outside.
     const [outer, inner] = TRACK.lanes;
     for (const s of inner!) {
       expect(Math.abs(s.x - TRACK.x), '內圈在 x 方向跑到外圈外面')
@@ -126,13 +131,14 @@ describe('高中', () => {
       expect(Math.abs(s.z - TRACK.z), '內圈在 z 方向跑到外圈外面')
         .toBeLessThanOrEqual(TRACK.b - TRACK.lane + 1e-9);
     }
-    // 而外圈真的要摸到宣告的外框，否則「內圈比較小」是廢話。
+    // And the outer lane really has to touch the declared outline, or "the inner lane is smaller"
+    // says nothing.
     expect(Math.max(...outer!.map(s => Math.abs(s.x - TRACK.x))))
       .toBeCloseTo(TRACK.a, 6);
   });
 
   it('should keep the whole track on the grass', () => {
-    // 跑道畫到看台上或畫出基地是最沒有說服力的一件事。
+    // A track drawn over the stand or off the plot is the least convincing thing there is.
     const field = plan.decals.find(d => d.lawn)!;
     expect(field, '沒有運動場').toBeTruthy();
     for (const s of TRACK.lanes.flat()) {
@@ -142,15 +148,16 @@ describe('高中', () => {
   });
 
   it('should turn every track segment', () => {
-    // 一整圈全部是軸對齊的短線的話，那是一個方框不是橢圓。
+    // A loop made entirely of axis-aligned segments is a rectangle, not a track.
     const turned = marks.filter(d => (d.rotationY ?? 0) !== 0);
     expect(turned.length, '跑道沒有任何一段轉向').toBeGreaterThanOrEqual(16);
   });
 
-  // ── 司令台 ────────────────────────────────────────────────
+  // ── The review stand ──────────────────────────────────────
 
   it('should raise the podium above the field', () => {
-    // 司令台是「站上去講話的地方」。與地面齊平的話它只是一塊鋪面。
+    // A review stand is something to stand on and speak from. Flush with the ground it is only
+    // paving.
     const podium = one('podium');
     expect(podium, '沒有司令台').toBeTruthy();
     const h = m(podium.y1 - podium.y0);
@@ -159,7 +166,8 @@ describe('高中', () => {
   });
 
   it('should face the podium onto the field', () => {
-    // 背對操場的司令台是笑話。它要在教室樓與跑道之間。
+    // A review stand with its back to the field is a joke. It belongs between the classroom block
+    // and the track.
     const podium = one('podium');
     const main = one('main');
     expect(podium.z, '司令台跑到教室樓後面去了').toBeGreaterThan(main.z);
@@ -167,7 +175,7 @@ describe('高中', () => {
   });
 
   it('should roof the podium on posts, not on walls', () => {
-    // 司令台的頂棚要架在柱子上 —— 四面牆的話那是一間房，不是司令台。
+    // The stand's roof rests on posts; with four walls it is a room rather than a review stand.
     const posts = plan.props.filter(v => v.tag === 'podiumPost');
     expect(posts.length, '司令台的頂棚沒有柱子').toBe(4);
     const canopy = plan.overhead.find(v => v.tag === 'podiumRoof')!;
@@ -187,8 +195,8 @@ describe('高中', () => {
   });
 
   it('should keep the fixtures off the running surface', () => {
-    // 種在跑道上的樹跟種在消防車道上的樹是同一個笑話。
-    // 圓角矩形的外框是逐軸的：只要有一軸在框外就安全。
+    // A tree planted on a running track is the same joke as one planted on a fire station's apron.
+    // The rounded rectangle's outline is per axis: clear on either axis is clear.
     for (const f of plan.fixtures) {
       const outside = Math.abs(f.x - TRACK.x) > TRACK.a
         || Math.abs(f.z - TRACK.z) > TRACK.b;

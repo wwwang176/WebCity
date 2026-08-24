@@ -11,10 +11,12 @@ const tagged = (tag: string) => plan.massing.filter(v => v.tag === tag);
 const one = (tag: string) => tagged(tag)[0]!;
 
 /**
- * 共通的驗收在 `CivicPlans.test.ts` 的資料表裡。這裡只寫小學獨有的形狀約束。
+ * The shared acceptance checks live in the table in `CivicPlans.test.ts`. This file holds only the
+ * shape constraints specific to a primary school.
  *
- * 辨識特徵：**低矮**、兩排平行的教室翼、操場、遊具。低矮是最重要的一項 ——
- * 它是小學與高中、大學之間唯一在遠景就分得出來的差別。
+ * Recognition features: **low height**, two parallel classroom wings, a playground, and play
+ * equipment. The height matters most — it is the only difference between a primary school and a
+ * high school or university that separates them at range.
  */
 describe('小學', () => {
   it('should occupy 2x2', () => {
@@ -24,7 +26,8 @@ describe('小學', () => {
   });
 
   it('should stay low', () => {
-    // 小學就是「矮」。與高中（三層）、大學（鐘塔）在遠景唯一的差別。
+    // A primary school is low. At range that is the only thing separating it from a three-storey
+    // high school or a university with a clock tower.
     const top = m(topOf(plan.massing));
     expect(top, `小學蓋到 ${top.toFixed(1)} m —— 那是高中`).toBeLessThan(12);
     expect(top).toBeGreaterThan(7);
@@ -34,17 +37,19 @@ describe('小學', () => {
     const wings = tagged('wing');
     expect(wings.length, '教室翼不是兩排').toBe(2);
     const [a, b] = wings.sort((p, q) => p.z - q.z);
-    // 平行：同寬、同高、只有 z 不同。垂直交錯的話那是 L 形，不是校舍。
+    // Parallel means the same width and height, differing only in z. Crossing at right angles it
+    // is an L rather than a school building.
     expect(a!.w).toBeCloseTo(b!.w, 9);
     expect(a!.y1).toBeCloseTo(b!.y1, 9);
     expect(a!.x).toBeCloseTo(b!.x, 9);
-    // 而且中間要留出縫（採光）。貼在一起的話那是一棟深樓。
+    // And a gap between them, for daylight. Pressed together they are one deep building.
     const slot = (b!.z - b!.d / 2) - (a!.z + a!.d / 2);
     expect(m(slot), '兩排教室之間沒有留縫').toBeGreaterThan(2);
   });
 
   it('should join the wings with a link that does not fill the slot', () => {
-    // 門廳連兩排，但**不能填滿**那道縫 —— 填滿了就是一棟深樓。
+    // The lobby joins the two wings but **must not fill** the gap; filled, it is one deep
+    // building.
     const link = one('link');
     const [a, b] = tagged('wing').sort((p, q) => p.z - q.z);
     expect(link.z - link.d / 2).toBeCloseTo(a!.z + a!.d / 2, 9);
@@ -60,7 +65,8 @@ describe('小學', () => {
   });
 
   it('should give the children a field, not a car park', () => {
-    // 操場是小學的辨識特徵之一，而且它必須是這塊基地上**最大**的一塊鋪面。
+    // The playground is one of a primary school's recognition features, and it has to be the
+    // **largest** surface on the plot.
     const base = plan.decals.filter(d => (d.layer ?? 'base') === 'base');
     const lawn = base.filter(d => d.lawn);
     expect(lawn.length, '沒有操場').toBeGreaterThan(0);
@@ -70,17 +76,17 @@ describe('小學', () => {
   });
 
   it('should mark a court on the field', () => {
-    // 一片純綠的草地讀不出是操場 —— 場地線才是。
+    // A plain green field does not read as a playground; the court markings do.
     const marks = plan.decals.filter(d => d.layer === 'mark');
     expect(marks.length, '操場上沒有場地線').toBeGreaterThanOrEqual(4);
     for (const d of marks) expect(d.shade, '場地線不是白漆').toBeGreaterThan(0.7);
   });
 
   /**
-   * 遊具。
+   * Play equipment.
    *
-   * 這是小學唯一真正需要自訂量體的東西 —— `geometry/props` 沒有溜滑梯、
-   * 攀爬架、鞦韆，而它們正是「這是小學」的訊號。
+   * The one thing a primary school genuinely needs custom masses for: `geometry/props` has no
+   * slide, climbing frame or swings, and they are exactly what says "this is a primary school".
    */
   it('should put play equipment in the playground', () => {
     const kinds = new Set(plan.props.map(v => v.tag));
@@ -88,7 +94,7 @@ describe('小學', () => {
   });
 
   it('should keep the play equipment child-sized', () => {
-    // 三公尺高的鞦韆不是遊具，是塔。
+    // A three-metre swing set is not play equipment but a tower.
     for (const v of plan.props) {
       const h = m(v.y1 - v.y0);
       expect(h, `${v.tag} 有 ${h.toFixed(1)} m 高`).toBeLessThan(2.6);
@@ -96,7 +102,7 @@ describe('小學', () => {
   });
 
   it('should stand the play equipment on the soft surface, not the field', () => {
-    // 遊具下面要鋪面（沙／橡膠），不是草皮也不是柏油。
+    // Play equipment stands on a soft surface, sand or rubber, rather than grass or asphalt.
     const soft = plan.decals.find(d => !d.lawn && (d.layer ?? 'base') === 'base'
       && d.shade > 0.7)!;
     expect(soft, '遊具區沒有鋪面').toBeTruthy();
@@ -109,7 +115,8 @@ describe('小學', () => {
   });
 
   it('should park the school bus along the kerb, not across it', () => {
-    // 校車 7.2 m 長。橫著停在 4 m 深的接送區的話，它有一半插在校舍裡。
+    // A school bus is 7.2 m long. Parked across a 4 m deep drop-off, half of it is inside the
+    // building.
     const bus = plan.vehicles.find(v => v.kind === 'bus')!;
     expect(bus, '沒有校車').toBeTruthy();
     expect(bus.rotationY ?? 0, '校車橫著停').toBeCloseTo(0, 6);

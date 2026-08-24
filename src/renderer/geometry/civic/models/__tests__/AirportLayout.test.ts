@@ -15,15 +15,15 @@ const SIZES = [
 ] as const;
 
 /**
- * 航路表本身合不合理。
+ * Whether the path table itself is reasonable.
  *
- * `Airport.test.ts` 測的是「幾何與航路表一致」—— 那些測試全部是**相對**的，
- * 所以表一動幾何跟著動，永遠自洽。實測過：把小型機場的跑道從 z = 1.20 挪到
- * 0.40，兩邊都是綠的，而停機坪只剩 0.59 格（7 m）深 —— 放不下一架 10.8 m
- * 的飛機。
+ * `Airport.test.ts` checks that the geometry agrees with the path table, and all of those cases
+ * are **relative**: change the table and the geometry follows, so they are always self-consistent.
+ * Measured: moving the small airport's runway from z = 1.20 to 0.40 leaves both green while the
+ * apron is 0.59 cells (7 m) deep, too little for a 10.8 m aircraft.
  *
- * 這個檔案是另一半：**表填了離譜的值會怎樣**。它問的是絕對的問題 ——
- * 每一條帶還放得下該放的東西嗎。
+ * This file is the other half: **what happens when the table holds an absurd value**. Its
+ * questions are absolute — does each band still hold what it has to hold.
  */
 describe.each(SIZES)('%s機場的航路表', (_label, size, type) => {
   const cfg = getInfraConfig(type as InfraType)!;
@@ -48,9 +48,9 @@ describe.each(SIZES)('%s機場的航路表', (_label, size, type) => {
   });
 
   it('should keep parallel runways far enough apart to be two runways', () => {
-    // 兩條中線靠得太近的話，「不重疊」仍然成立（帶會自己縮），但畫面上那是
-    // 一條寬跑道加一條 2 m 的細帶，而兩架飛機會在上面撞在一起。
-    // 16.8 m 是這裡的跑道帶寬（`RUNWAY_HALF` 的兩倍）。
+    // With the two centrelines too close, "they do not overlap" still holds because the bands
+    // shrink, but on screen it is one wide runway plus a 2 m strip, and two aircraft collide on
+    // it. 16.8 m is the runway band width here, twice `RUNWAY_HALF`.
     const cs = layout.runwayBands.map(r => r.c).sort((a, b) => a - b);
     for (let i = 1; i < cs.length; i++) {
       const gap = m(cs[i]! - cs[i - 1]!);
@@ -59,22 +59,23 @@ describe.each(SIZES)('%s機場的航路表', (_label, size, type) => {
   });
 
   it('should leave the terminal somewhere to stand', () => {
-    // 航廈帶從佔地後緣到 `termFront`。10 m 是一棟航廈的最小深度 ——
-    // 60 m 寬 × 10 m 深的航廈完全站得住，而小型機場只有 48 m 的總深度要
-    // 分給跑道、滑行道、停機坪與航廈。
+    // The terminal band runs from the plot's back edge to `termFront`. 10 m is a terminal's
+    // minimum depth: 60 m wide by 10 m deep holds up perfectly well, and the small airport has
+    // only 48 m of total depth to split between runway, taxiway, apron and terminal.
     const depth = layout.termFront - (-halfH);
     expect(m(depth), `航廈只剩 ${m(depth).toFixed(1)} m 深`).toBeGreaterThan(10);
   });
 
   it('should leave the apron deep enough for an aeroplane', () => {
-    // 飛機 11.7 × 10.8 m。停機坪比它淺的話，停在機位上的飛機會壓進航廈
-    // 或滑行道 —— 而每一條「幾何與航路一致」的測試仍然是綠的。
+    // An aircraft is 11.7 x 10.8 m. With a shallower apron, a parked aircraft presses into the
+    // terminal or the taxiway, while every "geometry agrees with the paths" case stays green.
     const depth = layout.apronBack - layout.termFront;
     expect(m(depth), `停機坪只剩 ${m(depth).toFixed(1)} m 深`).toBeGreaterThan(11);
   });
 
   it('should put the apron lane between the gates and the runway', () => {
-    // 聯絡道跑到機位後面的話，飛機要穿過航廈才進得了機位。
+    // With the cross taxiway behind the gates, an aircraft would have to pass through the
+    // terminal to reach one.
     for (const g of layout.gates) {
       expect(g.z, `機位 ${g.x} 沒有在聯絡道後面`).toBeLessThan(layout.laneZ);
     }
@@ -83,7 +84,7 @@ describe.each(SIZES)('%s機場的航路表', (_label, size, type) => {
 
   it('should keep the taxiways inside the plot', () => {
     expect(layout.taxiX, '縱向滑行道跑出佔地').toBeLessThan(halfW);
-    // 而且要在機位群之外 —— 壓在機位上的話飛機進不了停機位。
+    // And clear of the gate group: over a gate, no aircraft can reach it.
     for (const g of layout.gates) {
       expect(Math.abs(g.x), `機位 ${g.x} 壓在縱向滑行道上`)
         .toBeLessThan(layout.taxiX);
@@ -91,23 +92,25 @@ describe.each(SIZES)('%s機場的航路表', (_label, size, type) => {
   });
 
   /**
-   * 同時停得下的飛機，機位之間要放得下**翼展**。
+   * Gates that can be occupied simultaneously have to be at least a **wingspan** apart.
    *
-   * 大型機場原本只有三個登機口，而且兩架飛機會卡在一起：兩條航路共用中間那個
-   * 機位（A 用 −0.5/0.2、B 用 0.2/0.9），所以四個位置只有三個是不同的；
-   * 而 0.7 格（8.4 m）比翼展（10.8 m）還窄 —— 兩架同時停就是翼尖疊翼尖。
+   * With three gates on the large airport, two aircraft foul each other: the two paths share the
+   * middle gate (A uses -0.5/0.2 and B uses 0.2/0.9), so four positions are only three distinct
+   * ones, and 0.7 cells (8.4 m) is narrower than the 10.8 m wingspan — two parked at once are
+   * wingtip over wingtip.
    *
-   * 只對「同時會有兩架以上」的尺寸要求（`AIRPORT_PATH_COUNT > 1`）：小型與
-   * 中型一次只有一架，機位排密一點反而讓航廈那一排看起來忙。
+   * Required only for sizes that hold two or more at once (`AIRPORT_PATH_COUNT > 1`): small and
+   * medium hold one at a time, and closer gates make the terminal frontage look busier.
    *
-   * 翼展從**實際的幾何**量，不是抄一個數字：機翼改長，這條會要求機位跟著
-   * 拉開。
+   * The wingspan is measured from the **actual geometry** rather than copied: lengthen the wings
+   * and this case demands the gates move apart with them.
    */
   it('should space simultaneous gates at least a wingspan apart', () => {
     if (AIRPORT_PATH_COUNT[size as AirportSize] < 2) return;
     const plane = buildAirplaneGeometry();
     plane.computeBoundingBox();
-    // 幾何朝 +x，翼展沿 z。停在機位上時它轉 90 度，所以翼展沿 x。
+    // The geometry faces +x with its wingspan along z. Parked at a gate it is rotated 90 degrees,
+    // so the wingspan runs along x.
     const span = plane.boundingBox!.max.z - plane.boundingBox!.min.z;
     const xs = layout.gates.map(g => g.x).sort((a, b) => a - b);
     for (let i = 1; i < xs.length; i++) {
@@ -118,7 +121,7 @@ describe.each(SIZES)('%s機場的航路表', (_label, size, type) => {
   });
 
   it('should give the large airport four gates', () => {
-    // 兩條航路各兩個，而且**不共用** —— 共用的話兩架飛機會被指到同一格。
+    // Two gates per path, and **not shared**: shared, two aircraft are directed to one cell.
     if (AIRPORT_PATH_COUNT[size as AirportSize] < 2) return;
     expect(layout.gates.length, '大型機場的機位不是四個').toBe(4);
   });

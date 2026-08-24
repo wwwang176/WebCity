@@ -13,15 +13,17 @@ const m = (cells: number) => cells * METRES_PER_CELL;
 const tagged = (tag: string) => plan.massing.filter(v => v.tag === tag);
 const one = (tag: string) => tagged(tag)[0]!;
 
-/** 一塊量體的前緣／後緣（z 大的一側是前）。 */
+/** A mass's front and back edges; the larger z is the front. */
 const front = (v: CivicVolume) => v.z + v.d / 2;
 const back = (v: CivicVolume) => v.z - v.d / 2;
 
 /**
- * 共通的驗收在 `CivicPlans.test.ts` 的資料表裡。這裡只寫醫院獨有的形狀約束。
+ * The shared acceptance checks live in the table in `CivicPlans.test.ts`. This file holds only the
+ * shape constraints specific to a hospital.
  *
- * 辨識特徵：主樓 + 兩側翼 + 連廊、**頂樓直升機坪**（H 標線與周邊燈）、
- * 急診雨棚。直升機坪是最強的那一個 —— 城市裡沒有第二種建築的屋頂上有它。
+ * Recognition features: a main block with two wings and a link, a **rooftop helipad** with its H
+ * marking and perimeter lights, and the emergency canopy. The helipad is the strongest — no other
+ * building in the city has one on its roof.
  */
 describe('醫院', () => {
   it('should occupy 2x3', () => {
@@ -38,7 +40,8 @@ describe('醫院', () => {
   });
 
   it('should stand the main block over the wings', () => {
-    // 主樓要明顯高過側翼，否則整棟讀起來是一片相同高度的板樓。
+    // The main block has to be clearly taller than the wings, or the whole thing reads as one
+    // slab at a single height.
     const main = one('main');
     const wings = tagged('wing');
     expect(wings.length, '側翼不是兩支').toBe(2);
@@ -48,7 +51,7 @@ describe('醫院', () => {
   });
 
   it('should mirror the two wings about the centre line', () => {
-    // 不對稱的兩翼讀起來是「加蓋的」。醫院是對稱的。
+    // Asymmetric wings read as an extension. A hospital is symmetric.
     const [a, b] = tagged('wing').sort((p, q) => p.x - q.x);
     expect(a!.x, '兩翼沒有對稱').toBeCloseTo(-b!.x, 9);
     expect(a!.w).toBeCloseTo(b!.w, 9);
@@ -56,10 +59,10 @@ describe('醫院', () => {
   });
 
   /**
-   * 連廊要**真的接上**兩端。
+   * The link has to **actually meet** both ends.
    *
-   * 差幾公分的話畫面上是一條浮在半空、兩頭都沒接的走廊 —— 而在資料表裡它
-   * 完全合法（沒有越界、沒有重疊、沒有超支）。
+   * A few centimetres short and it is a corridor floating with neither end attached, which is
+   * entirely legal in the data table: no overrun, no overlap, no budget exceeded.
    */
   it('should bridge the main block to the wings', () => {
     const link = one('corridor');
@@ -69,21 +72,21 @@ describe('醫院', () => {
     for (const w of wings) {
       expect(front(link), '連廊沒有接上側翼').toBeCloseTo(back(w), 9);
     }
-    // 而且它要真的落在兩翼之間的縫上。
+    // And it has to land in the gap between the two wings.
     const [a, b] = wings.sort((p, q) => p.x - q.x);
     expect(link.x - link.w / 2).toBeGreaterThanOrEqual(a!.x - a!.w / 2 - 1e-9);
     expect(link.x + link.w / 2).toBeLessThanOrEqual(b!.x + b!.w / 2 + 1e-9);
   });
 
   it('should keep the corridor low so the wings still read as separate', () => {
-    // 連廊與側翼一樣高的話，三塊量體會併成一個大方盒。
+    // Level with the wings, the three masses merge into one large box.
     const link = one('corridor');
     for (const w of tagged('wing')) {
       expect(link.y1, '連廊太高，兩翼併成一塊了').toBeLessThan(w.y1 * 0.65);
     }
   });
 
-  // ── 直升機坪 ──────────────────────────────────────────────
+  // ── The helipad ───────────────────────────────────────────
 
   it('should put a helipad on the main roof', () => {
     const pad = one('helipad');
@@ -92,20 +95,21 @@ describe('醫院', () => {
     expect(pad.part, '停機坪不是鋪面 —— 它會長出窗戶或吃到屋頂色票')
       .toBe(PART_GROUND);
     expect(pad.y0, '停機坪沒有站在屋頂上').toBeGreaterThanOrEqual(roof.y1 - 1e-9);
-    // 停機坪不能懸空在屋頂邊界外。
+    // The pad may not overhang the roof's boundary.
     expect(pad.x - pad.w / 2).toBeGreaterThanOrEqual(roof.x - roof.w / 2 - 1e-9);
     expect(pad.x + pad.w / 2).toBeLessThanOrEqual(roof.x + roof.w / 2 + 1e-9);
   });
 
   it('should size the helipad for an actual helicopter', () => {
-    // 直升機坪的最小邊長大約是旋翼直徑，中型救護直升機約 11 m。
+    // A helipad's minimum edge is roughly the rotor diameter, about 11 m for a medium air
+    // ambulance.
     const pad = one('helipad');
     expect(m(Math.min(pad.w, pad.d)), '停機坪小到停不了直升機')
       .toBeGreaterThan(9);
   });
 
   it('should paint an H on the pad', () => {
-    // H 是停機坪唯一的識別。少了它那只是屋頂上一塊深色的方形。
+    // The H is a helipad's only identification. Without it the pad is a dark square on a roof.
     const bars = tagged('helipadH');
     expect(bars.length, 'H 不是三劃').toBe(3);
     const pad = one('helipad');
@@ -118,7 +122,7 @@ describe('醫院', () => {
   });
 
   it('should ring the pad with lights, not dot the middle of it', () => {
-    // 停機坪的燈是沿邊排的。放在中間的話直升機會停在燈上。
+    // The pad's lights run along its edges; in the middle, a helicopter would land on them.
     const lights = tagged('padLight');
     const pad = one('helipad');
     expect(lights.length, '停機坪周邊燈太少').toBeGreaterThanOrEqual(4);
@@ -131,18 +135,19 @@ describe('醫院', () => {
     }
   });
 
-  // ── 急診 ──────────────────────────────────────────────────
+  // ── Emergency ─────────────────────────────────────────────
 
   it('should shelter the ambulance bay', () => {
     const canopy = plan.overhead.find(v => v.tag === 'erCanopy')!;
     expect(canopy, '急診沒有雨棚').toBeTruthy();
-    // 救護車 3.7 x 1.5 x 1.6 m。雨棚遮不住一台車的話它只是裝飾。
+    // An ambulance is 3.7 x 1.5 x 1.6 m. Unable to cover one, the canopy is only decoration.
     expect(m(canopy.d), '急診雨棚太淺').toBeGreaterThan(3.5);
     expect(m(canopy.w), '急診雨棚太窄').toBeGreaterThan(6);
   });
 
   it('should mark the emergency entrance with its own colour', () => {
-    // 醫療白的箱子上找不到急診入口。那道紅色帶就是「往這裡走」。
+    // An emergency entrance cannot be found on a medical-white box. The red band says "this
+    // way".
     const band = one('erBand');
     expect(band.color, '急診帶沒有自己的顏色').toBeTruthy();
     const [r, g, b] = band.color!;
@@ -152,11 +157,11 @@ describe('醫院', () => {
   });
 
   it('should light a cross over the emergency entrance', () => {
-    // 夜裡它是醫院唯一一眼認得出來的東西。
+    // At night it is the one thing on a hospital recognisable at a glance.
     const bars = tagged('cross');
     expect(bars.length, '十字不成形').toBeGreaterThanOrEqual(3);
     for (const bar of bars) expect(bar.part, '十字不會亮').toBe(PART_LAMP);
-    // 十字要在急診帶那一側，不是在另一頭。
+    // The cross belongs on the emergency band's side, not at the other end.
     const band = one('erBand');
     for (const bar of bars) {
       expect(Math.sign(bar.x), '十字掛在急診的另一邊').toBe(Math.sign(band.x));
@@ -166,7 +171,7 @@ describe('醫院', () => {
   it('should park real ambulances at the bay', () => {
     const ambulances = plan.vehicles.filter(v => v.kind === 'ambulance');
     expect(ambulances.length, '急診門口沒有救護車').toBeGreaterThanOrEqual(2);
-    // 救護車要停在急診那一側，不是在員工停車場。
+    // The ambulance parks on the emergency side rather than in the staff bays.
     const band = one('erBand');
     for (const a of ambulances) {
       expect(Math.sign(a.x), '救護車停到大門那一側去了').toBe(Math.sign(band.x));
@@ -174,15 +179,16 @@ describe('醫院', () => {
   });
 
   /**
-   * 每一塊量體都要有屋頂，而且是**白的**。
+   * Every mass is capped with a roof, and a **white** one.
    *
-   * 少一片屋頂的話那一塊會走 `n.y > 0.85` 的自動判定 —— 拿得到屋頂色票，
-   * 但沒有屋簷，量體的邊緣是刀切的。
+   * Without a roof piece, a mass falls to the automatic `n.y > 0.85` test: it gets the roof
+   * palette but has no eaves, and its edges are cut square.
    *
-   * 而「拿得到屋頂色票」正是「醫院不夠白」的來源：公家建築
-   * 那組色票是深瀝青（最亮的一個也只有 0.38），所以一棟白牆的醫院從等角
-   * 視角看下去是深灰的。醫院的屋頂走 `PART_GROUND` + 高明度，顏色由這一棟
-   * 自己決定 —— 這條測的就是「沒有人把它改回共用色票」。
+   * And getting the roof palette is exactly why a hospital does not read as white: the civic
+   * group's palette is dark asphalt, with even its brightest entry at 0.38, so a white-walled
+   * hospital seen from an isometric view is dark grey. A hospital's roofs take `PART_GROUND` with
+   * a high brightness so the colour is decided by the building itself, and this case guards that
+   * nobody has switched them back to the shared palette.
    */
   it('should cap every block with a white roof', () => {
     for (const tag of ['main', 'wing', 'corridor']) {
@@ -194,8 +200,8 @@ describe('醫院', () => {
         expect(r.shade, `${tag}Roof 不夠白`).toBeGreaterThan(0.8);
       }
     }
-    // 而且不准有任何一片真的 `PART_ROOF` 混進來 —— 一棟白醫院上有一片
-    // 深灰的雨遮，那一片會變成整棟最顯眼的東西。
+    // And no genuine `PART_ROOF` piece may slip in: one dark grey canopy on a white hospital
+    // becomes the most conspicuous thing on it.
     for (const v of [...plan.massing, ...plan.props, ...plan.overhead]) {
       expect(v.part, `${v.tag} 是深色屋頂`).not.toBe(PART_ROOF);
     }

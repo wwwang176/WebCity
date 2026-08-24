@@ -15,10 +15,12 @@ const area = (d: CivicDecal) => d.w * d.d;
 const tagged = (p: CivicPlan, tag: string) => p.massing.filter(v => v.tag === tag);
 
 /**
- * 綠地兩種：公園與墓園。共通的驗收在 `CivicPlans.test.ts` 的資料表裡。
+ * The two green spaces: park and cemetery. Their shared acceptance checks live in the table in
+ * `CivicPlans.test.ts`.
  *
- * 它們共用 `FACADE_GREEN` —— 那條立面分支**刻意沒有窗格**。綠地上的量體是
- * 涼亭與禮拜堂，長滿窗戶的涼亭看起來只會像一個很小的辦公室。
+ * They share `FACADE_GREEN`, a facade branch that **deliberately has no window panes**. The
+ * masses on green space are pavilions and memorials, and a pavilion covered in windows only looks
+ * like a very small office.
  */
 describe.each([
   ['公園', parkPlan, 'park'],
@@ -30,7 +32,8 @@ describe.each([
   });
 
   it('should be mostly grass', () => {
-    // 綠地的地就是它的內容。鋪面過半的話那是一座廣場，不是綠地。
+    // Green space's ground is its content. More than half paved, it is a plaza rather than green
+    // space.
     const all = base(plan).reduce((s, d) => s + area(d), 0);
     const grass = base(plan).filter(d => d.lawn).reduce((s, d) => s + area(d), 0);
     expect(grass / all, `${type} 的草地只佔 ${(grass / all * 100).toFixed(0)}%`)
@@ -38,16 +41,16 @@ describe.each([
   });
 
   it('should let people walk in', () => {
-    // 有一條鋪面要通到格子邊界。四面都是草的綠地是一塊裝飾用的草皮 ——
-    // 而且遊戲裡它就緊貼著馬路。
+    // One paved path reaches the cell boundary. Green space with grass on all four sides is a
+    // decorative lawn, and in the game it sits right against the road.
     const edge = plan.footprint.h / 2;
     const reaches = base(plan).some(d => !d.lawn && d.z + d.d / 2 >= edge - 1e-9);
     expect(reaches, `${type} 的步道沒有通到路邊`).toBe(true);
   });
 
   it('should light something without relying on windows', () => {
-    // `FACADE_GREEN` 沒有窗格，所以夜裡的亮點只能來自 `PART_LAMP`。
-    // 這一條是 BUG-238 在綠地上的版本。
+    // `FACADE_GREEN` has no window panes, so the only light at night can come from `PART_LAMP`.
+    // This is BUG-238's green-space form.
     const lamps = [...plan.massing, ...plan.props]
       .filter(v => v.part === PART_LAMP).length;
     const street = plan.fixtures.filter(f => f.kind === 'lamp').length;
@@ -55,7 +58,7 @@ describe.each([
   });
 
   it('should plant a lot of trees', () => {
-    // 綠地的三角形本來就該花在綠化上。
+    // Green space's triangles belong in its planting.
     expect(plan.fixtures.filter(f => f.kind === 'tree').length, `${type} 的樹太少`)
       .toBeGreaterThanOrEqual(6);
   });
@@ -69,13 +72,14 @@ describe('公園', () => {
   });
 
   it('should stay small enough not to loom over the houses', () => {
-    // 12 m 的格子上蓋一棟樓是不對的。涼亭就是涼亭。
+    // A building on a 12 m cell is wrong here. A pavilion is a pavilion.
     const top = m(topOf(plan.massing));
     expect(top, `公園蓋到 ${top.toFixed(1)} m`).toBeLessThan(5);
   });
 
   it('should carry the gazebo roof on posts', () => {
-    // 四面牆的話那是一間房，不是涼亭 —— 而且從側面看不進去。
+    // With four walls it is a room rather than a pavilion, and nothing can be seen into it from
+    // the side.
     const posts = plan.props.filter(v => v.tag === 'post');
     const roof = tagged(plan, 'gazeboRoof');
     expect(posts.length, '涼亭的柱子不到三根').toBeGreaterThanOrEqual(3);
@@ -88,16 +92,16 @@ describe('公園', () => {
   });
 
   it('should floor the gazebo with paving, not a wall', () => {
-    // 標成牆的話這座 0.25 m 高的台子會長出窗戶。
+    // Tagged as wall, this 0.25 m platform grows windows.
     const deck = tagged(plan, 'deck')[0]!;
     expect(deck.part).toBe(PART_GROUND);
     expect(deck.shade, '台座沒有鋪面明度').toBeGreaterThan(0);
   });
 
   it('should light the gazebo itself, not only the paths', () => {
-    // 「有東西會亮」由共用路燈就能滿足（資料表那條），但那不是重點：
-    // 涼亭是這一格的焦點，夜裡它自己不亮的話，公園在夜景裡是兩支路燈中間
-    // 的一塊黑。
+    // "Something lights up" is satisfied by the shared lamps alone, which is what the data table
+    // checks, but that is not the point: the pavilion is this cell's focus, and unlit it leaves
+    // the park as a patch of black between two street lamps at night.
     const own = [...plan.massing, ...plan.props].filter(v => v.part === PART_LAMP);
     expect(own.length, '涼亭自己沒有燈').toBeGreaterThan(0);
     for (const v of own) {
@@ -111,12 +115,13 @@ describe('公園', () => {
   });
 
   it('should not pretend a 12 m park has parking', () => {
-    // 一格的公園是走路來的。停一台車就佔掉基地的十分之一。
+    // A one-cell park is reached on foot. One parked vehicle takes a tenth of the plot.
     expect(plan.vehicles).toEqual([]);
   });
 
   it('should cross the paths so all four edges connect', () => {
-    // 十字步道的四個端點都要通到邊界 —— 只通一邊的話從另外三面走不進來。
+    // All four ends of the cross paths reach the boundary; reaching only one side, the other
+    // three cannot be walked in from.
     const half = 0.5;
     const paths = base(plan).filter(d => !d.lawn);
     const reaches = (pick: (d: CivicDecal) => number) =>
@@ -137,8 +142,8 @@ describe('墓園', () => {
   });
 
   it('should line the headstones up in a grid', () => {
-    // 對齊是這一棟的全部。散落的矮方塊讀起來是「地上有一堆東西」，
-    // 排成格線才是墓園。
+    // Alignment is the whole of this plot. Scattered low blocks read as clutter on the ground;
+    // laid out on a grid they read as a cemetery.
     expect(stones.length, '墓碑太少，讀不出是墓園').toBeGreaterThanOrEqual(20);
     const key = (v: number) => v.toFixed(6);
     const cols = new Set(stones.map(s => key(s.x)));
@@ -150,14 +155,16 @@ describe('墓園', () => {
   });
 
   /**
-   * 而且**等距**。
+   * And **evenly spaced**.
    *
-   * 「成格線」擋不住不等距的格線：把某一列整條往下挪 0.1 m，行列數完全不變
-   * —— 上面那條測試是綠的，而畫面上那一列明顯歪掉。等距才是「有人在管理」
-   * 的訊號，也是墓園與「地上散了一堆石頭」的差別。
+   * "On a grid" does not rule out an uneven grid: move one row 0.1 m and the row and column
+   * counts are unchanged, so the case above stays green while that row is visibly out of line.
+   * Even spacing is the signal that someone maintains this, and it is the difference between a
+   * cemetery and stones scattered on the ground.
    *
-   * 行（x）分成步道左右兩群，各自等距；群與群之間隔著步道，所以整體不等距
-   * 是**對的** —— 拿整排一起量會把那道必要的縫判成錯。
+   * The columns (x) form two groups either side of the path, each evenly spaced within itself.
+   * The path separates the groups, so uneven spacing overall is **correct**: measuring the whole
+   * row together would flag that necessary gap as a fault.
    */
   it('should space the rows and columns evenly', () => {
     const gaps = (vs: number[]) => {
@@ -186,7 +193,7 @@ describe('墓園', () => {
   });
 
   it('should keep the headstones off the path', () => {
-    // 走道上長出墓碑的話，那條路就不通了。
+    // A headstone growing on the path closes it.
     const path = base(plan).find(d => !d.lawn && d.d > d.w)!;
     for (const s of stones) {
       const clear = Math.abs(s.x) - s.w / 2 >= path.w / 2 - 1e-9;
@@ -195,13 +202,15 @@ describe('墓園', () => {
   });
 
   it('should walk the path from the gate to the memorial', () => {
-    // 走不到頭的步道是一條裝飾線。步道要從基地前緣一路接到紀念碑。
+    // A path that stops short is a decorative line. It runs from the plot's front edge all the
+    // way to the memorial.
     const plinth = tagged(plan, 'plinth')[0]!;
     const path = base(plan).find(d => !d.lawn && d.d > d.w)!;
     const court = base(plan).find(d => !d.lawn && d !== path)!;
     expect(path.z + path.d / 2, '步道沒有接到門口')
       .toBeGreaterThanOrEqual(plan.footprint.h / 2 - 1e-9);
-    // 步道接到碑前廣場，碑站在廣場上 —— 中間斷一段的話那是「走到一半的路」。
+    // The path meets the plaza and the memorial stands on it; a break between them is a path
+    // that stops halfway.
     expect(path.z - path.d / 2, '步道與碑前廣場之間斷了一段')
       .toBeLessThanOrEqual(court.z + court.d / 2 + 1e-9);
     expect(Math.abs(plinth.z - court.z) + plinth.d / 2, '紀念碑站在廣場外面')
@@ -211,14 +220,13 @@ describe('墓園', () => {
   });
 
   /**
-   * 墓園裡沒有房子。
+   * There is no building in the graveyard.
    *
-   * 墓園可以再簡單，不一定要有建築。拆掉禮拜堂之後要有一條擋著它長回來 —— 而「有沒有建築」這件事在資料上就看得出來：
-   * **屋頂**。這一棟不該有任何一片 `PART_ROOF`，因為它沒有任何一棟需要蓋頂
-   * 的東西。
+   * A cemetery needs no building, and whether one is present is visible in the data as a **roof**.
+   * This plot should carry no `PART_ROOF` at all, because nothing on it needs covering.
    *
-   * 第二條是尺度：紀念碑最大的一階石台是 3.2 m 見方。留 16 m2 的上限 ——
-   * 超過那個尺寸的量體就不是一座碑，是一棟樓。
+   * The second condition is scale: the memorial's largest step is 3.2 m square. The limit is
+   * 16 m2 — a mass larger than that is not a memorial but a building.
    */
   it('should not put a building in the graveyard', () => {
     const all = [...plan.massing, ...plan.props, ...plan.overhead];
@@ -234,7 +242,7 @@ describe('墓園', () => {
   });
 
   it('should light a cross on top of the memorial', () => {
-    // 夜裡整座墓園只剩這個十字。
+    // At night the cross is all that remains of the cemetery.
     const cross = tagged(plan, 'cross');
     const shaft = tagged(plan, 'shaft')[0]!;
     expect(cross.length, '十字不成形').toBeGreaterThanOrEqual(3);
@@ -242,7 +250,7 @@ describe('墓園', () => {
       expect(c.part, '十字不會亮').toBe(PART_LAMP);
       expect(c.y0, '十字掛在石柱下面').toBeGreaterThanOrEqual(shaft.y1 - 1e-9);
     }
-    // 而且要看得到 —— 4 m 以下的十字被墓碑旁的樹擋住了。
+    // And it has to be visible: below 4 m the cross is hidden by the trees beside the graves.
     expect(m(Math.max(...cross.map(c => c.y1))), '十字太矮').toBeGreaterThan(4.5);
   });
 

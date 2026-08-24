@@ -11,11 +11,12 @@ const plan = firePlan;
 const m = (cells: number) => cells * METRES_PER_CELL;
 
 /**
- * 共通的驗收（佔地、預算、夜燈、貼地、量體不重疊、雨棚淨空）在
- * `CivicPlans.test.ts` 的資料表裡。這裡只寫消防局**獨有**的形狀約束。
+ * The shared checks — footprint, budget, night lights, sitting on the ground, non-overlapping
+ * masses, canopy clearance — live in the table in `CivicPlans.test.ts`. This file holds only the
+ * shape constraints **specific to** a fire station.
  *
- * 它的辨識特徵有三個，缺一個就會被誤認成別的公共建築：
- * 一整排捲門、落地的訓練塔、紅色主體。
+ * It has three recognition features, and without any one of them it is mistaken for another
+ * civic building: a row of roller doors, a training tower on the ground, and a red body.
  */
 describe('消防局', () => {
   const doors = plan.massing.filter(v => v.tag === 'door');
@@ -28,7 +29,8 @@ describe('消防局', () => {
   });
 
   it('should be red', () => {
-    // 等角視角下顏色比剪影更早被認出來。消防局是紅的不是裝飾，是功能。
+    // In an isometric view colour is recognised before silhouette. A fire station being red is
+    // functional, not decorative.
     expect(plan.color).toEqual(civicColorOf('fire'));
     const [r, g, b] = plan.color;
     expect(r, '主體不夠紅').toBeGreaterThan(0.5);
@@ -37,7 +39,8 @@ describe('消防局', () => {
   });
 
   it('should line up a row of roller doors', () => {
-    // 這是消防局最強的辨識訊號 —— 一排等距的大門。少於三扇讀起來像車庫。
+    // The strongest recognition signal a fire station has: a row of evenly spaced doors. Fewer
+    // than three reads as a garage.
     expect(doors.length, '捲門不成排').toBeGreaterThanOrEqual(3);
     const xs = doors.map(d => d.x).sort((a, b) => a - b);
     const gaps = xs.slice(1).map((x, i) => x - xs[i]!);
@@ -47,8 +50,8 @@ describe('消防局', () => {
   });
 
   it('should make the doors big enough for an engine to drive through', () => {
-    // 消防車 6.7 x 1.8 x 1.9 m（`buildFiretruckGeometry` 的實際尺寸）。
-    // 門洞比車小的話，畫面上那排門看起來就只是牆上的裝飾板。
+    // A fire engine is 6.7 x 1.8 x 1.9 m, the actual dimensions from `buildFiretruckGeometry`.
+    // With doors smaller than the engine, the row reads as decorative panels on a wall.
     for (const d of doors) {
       expect(m(d.w), `捲門只有 ${m(d.w).toFixed(1)} m 寬`).toBeGreaterThan(3.2);
       expect(m(d.y1 - d.y0), `捲門只有 ${m(d.y1 - d.y0).toFixed(1)} m 高`)
@@ -57,8 +60,8 @@ describe('消防局', () => {
   });
 
   it('should face all the doors the same way, onto the apron', () => {
-    // 一排門朝同一個方向才叫「一排」。而且要朝 +z（前庭那一側）——
-    // 朝後的話消防車開出來就撞牆。
+    // A row means all the doors face the same way, and they face +z, the forecourt side; facing
+    // back, an engine turning out hits a wall.
     for (const d of doors) {
       expect(d.z, '捲門不在同一面牆上').toBeCloseTo(doors[0]!.z, 6);
       expect(d.z, '捲門朝著建築的背面').toBeGreaterThan(bay.z);
@@ -66,8 +69,9 @@ describe('消防局', () => {
   });
 
   it('should stand the doors proud of the bay wall, not inside it', () => {
-    // 埋進牆裡的話是看不見的內部面：白吃三角形，畫面上完全沒有門。
-    // 機房前緣在 bay.z + bay.d / 2，門要整片在它之外。
+    // Sunk into the wall they are invisible interior faces: triangles spent for nothing, and no
+    // door on screen at all. The bay's leading edge is at bay.z + bay.d / 2, and each door stands
+    // entirely outside it.
     const wall = bay.z + bay.d / 2;
     for (const d of doors) {
       expect(d.z - d.d / 2, '捲門埋在牆裡').toBeGreaterThanOrEqual(wall - 1e-9);
@@ -75,25 +79,27 @@ describe('消防局', () => {
   });
 
   it('should not let the doors grow windows', () => {
-    // 捲門是金屬板。標成 PART_WALL 的話它會長出一格一格的窗。
+    // A roller door is a metal panel. Tagged PART_WALL it grows a grid of windows.
     for (const d of doors) expect(d.part).toBe(PART_DETAIL);
   });
 
   it('should give the apparatus bay the headroom an engine needs', () => {
-    // 車庫要挑高。與旁邊的宿舍樓一樣高的話，整棟就是一個方盒子。
+    // The bay is double height. Level with the dorm block beside it, the whole building is one
+    // box.
     expect(m(bay.y1), `機房只有 ${m(bay.y1).toFixed(1)} m 高`).toBeGreaterThan(6.0);
   });
 
   it('should stand the training tower on the ground', () => {
-    // 訓練塔（兼水帶晾乾塔）是消防局的第二個辨識特徵，而它與警局的瞭望塔
-    // 差在**它落地**：警局那座疊在翼樓屋頂上。兩座塔都架在屋頂上的話，
-    // 兩棟建築的剪影就分不出來了。
+    // The training tower, which doubles as a hose drying tower, is a fire station's second
+    // recognition feature, and what separates it from a police station's watchtower is **standing
+    // on the ground**: that one is stacked on a wing's roof. With both towers on roofs, the two
+    // buildings' silhouettes stop separating.
     expect(tower, '找不到訓練塔').toBeTruthy();
     expect(tower.y0, '訓練塔浮在半空').toBeCloseTo(0, 9);
   });
 
   it('should keep the training tower slender and tallest', () => {
-    // 又矮又胖的塔讀起來是「另一棟樓」。
+    // A short, wide tower reads as another building.
     const h = tower.y1 - tower.y0;
     expect(h / Math.max(tower.w, tower.d), '訓練塔太胖').toBeGreaterThan(3);
     for (const v of plan.massing) {
@@ -109,13 +115,15 @@ describe('消防局', () => {
   });
 
   /**
-   * 門前不准放東西。
+   * Nothing stands in front of the doors.
    *
-   * 這是這一棟唯一真正的**機能**約束：消防車要開得出去。一棵種在門口的樹是
-   * 所有人第一眼就會看到的笑話，而它在資料表裡完全合法（沒有越界、沒有超支）。
+   * This is the one genuinely **functional** constraint here: an engine has to be able to turn
+   * out. A tree planted in a doorway is the first thing anyone would laugh at, and it is entirely
+   * legal in the data table — no overrun, no budget exceeded.
    *
-   * 只檢查 `fixtures`（全部落地）。停在前庭上的消防車**是**停在車道上的 ——
-   * 那是「車剛開出來」，正是想要的畫面。
+   * Only `fixtures` are checked, since they all sit on the ground. A fire engine on the forecourt
+   * **is** parked on the apron: it reads as an engine that has just turned out, which is the
+   * intended picture.
    */
   it('should keep the run-out lanes clear of street furniture', () => {
     const edge = plan.footprint.h / 2;
@@ -132,7 +140,7 @@ describe('消防局', () => {
   });
 
   it('should pave a hard apron in front of the doors', () => {
-    // 門前是草地的話，消防車要輾過草坪才出得去。
+    // With grass in front of the doors, an engine drives over the lawn to leave.
     const base = plan.decals.filter(d => (d.layer ?? 'base') === 'base');
     const apron = base.find(d => d.z - d.d / 2 <= doors[0]!.z && d.z + d.d / 2 > doors[0]!.z)!;
     expect(apron, '門前沒有鋪面').toBeTruthy();
@@ -147,7 +155,7 @@ describe('消防局', () => {
   });
 
   it('should light the doors and the apron', () => {
-    // 門楣上的警示燈是消防局夜裡的辨識訊號。
+    // The warning lights above the doors are a fire station's night-time signal.
     const beacons = plan.props.filter(v => v.part === PART_LAMP);
     expect(beacons.length, '門楣上沒有燈').toBeGreaterThanOrEqual(doors.length);
     expect(plan.fixtures.filter(f => f.kind === 'lamp').length, '前庭的路燈太少')
@@ -155,14 +163,13 @@ describe('消防局', () => {
   });
 
   /**
-   * 消防車要比消防局**暗**。
+   * A fire engine has to be **darker** than the station.
    *
-   * 消防車要暗紅。原因比「比較好看」具體：消防車原本
-   * 與消防局的牆是**同一個紅**（兩邊都是 `0xd32f2f`）—— 一台停在牆前面的
-   * 車與牆同色，等於沒有車。
+   * At the same red as the station's walls (both `0xd32f2f`), an engine parked in front of a wall
+   * matches it, which is the same as having no engine.
    *
-   * 比的是與這一棟建築的關係，不是一個寫死的十六進位值：哪天有人調了消防局
-   * 的紅，這條測試會跟著要求車也調。
+   * The comparison is relative to this building rather than against a hard-coded hex value: tune
+   * the station's red and this case demands the engine follow.
    */
   it('should be darker than the station it parks at', () => {
     const truck = civicVehicleTint('firetruck');
@@ -176,7 +183,7 @@ describe('消防局', () => {
   });
 
   it('should park real fire engines', () => {
-    // 停著的消防車與街上出勤的消防車必須是同一台。
+    // A parked engine and one responding on the street have to be the same vehicle.
     expect(plan.vehicles.filter(v => v.kind === 'firetruck').length, '沒有消防車')
       .toBeGreaterThanOrEqual(2);
     for (const v of plan.vehicles) {
@@ -185,7 +192,7 @@ describe('消防局', () => {
   });
 
   it('should have its own hydrants', () => {
-    // 消防隊自己的門口沒有消防栓是最沒有說服力的一件事。
+    // A fire station with no hydrant outside it is the least convincing thing there is.
     expect(plan.fixtures.filter(f => f.kind === 'hydrant').length)
       .toBeGreaterThanOrEqual(2);
   });
@@ -195,7 +202,8 @@ describe('消防局', () => {
       expect(plan.fixtures.some(f => f.kind === kind), `${kind} 沒有走共用圖元`)
         .toBe(true);
     }
-    // 自訂量體只剩共用圖元裡真的沒有的東西：捲門與門楣警示燈。
+    // The custom masses are only what the shared primitives genuinely lack: the roller doors and
+    // the warning lights above them.
     expect(new Set(plan.props.map(v => v.tag)), '自訂量體裡混進了共用圖元有的東西')
       .toEqual(new Set(['beacon']));
   });

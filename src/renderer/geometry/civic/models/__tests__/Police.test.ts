@@ -8,8 +8,9 @@ const plan = policePlan;
 const m = (cells: number) => cells * METRES_PER_CELL;
 
 /**
- * 共通的驗收（佔地、預算、夜燈、貼地）在 `CivicPlans.test.ts` 的資料表裡，
- * 這裡只寫警局**獨有**的形狀約束 —— 那些是「它看起來還是不是警局」的實體。
+ * The shared checks — footprint, budget, night lights, sitting on the ground — live in the table
+ * in `CivicPlans.test.ts`. This file holds only the shape constraints **specific to** a police
+ * station: what "does it still look like a police station" amounts to.
  */
 describe('警局', () => {
   it('should occupy 2x2', () => {
@@ -18,7 +19,8 @@ describe('警局', () => {
   });
 
   it('should keep the watch tower above both wings', () => {
-    // 瞭望塔是警局的辨識特徵。被翼樓蓋過去就認不出來了。
+    // The watchtower is a police station's recognition feature. Hidden behind a wing it is not
+    // identifiable.
     const tower = plan.massing.find(v => v.tag === 'tower')!;
     const wings = plan.massing.filter(v => v.tag === 'wing');
     expect(tower, '找不到瞭望塔').toBeTruthy();
@@ -29,25 +31,27 @@ describe('警局', () => {
   });
 
   it('should be an L, not a box', () => {
-    // 兩支翼一長一短是 L 形的實體。體積重心偏離包圍盒中心就是「不對稱」的
-    // 可算出來的指標（`centroidOffset` 的註解說明了為什麼不用光柵差異）。
+    // One long wing and one short one is what an L amounts to. The volume centroid's offset from
+    // the bounding box centre is the computable measure of asymmetry; `centroidOffset`'s comment
+    // explains why a raster difference is not used.
     expect(centroidOffset(plan.massing), '量體太對稱 —— 它是個盒子不是 L')
       .toBeGreaterThan(0.05);
   });
 
-  // 「量體不得互相埋起來」在 `CivicPlans.test.ts` 的資料表裡（每一棟都要），
-  // 所以這裡不再寫第二份。
+  // "No mass buried inside another" lives in the table in `CivicPlans.test.ts`, which every
+  // building goes through, so there is no second copy here.
 
   it('should stay at a believable height for a police station', () => {
-    // 24 x 24 m 的基地上，塔太矮認不出是塔、太高就變成消防局的訓練塔。
+    // On a 24 x 24 m plot, too short and the tower is not identifiable as one; too tall and it
+    // becomes a fire station's training tower.
     const top = m(topOf(plan.massing));
     expect(top).toBeGreaterThan(14);
     expect(top).toBeLessThan(22);
   });
 
   it('should give the wings enough height for the lobby plus real floors', () => {
-    // CIVIC 立面的門廳高度是 floorHeight * 1.35，窗格從它之上才開始。
-    // 翼樓不夠高的話，整棟只有門廳、一扇窗都沒有。
+    // The CIVIC facade's lobby height is floorHeight * 1.35 and window panes start above it.
+    // With the wing too short, the whole building is lobby and shows no window at all.
     const wing = plan.massing.find(v => v.tag === 'wing')!;
     const floorH = 0.22 + plan.seed[0] * 0.08;   // shader 的 mix(MIN, MAX, aSeed.x)
     const windowed = wing.y1 - floorH * 1.35;
@@ -56,8 +60,8 @@ describe('警局', () => {
   });
 
   it('should cap the tower with a roof, not a wall', () => {
-    // 少了的話塔頂會走 `n.y > 0.85` 的自動屋頂判定，拿到的是屋頂色票沒錯，
-    // 但塔冠該比塔身寬一圈才看得出是「冠」。
+    // Without it the tower top falls to the automatic `n.y > 0.85` roof test, which does give it
+    // the roof palette, but a cap has to be wider than the shaft to read as a cap.
     const cap = plan.massing.find(v => v.tag === 'cap')!;
     const tower = plan.massing.find(v => v.tag === 'tower')!;
     expect(cap.part).toBe(PART_ROOF);
@@ -65,8 +69,8 @@ describe('警局', () => {
   });
 
   it('should put the parking bay lines on the mark layer', () => {
-    // 停車格線是標線，放進量體層就會長出牆與窗；放進底層貼片就會與柏油
-    // z-fighting。
+    // Parking bay lines are markings: in the massing layer they grow walls and windows, and in
+    // the base decal layer they z-fight with the asphalt.
     const marks = plan.decals.filter(d => d.layer === 'mark');
     expect(marks.length, '沒有任何標線').toBeGreaterThan(0);
     for (const d of marks) {
@@ -75,8 +79,8 @@ describe('警局', () => {
   });
 
   it('should use real parking bay dimensions', () => {
-    // 停車格線之間要放得下一台車。工業區的「停車格」在尺度上不成立
-    // （TODO.md 記著），這裡不要重演。
+    // A car has to fit between the bay lines. The industrial zone's "parking bays" do not hold up
+    // at that scale, as TODO.md records; this does not repeat it.
     const stripes = plan.decals
       .filter(d => d.layer === 'mark' && d.w < d.d)
       .map(d => d.x)
@@ -93,14 +97,16 @@ describe('警局', () => {
 
   it('should shelter the entrance with a canopy', () => {
     expect(plan.overhead.length, '門口沒有雨棚').toBeGreaterThan(0);
-    // 雨棚要高過人頭。2.2 m 是行人淨空（`OVERHEAD_CLEARANCE`）。
+    // A canopy clears people's heads. 2.2 m is the pedestrian clearance
+    // (`OVERHEAD_CLEARANCE`).
     for (const v of plan.overhead) {
       expect(m(v.y0), '雨棚會打到人').toBeGreaterThan(2.2);
     }
   });
 
   it('should light both the entrance and the car park', () => {
-    // 只有門口有燈的話，夜裡整片停車場是黑的 —— 而停車場佔了基地的一半。
+    // With lights only at the entrance, the whole car park is black at night, and it takes half
+    // the plot.
     const street = plan.fixtures.filter(f => f.kind === 'lamp');
     const porch = plan.props.filter(v => v.part === PART_LAMP);
     expect(street.length, '停車場的路燈太少').toBeGreaterThanOrEqual(3);
@@ -111,27 +117,28 @@ describe('警局', () => {
   });
 
   /**
-   * 所有矮物件都走共用的圖元。
+   * Every low prop comes from the shared primitives.
    *
-   * 自己再畫一份的下場是同一座城市裡兩支長得不一樣的路燈，而且改一邊不會
-   * 連動另一邊。所以凡是 `geometry/props` 有的東西，這裡不准用自訂量體重寫。
+   * A second copy ends with two differently shaped street lamps in one city, and a change to one
+   * not reaching the other. So anything `geometry/props` already has may not be redrawn here as a
+   * custom mass.
    */
   it('should use the shared primitives instead of re-drawing them', () => {
     for (const kind of ['tree', 'shrub', 'flowerBed', 'lamp', 'flagpole'] as const) {
       expect(plan.fixtures.some(f => f.kind === kind), `${kind} 沒有走共用圖元`)
         .toBe(true);
     }
-    // 自訂量體只剩下共用圖元裡真的沒有的東西。
+    // The custom masses are only what the shared primitives genuinely lack.
     const custom = new Set(plan.props.map(v => v.tag));
     expect(custom, '自訂量體裡混進了共用圖元有的東西')
       .toEqual(new Set(['porchLamp', 'bench']));
   });
 
   /**
-   * 巡邏車原本只是一個方塊，而現成的車輛幾何就在旁邊。
+   * Patrol cars use the existing vehicle geometry rather than plain boxes.
    *
-   * 有。停著的警車與街上巡邏的警車必須是同一台 —— 兩者長得不一樣是最容易
-   * 被看出來的不一致。
+   * A parked patrol car and one on patrol have to be the same vehicle; the two looking different
+   * is the most easily spotted inconsistency there is.
    */
   it('should park real police cars, not grey boxes', () => {
     expect(plan.vehicles.some(v => v.kind === 'policeCar'), '沒有警車').toBe(true);
@@ -140,16 +147,17 @@ describe('警局', () => {
   });
 
   it('should point the parked cars down the bays', () => {
-    // 停車格是沿 z 排的，車輛幾何原本車頭朝 +x —— 不轉的話車是橫著停的，
-    // 而且會壓過兩三條分隔線。
+    // The bays run along z while the vehicle geometry faces +x: unrotated the cars park sideways
+    // and straddle two or three separator lines.
     for (const v of plan.vehicles) {
       expect(v.rotationY, `${v.kind} 沒有轉向停車格`).toBeCloseTo(Math.PI / 2, 6);
     }
   });
 
   it('should not tag the lamp posts as glowing', () => {
-    // 整支標成發光的話，夜裡會看到一根從地上亮到頂的柱子（BUG-230 的教訓）。
-    // 走共用的 `lamp` 之後這條由圖元本身保證 —— 這裡守的是「真的走了共用的」。
+    // Tagging the whole thing as glowing gives a post lit from the ground to the top at night
+    // (the lesson of BUG-230). Through the shared `lamp` the primitive guarantees that, and what
+    // this case guards is that the shared one is actually used.
     expect(plan.fixtures.some(f => f.kind === 'lamp'), '路燈不是共用圖元')
       .toBe(true);
     for (const v of plan.props.filter(x => x.part === PART_LAMP)) {
@@ -160,8 +168,8 @@ describe('警局', () => {
   });
 
   it('should pave the forecourt and the car park without overlapping them', () => {
-    // 底層重疊會 z-fighting。`assembleDecals` 會擋，但這裡先講清楚意圖：
-    // 前庭、停車場、草地是三塊**不重疊**的鋪面，共邊即可。
+    // Overlapping base layers z-fight. `assembleDecals` catches it, but the intent is stated here
+    // too: forecourt, car park and lawn are three **non-overlapping** surfaces that share edges.
     const base = plan.decals.filter(d => (d.layer ?? 'base') === 'base');
     expect(base.length, '地面只有一塊 —— 前庭、停車場、草地應該分開').toBeGreaterThanOrEqual(3);
     expect(base.some(d => d.lawn), '沒有草地').toBe(true);
