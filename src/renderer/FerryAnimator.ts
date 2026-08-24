@@ -1,10 +1,10 @@
 /**
- * FerryAnimator — 渡輪渲染端動畫（從 Game.ts 抽出）。
+ * FerryAnimator — ferry animation on the render side.
  *
- * 實作 VehicleAnimator 介面，負責：
- * - 沿 A* 水路路徑做距離插值（純 LERP）
- * - heading 平滑轉向
- * - 動畫狀態管理（建立/清除）
+ * It implements the VehicleAnimator interface and handles:
+ * - distance interpolation along the A* water path, a pure LERP
+ * - smoothing the heading through turns
+ * - animation state, creating and clearing
  */
 import {
   buildFerryPathInfo,
@@ -14,11 +14,11 @@ import {
 import type { VehicleAnimator } from './VehicleAnimator';
 import type { TransportVehicleRenderData } from '../core/transport/collectTransportVehicles';
 
-/** 渡輪視覺移動速度（世界單位/秒），與 tick 無關 */
+/** A ferry's visual speed in world units per second, independent of ticks. */
 const FERRY_VISUAL_SPEED = 1.5;
-/** 渡輪轉向速率（弧度/秒），越大轉越快 */
+/** A ferry's turn rate in radians per second; larger turns faster. */
 const FERRY_TURN_RATE = 3.0;
-/** 渡輪 ID 偏移量（對應 collectTransportVehicles） */
+/** The ferry id offset, matching collectTransportVehicles. */
 const FERRY_ID_OFFSET = 500_000;
 
 interface FerryAnimState {
@@ -27,7 +27,7 @@ interface FerryAnimState {
   heading: number;
 }
 
-/** 最小渡輪系統介面（避免直接依賴 FerrySystem 類別） */
+/** The minimum ferry system interface, avoiding a direct dependency on the FerrySystem class. */
 export interface FerrySystemLike {
   getVessels(): Iterable<{ id: number; traveling: boolean }>;
   getVesselPath(id: number): ReadonlyArray<{ x: number; y: number }> | null;
@@ -37,7 +37,8 @@ export class FerryAnimator implements VehicleAnimator {
   private anims = new Map<number, FerryAnimState>();
 
   /**
-   * 每幀推進渡輪動畫，並覆蓋 transportVehicles 中 ferry 的位置/heading。
+   * Advances the ferry animations for one frame and overwrites every ferry's position and heading in
+   * transportVehicles.
    */
   update(
     dt: number,
@@ -45,12 +46,14 @@ export class FerryAnimator implements VehicleAnimator {
     ferrySystem: FerrySystemLike,
     transportVehicles: TransportVehicleRenderData[],
   ): void {
-    // 同步動畫狀態：新出發時建立動畫，動畫播完才清除
+    // Synchronise the animation state: create one on departure and clear it only once it has played
+    // out.
     for (const v of ferrySystem.getVessels()) {
       if (v.traveling) {
         const waterPath = ferrySystem.getVesselPath(v.id);
         const existing = this.anims.get(v.id);
-        // 新出發或新航段（path 參照不同）→ 建立新動畫
+        // A new departure or a new leg, seen as a different path reference, creates a new
+        // animation.
         if (waterPath && waterPath.length > 1 &&
             (!existing || existing.pathInfo.path !== waterPath)) {
           const info = buildFerryPathInfo(waterPath);
@@ -62,13 +65,13 @@ export class FerryAnimator implements VehicleAnimator {
           });
         }
       }
-      // 不在 !traveling 時刪除 — 讓動畫播放到終點
+      // Not deleted while !traveling, so the animation plays to its end.
     }
 
-    // 推進渡輪動畫距離 + heading LERP & 清除已播完的動畫
+    // Advance each ferry's distance, LERP its heading, and clear animations that have finished.
     for (const [vesselId, anim] of this.anims) {
       anim.distance += FERRY_VISUAL_SPEED * dt * speed;
-      // Heading LERP：取路徑目標朝向，平滑轉向
+      // Heading LERP: take the path's target heading and turn toward it smoothly.
       const target = interpolateFerryPath(anim.pathInfo, anim.distance);
       if (target) {
         let diff = target.heading - anim.heading;
@@ -85,7 +88,7 @@ export class FerryAnimator implements VehicleAnimator {
       }
     }
 
-    // 覆蓋渡輪的視覺位置和朝向（使用 LERP heading）
+    // Overwrite each ferry's visual position and heading, using the LERPed heading.
     for (const vd of transportVehicles) {
       if (vd.type === 'ferry') {
         const vesselId = vd.id - FERRY_ID_OFFSET;

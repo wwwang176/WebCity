@@ -1,21 +1,22 @@
 import * as THREE from 'three';
 
 /**
- * focus 模式的白模化 —— 把地面上的東西壓成半透明中性灰，讓底下（或聚焦中）的
- * 東西看得見。
+ * Focus mode's white model: everything on the ground is flattened to a translucent neutral grey so
+ * what lies beneath, or what is focused, becomes visible.
  *
- * 壓白模是直接改材質的 `color`，而每份材質的原色只寫在建立它的那一行。這裡在
- * 第一次動手之前把原色收進 `userData.baseColor`，還原時才有東西可以寫回去；
- * 由呼叫端各自記一份色碼的話，改了建構時的顏色就會與還原的顏色不同步。
+ * Whitening writes the material's `color` directly, and each material's original colour is written
+ * only on the line that creates it. This captures that colour into `userData.baseColor` before the
+ * first change, so there is something to write back on restore; with each caller recording its own
+ * hex value, changing the constructed colour desynchronises it from the restored one.
  */
 
-/** 白模化之後蓋上去的中性灰。 */
+/** The neutral grey laid over everything once whitened. */
 export const DIM_TINT = 0xcccccc;
 
-/** 半透明物體的繪製順序 —— 排在所有不透明物體之後。 */
+/** Translucent objects' render order, after every opaque one. */
 export const DIM_RENDER_ORDER = 20;
 
-/** 有 `color` 與透明度可調的材質。 */
+/** A material with an adjustable `color` and opacity. */
 type DimmableMaterial = THREE.Material & {
   color: THREE.Color;
   opacity: number;
@@ -24,7 +25,8 @@ type DimmableMaterial = THREE.Material & {
 };
 
 /**
- * 把材質切成半透明白模（`opacity < 1`）或還原成原本的樣子（`opacity >= 1`）。
+ * Switches a material into the translucent white model (`opacity < 1`) or back to its original
+ * appearance (`opacity >= 1`).
  */
 export function setMaterialDim(mat: DimmableMaterial, opacity: number, tint = DIM_TINT): void {
   if (mat.userData.baseColor === undefined) mat.userData.baseColor = mat.color.getHex();
@@ -41,7 +43,7 @@ export function setMaterialDim(mat: DimmableMaterial, opacity: number, tint = DI
   }
 }
 
-/** 材質與繪製順序一起處理。多重材質的網格不在支援範圍內。 */
+/** Handles the material and the render order together. Meshes with multiple materials are not supported. */
 export function setMeshDim(
   mesh: THREE.Mesh | THREE.InstancedMesh, opacity: number, tint = DIM_TINT,
 ): void {

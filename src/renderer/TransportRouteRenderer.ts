@@ -21,18 +21,17 @@ function routeFingerprint(routes: TransportRouteRenderData[]): number {
 }
 
 /**
- * TransportRouteRenderer — 渲染交通路線連線。
+ * TransportRouteRenderer — draws the transport routes' connecting lines.
  *
- * 在站點之間畫出彩色線條，讓玩家在地圖上看到路線。
- * 不同交通系統使用不同顏色。
- * Only rebuilds when route data actually changes (fingerprint check).
+ * Coloured lines between stops let the player see routes on the map, with one colour per transport
+ * system. Only rebuilds when route data actually changes (fingerprint check).
  */
 export class TransportRouteRenderer {
   private lines: THREE.Line[] = [];
   private scene: THREE.Scene | null = null;
   private lastFingerprint = 0;
 
-  /** 固定 Y 高度（略高於地面，避免 z-fighting） */
+  /** A fixed Y, just above the ground to avoid z-fighting. */
   private static readonly LINE_Y = 0.15;
 
   build(scene: THREE.Scene): void {
@@ -42,8 +41,8 @@ export class TransportRouteRenderer {
   }
 
   /**
-   * 更新路線渲染——每幀呼叫。
-   * 使用 fingerprint 偵測路線變更，只在變更時重建（非每幀）。
+   * Updates the route lines. Called every frame, but a fingerprint detects route changes and it only
+   * rebuilds when something actually changed.
    */
   update(routes: TransportRouteRenderData[]): void {
     if (!this.scene) return;
@@ -53,7 +52,7 @@ export class TransportRouteRenderer {
     if (fp === this.lastFingerprint) return;
     this.lastFingerprint = fp;
 
-    // 清除舊線條
+    // Clear the old lines.
     for (const line of this.lines) {
       this.scene.remove(line);
       line.geometry.dispose();
@@ -61,11 +60,12 @@ export class TransportRouteRenderer {
     }
     this.lines.length = 0;
 
-    // 為每條路線建立線條
+    // Build one line per route.
     for (const route of routes) {
       if (route.stops.length < 2) continue;
 
-      // 每一跳拱成拋物線，最後繞回第一站。弧的數學在 core，這裡只把點接起來。
+      // Each hop arcs as a parabola and the last wraps back to the first stop. The arc arithmetic
+      // lives in core; this only joins the points.
       const points = buildRoutePolyline(route.stops, TransportRouteRenderer.LINE_Y)
         .map(p => new THREE.Vector3(p.x, p.y, p.z));
 
@@ -99,7 +99,7 @@ export class TransportRouteRenderer {
     this.lastFingerprint = 0;
   }
 
-  /** 返回當前渲染的路線數量（用於測試） */
+  /** The number of routes currently drawn, for tests. */
   getLineCount(): number {
     return this.lines.length;
   }

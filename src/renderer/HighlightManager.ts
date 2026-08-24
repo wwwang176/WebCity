@@ -71,10 +71,10 @@ export class HighlightManager {
   private infraTinted: { mesh: THREE.Mesh; original: THREE.Material }[] = [];
 
   /**
-   * 寫過 `aHighlight` 的 mesh，`clear()` 要把它們歸零。
+   * The meshes `aHighlight` has been written to, which `clear()` zeroes.
    *
-   * 分區建築是 `InstancedMesh`（逐實例），公共建築是普通的 `Mesh`
-   * （逐頂點）—— 兩者在這裡沒有差別：都是把那一份陣列填 0。
+   * Zoned buildings are `InstancedMesh` and per instance while civic buildings are plain `Mesh` and
+   * per vertex, and the difference does not matter here: both fill that array with 0.
    */
   private highlightedMeshes: (THREE.InstancedMesh | THREE.Mesh)[] = [];
 
@@ -238,7 +238,7 @@ export class HighlightManager {
     }
   }
 
-  /** 同上，但顏色逐格查表 —— 漸層高亮下每一棟的顏色都不一樣。 */
+  /** As above, but with the colour looked up per cell: under a gradient highlight every building differs. */
   private tintInfraGroupsByCellColor(
     groups: readonly THREE.Group[], cellMap: ReadonlyMap<string, number>, intensity: number,
   ): void {
@@ -251,18 +251,18 @@ export class HighlightManager {
   }
 
   /**
-   * 一棟公共建築的高亮。
+   * One civic building's highlight.
    *
-   * 走 `aHighlight` / `aHighlightColor` —— 建築 shader 本來就吃這兩個屬性，
-   * 分區建築走的就是那條路。公共建築改用同一個 shader 之後，這裡原本的
-   * `MeshLambertMaterial` / `MeshBasicMaterial` 兩個分支**都不中**，
-   * 高亮會靜默失效。
+   * It goes through `aHighlight` and `aHighlightColor`, the two attributes the building shader
+   * already reads and the path zoned buildings take. Once civic buildings use that same shader,
+   * **neither** the `MeshLambertMaterial` nor the `MeshBasicMaterial` branch matches and
+   * highlighting fails silently.
    *
-   * 而補上第三個分支也是錯的：clone 出來的材質是另一個 `ShaderMaterial`
-   * 實例，收不到每幀寫進單例的 `uTime` —— 被高亮過的那一棟窗戶會凍結在
-   * 某個亮燈狀態，而且再也不會動。
+   * A third branch would be wrong too: a cloned material is a second `ShaderMaterial` instance and
+   * never receives the `uTime` written into the singleton each frame, so a highlighted building's
+   * windows freeze in one lit state and never move again.
    *
-   * 只有停放的車輛（走 `MeshLambertMaterial`）還走 clone 那條路。
+   * Only parked vehicles, which use `MeshLambertMaterial`, still take the cloning path.
    */
   private applyTintToGroup(group: THREE.Group, color: number, intensity: number = 1.0): void {
     const tint = new THREE.Color(color);
@@ -350,9 +350,10 @@ export class HighlightManager {
     const cellMap = new Map<string, number>();
     for (const c of cells) cellMap.set(`${c.x},${c.y}`, c.color);
 
-    // 每一棟公共建築拿**自己那一格**的顏色。原本一律用 cells[0] —— 通勤圖層把
-    // 站牌標成青色、住宅標成漸層色，於是所有交通建築都被塗成第一個住宅格的
-    // 顏色，那一格通勤很糟的話就是全城的公共建築一起變紅。
+    // Each civic building takes **its own cell's** colour. Taking cells[0] for all of them, the
+    // commute overlay marks stops cyan and houses on a gradient, so every transit building is
+    // painted the first residential cell's colour — and if that cell commutes badly, every civic
+    // building in the city turns red together.
     if (infraGroups.length > 0) {
       this.tintInfraGroupsByCellColor(infraGroups, cellMap, intensity);
     }

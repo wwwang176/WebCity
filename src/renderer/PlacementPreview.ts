@@ -79,7 +79,7 @@ export class PlacementPreview {
     grid: Grid,
     funds: number,
     groundwaterFn?: (x: number, y: number) => number,
-    /** 這一格頭上有沒有高架 —— 橋下不蓋房子，預覽要跟實際規則一致。 */
+    /** Whether an elevated segment passes over this cell. Nothing is built under a bridge, and the preview follows the real rule. */
     hasElevatedAbove?: (x: number, y: number) => boolean,
   ): void {
     const cfg = getInfraConfig(type);

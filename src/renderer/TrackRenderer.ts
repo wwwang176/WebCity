@@ -6,23 +6,26 @@ import { injectHighlightShader, addHighlightAttribute } from './HighlightManager
 import { RAIL_Y, RAIL_THICKNESS } from './surfaceHeights';
 
 /**
- * 碴床的寬度（格）。軌道貼著**格心**畫，所以它佔的是 |z| ≤ TRACK_WIDTH / 2。
+ * The ballast's width, in cells. Track hugs the **cell centre**, so it occupies
+ * |z| <= TRACK_WIDTH / 2.
  *
- * 匯出是因為火車站的幾何要讓開這條帶：`canPlaceTransportStop` 規定火車站
- * 蓋在 `railType ≠ 0` 的格子上，而 `placeTransportStopOnGrid` 只改
- * buildingId/reserved/zoneType —— 軌道還在，這裡照畫。站房蓋在上面的話，
- * 真的鋼軌會從站房的地板穿出來。
+ * Exported because a train station's geometry has to keep clear of this band:
+ * `canPlaceTransportStop` requires a station on a cell whose `railType != 0`, and
+ * `placeTransportStopOnGrid` only changes buildingId, reserved and zoneType — the track stays and
+ * is still drawn here. With the hall on top of it, the real rails come up through its floor.
  */
 export const TRACK_WIDTH = 0.15;
 
 /**
- * 軌道上方的淨空（格）。跨過軌道的東西下緣不得低於它。
+ * The clearance above the track, in cells. Anything crossing it may not reach below.
  *
- * 「讓開軌道」其實是一個**淨空包絡線**，不是平面上的禁建區 —— 真實車站的
- * 天橋、跨站站房、電車線橫擔全部跨在軌道上方。把它寫成禁建區的話，火車站
- * 就只能是「軌道兩側各擺一棟、彼此不相連」的樣子 —— 那讀起來不是一座車站。
+ * "Keep clear of the track" is a **clearance envelope** rather than a no-build zone in plan: a real
+ * station's footbridges, overtrack halls and catenary cantilevers all cross above the rails. As a
+ * no-build zone, a train station could only ever be two disconnected buildings either side of the
+ * track, which does not read as a station.
  *
- * 5.5 m 取電氣化路線的建築限界（車廂約 4 m，加上受電弓與導線的空間）。
+ * 5.5 m is the structure gauge for an electrified line: a carriage of about 4 m plus room for the
+ * pantograph and the wire.
  */
 export const TRACK_CLEARANCE = 5.5 / 12;
 const TIE_Y = 0.03;

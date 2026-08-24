@@ -4,8 +4,8 @@ import { TerrainType } from '../core/grid/types';
 import { isStoneGround } from '../core/grid/GroundType';
 import { ViewMode, VIEW_MODE_OPACITY } from '../core/ViewMode';
 
-// 實體在 terrainColors —— 展示區的地板要與這裡同色，而它不能把 Grid 與
-// ViewMode 一起拖進相依圖（見那個檔案的說明）。
+// The values live in terrainColors: the showcase's floor has to match these colours and cannot drag
+// Grid and ViewMode into its dependency graph (see that file's note).
 import { TERRAIN_COLORS, STONE_COLOR } from './terrainColors';
 
 // Tree constants

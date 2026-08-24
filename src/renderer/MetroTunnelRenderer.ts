@@ -11,7 +11,7 @@ import {
   type TrainAnimState,
 } from '../core/transport/MetroLinePath';
 
-/** 隧道常數 */
+/** Tunnel constants. */
 const TUNNEL_Y = UNDERGROUND_TUNNEL_Y;
 const TUNNEL_RADIUS = 0.12;
 const TUNNEL_SEGMENTS = 20;
@@ -21,14 +21,14 @@ const STATION_RADIUS = 0.22;
 const STATION_COLOR = 0x00e5ff;
 const TRAIN_COLOR = 0x00bcd4;
 
-/** 列車動畫常數 */
+/** Train animation constants. */
 const CARRIAGES_PER_TRAIN = 3;
 const CARRIAGE_SPACING = 0.25;        // world units, center-to-center
 const MAX_CARRIAGES = 50 * CARRIAGES_PER_TRAIN;
 const VISUAL_SPEED = 1.5;            // world units per second
 const STATION_WAIT_TIME = 1.2;       // seconds to wait at each station
 
-/** 隧道線段資料，帶 lineId 以便列車查找曲線 */
+/** One tunnel segment's data, carrying lineId so a train can look up its curve. */
 export interface MetroLineData {
   lineId: number;
   stops: readonly { x: number; y: number }[];
@@ -36,7 +36,7 @@ export interface MetroLineData {
   trainCount: number;
 }
 
-/** 每條線的渲染路徑快取 */
+/** The cached render path per line. */
 interface LineRenderPath {
   linePath: LinePath;
   curves: THREE.CatmullRomCurve3[];
@@ -46,10 +46,10 @@ interface LineRenderPath {
 }
 
 /**
- * MetroTunnelRenderer — 渲染地鐵隧道管狀幾何及地鐵列車。
+ * MetroTunnelRenderer — draws the metro's tunnel tubes and its trains.
  *
- * 列車移動為純渲染端動畫，不依賴模擬 tick。
- * 每列車渲染 3 節車廂，各自沿曲線獨立朝向。
+ * Train movement is animation on the render side alone and does not depend on simulation ticks.
+ * Each train draws 3 carriages, each oriented independently along the curve.
  */
 export class MetroTunnelRenderer {
   private tunnelGroup: THREE.Group;
@@ -105,8 +105,8 @@ export class MetroTunnelRenderer {
   }
 
   /**
-   * 更新隧道渲染及列車動畫。
-   * @param dt - 渲染幀間隔（秒），用於推進列車動畫
+   * Updates the tunnel geometry and the train animations.
+   * @param dt - The render frame interval in seconds, used to advance the train animations.
    */
   update(
     lines: MetroLineData[],
@@ -490,12 +490,12 @@ export class MetroTunnelRenderer {
     this.lineTunnelMeshes.clear();
   }
 
-  /** 返回當前渲染的隧道段數量 + 站點球體數量（用於測試） */
+  /** The number of tunnel segments plus station spheres currently drawn, for tests. */
   getMeshCount(): number {
     return this.tunnelGroup.children.length;
   }
 
-  /** 返回隧道群組是否可見 */
+  /** Whether the tunnel group is visible. */
   isVisible(): boolean {
     return this.tunnelGroup.visible;
   }

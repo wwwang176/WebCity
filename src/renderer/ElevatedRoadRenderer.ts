@@ -100,14 +100,16 @@ function getSharedGeo() {
   const pole = new THREE.CylinderGeometry(0.008, 0.01, poleH, 4); pole.translate(0, poleH / 2, 0);
   const head = new THREE.SphereGeometry(0.018, 4, 3); head.translate(0, poleH + 0.01, 0);
   const lamp = mergeGeometries([pole, head])!; pole.dispose(); head.dispose();
-  // 高架的光暈是**半圓**，不是整圓。
+  // An elevated lamp's glow is a **half circle**, not a full one.
   //
-  // 地面的路燈四周都是地，整圈的光暈落在地上沒有問題。高架的燈站在橋面邊緣 ——
-  // 整圈的話有一半會灑到橋外的空中，看起來像一片浮在半空的黃霧。
+  // A ground-level lamp has ground all around it and a full ring falls on it without trouble. An
+  // elevated lamp stands at the deck's edge, where half of a full ring falls into open air beyond
+  // the bridge and reads as yellow haze floating in mid-air.
   //
-  // `thetaStart = π、thetaLength = π` 那半圈在 `rotateX(-π/2)` 之後落在局部 +Z
-  // 那一側，而 `LampPosition.rotY` 給的正是「+Z 要轉去指著路面」的角度。彎道的
-  // 兩盞各自朝彎心，合起來就是一條沿著弧的光帶。
+  // The half at `thetaStart = pi, thetaLength = pi` lands on the local +Z side after
+  // `rotateX(-pi/2)`, and `LampPosition.rotY` is exactly the angle that turns +Z toward the road
+  // surface. On a bend the two lamps each point at the bend's centre, and together they make a band
+  // of light along the arc.
   const glowR = 0.4, glowS = 12;
   const glowGeo = new THREE.CircleGeometry(glowR, glowS, Math.PI, Math.PI);
   glowGeo.rotateX(-Math.PI / 2);
@@ -492,7 +494,8 @@ export class ElevatedRoadRenderer {
             const p = lamps[i]!;
             matrix.identity(); matrix.setPosition(p.x, lampY + SIDEWALK_Y, p.z);
             ld.lampMesh.setMatrixAt(ls + i, matrix);
-            // 光暈是半圓，要轉去對著路面 —— 燈柱本身是圓的，不必轉。
+            // The glow is a half circle and has to be turned toward the road; the post itself is
+            // round and needs no rotation.
             rot.makeRotationY(p.rotY);
             matrix.copy(rot); matrix.setPosition(p.x, lampY + 0.055, p.z);
             ld.lampGlowMesh.setMatrixAt(gs + i, matrix);
@@ -502,7 +505,7 @@ export class ElevatedRoadRenderer {
     }
 
     // ── Pillars (individual meshes, per cell) ──
-    // 這些是現在才生出來的網格，套不到 applyViewModeToLevel 那一輪。
+    // These meshes are created here and miss applyViewModeToLevel's pass.
     const dimRenderOrder = this.isDimmed() ? DIM_RENDER_ORDER : 0;
     const geo = getSharedGeo();
     for (const c of allCells) {
@@ -562,9 +565,10 @@ export class ElevatedRoadRenderer {
     roadMesh.count = 0; roadMesh.receiveShadow = true; roadMesh.castShadow = true; roadMesh.frustumCulled = false;
     grp.add(roadMesh);
 
-    // 路緣是一張零厚度的平面，法線朝上。陰影圖預設畫的是**背面**，所以從頭頂的
-    // 太陽看過去它整片被剔除，一點影子都沒有 —— 而旁邊的路面是個盒子，底面就是
-    // 背面，一直都有影子。兩者並排，缺的那一條特別明顯。
+    // A kerb is a zero-thickness plane with its normal up. The shadow map draws **back** faces by
+    // default, so seen from an overhead sun the whole thing is culled and casts nothing — while the
+    // road surface beside it is a box whose underside is a back face and always has a shadow. Side
+    // by side, the missing one stands out.
     const swMat = new THREE.MeshLambertMaterial({ color: 0x707070 });
     swMat.shadowSide = THREE.DoubleSide;
     const swMesh = new THREE.InstancedMesh(geo.sidewalk, swMat, cap * CAP.sidewalk);
@@ -640,8 +644,8 @@ export class ElevatedRoadRenderer {
   // ─── Frame update ──────────────────────────────────────────────
 
   update(sunIntensity: number): void {
-    // 光暈是加色混合的，壓半透明蓋不住它 —— focus 模式必須直接關掉，否則地下
-    // 模式的夜裡會看到一排飄在空中的光點。
+    // The glow is additive and translucency cannot hide it, so focus mode switches it off outright;
+    // otherwise underground mode at night shows a row of points of light floating in the air.
     const opacity = this.isDimmed() ? 0 : Math.max(0, 0.75 * (1 - sunIntensity / 0.45));
     for (const ld of this.levels.values()) ld.lampGlowMat.opacity = opacity;
   }
@@ -653,10 +657,11 @@ export class ElevatedRoadRenderer {
   }
 
   /**
-   * 高架與地面道路共用同一組透明度 —— 玩家看到的是同一條路，只是高度不同。
+   * Elevated and ground roads share one opacity: a player sees one road at different heights.
    *
-   * 模式記在這裡而不是只作用於當下的網格，是因為蓋一段高架路會整個重建：
-   * `ensureLevel` 每建一層就重新套用一次，重建才不會把已經白模化的視角打回原形。
+   * The mode is stored here rather than applied only to the current meshes, because building a
+   * stretch of elevated road rebuilds everything: `ensureLevel` reapplies it for each level it
+   * builds, so a rebuild does not undo an already whitened view.
    */
   setViewMode(mode: ViewMode): void {
     this.viewMode = mode;
@@ -671,8 +676,8 @@ export class ElevatedRoadRenderer {
     ]) {
       setMeshDim(mesh, opacity);
     }
-    // 橋墩與護欄是每格一個獨立的 Mesh，共用一份材質：材質改一次全部跟著改，
-    // 但繪製順序是逐一設定的。
+    // Piers and parapets are one Mesh per cell sharing a material: changing the material once
+    // changes them all, while the render order is set on each individually.
     setMaterialDim(ld.pillarMat, opacity);
     setMaterialDim(ld.railMat, opacity);
     const order = dimmed ? DIM_RENDER_ORDER : 0;

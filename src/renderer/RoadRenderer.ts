@@ -33,17 +33,18 @@ const MARKING_Y = 0.052;
 const CAP = { road: Math.max(3, BEND_ARC_SEGMENTS), sidewalk: Math.max(4, BEND_KERB_SEGMENTS), marking: MAX_LANE_MARKINGS_PER_CELL, centerLine: 2, curvedCL: 1, crosswalk: 6, stopLine: 2, lamp: 4, lampGlow: 4 } as const;
 
 /**
- * 路燈的桿高（格）。
+ * A street lamp's pole height, in cells.
  *
- * 匯出是因為號誌以它為下限 —— 號誌矮過路燈的話，讀起來就不像號誌。各寫一個
- * 數字的話，哪天路燈調高了，號誌會靜靜地變成路邊最矮的那根柱子。
+ * Exported because signals take it as their lower bound: a signal shorter than a street lamp does
+ * not read as a signal. Written separately, the signals silently become the shortest posts on the
+ * street the day the lamps are raised.
  */
 export const STREET_LAMP_HEIGHT = 0.28;
 
-/** 路燈燈泡的半徑（格）。號誌的燈泡以它為上限。 */
+/** A street lamp bulb's radius, in cells. A signal's bulb takes it as an upper bound. */
 export const STREET_LAMP_BULB_RADIUS = 0.018;
 
-/** 路燈燈桿的顏色。號誌桿直接沿用 —— 路邊的金屬桿件應該是同一個顏色。 */
+/** A street lamp post's colour, reused by signal poles: metal posts along a street should be one colour. */
 export const STREET_LAMP_COLOR = 0x555555;
 
 export class RoadRenderer {

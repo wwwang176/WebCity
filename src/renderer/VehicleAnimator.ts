@@ -1,18 +1,18 @@
 /**
- * VehicleAnimator — 車輛渲染端動畫的統一介面。
+ * VehicleAnimator — the common interface for vehicle animation on the render side.
  *
- * Ferry / Metro / 未來的飛機等需要「沿路徑插值 + 特殊動畫」的車輛，
- * 都應實作此介面，使 Game.ts 可以用一致的方式驅動動畫。
+ * Every vehicle that interpolates along a path with animation of its own — ferries, metros,
+ * aircraft — implements it, so Game.ts drives them all the same way.
  */
 export interface VehicleAnimator {
   /**
-   * 每幀推進動畫。
-   * @param dt    幀間隔（秒）
-   * @param speed 遊戲速度倍率（0 = 暫停）
-   * @param args  各 animator 自定義的額外參數
+   * Advances the animation by one frame.
+   * @param dt    The frame interval, in seconds.
+   * @param speed The game speed multiplier; 0 is paused.
+   * @param args  Extra parameters each animator defines for itself.
    */
   update(dt: number, speed: number, ...args: unknown[]): void;
 
-  /** 釋放內部狀態。 */
+  /** Releases internal state. */
   dispose(): void;
 }

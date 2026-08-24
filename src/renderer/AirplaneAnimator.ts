@@ -1,9 +1,9 @@
 /**
- * AirplaneAnimator — 飛機起降渲染端動畫。
+ * AirplaneAnimator — aircraft arrival and departure animation on the render side.
  *
- * 每個機場獨立生成飛機，執行完整降落→滑行→停泊→推出→起飛循環。
- * 使用距離插值沿 Bézier 曲線路徑，轉彎 heading 逐幀平滑。
- * 支援 pitch（俯仰）和 roll（傾斜）。
+ * Each airport spawns its own aircraft and runs the full cycle: land, taxi, park, push back, take
+ * off. It interpolates by distance along Bezier paths, smoothing the heading per frame through
+ * turns, and supports pitch and roll.
  */
 import type { TransportVehicleRenderData } from '../core/transport/collectTransportVehicles';
 import type { Airport, AirportSize } from '../core/transport/AirportSystem';
@@ -82,9 +82,9 @@ const ROLL_WAIT_TIME = 1.0;
 /** Pause on runway before takeoff — waiting for ATC clearance (seconds). */
 const LINEUP_WAIT_TIME = 1.0;
 
-// 航路表已搬到 `airportPaths.ts` —— 它現在是整個專案唯一的一份機場配置。
-// 裝飾幾何（`civic/models/airport.ts`）從同一份表推導跑道帶、滑行道標線與
-// 停機位，所以兩邊不可能再各自畫一座機場（BUG-239）。
+// The path table lives in `airportPaths.ts`, the project's only airport layout. The decorative
+// geometry (`civic/models/airport.ts`) derives its runway bands, taxiway markings and gates from
+// the same table, so the two can no longer draw different airports (BUG-239).
 
 // ── Coordinate transform ─────────────────────────────────────────
 
