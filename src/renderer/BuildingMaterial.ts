@@ -275,7 +275,7 @@ const FACADE_BODY: Record<number, string> = {
         vec2 wid = floor(vec2(bay, 0.0)) + floor(vWorldPos.xz + 0.5) * 3.7;
         float r = hash21(wid);
         vec3 glassColor = mix(vec3(0.45, 0.58, 0.68), vec3(0.55, 0.7, 0.78), r);
-        color = mix(vBldgColor * 0.6, glassColor, glass); // 窗框 -> 玻璃
+        color = mix(vBldgColor * 0.6, glassColor, glass); // frame -> glass
 
         // Whether this bay's shop is open tonight. Per bay rather than per building: a row of
         // shopfronts all dark or all lit is wrong either way.
@@ -537,7 +537,7 @@ const FACADE_BODY: Record<number, string> = {
                     * smoothstep(0.84 + fwB, 0.84 - fwB, bayU);
         vec2 lid = vec2(floor(bay), 0.0) + floor(vWorldPos.xz + 0.5) * 4.3;
         vec3 glassColor = mix(vec3(0.42, 0.52, 0.60), vec3(0.52, 0.62, 0.68), hash21(lid));
-        color = mix(vBldgColor * 0.66, glassColor, glass);   // 石材柱 -> 玻璃
+        color = mix(vBldgColor * 0.66, glassColor, glass);   // stone pier -> glass
         windowMask = glass;
         // The lobby stays lit all night, since the duty desk is there. It is what a civic building
         // looks like at night.
@@ -640,7 +640,7 @@ const FACADE_BODY: Record<number, string> = {
         ? smoothstep(0.06 - fwX, 0.06 + fwX, fracX) * smoothstep(0.94 + fwX, 0.94 - fwX, fracX)
         * smoothstep(0.08 - fwY, 0.08 + fwY, fracY) * smoothstep(0.90 + fwY, 0.90 - fwY, fracY)
         : 0.0;
-      vec3 wallColor = vBldgColor * 0.55;   // 細窗櫺
+      vec3 wallColor = vBldgColor * 0.55;   // slim mullions
 
       // A station is among the brightest things in a city at night, so its dark fraction is half
       // everyone else's — but not zero: the platform's far end and the closed gatelines are
@@ -727,7 +727,7 @@ function facadeBodyOf(key: number): string {
   const body = FACADE_BODY[key];
   if (body === undefined) {
     throw new Error(
-      `立面類別 ${key} 在 ZONE_CAT 裡有 cat ${ZONE_CAT[key]} 卻沒有 FACADE_BODY`,
+      `facade category ${key} has cat ${ZONE_CAT[key]} in ZONE_CAT but no FACADE_BODY`,
     );
   }
   return body;

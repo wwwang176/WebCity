@@ -52,7 +52,7 @@ export function mergeOrThrow(
   if (merged) return merged;
   const sets = parts.map((g, i) => `#${i} {${Object.keys(g.attributes).sort().join(',')}}`);
   throw new Error(
-    `${what} 的幾何合併失敗 —— 屬性集合不一致：${sets.join(' ')}`,
+    `${what}: geometry merge failed — inconsistent attribute sets: ${sets.join(' ')}`,
   );
 }
 
@@ -116,7 +116,7 @@ function assertInside(volumes: readonly Volume[], footprint: Footprint, inset: n
   }
   if (over > 1e-6) {
     throw new Error(
-      `量體超出佔地 ${(over * METRES_PER_CELL).toFixed(3)} m —— 會壓到鄰格`,
+      `mass leaves the plot by ${(over * METRES_PER_CELL).toFixed(3)} m — it would overlap a neighbouring cell`,
     );
   }
 }
@@ -142,7 +142,7 @@ export function assembleCivic(
   // mergeGeometries return null, and the null travels to `new THREE.Mesh` before failing, far
   // from the scene.
   if (parts.length === 0) return emptyTagged(PART_WALL);
-  return mergeOrThrow(parts, '量體');
+  return mergeOrThrow(parts, 'massing');
 }
 
 const layerY = (d: CivicDecal) =>
@@ -184,8 +184,9 @@ export function assembleDecals(
   for (const d of decals) {
     if (d.rotationY && (d.layer ?? 'base') === 'base') {
       throw new Error(
-        '只有標線層可以轉向 —— 底層的重疊檢查是軸對齊矩形的交集，'
-        + '轉過的底層會讓它靜靜地算錯，兩塊其實重疊的鋪面會被放行',
+        'only marking layers may be rotated — the base layer overlap check intersects '
+        + 'axis-aligned rectangles, and a rotated base makes it silently wrong, letting two '
+        + 'genuinely overlapping slabs through',
       );
     }
   }
@@ -205,8 +206,9 @@ export function assembleDecals(
       const area = overlapArea(base[i]!, base[j]!);
       if (area > 0) {
         throw new Error(
-          `底層貼片重疊 ${(area * METRES_PER_CELL * METRES_PER_CELL).toFixed(2)} m2`
-          + ' —— 兩塊同高的四邊形會 z-fighting，靜止時看不出來、一移動鏡頭就閃',
+          `base decals overlap by ${(area * METRES_PER_CELL * METRES_PER_CELL).toFixed(2)} m2`
+          + ' — two quads at the same height z-fight, invisible at rest and flickering the moment'
+          + ' the camera moves',
         );
       }
     }
@@ -229,7 +231,7 @@ export function assembleDecals(
   });
 
   if (parts.length === 0) return emptyTagged(PART_GROUND);
-  return mergeOrThrow(parts, '貼片');
+  return mergeOrThrow(parts, 'decals');
 }
 
 /**
@@ -257,7 +259,7 @@ export function assembleFixtures(
 
   const parts = fixtures.flatMap(propGeometry);
   if (parts.length === 0) return emptyTagged(PART_FOLIAGE);
-  return mergeOrThrow(parts, '共用矮物件');
+  return mergeOrThrow(parts, 'shared ground props');
 }
 
 /**
@@ -390,7 +392,7 @@ export function vehiclePieces(
 export function civicVehicleGeometry(
   kind: CivicVehicleKind, tint?: number,
 ): THREE.BufferGeometry {
-  return mergeOrThrow(vehiclePieces(kind, tint), `車輛 ${kind}`);
+  return mergeOrThrow(vehiclePieces(kind, tint), `vehicle ${kind}`);
 }
 
 /**
@@ -443,5 +445,5 @@ export function assembleVehicles(
     empty.setAttribute('color', new THREE.BufferAttribute(new Float32Array(0), 3));
     return empty;
   }
-  return mergeOrThrow(parts, '車輛');
+  return mergeOrThrow(parts, 'vehicles');
 }

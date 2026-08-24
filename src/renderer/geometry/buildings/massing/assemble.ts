@@ -309,7 +309,7 @@ export function assemble(volumes: readonly Volume[]): THREE.BufferGeometry {
   const over = maxAbsOf(volumes) - HALF_ENVELOPE;
   if (over > 1e-6) {
     throw new Error(
-      `量體越過行人包絡線 ${(over * METRES_PER_CELL).toFixed(3)} m —— 行人會穿牆（BUG-221）`,
+      `mass crosses the pedestrian envelope by ${(over * METRES_PER_CELL).toFixed(3)} m — pedestrians would walk through walls (BUG-221)`,
     );
   }
 

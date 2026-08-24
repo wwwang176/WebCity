@@ -73,7 +73,7 @@ describe('停放的車輛', () => {
   });
 
   it('should keep vehicles inside the footprint', () => {
-    expect(() => assembleVehicles([car({ x: 0.95 })], FOOT)).toThrow(/超出佔地/);
+    expect(() => assembleVehicles([car({ x: 0.95 })], FOOT)).toThrow(/leaves the plot/);
   });
 
   /**
@@ -89,7 +89,7 @@ describe('停放的車輛', () => {
   it('should measure the bounding box after the car is turned', () => {
     // Rotated, the body runs long along z, so parking at z = 0.92 reaches out.
     expect(() => assembleVehicles([car({ z: 0.92, rotationY: Math.PI / 2 })], FOOT),
-      '轉向之後的越界沒有被擋下來').toThrow(/超出佔地/);
+      '轉向之後的越界沒有被擋下來').toThrow(/leaves the plot/);
     // The same position and the same car unrotated occupies 0.045 cells and fits.
     expect(() => assembleVehicles([car({ z: 0.92 })], FOOT),
       '沒轉的車被誤判成越界').not.toThrow();
@@ -264,6 +264,6 @@ describe('停放的車輛', () => {
     bad.setAttribute('position',
       new THREE.BufferAttribute(new Float32Array([0, 0, 0, 1, 0, 0, 0, 0, 1]), 3));
     expect(() => mergeOrThrow([bad, buildPoliceCarGeometry()], '測試'))
-      .toThrow(/合併失敗/);
+      .toThrow(/merge failed/);
   });
 });

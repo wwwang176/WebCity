@@ -61,7 +61,7 @@ export function buildRoadCellGraph(lookup: UnifiedRoadLookup): RoadCellGraph {
   for (let i = 0; i < n; i++) {
     const key = nodeKeys[i]!;
     const { x, y } = parsePosKeyUnsafe(key);
-    if (x > 0xffff || y > 0xffff) throw new RangeError(`格子座標超過 Uint16 上限: ${key}`);
+    if (x > 0xffff || y > 0xffff) throw new RangeError(`cell coordinate exceeds the Uint16 limit: ${key}`);
     nodeX[i] = x; nodeY[i] = y; nodeLevel[i] = levelOfKey(key);
   }
 
@@ -82,7 +82,7 @@ export function buildRoadCellGraph(lookup: UnifiedRoadLookup): RoadCellGraph {
         if (!info) continue;
         const w = roadTileCost(info.roadType);
         if (!Number.isFinite(w)) continue;
-        if (w > 0xffff) throw new RangeError(`道路成本超過 Uint16 上限: ${nk} = ${w}`);
+        if (w > 0xffff) throw new RangeError(`road cost exceeds the Uint16 limit: ${nk} = ${w}`);
         targetList.push(j);
         weightList.push(w);
       }

@@ -62,7 +62,7 @@ export function heightOptions(targetUnits: number): HeightOption[] {
   // is a hundred times easier to track down than handing the caller undefined and failing
   // elsewhere.
   if (out.length === 0) {
-    throw new Error(`目標高度 ${targetUnits} 湊不出任何整數層組合`);
+    throw new Error(`no whole-floor combination reaches the target height ${targetUnits}`);
   }
 
   out.sort((a, b) => a.height - b.height);

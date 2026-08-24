@@ -31,7 +31,7 @@ describe('assembleCivic 的護欄', () => {
   it('should throw when a volume leaves the footprint', () => {
     // Silently overrunning a neighbour is a hundred times harder to track down than failing on
     // the spot, the same reasoning as in `assemble()`.
-    expect(() => assembleCivic([box({ w: 2.4, d: 1 })], FOOT, GREY)).toThrow(/超出佔地/);
+    expect(() => assembleCivic([box({ w: 2.4, d: 1 })], FOOT, GREY)).toThrow(/leaves the plot/);
   });
 
   it('should throw on an off-centre volume that pokes out one side', () => {
@@ -39,7 +39,7 @@ describe('assembleCivic 的護欄', () => {
     // 2-cell plot, but its centre is offset by 0.8 so its right edge is at 1.3, already in the
     // next cell. That is the shape of BUG-222, which is why the maximum distance from the centre
     // is measured rather than the width.
-    expect(() => assembleCivic([box({ x: 0.8, w: 1, d: 1 })], FOOT, GREY)).toThrow(/超出佔地/);
+    expect(() => assembleCivic([box({ x: 0.8, w: 1, d: 1 })], FOOT, GREY)).toThrow(/leaves the plot/);
   });
 
   it('should measure the footprint per axis, not as a square', () => {
@@ -47,7 +47,7 @@ describe('assembleCivic 的護欄', () => {
     // long side or lets the short one overflow.
     const tall: Footprint = { w: 2, h: 3 };
     expect(() => assembleCivic([box({ w: 1.9, d: 2.9 })], tall, GREY)).not.toThrow();
-    expect(() => assembleCivic([box({ w: 2.9, d: 1.9 })], tall, GREY)).toThrow(/超出佔地/);
+    expect(() => assembleCivic([box({ w: 2.9, d: 1.9 })], tall, GREY)).toThrow(/leaves the plot/);
   });
 
   it('should reserve the inset', () => {
@@ -137,13 +137,13 @@ describe('轉向的貼片', () => {
     const long = bar({ w: 1.9, z: 0.9 });
     expect(() => assembleDecals([long], FOOT), '沒轉的時候該放得下').not.toThrow();
     expect(() => assembleDecals([{ ...long, rotationY: Math.PI / 2 }], FOOT))
-      .toThrow(/超出佔地/);
+      .toThrow(/leaves the plot/);
   });
 
   it('should reject a turned base decal', () => {
     // Refusing loudly beats computing the wrong answer in silence.
     expect(() => assembleDecals([bar({ layer: 'base', rotationY: 0.3 })], FOOT))
-      .toThrow(/只有標線/);
+      .toThrow(/only marking layers/);
   });
 
   it('should leave an unturned marking exactly where it was', () => {
@@ -242,7 +242,7 @@ describe('assembleDecals', () => {
     // Two quads at the same height and position do not show in a static screenshot and turn into a
     // flickering sheet as soon as the camera moves.
     expect(() => assembleDecals([decal(), decal({ x: 0.5 })], FOOT))
-      .toThrow(/底層貼片重疊/);
+      .toThrow(/base decals overlap/);
   });
 
   it('should allow base decals that merely touch', () => {
@@ -263,7 +263,7 @@ describe('assembleDecals', () => {
   });
 
   it('should keep decals inside the footprint', () => {
-    expect(() => assembleDecals([decal({ w: 3 })], FOOT)).toThrow(/超出佔地/);
+    expect(() => assembleDecals([decal({ w: 3 })], FOOT)).toThrow(/leaves the plot/);
   });
 
   it('should let a decal reach the footprint edge', () => {

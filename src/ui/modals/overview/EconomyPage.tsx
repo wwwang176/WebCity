@@ -153,7 +153,7 @@ export function EconomyPage(props: EconomyPageProps) {
             <tr
               onClick={() => setChargeOpen(v => !v)}
               style="cursor:pointer"
-              title="展開逐條政策規費"
+              title="Expand per-policy charges"
             >
               <td class="td-label">
                 {chargeOpen() ? '\u25BE ' : '\u25B8 '}Policy Charges
@@ -193,7 +193,7 @@ export function EconomyPage(props: EconomyPageProps) {
           <tr
             onClick={() => setPolicyOpen(v => !v)}
             style={{ cursor: spendingLines().length > 0 ? 'pointer' : 'default' }}
-            title={spendingLines().length > 0 ? '展開逐條政策支出' : undefined}
+            title={spendingLines().length > 0 ? 'Expand per-policy spending' : undefined}
           >
             <td class="td-label">
               {spendingLines().length > 0 ? (policyOpen() ? '\u25BE ' : '\u25B8 ') : ''}Policies

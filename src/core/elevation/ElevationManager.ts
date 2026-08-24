@@ -59,7 +59,7 @@ export class ElevationManager {
    */
   private static validatePosition(x: number, y: number): void {
     if (x < 0 || y < 0 || y >= POS_STRIDE) {
-      throw new RangeError(`高架座標超出位置索引範圍: (${x}, ${y})`);
+      throw new RangeError(`elevated coordinate outside the position index range: (${x}, ${y})`);
     }
   }
 

@@ -59,7 +59,7 @@ export class WorkplaceDistanceTableBuilder {
    */
   addWorkplace(pos: string, dense: Int32Array): void {
     if (this.positions.length >= MAX_WORKPLACES) {
-      throw new RangeError(`工作地數量超過 ${MAX_WORKPLACES}，wpIndex 會溢位`);
+      throw new RangeError(`more than ${MAX_WORKPLACES} workplaces — wpIndex would overflow`);
     }
     const wp = this.positions.length;
     this.positions.push(pos);
