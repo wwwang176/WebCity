@@ -1,8 +1,9 @@
 /**
- * 建築展示區 —— 不載入遊戲：沒有模擬、沒有 worker、沒有 UI 面板。
+ * The building showcase. It does not load the game: no simulation, no workers, no UI panels.
  *
- * 它刻意使用正式的 SceneManager、正式的材質與正式的變體註冊表。
- * 在這裡調到滿意的東西，進遊戲必須長得一模一樣，否則展示區沒有價值。
+ * It deliberately uses the real SceneManager, the real materials and the real variant registry.
+ * Whatever is tuned to satisfaction here has to look identical in game, or the showcase has no
+ * value.
  */
 import * as THREE from 'three';
 import { SceneManager } from '../renderer/SceneManager';
@@ -40,43 +41,45 @@ import { getInfraConfig } from '../core/building/InfraConfig';
 const container = document.getElementById('scene')!;
 const sceneManager = new SceneManager(container);
 
-/** 展示用地面。顏色與受光模型都跟著遊戲的地形走 —— 見 `createShowcaseGround`。 */
+/** The showcase floor. Its colour and lighting model follow the game's terrain; see `createShowcaseGround`. */
 sceneManager.scene.add(createShowcaseGround(120));
 
-// 日夜由正式的 WeatherRenderer 驅動 —— shader 讀的是場景燈光
-// (directionalLights[0])，不是 uTime，所以少了它時間滑桿等於沒接。
+// The day-night cycle runs through the real WeatherRenderer: the shader reads the scene lights
+// (directionalLights[0]) rather than uTime, so without it the time slider is not connected.
 const weather = new WeatherRenderer(sceneManager, 60);
 
 const material = getBuildingMaterial();
 const shown: THREE.Mesh[] = [];
 /**
- * 不是 mesh 的東西（目前只有火車站底下那條軌道）。
+ * The objects that are not meshes, currently only the track under the train station.
  *
- * `shown` 那條路徑會 `scene.remove(m)` 再 dispose 幾何，而 `remove` 只對
- * **直接子物件**有效 —— 一組 group 的子節點丟進去的話，場景裡會留下一個
- * 空殼，而下一次繪製再疊一組上去。
+ * The `shown` path calls `scene.remove(m)` and then disposes the geometry, and `remove` only works
+ * on **direct children**: passing a group's child leaves an empty shell in the scene, and the next
+ * draw stacks another one on top.
  */
 const shownGroups: THREE.Object3D[] = [];
 
 /**
- * 遠景時關掉矮物件與懸挑 —— 與遊戲同一套門檻（見 `renderer/detailLOD`）。
+ * Ground props and overhangs are switched off at distance, on the same thresholds as the game (see
+ * `renderer/detailLOD`).
  *
- * 遊戲那一側是整層 `InstancedLayer` 的閘門，展示區畫的是普通 Mesh，所以
- * 兩邊的實作不同，但**門檻與遲滯共用一份**。不然縮放到某個位置時兩邊會
- * 看到不一樣的東西，而那正是展示區唯一不該發生的事。
+ * The game gates whole `InstancedLayer`s while the showcase draws plain meshes, so the two
+ * implementations differ, but **the thresholds and the hysteresis are one shared copy**. Otherwise
+ * the two show different things at some zoom levels, which is the one thing the showcase must never
+ * do.
  */
 const detailLOD = new DetailVisibility();
 
 /**
- * 機場的起降動畫。
+ * The airport's arrival and departure animation.
  *
- * 展示區要有飛機動畫才比較得出來。比較的對象是貼片 ——
- * 飛機真的落在跑道上嗎、真的沿著滑行道走嗎、真的停進機位嗎。跑的是遊戲裡
- * **同一個** `AirplaneAnimator`。
+ * Aircraft animation is what makes the comparison possible: does the aircraft land on the runway,
+ * follow the taxiway, park at the gate — all against the painted markings. It runs the **same**
+ * `AirplaneAnimator` the game does.
  */
 const planes = new ShowcasePlanes(sceneManager.scene);
 
-/** `civicTypesDone()` 的種類名 → 動畫端的機場尺寸。 */
+/** `civicTypesDone()`'s type names mapped to the animator's airport sizes. */
 const AIRPORT_SIZE_OF: Partial<Record<string, 'SMALL' | 'MEDIUM' | 'LARGE'>> = {
   airport_s: 'SMALL', airport_m: 'MEDIUM', airport_l: 'LARGE',
 };
@@ -93,13 +96,14 @@ function clear(): void {
   detailLOD.clear();
 }
 
-/** 一次繪製的三角形統計。四層各自一格，因為它們各有各的預算與問題。 */
+/** One draw's triangle counts. The four layers are separate because each has its own budget and its own problems. */
 interface Tris { massing: number; decal: number; prop: number; overhead: number }
 
 /**
- * 掛在建築上的三層 —— 與 BuildingRenderer.attachments 逐項對應。
+ * The three layers attached to a building, matching BuildingRenderer.attachments entry for entry.
  *
- * `baseY` 為 0 的那一層（貼片）幾何自己帶著絕對高度；另外兩層從建築底面起算。
+ * The layer with `baseY` 0, the decals, carries absolute heights in its geometry; the other two are
+ * measured from the building's base.
  */
 const ATTACHMENTS: ReadonlyArray<{
   variants: (zoneType: number, density: Density, level: number) => GeoBuilder[];
@@ -107,9 +111,9 @@ const ATTACHMENTS: ReadonlyArray<{
   castShadow: boolean;
   baseY: number;
   into: keyof Omit<Tris, 'massing'>;
-  /** 遠景時整層關掉。貼片不關 —— 它是平的鋪面，關掉會讓遠景整片地變空。 */
+  /** Whether the whole layer switches off at distance. Decals do not: they are flat paving, and switching them off empties the ground at a distance. */
   culled: boolean;
-  /** 牆體是圓的就跳過 —— 與 BuildingRenderer.attachments 的同名欄位對應。 */
+  /** Skipped where the body is round, matching the field of the same name in BuildingRenderer.attachments. */
   skipWhenRound?: boolean;
 }> = [
   {
@@ -128,10 +132,12 @@ const ATTACHMENTS: ReadonlyArray<{
 ];
 
 /**
- * 放一棟建築在 (x, z)，套用與遊戲完全相同的變換。回傳各層的三角形數。
+ * Places one building at (x, z) under exactly the game's transform, and returns each layer's
+ * triangle count.
  *
- * 旋轉必須在這裡重現，縮放則已經不存在 —— 生成器直接產出最終尺寸（2C-1）。
- * 「展示區看到的就是出貨的東西」是它唯一的價值，所以變換必須與遊戲一致。
+ * The rotation is reproduced here; there is no scaling, as the generator emits final dimensions. The
+ * showcase's only value is that what it shows is what ships, so the transform has to match the
+ * game's.
  */
 function place(cell: PlacedCell, seedByte: number): Tris {
   const tris: Tris = { massing: 0, decal: 0, prop: 0, overhead: 0 };
@@ -145,9 +151,10 @@ function place(cell: PlacedCell, seedByte: number): Tris {
     variantCount: VARIANT_COUNT, paletteSize: 8,
   });
 
-  // 逐實例屬性。遊戲把它們放在 InstancedBufferAttribute 上，展示區畫的是普通
-  // Mesh —— 不補的話 WebGL 一律餵 0，於是立面用最小樓高、窗戶相位全對齊，
-  // 而且 occupancy = 0 讓 shader 判定「沒有人」，一扇燈都不會亮。
+  // The per-instance attributes. The game holds them on an InstancedBufferAttribute while the
+  // showcase draws plain meshes: without filling them in, WebGL supplies 0 throughout, so facades
+  // take the minimum floor height, every window's phase aligns, and occupancy = 0 tells the shader
+  // nobody is home and not one light comes on.
   const values: InstanceValues = {
     occupancy: state.occupancy,
     seed: [
@@ -161,13 +168,14 @@ function place(cell: PlacedCell, seedByte: number): Tris {
   const mesh = new THREE.Mesh(geo, material);
   mesh.castShadow = true;
   mesh.receiveShadow = true;
-  // 不套用任何縮放 —— 生成器產出的就是最終尺寸（階段 2C-1）。
+  // No scaling: the generator emits final dimensions.
   mesh.rotation.y = (app.rotationQuarter * Math.PI) / 2;
   mesh.position.set(cell.x, GROUND_LAYERS.BUILDING, cell.z);
   sceneManager.scene.add(mesh);
   shown.push(mesh);
 
-  // 圓塔不掛雨遮與招牌（平板貼不上圓弧牆）。遊戲那側同一條規則。
+  // Round towers carry no canopies or signs, since a flat panel does not sit on a curved wall. The
+  // game applies the same rule.
   const round = isRoundBodied(cell.zoneType, cell.density, cell.level, cell.variantIndex);
 
   for (const a of ATTACHMENTS) {
@@ -178,18 +186,19 @@ function place(cell: PlacedCell, seedByte: number): Tris {
     const pi = Math.floor(app.propVariant01 * builders.length) % builders.length;
     const pgeo = builders[pi]!();
     stampZoneCategory(pgeo, ZONE_CAT[cell.zoneType] ?? 0);
-    // 招牌與燈頭（PART_LAMP）的亮暗吃 aOccupancy，所以附掛層也要餵。
+    // Signs and lamp heads (PART_LAMP) take their brightness from aOccupancy, so the attachment
+    // layers need it too.
     stampInstanceValues(pgeo, values);
     const pmesh = new THREE.Mesh(pgeo, material);
     pmesh.castShadow = a.castShadow;
     pmesh.receiveShadow = true;
-    // 不套用任何縮放 —— 這正是這三層存在的理由（BUG-219）。
+    // No scaling, which is exactly why these three layers exist (BUG-219).
     pmesh.rotation.y = (app.rotationQuarter * Math.PI) / 2;
     pmesh.position.set(cell.x, a.baseY, cell.z);
     sceneManager.scene.add(pmesh);
     shown.push(pmesh);
-    // add() 會立刻套用目前的縮放狀態 —— 縮在遠景時動一下控制項會整批重畫，
-    // 少了這一步細節就會全部冒回來。
+    // add() applies the current zoom state immediately. Zoomed out, touching a control redraws
+    // everything, and without this step all the detail comes back.
     if (a.culled) detailLOD.add(pmesh);
     tris[a.into] = triangleCount(pgeo);
   }
@@ -206,20 +215,21 @@ const state: ControlState = {
   variantOverride: null,
 };
 
-/** 統計表的四層。名稱與 `CivicTris` 的鍵逐項對應。 */
+/** The table's four layers, named to match `CivicTris`' keys entry for entry. */
 const CIVIC_LAYER_LABELS: Array<[string, keyof CivicTris]> = [
   ['量體', 'massing'], ['貼片', 'decal'], ['矮物件', 'prop'], ['懸挑', 'overhead'],
 ];
 
 /**
- * 公共建築的檢視 —— **一次畫全部**。
+ * The civic buildings view, which draws **all of them at once**.
  *
- * 直接把全部一起顯示出來，不用再另外挑建築。逐一切換看不出
- * 十九棟彼此的關係，而顏色分不分得開、高度差合不合理、街道家具的密度一不一致
- * 這些正是要驗收的東西。
+ * Switching through them one at a time hides the relationships among the nineteen, and whether the
+ * colours separate, whether the height differences are reasonable and whether the street furniture's
+ * density is consistent are exactly what needs reviewing.
  *
- * 它與下面的分區建築流程分開，因為兩者幾乎沒有共通的東西：沒有變體、沒有
- * 等級、沒有街廓、預算是逐格算的。硬塞進同一條路徑只會讓兩邊都長滿 if。
+ * It is separate from the zoned-building flow below because the two share almost nothing: no
+ * variants, no levels, no blocks, and a budget counted per cell. Forcing them through one path only
+ * fills both with conditionals.
  */
 function renderCivic(fitCamera: boolean): void {
   const stats = document.getElementById('stats');
@@ -238,13 +248,13 @@ function renderCivic(fitCamera: boolean): void {
     if (!plan) continue;
     const placed = placeCivic(plan, sceneManager.scene, state.occupancy, slot);
     shown.push(...allMeshes(placed));
-    // add() 會立刻套用目前的縮放狀態 —— 縮在遠景時動一下控制項會整批重畫，
-    // 少了這一步細節就會全部冒回來。
+    // add() applies the current zoom state immediately. Zoomed out, touching a control redraws
+    // everything, and without this step all the detail comes back.
     for (const m of placed.culled) detailLOD.add(m);
 
-    // 火車站底下那條**真的**軌道。它蓋在軌道上（`canPlaceTransportStop`
-    // 要求 `railType ≠ 0`），所以遊戲裡鋼軌本來就從站中間穿過去 —— 展示區
-    // 少的是 `TrackRenderer`，不是這一格漏畫。
+    // The **real** track under the train station. A station is built on track
+    // (`canPlaceTransportStop` requires `railType != 0`), so in game the rails do run through the
+    // middle of it — what the showcase lacks is `TrackRenderer`, not a cell in this drawing.
     if (slot.type === 'train_station') {
       const track = createShowcaseTrack(slot);
       sceneManager.scene.add(track);
@@ -260,8 +270,8 @@ function renderCivic(fitCamera: boolean): void {
     for (const key of ['massing', 'decal', 'prop', 'overhead'] as const) {
       total[key] += placed.tris[key];
     }
-    // 只列超支的那幾層。四層一律列出的話，十九棟就是 76 行，而超支的那一行
-    // 會淹沒在裡面 —— 統計表存在的理由就是讓超支跳出來。
+    // Only the layers over budget are listed. All four for each of nineteen buildings is 76 rows,
+    // and the one over budget drowns in them — making it stand out is why the table exists.
     const over = CIVIC_LAYER_LABELS
       .filter(([, key]) => report.over[key])
       .map(([label, key]) =>
@@ -275,12 +285,12 @@ function renderCivic(fitCamera: boolean): void {
   planes.setFields(fields);
 
   sceneManager.setCameraTarget(0, 0);
-  // **只在剛切進來時**框一次。每次重繪都框的話，使用者調一下住戶比例滑桿，
-  // 自己拉的縮放就被拉回去了。
+  // Framed once, **only on entering the mode**. Framing on every redraw pulls the user's own zoom
+  // back the moment they touch the occupancy slider.
   if (fitCamera) {
     const ext = civicLayoutExtent(slots);
-    // 等角視角下，一塊 w x h 的地在畫面上的高度大約是兩軸投影的和。乘 1.15
-    // 留一點邊 —— 剛好貼齊的話邊緣那一棟會頂到畫面。
+    // In an isometric view a w by h plot occupies roughly the sum of its two axis projections on
+    // screen. The 1.15 leaves a margin: fitted exactly, the outermost building touches the edge.
     const want = (ext.w + ext.h) * 0.62 * 1.15;
     sceneManager.zoomCamera(want - (sceneManager.camera.top - sceneManager.camera.bottom));
   }
@@ -295,7 +305,7 @@ function renderCivic(fitCamera: boolean): void {
   }
 }
 
-/** 上一次繪製的模式。只用來判斷「是不是剛切進 civic」，好只框一次鏡頭。 */
+/** The mode of the previous draw, used only to tell whether civic was just entered so the camera is framed once. */
 let lastMode: ViewMode | null = null;
 
 function render(): void {
@@ -330,7 +340,8 @@ function render(): void {
     total.overhead += t.overhead;
   }
 
-  // 依內容置中：矩陣模式的內容全在正象限，預設鏡頭對著原點會看不到。
+  // Centred on the content: the matrix mode's content lies wholly in the positive quadrant, out of
+  // sight of a camera aimed at the origin.
   if (cells.length > 0) {
     const cx = (Math.min(...cells.map(c => c.x)) + Math.max(...cells.map(c => c.x))) / 2;
     const cz = (Math.min(...cells.map(c => c.z)) + Math.max(...cells.map(c => c.z))) / 2;
@@ -341,8 +352,9 @@ function render(): void {
   const n = Math.max(1, cells.length);
   const sum = total.massing + total.decal + total.prop + total.overhead;
 
-  // 四層各自的預算：量體與矮物件有明訂上限，貼片與懸挑各自的上限寫在自己的
-  // 模組裡。沒有上限的欄位就不上色，而不是拿別人的上限硬套。
+  // A budget per layer: massing and ground props have stated limits, while the decal and overhead
+  // limits live in their own modules. A field with no limit is left uncoloured rather than measured
+  // against someone else's.
   const rows: Array<[string, number, number | null]> = [
     ['量體', total.massing, state.level === 3 ? TRIANGLE_BUDGET.TOWER : TRIANGLE_BUDGET.HOUSE],
     ['貼片', total.decal, null],
@@ -377,12 +389,12 @@ let frames = 0;
 let fpsClock = 0;
 sceneManager.onUpdate((dt) => {
   elapsed += dt;
-  // uTime 只驅動窗戶亮燈的隨機週期，一律照實時走。
+  // uTime drives only the random period of the window lights and always follows real time.
   material.uniforms.uTime!.value = elapsed;
 
   detailLOD.update(sceneManager.camera.top - sceneManager.camera.bottom);
-  // 飛機只在 civic 模式有東西可跑 —— `clear()` 已經把機場清掉，這裡照跑
-  // 也只是空轉。
+  // Aircraft have something to run only in civic mode: `clear()` has already removed the airport,
+  // and running here otherwise is idle work.
   planes.update(dt);
 
   if (state.timeOverride === null) {

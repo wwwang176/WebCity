@@ -1,30 +1,32 @@
 import { getInfraConfig, type InfraType } from '../core/building/InfraConfig';
 
 /**
- * 把全部公共建築排進展示區。
+ * Lays every civic building out in the showcase.
  *
- * 公共建築模式直接把全部一起顯示出來。逐一切換看不出
- * 十九棟**彼此**的關係 —— 顏色分不分得開、高度差合不合理、街道家具的密度一不
- * 一致，這些只有並排時才看得出來，而它們正是這次改造要驗收的東西。
+ * The civic mode shows all of them at once. Switching through them one at a time hides the
+ * relationships **among** the nineteen: whether the colours separate, whether the height differences
+ * are reasonable and whether the street furniture's density is consistent are only visible side by
+ * side, and they are exactly what needs reviewing.
  *
- * 單位一律是**格**（1 格 = 12 m），與 `CivicPlan` 的座標同一套。
+ * Every unit here is a **cell** (1 cell = 12 m), the same system as `CivicPlan`'s coordinates.
  */
 
-/** 兩棟之間留的空地（格）。 */
+/** The open ground left between two buildings, in cells. */
 export const CIVIC_LAYOUT_GAP = 2;
 
 /**
- * 一列的寬度上限（格）。
+ * A row's width limit, in cells.
  *
- * 十九棟排成一列的話總長超過 60 格 = 720 m，鏡頭要拉到看不見任何細節的高度
- * 才裝得下。18 格讓整批接近正方形 —— 而正方形是等角鏡頭最省的形狀。
+ * Nineteen buildings in one row run past 60 cells = 720 m, and the camera has to pull back beyond
+ * any visible detail to fit them. At 18 the whole set is close to square, and a square is the
+ * cheapest shape for an isometric camera.
  *
- * 它必須小於「兩座大型機場並排」（9 + 2 + 9 = 20），否則換行邏輯在實際資料
- * 上永遠不會觸發，而那是最容易寫錯又最不容易發現的分支。
+ * It has to be smaller than two large airports side by side (9 + 2 + 9 = 20), or the wrapping never
+ * triggers on real data — the branch easiest to get wrong and hardest to notice.
  */
 export const CIVIC_LAYOUT_ROW_LIMIT = 18;
 
-/** 一棟建築在展示區裡的位置。`x` / `z` 是**佔地中心**，與 plan 的原點對齊。 */
+/** One building's place in the showcase. `x` and `z` are the **footprint's centre**, aligned with the plan's origin. */
 export interface CivicSlot {
   type: InfraType;
   x: number;
@@ -32,36 +34,38 @@ export interface CivicSlot {
 }
 
 /**
- * 依 `types` 的順序逐列排放，整批置中於原點。
+ * Lays the types out row by row in the order given, centred on the origin.
  *
- * 順序**不重排** —— 它來自 `CIVIC_MODELS` 的宣告順序，而那是逐批排的。
- * 按大小重排會讓警局與消防局分開，而「藍的紅的分不分得開」正是要並排才
- * 看得出來的東西。
+ * The order is **not** rearranged: it comes from `CIVIC_MODELS`' declaration order, which groups
+ * related kinds together. Sorting by size separates the police and fire stations, and whether their
+ * blue and red separate is exactly what side-by-side placement shows.
  *
- * 同一列的建築**前緣對齊**（z 小的那一側），不是置中對齊：對齊的邊讓「這一
- * 列有幾棟」一眼讀得出來，而置中對齊在深度差三倍時看起來像散落的。
+ * Buildings in a row align on their **front edge**, the low-z side, rather than on their centres: an
+ * aligned edge makes the number of buildings in a row readable at a glance, while centring looks
+ * scattered where depths differ threefold.
  */
 export function civicLayout(types: readonly InfraType[]): CivicSlot[] {
   const slots: CivicSlot[] = [];
-  /** 這一列下一棟的左緣。 */
+  /** The left edge of the next building in this row. */
   let cursorX = 0;
-  /** 這一列的前緣。 */
+  /** This row's front edge. */
   let rowZ = 0;
-  /** 這一列目前最深的一棟。下一列從它之後起算。 */
+  /** The deepest building in this row so far. The next row starts beyond it. */
   let rowDepth = 0;
 
   for (const type of types) {
     const cfg = getInfraConfig(type);
-    // 查不到就當 1×1。這裡不丟例外 —— 展示區是拿來看東西的，
-    // 為了一個查不到的種類整頁空白不划算。
+    // An unknown type counts as 1x1 rather than throwing: the showcase exists to be looked at, and
+    // a blank page over one unknown type is a bad trade.
     const w = cfg?.width ?? 1;
     const h = cfg?.height ?? 1;
 
-    // 換行是單一個 `if` 而不是迴圈 —— 所以一棟寬到單獨都超過上限的建築
-    // （目前沒有，但大型機場 9 格已經是上限的一半）仍然放得下：它換一次行，
-    // 然後就地放下去。曾經這裡多一個 `cursorX > 0` 的前提，但那個分支只可能
-    // 在整份清單的第一棟觸發，而它做的只是把每一列一起往下推一個間距 ——
-    // 置中之後完全看不出來。無效的分支比沒有分支糟：它看起來被守住了。
+    // Wrapping is a single `if` rather than a loop, so a building wide enough to exceed the limit
+    // on its own still fits — there is none today, though a large airport at 9 cells is already
+    // half the limit: it wraps once and is placed where it lands. A `cursorX > 0` guard here could
+    // only ever fire on the list's first building, and all it would do is push every row down by
+    // one gap, invisible once centred. A branch that never fires is worse than none: it looks like
+    // a guarded case.
     if (cursorX + w > CIVIC_LAYOUT_ROW_LIMIT) {
       rowZ += rowDepth + CIVIC_LAYOUT_GAP;
       cursorX = 0;
@@ -77,13 +81,14 @@ export function civicLayout(types: readonly InfraType[]): CivicSlot[] {
 }
 
 /**
- * 整批排完之後佔多大（格）。
+ * How much ground the whole set occupies once laid out, in cells.
  *
- * 展示區用它把鏡頭拉到剛好框住全部 —— 十九棟排出來有 18 × 30 格，而預設的
- * 視錐是給 8×8 街廓訂的，不調的話一切到公共建築看到的是遠處一小撮。
+ * The showcase uses it to frame the camera on all of them: nineteen buildings lay out to 18 by 30
+ * cells while the default frustum is sized for an 8 by 8 block, so without adjustment the civic mode
+ * opens on a small cluster in the distance.
  *
- * 算的是**含佔地**的範圍，不是中心點的範圍：只看中心的話，邊緣那一棟會有
- * 一半在畫面外。
+ * It measures the extent **including the footprints** rather than of the centres: on centres alone,
+ * half of each outermost building falls off screen.
  */
 export function civicLayoutExtent(slots: readonly CivicSlot[]): { w: number; h: number } {
   if (slots.length === 0) return { w: 0, h: 0 };
@@ -101,11 +106,12 @@ export function civicLayoutExtent(slots: readonly CivicSlot[]): { w: number; h: 
 }
 
 /**
- * 整批平移到原點。
+ * Shifts the whole set onto the origin.
  *
- * 展示區的鏡頭預設對著原點，而排版是從 (0, 0) 往正象限長的 —— 不平移的話
- * 開啟時看到的是空地。矩陣模式踩過這個坑，那裡是靠 `setCameraTarget` 事後
- * 補救的；這裡直接把座標排對，鏡頭就不必知道排版的事。
+ * The showcase's camera points at the origin by default while the layout grows from (0, 0) into the
+ * positive quadrant, so without the shift it opens on empty ground. The matrix mode hit this and
+ * patches it afterwards through `setCameraTarget`; here the coordinates are laid out correctly, and
+ * the camera needs to know nothing about the layout.
  */
 function centre(slots: CivicSlot[]): CivicSlot[] {
   if (slots.length === 0) return slots;

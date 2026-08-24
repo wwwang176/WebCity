@@ -9,9 +9,9 @@ const NO_TRIS = { massing: 0, decal: 0, prop: 0, overhead: 0 };
 
 describe('civic 檢視的三角形統計', () => {
   it('should scale the budget by footprint, not per building', () => {
-    // 2x2 的醫院不能套逐棟的 HOUSE: 400 —— 那條線是給「一格一棟」訂的。
-    // 用「三格份」當樣本而不是寫死一個數字：寫死的話，校準預算之後這條
-    // 測試會在一個與它想測的事完全無關的理由上轉紅（實際發生過）。
+    // A 2x2 hospital cannot be measured against the per-building HOUSE: 400, a line drawn for one
+    // building per cell. The sample is three cells' worth rather than a literal: written as a
+    // literal, recalibrating the budget turns this red for a reason unrelated to what it tests.
     const threeCells = CIVIC_TRIANGLE_BUDGET.MASSING_PER_CELL * 3;
     const r = civicTriangleReport({ w: 2, h: 2 }, { ...NO_TRIS, massing: threeCells });
     expect(r.budget.massing).toBe(CIVIC_TRIANGLE_BUDGET.MASSING_PER_CELL * 4);
@@ -19,8 +19,8 @@ describe('civic 檢視的三角形統計', () => {
   });
 
   it('should flag a plan that blows the budget', () => {
-    // 用預算本身推出「超支一個三角形」，不寫死數字 —— 寫死的話，調整
-    // CIVIC_TRIANGLE_BUDGET 之後這條測試會靜靜地變成「沒超支也不報」。
+    // "One triangle over" is derived from the budget rather than written as a literal: as a literal,
+    // adjusting CIVIC_TRIANGLE_BUDGET silently turns this into a case that reports nothing.
     const justOver = CIVIC_TRIANGLE_BUDGET.MASSING_PER_CELL * 4 + 1;
     const r = civicTriangleReport({ w: 2, h: 2 }, { ...NO_TRIS, massing: justOver });
     expect(r.over.massing).toBe(true);
@@ -29,7 +29,8 @@ describe('civic 檢視的三角形統計', () => {
   });
 
   it('should count cells as w * h, not as the longer side', () => {
-    // 9x6 的大型機場有 54 格。取長邊的話預算會少報六倍，統計整片標紅。
+    // A 9 by 6 large airport is 54 cells. Taking the longer edge understates the budget sixfold and
+    // marks the whole table red.
     const r = civicTriangleReport({ w: 9, h: 6 }, NO_TRIS);
     expect(r.cells).toBe(54);
     expect(r.budget.massing).toBe(CIVIC_TRIANGLE_BUDGET.MASSING_PER_CELL * 54);
@@ -46,14 +47,15 @@ describe('civic 檢視的三角形統計', () => {
   });
 
   it('should flag each layer independently', () => {
-    // 四層各有各的預算與問題。一個總開關的話，「哪一層超支」只能用猜的。
+    // Each layer has its own budget and its own problems; under a single switch, which one is over
+    // budget is guesswork.
     const r = civicTriangleReport({ w: 1, h: 1 }, { ...NO_TRIS, prop: 999 });
     expect(r.over).toEqual({ massing: false, decal: false, prop: true, overhead: false });
   });
 });
 
 describe('placeCivic 的四層', () => {
-  /** 每層放一個看得出來的東西，好確認四層都真的建出來了。 */
+  /** One recognisable object per layer, so that all four can be confirmed to exist. */
   const fullPlan = (): CivicPlan => ({
     footprint: { w: 2, h: 2 },
     facade: FACADE_CIVIC,
@@ -68,8 +70,9 @@ describe('placeCivic 的四層', () => {
   });
 
   it('should build every layer', () => {
-    // 五個建築 mesh、四格預算：共用矮物件自己一個 mesh（圓錐與球併不進
-    // 稜台），但它就是矮物件，所以三角形算在 prop 那一格。
+    // Five building meshes against four budget fields: the shared ground props take a mesh of their
+    // own, since cones and spheres do not merge into the frusta, but they are ground props and their
+    // triangles count in the prop field.
     const placed = placeCivic(fullPlan(), new THREE.Scene(), 0.8)!;
     expect(placed.building.length, '有一層沒有建出來').toBe(5);
     for (const key of ['massing', 'decal', 'prop', 'overhead'] as const) {
@@ -78,8 +81,9 @@ describe('placeCivic 的四層', () => {
   });
 
   it('should keep the parked vehicles out of the building meshes', () => {
-    // 車輛走別的材質，而且**絕對不能**被 stampZoneCategory 碰 —— 那會把
-    // color 裡真正的 RGB 蓋成零件標籤，一台白藍相間的警車變成一塊灰。
+    // Vehicles take a different material and must **never** be touched by stampZoneCategory, which
+    // overwrites the real RGB in color with part labels and turns a white and blue police car into a
+    // block of grey.
     const placed = placeCivic(fullPlan(), new THREE.Scene(), 0.8)!;
     expect(placed.vehicles, '沒有停車').not.toBeNull();
     expect(placed.building).not.toContain(placed.vehicles);
@@ -102,11 +106,11 @@ describe('placeCivic 的四層', () => {
   });
 
   /**
-   * BUG-230c 的形狀：只寫量體層的逐實例屬性。
+   * The shape of BUG-230c: writing the per-instance attributes only on the massing layer.
    *
-   * 招牌與燈頭住在矮物件層與懸挑層，而它們的亮暗吃的是同一個 `aOccupancy`
-   * —— 只餵量體層的話，那兩層的值永遠停在 0，shader 判定「沒有人」，
-   * 路燈與招牌整座城市都是暗的。
+   * Signs and lamp heads live on the ground-prop and overhead layers and take their brightness from
+   * the same `aOccupancy`. Fed to the massing layer alone, those two stay at 0, the shader reads
+   * nobody home, and every street lamp and sign in the city is dark.
    */
   it('should stamp the per-instance attributes on every layer', () => {
     const placed = placeCivic(fullPlan(), new THREE.Scene(), 0.8)!;
@@ -121,7 +125,7 @@ describe('placeCivic 的四層', () => {
   });
 
   it('should stamp the facade category on every layer', () => {
-    // 少了的話那一層的 vZoneCat 是 0 —— 走進住宅低密度的立面分支。
+    // Without it that layer's vZoneCat is 0 and it takes the low-residential facade branch.
     const placed = placeCivic(fullPlan(), new THREE.Scene(), 0.8)!;
     for (const m of placed.building) {
       expect(m.geometry.getAttribute('color').getY(0), '某一層沒有蓋上立面類別')
@@ -130,21 +134,22 @@ describe('placeCivic 的四層', () => {
   });
 
   it('should carry the building colour into every layer', () => {
-    // 少了的話 shader 讀到 aBldgColor = 0 —— 整棟是黑的。
+    // Without it the shader reads aBldgColor = 0 and the whole building is black.
     const placed = placeCivic(fullPlan(), new THREE.Scene(), 0.8)!;
     const massing = placed.building[1]!;   // 順序：貼片、量體、自訂矮物件、共用矮物件、懸挑
     const a = massing.geometry.getAttribute('aBldgColor');
     expect(a, '量體層沒有 aBldgColor').toBeTruthy();
-    // Float32 存不下 0.2 —— 逐位比對會在一個與顏色無關的理由上失敗。
+    // Float32 cannot hold 0.2 exactly, and a bitwise comparison fails for a reason unrelated to
+    // colour.
     for (const [i, want] of [0.2, 0.3, 0.8].entries()) {
       expect([a.getX(0), a.getY(0), a.getZ(0)][i]).toBeCloseTo(want, 6);
     }
   });
 
   it('should not flatten a per-volume colour override', () => {
-    // `assembleCivic` 逐量體寫 aBldgColor（醫院的紅十字、大學的金頂）。
-    // `stampInstanceValues` 若無條件重寫整份，那些覆寫會被抹平 ——
-    // 而畫面上只表現為「紅十字不見了」。
+    // `assembleCivic` writes aBldgColor per volume: the hospital's red cross, the university's
+    // golden dome. `stampInstanceValues` rewriting the whole array unconditionally flattens those
+    // overrides, and on screen that shows only as the red cross being gone.
     const p = fullPlan();
     p.massing = [
       { x: -0.3, z: 0, w: 0.4, d: 0.4, y0: 0, y1: 0.5 },
@@ -160,23 +165,25 @@ describe('placeCivic 的四層', () => {
   });
 
   it('should cull only the prop and overhead layers', () => {
-    // 貼片不關 —— 它是平的鋪面，關掉會讓遠景整片地變空。量體當然也不關。
+    // Decals do not switch off: they are flat paving, and switching them off empties the ground at a
+    // distance. Nor, of course, does the massing.
     const placed = placeCivic(fullPlan(), new THREE.Scene(), 0.8)!;
     expect(placed.culled.length, '自訂矮物件、共用矮物件、懸挑、車輛四層要跟著遠景關掉')
       .toBe(4);
   });
 
   it('should not cast shadows from the decal layer', () => {
-    // 平的鋪面投影會在自己底下畫出一圈黑邊。
+    // Flat paving casting a shadow draws a black rim beneath itself.
     const placed = placeCivic(fullPlan(), new THREE.Scene(), 0.8)!;
     const noShadow = placed.building.filter(m => !m.castShadow);
     expect(noShadow.length, '不投影的層數不是一層（貼片）').toBe(1);
   });
 
   /**
-   * 十九棟一起排出來時，每一棟的 plan 座標仍然以自己的佔地中心為原點 ——
-   * 所以擺放時要整棟平移。漏掉任何一層（車輛最容易漏，它不走那個迴圈）的話，
-   * 那一層會留在原點，看起來像「某一棟的樹跑到別人家去了」。
+   * Laid out together, each of the nineteen still carries plan coordinates measured from its own
+   * footprint centre, so placement translates the whole building. A layer left out — the vehicles
+   * most easily, as they do not go through that loop — stays at the origin and reads as one
+   * building's trees standing in someone else's plot.
    */
   it('should move every layer to the slot it was given', () => {
     const at = { x: 6, z: -4 };
@@ -188,8 +195,8 @@ describe('placeCivic 的四層', () => {
   });
 
   it('should keep each layer at its own height when moved', () => {
-    // 平移只動水平面。把 y 也一起蓋掉的話，貼片會從地面浮起來，
-    // 或整棟沉進地裡。
+    // The translation moves the horizontal plane only. Overwriting y as well lifts the decals off
+    // the ground, or sinks the whole building into it.
     const here = placeCivic(fullPlan(), new THREE.Scene(), 0.8);
     const there = placeCivic(fullPlan(), new THREE.Scene(), 0.8, { x: 6, z: -4 });
     expect(there.building.map(m => m.position.y))
@@ -202,7 +209,8 @@ describe('placeCivic 的四層', () => {
   });
 
   it('should skip a layer that has nothing in it', () => {
-    // 公園沒有懸挑。空幾何仍然建出 mesh 的話是白吃一次 draw call。
+    // A park has no overhangs, and building a mesh for empty geometry spends a draw call for
+    // nothing.
     const placed = placeCivic(
       { ...fullPlan(), overhead: [], props: [], fixtures: [], vehicles: [] },
       new THREE.Scene(), 0.8,

@@ -1,13 +1,13 @@
 /**
- * 展示區的控制面板。刻意用原生 DOM 而不是 Solid：展示區不該把遊戲的 UI
- * 相依帶進來，它要能在遊戲壞掉的時候仍然打得開。
+ * The showcase's control panel. Deliberately plain DOM rather than Solid: the showcase must not pull
+ * in the game's UI dependencies, so that it still opens when the game is broken.
  */
 import { densityFor, type ViewMode } from './views';
 import { VARIANT_COUNT } from '../renderer/geometry/buildings/massing';
 import { ZONE_TYPES, LEVELS, type Density }
   from '../renderer/geometry/buildings/registry';
 
-/** 0..1 的一天位置轉成 24 小時字面，滑桿才知道自己拖到幾點。 */
+/** Turns a 0..1 position in the day into a 24-hour label, so the slider can say what time it is on. */
 function clockText(t: number): string {
   const minutes = Math.round(t * 24 * 60);
   const h = Math.floor(minutes / 60) % 24;
@@ -21,33 +21,35 @@ export interface ControlState {
   density: Density;
   level: number;
   seedByte: number;
-  /** 手動指定的一天位置 0..1；null 表示自動循環。 */
+  /** A manually set position in the day, 0..1; null means the automatic cycle. */
   timeOverride: number | null;
   /**
-   * 住戶／使用率 0..1 —— 夜裡有多少比例的窗戶與招牌會亮。
+   * Occupancy, 0..1: the share of windows and signs lit at night.
    *
-   * 遊戲裡這個值來自 `SimulationLoop` 的實際住戶數；展示區沒有模擬，所以
-   * 由這根滑桿頂替。0 就是空屋（燒毀與廢棄的建築也是這個值）。
+   * In game the value comes from `SimulationLoop`'s actual occupancy; the showcase has no simulation
+   * and this slider stands in for it. 0 is an empty building, the value burned and abandoned
+   * buildings also carry.
    */
   occupancy: number;
   wireframe: boolean;
-  /** 街廓邊長。量效能基準時調大。 */
+  /** The block's edge length. Raised when measuring performance. */
   blockSize: number;
   /**
-   * 三個附掛層各自的開關。
+   * One switch per attachment layer.
    *
-   * 分開而不是一個「地面物件」總開關：三層的放置限制完全不同（貼片可以鋪到
-   * 格子邊界、矮物件不能越過行人包絡線、懸挑要高過人頭），驗收時要能單獨
-   * 看出每一層的貢獻，否則「哪一層的東西跑錯位置」只能用猜的。
+   * Separate rather than a single "ground objects" switch: the three have entirely different
+   * placement limits — decals may reach the cell boundary, ground props may not cross the pedestrian
+   * envelope, overhangs have to clear head height — and reviewing means seeing each layer's
+   * contribution on its own, or which layer's object is misplaced is guesswork.
    */
   showDecals: boolean;
   showLowProps: boolean;
   showOverhead: boolean;
   /**
-   * 單體模式要看哪一個變體；null = 照雜湊。
+   * Which variant the single-building mode shows; null follows the hash.
    *
-   * 逐一檢查八個變體是驗收的主要動作（「兩兩不得長一樣」），靠重擲種子撞出
-   * 全部八個太慢。
+   * Stepping through all eight variants is the main reviewing action, since no two may look alike,
+   * and rerolling the seed until all eight turn up is too slow.
    */
   variantOverride: number | null;
 }
@@ -67,10 +69,12 @@ export function mountControls(
   host.innerHTML = '';
 
   /**
-   * 只在分區建築的模式下有意義的控制項。`civic` 模式下整組藏起來。
+   * The controls that mean something only in the zoned-building modes, hidden as a group in `civic`
+   * mode.
    *
-   * 收在這裡而不是各自記一個變數：漏掉一個的話它會孤零零地留在面板上，
-   * 而使用者會花時間找「為什麼把等級調到 3 警局沒有變高」。
+   * Collected here rather than tracked one variable each: a missed one is left alone on the panel,
+   * and the user spends time working out why raising the level to 3 does not make the police station
+   * taller.
    */
   const zoneOnly: HTMLElement[] = [];
 
@@ -112,7 +116,8 @@ export function mountControls(
   zoneSel.value = String(state.zoneType);
   row('分區', zoneSel);
 
-  // 只有辦公區兩種密度都有建築；其他分區選了也沒有對應的高度表。
+  // Only offices have buildings at both densities; the other zones have no height table for the
+  // second one.
   const densitySel = document.createElement('select');
   for (const d of ['LOW', 'HIGH'] as Density[]) {
     const o = document.createElement('option');
@@ -125,14 +130,12 @@ export function mountControls(
   row('密度（僅辦公區兩者皆有）', densitySel);
 
   /**
-   * 這個分區沒有的密度要換掉。
+   * Replaces a density the selected zone does not have.
    *
-   * **必須在重繪之前跑。** 以前它是掛在 `zoneSel` 上的第二個 change 監聽器，
-   * 而第一個（`onchange` 屬性）已經先呼叫過 `onChange()` —— 所以切到住宅高
-   * 的那一次是用上一個分區的密度重繪的，而 `getMassingVariants(2, 'LOW', …)`
-   * 回傳空陣列，畫面上什麼都沒有（BUG-227）。
-   *
-   * 階段 2C-1 之前 `getVariants` 根本不看密度，所以這個順序錯誤看不出來。
+   * **It has to run before the redraw.** As a second change listener on `zoneSel` it ran after the
+   * first, the `onchange` property, had already called `onChange()`: switching to high residential
+   * redrew with the previous zone's density, and `getMassingVariants(2, 'LOW', ...)` returns an empty
+   * array, leaving the view blank (BUG-227).
    */
   const syncDensity = () => {
     state.density = densityFor(state.zoneType, state.density);
@@ -199,7 +202,8 @@ export function mountControls(
   };
   host.appendChild(time);
 
-  // 住戶比例。夜景要調的就是它 —— 白天完全看不出差別，所以標籤寫清楚。
+  // Occupancy, the control for night scenes. It makes no visible difference by day, so the label
+  // says so.
   const occLabel = document.createElement('label');
   const occText = () => `住戶比例 ${Math.round(state.occupancy * 100)}%（夜間亮燈）`;
   occLabel.textContent = occText();
@@ -260,7 +264,7 @@ export function mountControls(
   stats.id = 'stats';
   host.appendChild(stats);
 
-  // **必須在所有 row() 之後。** 它讀的是 `zoneOnly`，而那份清單是 row()
-  // 一路累積起來的 —— 提前呼叫只會藏到當下已經建好的那幾個。
+  // **It has to come after every row().** It reads `zoneOnly`, which row() accumulates, so calling
+  // it earlier hides only the controls built so far.
   syncModeVisibility();
 }
