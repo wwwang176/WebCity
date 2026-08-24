@@ -1,26 +1,29 @@
 import { EducationLevel } from './types';
 
 /**
- * 「哪一棟樓住了幾個人、哪一棟樓有幾個人上班」的索引。
+ * An index of how many people live in and work at each building.
  *
- * 服務負載（警局、消防隊、醫院、學校）算的是**每一格**的需求，而同一棟樓裡的
- * 住戶算出來完全一樣 —— 座標、覆蓋、污染、分區都只跟樓有關。原本每個服務各自
- * 逐市民掃一遍，每位市民付兩次 `parsePosKey`、兩次 `getCoverage`、一次 `getCell`，
- * 然後往陣列裡塞一個小物件。12 萬人的城市光是警消就配置約 24 萬個物件，而不重複
- * 的位置只有幾千個（實測 12 434 人住在 103 棟住宅裡）。
+ * Service load — police, fire, hospitals, schools — is demand **per cell**, and residents of one
+ * building produce identical results, because coordinates, coverage, pollution and district all
+ * depend only on the building. Each service scanned the citizen list itself, paying two
+ * `parsePosKey` calls, two `getCoverage` calls and one `getCell` per citizen and pushing a small
+ * object onto an array. In a city of 120,000, police and fire alone allocated around 240,000
+ * objects across a few thousand distinct positions: 12,434 people measured living in 103
+ * buildings.
  *
- * 先數成「每一格幾個人」再去查，昂貴的查詢就從 O(人口) 掉到 O(建築)。逐市民的
- * 部分只剩下一次 Map 加一。
+ * Counting people per cell first drops the expensive lookups from O(population) to O(buildings),
+ * leaving one Map increment per citizen.
  *
- * 這**不是**近似:下游 (`distributeLoadToNearest`、`SchoolService.updateLoads`、
- * `HealthService.updateLoads`) 對同一格的條目只做加總，先加起來再送進去結果一樣。
+ * This is **not** an approximation: downstream, `distributeLoadToNearest`,
+ * `SchoolService.updateLoads` and `HealthService.updateLoads` only sum entries for one cell, so
+ * pre-summing gives the same result.
  */
 export interface CitizenLocationIndex {
-  /** `homeId` → 住在這裡的人數。 */
+  /** `homeId` to how many people live there. */
   readonly homeCounts: ReadonlyMap<string, number>;
-  /** `homeId` → 各學歷各住了幾個人。只有警局的需求權重看學歷。 */
+  /** `homeId` to a count per education level. Only police demand weights follow education. */
   readonly homeEducation: ReadonlyMap<string, ReadonlyMap<EducationLevel, number>>;
-  /** `workplaceId` → 在這裡上班的人數。 */
+  /** `workplaceId` to how many people work there. */
   readonly workCounts: ReadonlyMap<string, number>;
 }
 
@@ -31,10 +34,10 @@ interface CitizenLike {
 }
 
 /**
- * 掃一遍市民名單，數出每一格的人數。
+ * Walks the citizen list once and counts the people per cell.
  *
- * 這一趟是 O(人口)，但每位市民只做 Map 加一 —— 沒有字串解析、沒有格子查詢、
- * 沒有物件配置。四個服務共用這一份結果，取代它們各自的那一趟。
+ * The pass is O(population), but each citizen costs one Map increment: no string parsing, no cell
+ * lookups, no allocation. Four services share the result in place of a pass each.
  */
 export function buildCitizenLocationIndex(
   citizens: readonly CitizenLike[],

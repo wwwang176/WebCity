@@ -2,14 +2,14 @@ import { describe, it, expect } from 'vitest';
 import { scoreCommute, HOUSING_SCORE } from '../HousingScore';
 
 /**
- * 通勤好不好，看的是**要花多久**，不是隔多遠。
+ * How good a commute is follows **how long it takes**, not how far it is.
  *
- * 用直線距離的話，一間就在捷運站旁邊的房子，在系統眼中跟荒郊野外的房子一樣糟 ——
- * 只要它離公司遠。於是玩家蓋了捷運，市民的居住偏好完全不動，運輸建設對城市形狀
- * 沒有任何影響。
+ * By straight-line distance, a house beside a metro station looks as bad to the system as one in
+ * open country as long as it is far from work. The player builds a metro, housing preferences do
+ * not move, and the transport built has no effect on the city's shape.
  *
- * 改看時間之後，距離仍然有代價（開車時間隨距離線性上升），但那個代價可以被交通
- * 建設抵銷 —— 這才有「住得遠但住在站旁邊」這種選擇。
+ * With time, distance still costs — driving time rises linearly with it — but that cost can be
+ * offset by transport, which is what makes living far away beside a station a choice.
  */
 
 describe('住房評分的通勤項', () => {
@@ -40,12 +40,13 @@ describe('住房評分的通勤項', () => {
   });
 
   it('should score an unknown commute as neutral', () => {
-    // 沒有工作的人不該因為「通勤未知」被加分或扣分。
+    // Someone with no job should be neither rewarded nor penalised for an unknown commute.
     expect(scoreCommute(null)).toBe(0);
   });
 
   it('should rank a far house next to a station above a near house without one', () => {
-    // 這是整件事的重點。遠但有捷運（時間 22）要贏過近但只能塞車開車（時間 45）。
+    // The point of all of it: far with a metro, at 22, beats near with only congested driving,
+    // at 45.
     const farWithMetro = scoreCommute(22);
     const nearWithJam = scoreCommute(45);
     expect(farWithMetro, '住在站旁邊沒有比較吃香').toBeGreaterThan(nearWithJam);

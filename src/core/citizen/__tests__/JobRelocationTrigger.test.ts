@@ -11,19 +11,22 @@ import type { CachedRoute } from '../../traffic/CommuteCache';
 import type { ReadableGrid } from '../../grid/GridHelpers';
 
 /**
- * 什麼樣的通勤該讓人想換工作。
+ * Which commutes should make someone want a different job.
  *
- * 舊的判斷是兩條互斥的規則：**有**快取路線就看路徑長度（門檻 500），**沒有**就看
- * 直線距離（門檻 15）。兩個問題都問錯了 —— 實測 60×60 城市裡路徑長度最大值 99，
- * 500 永遠不成立；而直線距離超過 15 的佔 99.9%，等於全部放行。實際在篩人的是
- * 後面那條「每輪最多動 5%」的配額，而配額是照名單順序取的，跟通勤好不好無關。
+ * Two mutually exclusive rules — path length with a cached route (threshold 500) and
+ * straight-line distance without (threshold 15) — asked the wrong question both ways: the
+ * measured maximum path length in a 60x60 city is 99, so 500 never holds, and 99.9% of
+ * straight-line distances exceed 15, which lets everyone through. What actually filtered was the
+ * 5%-per-round quota, taken in list order and unrelated to how good a commute is.
  *
- * 更糟的是那個 if/else：兩個一模一樣的市民，會因為系統剛好還沒替其中一個算好
- * 路線而套用完全不同的規則。修好載入時的快取覆蓋率之後，所有人都落進「有路線」
- * 那一邊，於是整個機制靜靜地停擺了。
+ * Worse, the if/else applied entirely different rules to two identical citizens depending on
+ * whether the system happened to have computed a route for one of them. Once cache coverage on
+ * load was fixed, everyone fell on the "has a route" side and the whole mechanism silently
+ * stopped.
  *
- * 現在只有一條規則：**通勤要花多久**。距離仍然有代價（開車時間隨距離上升），但
- * 那個代價可以被大眾運輸抵銷 —— 這才有「住得遠但住在站旁邊」這種選擇。
+ * There is now one rule: **how long the commute takes**. Distance still costs, since driving time
+ * rises with it, but that cost can be offset by transit, which is what makes living far away
+ * beside a station a choice.
  */
 
 function makeCitizen(id: number, overrides: Partial<Citizen> = {}): Citizen {
@@ -59,7 +62,7 @@ function readyRoute(id: number): CachedRoute {
   };
 }
 
-/** 有多少人被判定為需要換工作。不做任何距離查詢。 */
+/** How many citizens are judged to need a different job. Does no distance lookups. */
 function pendingWith(
   citizens: Citizen[],
   commuteTime: (c: Citizen) => number,
@@ -82,7 +85,8 @@ describe('換工作的觸發條件', () => {
   });
 
   it('should judge the same way whether or not a route is cached', () => {
-    // 這是舊實作真正的毛病：規則不該取決於系統剛好算好了沒。
+    // The real defect in the old implementation: the rule must not depend on whether the system
+    // happened to have finished computing.
     const withCache = { get: (id: number) => readyRoute(id), roadGeneration: 0 };
     const long = () => THRESHOLD + 20;
     const short = () => THRESHOLD - 20;
@@ -94,8 +98,8 @@ describe('換工作的觸發條件', () => {
   });
 
   it('should leave a distant citizen alone when transit makes the trip quick', () => {
-    // 整件事的重點。住得遠（開車要很久）但兩端都在站旁邊 —— 通勤時間短，
-    // 就不該被逼著換工作。
+    // The point of all of it. Living far away, a long drive, but with both ends beside stations:
+    // the commute is short and should not force a job change.
     const farButWellServed = makeCitizen(1, { homeId: '0,1', workplaceId: '55,1' });
     expect(pendingWith([farButWellServed], () => 22)).toBe(0);
   });
@@ -116,13 +120,15 @@ describe('換工作的觸發條件', () => {
   });
 
   it('should ignore a stale route rather than treat it as failed', () => {
-    // 路網剛改過，快取還沒重算。當成「走不到」會引發一波集體失業。
+    // The road network just changed and the cache has not been recomputed. Treating that as
+    // unreachable triggers a wave of mass unemployment.
     const stale = { get: (id: number) => ({ ...readyRoute(id), generation: -1 }), roadGeneration: 0 };
     expect(pendingWith([makeCitizen(1)], () => 1, stale)).toBe(0);
   });
 
   it('should fall back to straight-line distance when the commute time is unknown', () => {
-    // 估不出時間時仍然要有個保底，否則路網剛建好那幾 tick 完全不做判斷。
+    // A fallback is still needed when time cannot be estimated, or nothing is judged at all for
+    // the few ticks after roads are built.
     const far = makeCitizen(1, { homeId: '0,1', workplaceId: '55,1' });
     const near = makeCitizen(2, { homeId: '30,1', workplaceId: '31,1' });
     expect(pendingWith([far], () => NaN)).toBe(1);

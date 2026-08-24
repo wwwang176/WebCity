@@ -23,10 +23,11 @@ export interface DeathContext {
   /** Pollution death-rate multiplier (1.0 = no extra risk, up to 1.5 = high pollution uncovered) */
   pollutionMult: number;
   /**
-   * 條例對死亡機率的乘數（禁菸令、免費診所）。1 = 沒有條例。
+   * The ordinances' multiplier on death probability, from the smoking ban and free clinics. 1
+   * means no ordinance.
    *
-   * 跟 hospitalMult 分開帶著:那一欄是醫院負荷算出來的，兩者乘在一起的話，帳面上
-   * 會看不出死亡率是被醫院蓋住的還是被條例壓下去的。
+   * Carried separately from hospitalMult, which comes from hospital load: multiplied together,
+   * nothing distinguishes a death rate held down by hospitals from one held down by ordinances.
    */
   policyMult: number;
 }
@@ -80,10 +81,10 @@ export function getLearningSpeed(age: number): number {
 }
 
 /**
- * 義務教育階段的學習速度加成。
+ * The learning speed bonus for stages within compulsory education.
  *
- * 全日、強制出席跟有一天沒一天地來上課的差別 —— 同一間學校、同一個老師，把學生
- * 推得比較快。
+ * The difference between full-time compulsory attendance and turning up when convenient: the
+ * same school and the same teacher push a student further.
  */
 export const COMPULSORY_SPEED_BONUS = 1.5;
 
@@ -343,10 +344,11 @@ export class CitizenManager {
     isSchoolCovered: (x: number, y: number, schoolKey: EducationRule['schoolKey']) => boolean,
     capacityBySchoolKey: Record<EducationRule['schoolKey'], number>,
     /**
-     * 國民教育辦到學制的第幾階（義務教育條例）。0 = 沒有。
+     * How far compulsory education reaches as a school stage. 0 means none.
      *
-     * 站在第 `rung` 階（0 起算）的學生，只有 `rung < compulsoryStages` 時才享有
-     * 加成 —— 那一階在義務範圍之內。範圍之外的自己唸自己的。
+     * A student at stage `rung`, counting from 0, gets the bonus only while
+     * `rung < compulsoryStages`, meaning that stage is within the compulsory range. Stages beyond
+     * it study on their own.
      */
     compulsoryStages = 0,
   ): void {

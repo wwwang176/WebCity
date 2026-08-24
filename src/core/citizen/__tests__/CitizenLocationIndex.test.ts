@@ -3,8 +3,9 @@ import { buildCitizenLocationIndex } from '../CitizenLocationIndex';
 import { EducationLevel } from '../types';
 
 /**
- * 服務負載原本每個都逐市民掃一遍，每位付兩次 `parsePosKey`、兩次 `getCoverage`、
- * 一次 `getCell`。同一棟樓的住戶查出來完全一樣 —— 12 434 人只住在 103 棟樓裡。
+ * Each service's load scanned the citizen list itself, paying two `parsePosKey` calls, two
+ * `getCoverage` calls and one `getCell` per citizen. Residents of one building produce identical
+ * lookups: 12,434 people measured living in 103 buildings.
  */
 
 function c(homeId: string | null, workplaceId: string | null,
@@ -23,8 +24,8 @@ describe('每一格住了幾個人', () => {
   });
 
   it('should skip the homeless and the jobless separately', () => {
-    // 同一位市民可能有家沒工作、或有工作沒家。兩邊各自判斷，一起判斷的話
-    // 「沒工作的人」會連帶從住宅人數裡消失。
+    // One citizen can have a home and no job or a job and no home. Each is decided separately;
+    // decided together, people without a job would disappear from the housing counts too.
     const idx = buildCitizenLocationIndex([
       c(null, '9,9'), c('2,2', null), c(null, null),
     ]);
@@ -35,8 +36,8 @@ describe('每一格住了幾個人', () => {
   });
 
   it('should break each address down by education', () => {
-    // 警局的需求權重看學歷（無學歷 2.0、大學 0.3）。只記總人數的話，
-    // 一棟樓裡混住的人會被當成同一種。
+    // Police demand weights follow education, 2.0 for none and 0.3 for university. Recording only
+    // a headcount treats a building's mixed residents as one kind.
     const idx = buildCitizenLocationIndex([
       c('2,2', null, EducationLevel.NONE),
       c('2,2', null, EducationLevel.NONE),
@@ -49,7 +50,8 @@ describe('每一格住了幾個人', () => {
   });
 
   it('should keep the education breakdown consistent with the plain count', () => {
-    // 兩份資料算出來的人數不一樣的話，醫院跟警局會對同一棟樓有不同的看法。
+    // With the two records disagreeing on a count, hospitals and police hold different views of
+    // one building.
     const citizens = [];
     const levels = [EducationLevel.NONE, EducationLevel.ELEMENTARY,
       EducationLevel.HIGH_SCHOOL, EducationLevel.UNIVERSITY];
@@ -72,7 +74,8 @@ describe('每一格住了幾個人', () => {
   });
 
   it('should collapse a crowded city to one entry per address', () => {
-    // 這是整件事的重點:成本從跟人口成正比變成跟建築成正比。
+    // The point of all of it: the cost goes from proportional to population to proportional to
+    // buildings.
     const citizens = [];
     for (let i = 0; i < 12_000; i++) citizens.push(c(`${i % 103},4`, `${i % 40},9`));
     const idx = buildCitizenLocationIndex(citizens);

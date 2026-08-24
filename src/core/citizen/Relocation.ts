@@ -20,33 +20,38 @@ export const DEFAULT_RELOCATION_CONFIG: RelocationConfig = {
  * Returns the number of citizens that were relocated.
  * Mutates citizens (homeId) and occupancy map in-place.
  *
- * ### 為什麼有 `inSlice`
+ * ### Why `inSlice` exists
  *
- * 昂貴的是**評估**不是搬遷:每一位不開心的市民都要把全城的候選住宅打一次分，而
- * 只有分數差夠大的才會真的搬。搬遷有 5% 的上限，評估沒有 —— 沒搬成的人不算進
- * 上限，所以成本是 O(不開心人數 × 住宅數)。12 萬人實測一次 **195ms**，而速度 1
- * 的一個 tick 只有 250ms（BUG-331）。
+ * The expensive part is **evaluation**, not relocation: every unhappy citizen scores every
+ * candidate home in the city, and only those with a large enough score difference actually move.
+ * Relocation is capped at 5% and evaluation is not — citizens who do not move are not counted
+ * against the cap — so the cost is O(unhappy x homes). One pass measured **195ms** at 120,000
+ * citizens against the 250ms a tick has at speed 1 (BUG-331).
  *
- * `inSlice` 讓呼叫端每次只叫**一部分市民**來評估。節奏因此變成「開得比較密、每次
- * 人比較少」，而不是「一場會拆成幾十天開」。
+ * `inSlice` lets the caller bring **part of the population** to each evaluation. The rhythm
+ * becomes more frequent meetings with fewer people rather than one meeting spread across dozens
+ * of days.
  *
- * 拆成幾十天開過一次，那是錯的:候選住宅、入住數、誰還活著，這三份資料在那幾十個
- * tick 裡全部會變，而拿著第一天印的資料一路用到最後一天，就會把人搬進已經拆掉的
- * 樓、已經住滿的樓，或幫已經過世的人搬家。補了三輪還在冒新的（BUG-331）。
+ * Spreading one meeting across dozens of days was wrong: candidate homes, occupancy and who is
+ * still alive all change during those ticks, and carrying the first day's data through to the
+ * last moves people into demolished buildings, into full ones, or moves the dead. Three rounds of
+ * patches kept producing new ones (BUG-331).
  *
- * 現在每次呼叫都是**獨立的一場會**:當場拍快照、當場用完、當場丟掉，壽命一個 tick
- * —— 與最初的寫法完全相同，那一整類問題不存在。
+ * Each call is now an **independent meeting**: the snapshot is taken, used and discarded within
+ * one tick — exactly as originally written, and that class of problem does not exist.
  *
- * ### 配額
+ * ### Quota
  *
- * 沒有 `quota` 時，上限是「這一次看到的不開心的人的 5%」——與分批之前完全相同。
+ * Without a `quota`, the cap is 5% of the unhappy citizens seen this call, exactly as before
+ * slicing.
  *
- * 分批的呼叫端**必須自己算 `quota`**。讓每一批各自取 5%，加起來不等於全城的 5%:
- * `Math.max(1, Math.floor(n × 0.05))` 每批各自取整，100 位不開心的人分十批（每批
- * 10 位）會變成每批 `max(1, floor(0.5)) = 1`、一圈搬 10 位，而一次跑完只搬
- * `floor(100 × 0.05) = 5` 位 —— **超搬一倍**。小城市更誇張。
+ * A slicing caller **must compute `quota` itself**. Taking 5% per slice does not sum to 5% of the
+ * city: `Math.max(1, Math.floor(n * 0.05))` rounds within each slice, so 100 unhappy citizens in
+ * ten slices of 10 become `max(1, floor(0.5)) = 1` each and 10 per round, against
+ * `floor(100 * 0.05) = 5` in one pass — **twice as many**. Smaller cities are worse.
  *
- * 給了 `quota` 就不再自己數，`inSlice` 因此每位市民只會被問一次（它不必是純函式）。
+ * With a `quota` given, nothing is counted here, so `inSlice` is asked about each citizen exactly
+ * once and need not be pure.
  */
 export function relocationTick(
   // Read-only: the pass rewrites `homeId` on the citizens, never the array.
@@ -54,9 +59,9 @@ export function relocationTick(
   candidates: readonly HousingCandidate[],
   occupancy: Map<string, number>,
   config?: Partial<RelocationConfig>,
-  /** 這一位屬於這一批嗎。省略等於「全部人都算」。 */
+  /** Whether this citizen is in this slice. Omitted means everyone. */
   inSlice: (citizen: Citizen) => boolean = () => true,
-  /** 這一次最多搬幾位。省略時自己數（見上面的「配額」）。 */
+  /** The most citizens this call may move. Omitted, it counts them itself (see Quota above). */
   quota?: number,
 ): { count: number; relocatedIds: number[] } {
   const cfg: RelocationConfig = config
@@ -80,9 +85,10 @@ export function relocationTick(
   if (maxRelocations <= 0) return { count: 0, relocatedIds: [] };
   const relocatedIds: number[] = [];
 
-  // 現居住宅原本是每位市民 `candidates.find` 線性找一次。
-  // 候選的 `pos` 必須唯一（`buildHousingCandidates` 一格一筆，天然唯一）。重複時
-  // `find` 取第一筆而 Map 留最後一筆 —— 現居住宅的分數會不一樣。
+  // The current home was a linear `candidates.find` per citizen.
+  // A candidate's `pos` must be unique, which `buildHousingCandidates` gives naturally with one
+  // entry per cell. With duplicates, `find` takes the first while a Map keeps the last, and the
+  // current home would score differently.
   const byPos = new Map<string, HousingCandidate>();
   for (const c of candidates) byPos.set(c.pos, c);
 

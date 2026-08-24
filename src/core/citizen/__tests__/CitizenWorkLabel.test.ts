@@ -3,12 +3,13 @@ import { citizenWorkLabel } from '../CitizenPresentation';
 import { isWorkingAge, LIFE_STAGE_AGE, MAX_AGE } from '../types';
 
 /**
- * 面板上的「Unemployed」要跟總覽算的是同一件事。
+ * The panel's "Unemployed" has to mean what the overview counts.
  *
- * 總覽兩頁都只數**工作年齡**的人（`isWorkingAge` / `lifeStage === ADULT`），面板卻
- * 對任何 `workplaceId === null` 的人都印 Unemployed —— 小孩、學生、退休的老人全都
- * 被算成失業。於是一座「Full employment、662 個職缺」的城市，點開住宅一看滿滿的
- * Unemployed。數字沒錯，是那個詞用錯了。
+ * Both overview pages count only people of **working age** (`isWorkingAge` /
+ * `lifeStage === ADULT`), while the panel printed Unemployed for anyone with
+ * `workplaceId === null` — children, students and the retired all counted as unemployed. So a
+ * city reading "Full employment, 662 vacancies" opened onto housing full of Unemployed. The
+ * figures were right and the word was wrong.
  */
 
 const at = (age: number, over: Partial<{ workplaceId: string | null; educationProgress: number }> = {}) =>
@@ -39,8 +40,8 @@ describe('citizenWorkLabel', () => {
   });
 
   it('should say Unemployed exactly when the overview counts one', () => {
-    // 這是整條測試的重點:面板與總覽必須對同一群人說同一件事。總覽數的是
-    // `isWorkingAge(age) && workplaceId === null`。
+    // The point of the test: the panel and the overview have to say the same thing about the
+    // same people. The overview counts `isWorkingAge(age) && workplaceId === null`.
     for (let age = 0; age <= MAX_AGE; age++) {
       const label = citizenWorkLabel(at(age));
       const counted = isWorkingAge(age);

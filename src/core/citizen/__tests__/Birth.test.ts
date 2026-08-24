@@ -4,17 +4,18 @@ import { birthTick, DEFAULT_CONTEXT, BIRTH, getMaxChildren, CHILDREN_PER_RESIDEN
 import { LifeStage, EducationLevel } from '../types';
 
 /**
- * Phase B: 自然出生機制測試
- * 規則：
- *  - 只有 ADULT (age 53-200)、age ≤ 130、有家（homeId !== null）才能生育
- *  - 基礎 4% 機率 / eligible citizen / month
- *  - happiness > 70 時 +3%
- *  - 每棟住宅 BABY+CHILD 上限 = max(2, floor(residents / 4))
- *  - 新生兒：age=0, BABY, NONE education, 父母 homeId, workplaceId=null
+ * Natural births.
+ *
+ * The rules:
+ *  - only an ADULT aged 53-200, at most 130, with a home (homeId !== null) can give birth
+ *  - a base 4% probability per eligible citizen per month
+ *  - +3% above happiness 70
+ *  - the BABY+CHILD limit per home is max(2, floor(residents / 4))
+ *  - a newborn is age 0, BABY, NONE education, the parent's homeId, workplaceId null
  */
 
-// 強制 100% 生育率的 context，方便測試確定性行為
-// getResidents 回傳 8 → maxChildren = max(2, 8/4) = 2
+// A context forcing a 100% fertility rate, so the behaviour is deterministic.
+// getResidents returns 8, giving maxChildren = max(2, 8/4) = 2.
 const alwaysBirth: Partial<BirthContext> = {
   baseFertilityRate: 1.0,
   happinessBonus: 0,
@@ -27,7 +28,7 @@ describe('birthTick — 自然出生機制', () => {
     mgr.createCitizen({ age: 100, homeId: '1,1', happiness: 60 })!;
     const births = birthTick(mgr, alwaysBirth);
     expect(births).toBe(1);
-    // 新生兒應被加入 manager
+    // The newborn is added to the manager.
     expect(mgr.getPopulation()).toBe(2);
   });
 
@@ -55,9 +56,9 @@ describe('birthTick — 自然出生機制', () => {
 
   it('戶內上限：同一 homeId 已有 2 個 BABY/CHILD → 不再生育', () => {
     const mgr = new CitizenManager();
-    // 父母
+    // The parents.
     mgr.createCitizen({ age: 100, homeId: '2,2', happiness: 60 })!;
-    // 已有 2 個小孩
+    // Two children already.
     mgr.createCitizen({ age: 3, homeId: '2,2', happiness: 50 })!; // BABY
     mgr.createCitizen({ age: 20, homeId: '2,2', happiness: 50 })!; // CHILD
     const births = birthTick(mgr, alwaysBirth);
@@ -65,29 +66,30 @@ describe('birthTick — 自然出生機制', () => {
   });
 
   it('幸福度加成：happiness > 70 生育率高於 ≤ 70', () => {
-    // 用統計方法：跑多次，高幸福度的平均生育數應大於低幸福度
-    // 用固定 seed 概率不行，改用較大樣本的確定性測試
+    // Statistically: across many runs, high happiness should average more births than low. A
+    // fixed seed will not do for a probability, so a larger sample is made deterministic
+    // instead.
     const mgr1 = new CitizenManager();
     const mgr2 = new CitizenManager();
-    // 每組 100 位合資格成人
+    // 100 eligible adults per group.
     for (let i = 0; i < 100; i++) {
       mgr1.createCitizen({ age: 100, homeId: `${i},0`, happiness: 80 })!;
       mgr2.createCitizen({ age: 100, homeId: `${i},1`, happiness: 50 })!;
     }
-    // 用較高但非 100% 的基礎率來觀察差異
+    // A high but not certain base rate, so the difference is visible.
     const ctx: Partial<BirthContext> = { baseFertilityRate: 0.5, happinessBonus: 0.3 };
-    // 固定 random 確保可重複
+    // A fixed random, so the run repeats.
     vi.spyOn(Math, 'random').mockImplementation(() => {
-      // 回傳 0.7，低於 0.5+0.3=0.8 (高幸福) 但不低於 0.5 (低幸福)
+      // 0.7 is below the high-happiness 0.5+0.3=0.8 and not below the low-happiness 0.5.
       return 0.7;
     });
     const births1 = birthTick(mgr1, ctx);
-    // 重設 manager2 需要重新 mock
+    // manager2 needs the mock reinstated.
     const births2 = birthTick(mgr2, ctx);
     vi.restoreAllMocks();
-    // 高幸福度 (rate=0.8, random=0.7 < 0.8) → 全部生育
+    // High happiness: rate 0.8 against random 0.7, so everyone gives birth.
     expect(births1).toBe(100);
-    // 低幸福度 (rate=0.5, random=0.7 >= 0.5) → 全部不生育
+    // Low happiness: rate 0.5 against random 0.7, so nobody does.
     expect(births2).toBe(0);
   });
 
@@ -101,7 +103,7 @@ describe('birthTick — 自然出生機制', () => {
     })!;
     birthTick(mgr, alwaysBirth);
     expect(mgr.getPopulation()).toBe(2);
-    // 找到新生兒（非原本的 adult）
+    // Finds the newborn, which is not the original adult.
     const baby = mgr.getCitizens().find(c => c.age === 0);
     expect(baby).toBeDefined();
     expect(baby!.lifeStage).toBe(LifeStage.BABY);
@@ -168,21 +170,21 @@ describe('birthTick — 自然出生機制', () => {
 
   it('大樓允許更多幼兒：residents=16 → 最多 4 個 BABY+CHILD', () => {
     const mgr = new CitizenManager();
-    // 4 位可生育成人住在大樓
+    // Four fertile adults in an apartment block.
     for (let i = 0; i < 4; i++) {
       mgr.createCitizen({ age: 100, homeId: '3,3', happiness: 60 })!;
     }
-    // 已有 2 個幼兒
+    // Two young children already.
     mgr.createCitizen({ age: 3, homeId: '3,3', happiness: 50 })!;
     mgr.createCitizen({ age: 20, homeId: '3,3', happiness: 50 })!;
 
-    // residents=8 → max 2 幼兒 → 不能再生
+    // residents=8 gives a limit of 2 young children, so no more births.
     const births8 = birthTick(mgr, { baseFertilityRate: 1.0, happinessBonus: 0, getResidents: () => 8 });
     expect(births8).toBe(0);
 
-    // residents=16 → max 4 幼兒 → 可以再生 2 個
+    // residents=16 gives a limit of 4, so two more births are possible.
     const births16 = birthTick(mgr, { baseFertilityRate: 1.0, happinessBonus: 0, getResidents: () => 16 });
     expect(births16).toBeGreaterThan(0);
-    expect(births16).toBeLessThanOrEqual(2); // 最多再生 2 個 (4-2=2 slots)
+    expect(births16).toBeLessThanOrEqual(2); // at most 2 more (4-2=2 slots)
   });
 });

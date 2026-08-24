@@ -4,9 +4,10 @@ import type { Citizen } from '../types';
 import { LifeStage, EducationLevel } from '../types';
 
 /**
- * 全城通勤時間的統計 —— 圖層與總覽面板共用同一份。
+ * City-wide commute time statistics, shared by the overlay and the overview panel.
  *
- * 兩邊各算一次的話，地圖上紅通通、面板卻說平均通勤良好，玩家不知道該信哪一個。
+ * Computed separately, the map turns red while the panel calls the average commute good, and the
+ * player does not know which to believe.
  */
 
 function citizen(id: number, homeId: string | null, workplaceId: string | null): Citizen {
@@ -18,7 +19,7 @@ function citizen(id: number, homeId: string | null, workplaceId: string | null):
   };
 }
 
-/** 依 id 給定通勤時間與交通方式。 */
+/** Supplies a commute time and mode by id. */
 function lookup(table: Record<number, { time: number; mode: string } | null>) {
   return (c: Citizen) => table[c.id] ?? null;
 }
@@ -60,8 +61,8 @@ describe('全城通勤統計', () => {
   });
 
   it('should give the same median as a full sort, at every size', () => {
-    // 中位數不再靠排序求（改用 quickselect）。這一條盯的是「換掉之後答案要一樣」
-    // —— 取值位置差一格、或是分割寫壞，這裡就會紅。
+    // The median no longer comes from a sort but from quickselect. This checks the answer is
+    // unchanged: an off-by-one in the position, or a broken partition, turns it red.
     let seed = 987654321;
     const rnd = () => (seed = (Math.imul(seed, 1103515245) + 12345) >>> 0) / 4294967296;
 
@@ -135,7 +136,8 @@ describe('全城通勤統計', () => {
   });
 
   it('should ignore a commute that cannot be estimated', () => {
-    // 路網剛改過、還沒重算的時候會算不出來。把它當成 0 會讓平均值瞬間跳低。
+    // Just after a road change and before the recompute, some commutes cannot be computed.
+    // Counting them as 0 drops the average sharply.
     const cs = [citizen(1, '5,5', '9,9'), citizen(2, '6,6', '9,9')];
     const s = computeCommuteStats(cs, lookup({ 1: { time: 40, mode: 'DRIVE' }, 2: null }), THRESHOLD, 3);
     expect(s.sampled).toBe(1);

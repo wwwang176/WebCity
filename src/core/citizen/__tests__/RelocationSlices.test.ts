@@ -5,12 +5,14 @@ import type { HousingCandidate } from '../HousingScore';
 import { EducationLevel, type Citizen } from '../types';
 
 /**
- * 換房子一次要把每一位不開心的市民對全城住宅打一次分 —— 12 萬人實測 195ms，而
- * 速度 1 的一個 tick 只有 250ms（BUG-331）。
+ * One relocation pass scores every unhappy citizen against every home in the city: 195ms measured
+ * at 120,000 against the 250ms a tick has at speed 1 (BUG-331).
  *
- * 解法是**每次只叫一部分人來評估**，開得比較密。要釘的是「分批之後總量沒變」，
- * 以及「每一批都是獨立的一場會」—— 這一次不是把一份名單攤到幾十個 tick 上跑，
- * 那個做法讓候選住宅、入住數、誰還活著三份快照全部過期，補了三輪還在冒新的。
+ * The answer is **bringing part of the population to each evaluation**, more often. What has to
+ * be pinned is that slicing does not change the total, and that each slice is an independent
+ * meeting — not one list spread across dozens of ticks, which let the candidate homes, the
+ * occupancy and who is still alive all go stale, and produced new problems through three rounds
+ * of patches.
  */
 
 function citizen(id: number, homeId: string, happiness: number): Citizen {
@@ -21,7 +23,7 @@ function citizen(id: number, homeId: string, happiness: number): Citizen {
   } as unknown as Citizen;
 }
 
-/** `level` 決定分數:學歷 NONE 偏好 level 1，差兩級 -10 分。 */
+/** `level` decides the score: education NONE prefers level 1, and two levels away is -10. */
 function candidate(pos: string, level: number): HousingCandidate {
   return {
     pos, capacity: 50, level, landValue: 128,
@@ -29,7 +31,7 @@ function candidate(pos: string, level: number): HousingCandidate {
   };
 }
 
-/** 一批住在爛房子（level 3）、旁邊有好房子（level 1）的不開心市民。 */
+/** A group of unhappy citizens in poor housing (level 3) with better housing (level 1) nearby. */
 function scenario(n: number) {
   const citizens: Citizen[] = [];
   for (let i = 0; i < n; i++) citizens.push(citizen(i + 1, 'bad', 10));
@@ -39,12 +41,14 @@ function scenario(n: number) {
   return { citizens, candidates, occupancy };
 }
 
-/** 把 id 分成 N 批的簡單規則（實作用的是雜湊，這裡只要「有分批」）。 */
+/** A simple rule splitting ids into N slices. The implementation uses a hash; all that is needed
+ *  here is that slicing happens. */
 const sliceOf = (n: number) => (c: Citizen) => c.id % n;
 
 describe('分批評估', () => {
   it('should only consider citizens in the given slice', () => {
-    // 分批沒接上的話，一次還是全部人 —— 成本完全沒降，而所有看數值的斷言都還是綠的。
+    // With slicing unwired, one call still takes everyone: the cost does not fall at all while
+    // every value-checking assertion stays green.
     const { citizens, candidates, occupancy } = scenario(400);
     const pick = sliceOf(4);
     const { relocatedIds } = relocationTick(citizens, candidates, occupancy,
@@ -58,8 +62,9 @@ describe('分批評估', () => {
   });
 
   it('should cover everyone across a full round of the production hash', () => {
-    // 用**實際的**分批規則跑完一圈，逐一認人。自己在測試裡寫一份 `id % N` 再遍歷
-    // 全部 N，那是恆真的 —— 實作換了也不會紅。
+    // A full cycle through the **actual** slicing rule, identifying each citizen. Writing an
+    // `id % N` in the test and walking all N is trivially true and stays green when the
+    // implementation changes.
     const N = 10;
     const { citizens, candidates, occupancy } = scenario(400);
     const seen = new Set<number>();
@@ -70,9 +75,10 @@ describe('分批評估', () => {
   });
 
   it('should keep a whole round within the city-wide 5% cap', () => {
-    // **這是分批最容易搞砸的地方。** 讓每批各自取 5%，加起來不等於全城的 5%:
-    // `Math.max(1, Math.floor(n × 0.05))` 每批各自取整，小批全部進位到 1。
-    // 400 人分 4 批剛好整除，看不出問題 —— 這裡刻意用會產生餘數的數字。
+    // **The easiest thing to get wrong about slicing.** Taking 5% per slice does not sum to 5%
+    // of the city: `Math.max(1, Math.floor(n * 0.05))` rounds within each slice, and small slices
+    // all round up to 1. 400 across 4 slices divides evenly and hides it, so these numbers
+    // deliberately leave a remainder.
     for (const [pop, N] of [[100, 10], [390, 10], [37, 10], [1000, 10]] as const) {
       const oneGo = scenario(pop);
       const all = relocationTick(oneGo.citizens, oneGo.candidates, oneGo.occupancy);
@@ -82,7 +88,7 @@ describe('分批評估', () => {
         Math.floor(pop * DEFAULT_RELOCATION_CONFIG.maxRelocateRatio));
       let total = 0;
       for (let s = 0; s < N; s++) {
-        // 呼叫端算配額:階梯法，十批加起來剛好等於 cycleQuota。
+        // The caller computes the quota by a staircase, so ten slices sum to exactly cycleQuota.
         const quota = Math.floor((s + 1) * cycleQuota / N) - Math.floor(s * cycleQuota / N);
         total += relocationTick(sliced.citizens, sliced.candidates, sliced.occupancy,
           undefined, (c) => citizenSliceOf(c.id, N) === s, quota).count;
@@ -100,8 +106,8 @@ describe('分批評估', () => {
   });
 
   it('should ask inSlice once per citizen when a quota is given', () => {
-    // 沒有 quota 時要先數一遍不開心的人，`inSlice` 會被問兩次。給了 quota 就不必數
-    // —— 呼叫端因此不必保證 `inSlice` 是純函式。
+    // Without a quota the unhappy citizens are counted first and `inSlice` is asked twice. With
+    // one, nothing is counted, so the caller need not guarantee `inSlice` is pure.
     const { citizens, candidates, occupancy } = scenario(200);
     const asked = new Map<number, number>();
     relocationTick(citizens, candidates, occupancy, undefined,
@@ -112,7 +118,7 @@ describe('分批評估', () => {
   });
 
   it('should behave exactly as before when no slice is given', () => {
-    // 省略 inSlice 等於全部人。既有呼叫端（與測試）不傳它。
+    // Omitting inSlice means everyone. Existing callers and tests do not pass it.
     const a = scenario(300);
     const withoutArg = relocationTick(a.citizens, a.candidates, a.occupancy);
     const b = scenario(300);

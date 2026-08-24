@@ -47,18 +47,18 @@ export const HOUSING_SCORE = {
   /** Land value normalization midpoint (byte range 0-255) */
   LAND_VALUE_MIDPOINT: 128,
   /**
-   * 通勤時間（tick）在這之內就算好通勤，拿滿分。
+   * A commute within this many ticks counts as good and scores full marks.
    *
-   * 實測：住商混合的小鎮中位數 11，站旁邊的捷運族 16~34。15 讓「走得到、
-   * 搭得到」的通勤拿到高分。
+   * Measured: a mixed-use town's median is 11, and metro riders beside a station run 16-34. 15
+   * gives a high score to a commute that can be walked or ridden.
    */
   COMMUTE_TIME_NEAR: 15,
   /**
-   * 通勤時間超過這個值就吃滿扣分，與換工作的門檻同一把尺。
+   * Past this, the commute takes the full penalty. The same scale as the job-change threshold.
    *
-   * 實測：分區而沒有大眾運輸的城市中位數 70、塞爆的城市 108，而站旁邊的
-   * 捷運族不管住多遠都在 34 以內 —— 所以這條線分得開「城市規劃很糟」與
-   * 「住得遠但交通好」。
+   * Measured: a zoned city with no transit has a median of 70 and a gridlocked one 108, while
+   * metro riders beside a station stay within 34 however far they live. So this line separates
+   * bad city planning from living far away with good transport.
    */
   COMMUTE_TIME_FAR: 60,
   /** Commute best score */
@@ -107,13 +107,15 @@ export function scorePollution(
 }
 
 /**
- * 依**通勤時間**評分。
+ * Scores by **commute time**.
  *
- * 時間而不是距離：開車時間隨距離與壅塞上升，搭車時間由路網決定，兩者是同一個
- * 尺度。用直線距離的話，一間就在捷運站旁的房子與荒郊野外的房子分數相同，玩家
- * 蓋的運輸建設對居住偏好完全沒有影響。
+ * Time rather than distance: driving time rises with distance and congestion, transit time is
+ * decided by the network, and both are on one scale. By straight-line distance, a house beside a
+ * metro station scores the same as one in open country, and the transport the player builds has
+ * no effect on where people want to live.
  *
- * `null` 代表算不出通勤（沒有工作），給 0 —— 不加分也不扣分。
+ * `null` means the commute cannot be computed, as for someone with no job, and scores 0: neither
+ * bonus nor penalty.
  */
 export function scoreCommute(commuteTime: number | null): number {
   if (commuteTime === null) return 0;
@@ -135,16 +137,18 @@ export function serviceScore(serviceCoverage: number, hasPark: boolean): number 
 }
 
 /**
- * 從 A 到 B 的通勤要花多久（tick）。`null` = 算不出來。
+ * How many ticks a commute from A to B takes. `null` when it cannot be computed.
  *
- * 由呼叫端注入，因為時間取決於壅塞與大眾運輸，而那些只有模擬迴圈知道。
+ * Injected by the caller, because the time depends on congestion and transit, which only the
+ * simulation loop knows.
  */
 export type CommuteTimeEstimator = (fromPos: string, toPos: string) => number | null;
 
 /**
- * 沒有注入估計器時的退路：直線距離當作通勤時間。
+ * The fallback when no estimator is injected: straight-line distance as the commute time.
  *
- * 等同於「完全不塞車、沒有任何大眾運輸」的城市。只給測試與尚未接線的呼叫端用。
+ * Equivalent to a city with no congestion and no transit at all. For tests and callers not yet
+ * wired up.
  */
 export const straightLineCommuteTime: CommuteTimeEstimator = (fromPos, toPos) => {
   const a = parsePosKeyUnsafe(fromPos);

@@ -2,22 +2,23 @@ import { CitizenManager } from './CitizenManager';
 import { LifeStage, EducationLevel } from './types';
 
 export interface BirthContext {
-  /** 基礎生育率（每位合格市民每月），預設 0.04 (4%) */
+  /** The base fertility rate per eligible citizen per month. Defaults to 0.04. */
   baseFertilityRate: number;
-  /** 幸福度 > 70 時的額外生育率加成，預設 0.03 (3%) */
+  /** The extra fertility above happiness 70. Defaults to 0.03. */
   happinessBonus: number;
-  /** 查詢住宅容量的回調；未提供時使用固定上限 2 */
+  /** Looks up a building's residential capacity. Without one, a fixed limit of 2 is used. */
   getResidents?: (homeId: string) => number;
   /**
-   * 生育機率的乘數（育兒補貼）。1 = 沒有條例。
+   * The multiplier on birth probability from the childcare subsidy. 1 means no ordinance.
    *
-   * 乘在**最後**的機率上,不是 `baseFertilityRate` —— 那個欄位帶著一段「跟預設值
-   * 不同就當成測試覆寫」的判斷,乘進去會讓條例把測試的固定值也一起覆寫掉。
+   * Applied to the **final** probability rather than to `baseFertilityRate`, which carries a
+   * "different from the default means a test override" check that an ordinance multiplied in
+   * would override as well.
    */
   fertilityMultiplier: number;
 }
 
-/** 每 N 個住宅容量允許 1 個 BABY+CHILD，最低 2 */
+/** One BABY or CHILD per N of residential capacity, with a floor of 2. */
 export const CHILDREN_PER_RESIDENTS = 4;
 
 export const DEFAULT_CONTEXT: BirthContext = {
@@ -38,20 +39,20 @@ export const FERTILITY_BY_EDUCATION: Record<EducationLevel, { baseRate: number; 
   [EducationLevel.UNIVERSITY]:  { baseRate: 0.03,  happyThreshold: 75, happyBonus: 0.02 },
 };
 
-/** 根據住宅容量計算該棟建築的 BABY+CHILD 上限 */
+/** The BABY+CHILD limit for a building of this residential capacity. */
 export function getMaxChildren(residents: number): number {
   return Math.max(2, Math.floor(residents / CHILDREN_PER_RESIDENTS));
 }
 
 /**
- * 自然出生 tick — 根據合格成人的生育機率產生新生兒。
+ * The natural birth tick, producing newborns from eligible adults' fertility.
  *
- * 合格條件：
- *  - lifeStage === ADULT 且 age ≤ MAX_FERTILITY_AGE
+ * Eligible means:
+ *  - lifeStage === ADULT and age <= MAX_FERTILITY_AGE
  *  - homeId !== null
- *  - 同一 homeId 下的 BABY + CHILD 數量 < getMaxChildren(residents)
+ *  - the BABY + CHILD count under that homeId is below getMaxChildren(residents)
  *
- * 回傳本 tick 產生的新生兒數量。
+ * Returns how many newborns this tick produced.
  */
 export function birthTick(
   manager: CitizenManager,
@@ -61,12 +62,13 @@ export function birthTick(
   const ctx: BirthContext = { ...DEFAULT_CONTEXT, ...context };
   let births = 0;
 
-  // 先統計每個 homeId 已有的 BABY+CHILD 數量，以及總入住人數。
+  // The BABY+CHILD count and the total occupancy of each homeId are gathered first.
   //
-  // 只看幼兒上限是不夠的：createCitizen 唯一的容量閘門是**全城**住宅總量，
-  // 所以只要城裡別處還有空屋，一棟已住滿 4 人的 4 人房仍可再生 2 個小孩，
-  // 永久超載 50%（computeOccupancyRatios 把比例夾在 1.0，UI 也看不出來）。
-  // 需要逐棟比對實際入住數與容量（BUG-082）。
+  // The child limit alone is not enough: createCitizen's only capacity gate is the **city-wide**
+  // residential total, so as long as empty housing exists elsewhere, a full 4-person house can
+  // still produce 2 more children and stay 50% over capacity permanently
+  // (computeOccupancyRatios clamps the ratio to 1.0 and the UI shows nothing). Actual occupancy
+  // has to be compared against capacity per building (BUG-082).
   const childrenCount = new Map<string, number>();
   const occupancyCount = new Map<string, number>();
   for (const c of manager.getCitizens()) {
@@ -77,22 +79,22 @@ export function birthTick(
     }
   }
 
-  // 收集所有新生兒（避免在遍歷中修改 citizens 陣列）
+  // Newborns are collected first, to avoid mutating the citizens array while iterating it.
   const newborns: { homeId: string }[] = [];
 
-  // 遍歷現有市民，篩選合格者
+  // Walks the existing citizens and keeps the eligible ones.
   for (const c of manager.getCitizens()) {
     if (c.lifeStage !== LifeStage.ADULT) continue;
     if (c.age > BIRTH.MAX_FERTILITY_AGE) continue;
     if (c.homeId === null) continue;
 
-    // 檢查該棟建築的幼兒上限（按容量比例）與剩餘空位
+    // Checks this building's child limit, proportional to capacity, and its remaining room.
     const currentChildren = (childrenCount.get(c.homeId) ?? 0);
     const residents = ctx.getResidents ? ctx.getResidents(c.homeId) : 8;
     if (currentChildren >= getMaxChildren(residents)) continue;
     if ((occupancyCount.get(c.homeId) ?? 0) >= residents) continue;
 
-    // 計算生育機率（按教育等級調整）
+    // Fertility, adjusted for education level.
     const fertility = FERTILITY_BY_EDUCATION[c.education] ?? FERTILITY_BY_EDUCATION[EducationLevel.NONE];
     let rate = ctx.baseFertilityRate !== DEFAULT_CONTEXT.baseFertilityRate
       ? ctx.baseFertilityRate   // test override: use fixed rate
@@ -105,17 +107,15 @@ export function birthTick(
 
     rate *= ctx.fertilityMultiplier;
 
-    // 隨機判定
+    // The roll.
     if (Math.random() < rate) {
       newborns.push({ homeId: c.homeId });
-      // 更新計數，避免同一 homeId 本 tick 超生
+      // The count is updated so one homeId cannot exceed its limit within this tick.
       childrenCount.set(c.homeId, currentChildren + 1);
       occupancyCount.set(c.homeId, (occupancyCount.get(c.homeId) ?? 0) + 1);
     }
   }
 
-  // 產生新生兒。
-  //
   // Every newborn here has already passed a per-building check: its home's
   // occupancy is strictly below that building's own `residents` capacity, and
   // occupancyCount was incremented as each newborn was queued so one house

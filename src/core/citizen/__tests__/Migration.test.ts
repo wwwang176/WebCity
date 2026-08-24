@@ -84,7 +84,7 @@ describe('Migration', () => {
   });
 });
 
-/* ── Phase A: 移民動態縮放 ── */
+/* ── Immigration cap scaling ── */
 describe('getImmigrationCap — 移民動態縮放', () => {
   // Deterministic ticks: see useSeededRandom.
   useSeededRandom();
@@ -224,7 +224,7 @@ describe('getImmigrationCap — 移民動態縮放', () => {
   });
 });
 
-/* ── emigrationTolerance 個人化遷出門檻 ── */
+/* ── emigrationTolerance: the per-citizen emigration threshold ── */
 describe('emigrationTolerance — 個人化遷出門檻', () => {
   it('calculateEmigrationTolerance returns values in expected range', () => {
     for (let i = 0; i < 100; i++) {

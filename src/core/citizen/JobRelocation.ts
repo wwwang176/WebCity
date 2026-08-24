@@ -14,9 +14,10 @@ export interface WorkplaceCandidateWithZone {
 }
 
 export interface JobRelocationConfig {
-  /** 通勤超過幾 tick 就想換工作。 */
+  /** The commute length, in ticks, past which a citizen wants a different job. */
   commuteTimeThreshold: number;
-  /** 估不出通勤時間時的保底：直線距離超過幾格算太遠。 */
+  /** The fallback when commute time cannot be estimated: how many cells of straight-line
+   *  distance counts as too far. */
   manhattanFallback: number;
   happinessThreshold: number;
   scoreGap: number;
@@ -27,12 +28,14 @@ export interface JobRelocationConfig {
 
 export const DEFAULT_JOB_RELOCATION_CONFIG: JobRelocationConfig = {
   /**
-   * 實測六種城市加一份真實存檔的通勤時間分布定出來的：住商混合的小鎮中位數
-   * 11、緊湊城市 24.7、真實存檔 42.9、分區而沒有大眾運輸的城市 70.2、塞爆的
-   * 城市 108，而家與公司都在站旁邊的捷運族不管住多遠都在 34 以內。
+   * Set from the commute time distributions measured across six cities and one real save: a
+   * mixed-use town's median is 11, a compact city 24.7, the real save 42.9, a zoned city with no
+   * transit 70.2 and a gridlocked one 108, while metro riders with home and work beside stations
+   * stay within 34 however far they live.
    *
-   * 60 這條線讓小鎮與緊湊城市幾乎不觸發、規劃糟的城市約四成的人想換工作，
-   * 而捷運族一個都不會被抓 —— 這正是「住得遠但住在站附近」要成立的條件。
+   * At 60, towns and compact cities almost never trigger, about 40% of a badly planned city
+   * wants a different job, and no metro rider is caught — which is what makes living far away
+   * beside a station work.
    */
   commuteTimeThreshold: 60,
   manhattanFallback: 15,
@@ -40,24 +43,25 @@ export const DEFAULT_JOB_RELOCATION_CONFIG: JobRelocationConfig = {
   scoreGap: 15,
   maxRelocateRatio: 0.05,
   tickInterval: 120,
-  /** 道路通行成本上限（見 `core/road/roadCost.ts`）。舊制 60，整數化後 ×18。 */
+  /** The road cost budget (see `core/road/roadCost.ts`). 60 on the old scale, x18 as integers. */
   dijkstraMaxBudget: 1080,
 };
 
-/** 這一趟通勤要花多久（tick）。估不出來時回傳非有限值。 */
+/** How many ticks this commute takes. Returns a non-finite value when it cannot be estimated. */
 export type CommuteTimeOf = (citizen: Citizen) => number;
 
 /**
- * 這個人該不該考慮換工作，以及是不是緊急。
+ * Whether this citizen should consider a different job, and whether it is urgent.
  *
- * 只有一條主要規則：**通勤要花多久**。距離仍然有代價（開車時間隨距離與壅塞上升），
- * 但那個代價可以被大眾運輸抵銷，所以「住得遠但住在站旁邊」不會被逼著換工作，
- * 而「住得近但天天塞車」會。
+ * One main rule: **how long the commute takes**. Distance still costs, since driving time rises
+ * with distance and congestion, but that cost can be offset by transit, so living far away beside
+ * a station is not forced into a job change while living nearby in daily gridlock is.
  *
- * 舊版是兩條互斥的規則 —— 有快取路線就看路徑長度、沒有就看直線距離。兩個門檻
- * 都沒在篩人（路徑長度 500 在 60×60 的城市裡永遠不成立；直線距離 15 命中 99.9%），
- * 而且規則取決於系統剛好算好了沒：修好載入時的快取覆蓋率之後，所有人都落進
- * 「有路線」那一邊，整個機制就靜靜地停擺了。
+ * Two mutually exclusive rules — path length with a cached route and straight-line distance
+ * without — filtered nobody: a path length of 500 never holds in a 60x60 city, and a
+ * straight-line distance of 15 matched 99.9%. The rule also depended on whether the system
+ * happened to have finished computing: once cache coverage on load was fixed, everyone fell on
+ * the "has a route" side and the whole mechanism silently stopped.
  */
 function getTriggerReason(
   citizen: Citizen,
@@ -69,7 +73,8 @@ function getTriggerReason(
 
   if (route) {
     if (route.status === 'failed') return 'failed';
-    // 路網剛改過，快取還沒重算。當成「走不到」會引發一波集體失業。
+    // The road network just changed and the cache has not been recomputed. Treating that as
+    // unreachable triggers a wave of mass unemployment.
     if (route.generation !== cache.roadGeneration) return 'none';
   }
 
@@ -77,7 +82,8 @@ function getTriggerReason(
   if (Number.isFinite(time)) {
     if (time > config.commuteTimeThreshold) return 'long_commute';
   } else {
-    // 估不出時間（路網剛建好、還沒有可及性圖）時的保底。
+    // The fallback when time cannot be estimated, as just after roads are built and before there
+    // is a reachability map.
     const home = parsePosKeyUnsafe(citizen.homeId!);
     const work = parsePosKeyUnsafe(citizen.workplaceId!);
     if (manhattanDistance(home.x, home.y, work.x, work.y) > config.manhattanFallback) return 'long_commute';
@@ -103,13 +109,14 @@ export type DistanceLookup = (
 ) => Map<string, number>;
 
 /**
- * 這一輪有哪些市民該換工作，以及為什麼。
+ * Which citizens should change jobs this round, and why.
  *
- * 分成兩組:**走不到**公司的（緊急）與**通勤太久**的（非緊急）。這兩組的處理順序
- * 不能亂 —— `occupancy` 隨著搬遷邊走邊改，後面的市民看得到前面的決定。
+ * Two groups: those who **cannot reach** work (urgent) and those whose **commute is too long**
+ * (not urgent). Their order matters, because `occupancy` changes as relocations proceed and later
+ * citizens see earlier decisions.
  *
- * 獨立出來是因為「有幾位符合條件」本身就是個有用的觀測值:它不做任何距離查詢，
- * 所以可以拿來檢查觸發條件而不必真的跑一輪。
+ * Separate because how many citizens qualify is a useful observation in itself: it does no
+ * distance lookups, so the trigger conditions can be checked without running a round.
  */
 export function collectJobRelocationTriggers(
   citizens: readonly Citizen[],
@@ -134,27 +141,31 @@ export function collectJobRelocationTriggers(
 }
 
 /**
- * 換工作:走不到公司、或通勤太久的市民換一份工作。**整輪在一個 tick 之內跑完。**
+ * Job relocation: citizens who cannot reach work, or whose commute is too long, change jobs. **A
+ * whole round runs within one tick.**
  *
- * ### 為什麼不再切片
+ * ### Why it is no longer sliced
  *
- * 這一輪曾經被切成「每個 tick 只做 2 次」——那是 BUG-109 的止痛藥，當時每位市民
- * 都要一次完整的 Dijkstra（2436 人的城市整輪 1474 毫秒）。
+ * This round was once sliced to 2 citizens per tick, as an analgesic for BUG-109, when every
+ * citizen needed a full Dijkstra: 1,474ms for a round in a city of 2,436.
  *
- * 後來治本做完了:工作距離快取（樓層感知，高架也能用）把查詢變成 O(1)，而 fallback
- * 的路網圖也改成整輪只建一次。**止痛藥卻留著。**
+ * The underlying fix followed: a level-aware workplace distance cache that works over elevated
+ * roads made the lookup O(1), and the fallback road graph is now built once per round. **The
+ * analgesic stayed.**
  *
- * 實測（玩家 12 354 人的存檔）整輪 **7.7 毫秒**;10 萬人 **29 毫秒**。而切片器每個
- * tick 做 2 次 —— 一輪要 503 個 tick，10 萬人時 **9 478 個 tick（約 400 個遊戲日）**。
- * 換工作在大城市等於是關掉的。
+ * Measured on a player's 12,354-population save, a round takes **7.7ms**; at 100,000 it takes
+ * **29ms**. At 2 citizens per tick, a round takes 503 ticks, and at 100,000 it takes **9,478
+ * ticks, about 400 game days**. Job relocation was effectively switched off in a large city.
  *
- * 而且那幾百個 tick 的視窗會讓名單過期:候選工作地被拆、市民死亡遷出 —— 與 BUG-331
- * 一模一樣的那一整類問題。一個 tick 內做完就沒有那個視窗。
+ * And a window of hundreds of ticks lets the list go stale: candidate workplaces demolished,
+ * citizens dead or emigrated — exactly the class of problem BUG-331 covered. Finishing within one
+ * tick removes the window.
  *
- * ### 順序
+ * ### Order
  *
- * 先所有**走不到**的（緊急），再所有**通勤太長**的（非緊急）。順序不能亂 ——
- * `occupancy` 隨著搬遷邊走邊改，後面的市民看得到前面的決定。
+ * Everyone **unable to reach** work first (urgent), then everyone whose **commute is too long**
+ * (not urgent). The order matters, because `occupancy` changes as relocations proceed and later
+ * citizens see earlier decisions.
  */
 export function jobRelocationTick(
   citizens: readonly Citizen[],
@@ -183,9 +194,10 @@ export function jobRelocationTick(
 
   for (const { citizen, reason } of ordered) {
     if (reason !== 'failed' && nonUrgentCount >= maxNonUrgent) continue;
-    // homeId / workplaceId 為 null 的人已經被 `collectJobRelocationTriggers` 濾掉，
-    // 而名單與處理在同一個 tick 之內 —— 中間沒有東西會把它們清成 null。切片時代
-    // 需要在這裡再擋一次，因為那份名單要活上百個 tick。
+    // Citizens with a null homeId or workplaceId were filtered out by
+    // `collectJobRelocationTriggers`, and the list and its processing are in one tick, so nothing
+    // in between clears them to null. The sliced version needed a second check here, because that
+    // list had to survive hundreds of ticks.
     const currentPos = citizen.workplaceId!;
     const homePos = parsePosKeyUnsafe(citizen.homeId!);
 

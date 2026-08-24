@@ -283,13 +283,13 @@ export function calculateAttractiveness(city: CityAttractiveness): number {
 }
 
 /**
- * 計算移民上限，根據人口規模、空房數量、吸引力動態縮放。
- * - popCap: 人口的 1%，最低 3
- * - baseDemand: 吸引力超過 50 的部分除以 10，向上取整
- * - populationTier: max(1, floor(log10(pop)))，讓中後期城市成長更快
- * - demandCap = baseDemand × populationTier
- * - 取三者最小值（popCap、vacantHomes、demandCap）
- * - 吸引力 ≤ 50 時回傳 0
+ * The immigration cap, scaled by population, vacant housing and attractiveness.
+ * - popCap: 1% of the population, with a floor of 3
+ * - baseDemand: attractiveness above 50, over 10, rounded up
+ * - populationTier: max(1, floor(log10(pop))), so larger cities grow faster
+ * - demandCap = baseDemand x populationTier
+ * - the smallest of popCap, vacantHomes and demandCap
+ * - 0 at attractiveness 50 or below
  */
 export function getImmigrationCap(population: number, vacantHomes: number, attractiveness: number): number {
   if (attractiveness <= IMMIGRATION.ATTRACTIVENESS_THRESHOLD) return 0;
@@ -311,7 +311,7 @@ export function migrationTick(
   const emigratedIds: number[] = [];
 
   const attractiveness = calculateAttractiveness(city);
-  // 使用傳入的 population，若未傳入則以 manager 現有人口為準
+  // The population passed in, falling back to the manager's current population.
   const pop = population ?? manager.getPopulation();
 
   // Immigration — family-based: generate families until headroom is exhausted

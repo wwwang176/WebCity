@@ -30,9 +30,9 @@ export function scoreEducationMatch(education: EducationLevel, zoneType: ZoneTyp
 /**
  * Commute scoring constants for job relocation.
  *
- * `SHORT_DISTANCE` / `LONG_DISTANCE` 的單位是道路通行成本（見
- * `core/road/roadCost.ts`），與 `roadTileCost` 同尺度 —— 舊制的 10 / 40
- * 在成本整數化後變成 180 / 720。獎懲分數本身不是距離，維持原值。
+ * `SHORT_DISTANCE` and `LONG_DISTANCE` are in road cost units (see `core/road/roadCost.ts`), on
+ * the same scale as `roadTileCost`: 10 and 40 on the old scale became 180 and 720 as integers.
+ * The bonus and penalty are not distances and keep their values.
  */
 export const COMMUTE_SCORE = {
   NO_PATH_PENALTY: -20,
@@ -71,7 +71,7 @@ export function scoreWorkplace(
   // Education-zone match
   score += scoreEducationMatch(citizen.education, zoneType);
 
-  // 通勤時間（與住房評分共用同一把尺）
+  // Commute time, on the same scale as the housing score.
   score += scoreCommute(citizen.homeId ? estimate(citizen.homeId, workplacePos) : null);
 
   return score;

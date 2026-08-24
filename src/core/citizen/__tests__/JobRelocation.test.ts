@@ -454,21 +454,23 @@ describe('jobRelocationTick', () => {
 
 describe('緊急與非緊急的順序', () => {
   it('should handle a failed route even when the non-urgent quota is used up', () => {
-    // 走不到公司的人是**緊急**的，不吃 5% 的配額。兩組混在一起的話，前面一堆
-    // 「通勤太久」的人會把配額用光，真正走不到公司的人就一直卡在那裡。
+    // Citizens who cannot reach work are **urgent** and do not consume the 5% quota. Mixed
+    // together, a run of "commute too long" citizens exhausts the quota and the ones who really
+    // cannot reach work stay stuck.
     const grid = makeRoadGrid(20, 20);
-    // 遠的現職 + 家門口的空缺 —— 非緊急的那批要真的搬得動，配額才會被用掉。
+    // A distant current job and a vacancy on the doorstep, so the non-urgent group really moves
+    // and the quota is actually consumed.
     const candidates = [
       { pos: '18,0', capacity: 100, zoneType: ZoneType.COMMERCIAL_LOW },
       { pos: '1,0', capacity: 100, zoneType: ZoneType.COMMERCIAL_LOW },
     ];
     const citizens: Citizen[] = [];
     const routes: [number, CachedRoute][] = [];
-    // 40 位通勤太久的（非緊急，配額只有 max(1, 40×5%) = 2）
+    // 40 with commutes too long (non-urgent, quota max(1, 40 x 5%) = 2).
     for (let i = 1; i <= 40; i++) {
       citizens.push(makeCitizen({ id: i, homeId: '0,0', workplaceId: '18,0' }));
     }
-    // 一位走不到公司的（緊急）排在最後
+    // One who cannot reach work (urgent), placed last.
     citizens.push(makeCitizen({ id: 99, homeId: '0,0', workplaceId: '18,0' }));
     routes.push([99, makeRoute({ status: 'failed' })]);
 
@@ -476,7 +478,7 @@ describe('緊急與非緊急的順序', () => {
       citizens, candidates, new Map([['18,0', 41]]),
       makeCacheMap(routes), grid, 0, undefined, undefined, () => 999,
     );
-    // 前提:非緊急的配額真的被用光了，否則這條測試什麼都沒擋到。
+    // The premise: the non-urgent quota really is exhausted, or this test guards nothing.
     const nonUrgentMoved = relocatedIds.filter(id => id !== 99).length;
     expect(nonUrgentMoved, '非緊急的一個都沒搬，配額沒被用掉').toBeGreaterThan(0);
     expect(relocatedIds, '走不到公司的人被非緊急的配額擋住了').toContain(99);
@@ -485,14 +487,16 @@ describe('緊急與非緊急的順序', () => {
 
 describe('緊急優先於非緊急', () => {
   it('should give the last opening to the stranded citizen, not a long commuter', () => {
-    // 兩組的順序只有在**搶同一個名額**時才看得出來 —— occupancy 邊走邊改，
-    // 先被處理的人拿走位子。走不到公司的人比通勤久的人更需要那個位子。
+    // The two groups' order is only visible when they **compete for one vacancy**: occupancy
+    // changes as they go, and whoever is processed first takes the place. Someone who cannot
+    // reach work needs it more than someone with a long commute.
     const grid = makeRoadGrid(20, 20);
     const candidates: WorkplaceCandidateWithZone[] = [
       { pos: '18,0', capacity: 100, zoneType: ZoneType.COMMERCIAL_LOW },
-      { pos: '1,0', capacity: 1, zoneType: ZoneType.COMMERCIAL_LOW },  // 只剩一個名額
+      { pos: '1,0', capacity: 1, zoneType: ZoneType.COMMERCIAL_LOW },  // one vacancy left
     ];
-    // 通勤太久的（非緊急）排在陣列前面，走不到公司的（緊急）排在後面。
+    // The long commute (non-urgent) comes first in the array and the unreachable one (urgent)
+    // last.
     const commuter = makeCitizen({ id: 1, homeId: '0,0', workplaceId: '18,0' });
     const stranded = makeCitizen({ id: 99, homeId: '0,0', workplaceId: '18,0' });
     const cache = makeCacheMap([[99, makeRoute({ citizenId: 99, status: 'failed' })]]);

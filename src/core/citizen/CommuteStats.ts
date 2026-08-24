@@ -2,24 +2,27 @@ import type { Citizen } from './types';
 import { selectNth } from '../utils/quickselect';
 
 /**
- * 全城通勤時間的統計。
+ * City-wide commute time statistics.
  *
- * 地圖圖層與總覽面板讀的是同一份 —— 兩邊各算一次的話，地圖上紅通通、面板卻說
- * 平均通勤良好，玩家不知道該信哪一個。
+ * The map overlay and the overview panel read one copy: computed separately, the map turns red
+ * while the panel calls the average commute good, and the player does not know which to believe.
  */
 
-/** 分桶的邊界（tick）。最後一桶是「以上」，所以桶數比邊界數多一。 */
+/** The bucket edges in ticks. The last bucket is open-ended, so there is one more bucket than
+ *  edge. */
 export const COMMUTE_BUCKET_EDGES = [15, 30, 45, 60] as const;
 
 /**
- * 一位市民的通勤：花多久、怎麼去。算不出來時回傳 null。
+ * One citizen's commute: how long it takes and how they get there. `null` when it cannot be
+ * computed.
  *
- * `chargedDistrictId` 是「這一趟付了壅塞費，而且付給哪一個收費區」—— 還在開車，
- * 而且起點或終點落在那個收費區裡。由呼叫端判斷，因為只有它查得到分區;統計這一層
- * 只負責數。
+ * `chargedDistrictId` is which charging zone this trip paid a congestion charge to: still
+ * driving, with one end inside that zone. The caller decides it, because only the caller can look
+ * districts up; this layer only counts.
  *
- * 記分區而不是一個布林值:計費是逐分區跑的，只有一個全城總數的話，每個收費區都會
- * 拿整個城市的付費人數去乘 —— 畫兩個收費區同一筆過路費就收兩次。
+ * A district rather than a boolean: billing runs per district, and with a single city-wide total
+ * every charging zone would multiply by the whole city's paying drivers, so two zones would
+ * charge the same toll twice.
  */
 export interface CommuteRecord {
   time: number;
@@ -31,35 +34,36 @@ export type CommuteOf = (citizen: Citizen) => CommuteRecord | null;
 
 export interface WorstHome {
   pos: string;
-  /** 這一格住戶的平均通勤時間。 */
+  /** The average commute time of this cell's residents. */
   time: number;
   residents: number;
 }
 
 export interface CommuteStats {
-  /** 住宅格 → 住戶的平均通勤時間。圖層直接讀這一張。 */
+  /** Residential cell to its residents' average commute time. The overlay reads this directly. */
   byHome: Map<string, number>;
-  /** 算得出通勤時間的人數。 */
+  /** How many citizens have a computable commute time. */
   sampled: number;
   average: number;
   median: number;
-  /** 通勤時間**超過**門檻的人數（門檻上剛好那一位不算）。 */
+  /** How many are **above** the threshold; exactly at it does not count. */
   overThreshold: number;
-  /** 依 `COMMUTE_BUCKET_EDGES` 分桶的人數。 */
+  /** Counts per bucket, following `COMMUTE_BUCKET_EDGES`. */
   buckets: number[];
-  /** 交通方式 → 人數。 */
+  /** Mode of travel to citizen count. */
   byMode: Record<string, number>;
   /**
-   * 每個收費區收到幾個付費的駕駛。
+   * How many paying drivers each charging zone collects.
    *
-   * 壅塞費的收入照這個數字收 —— 它是**流量**，車越少收得越少。用收費區的格數
-   * 之類的存量計價的話，在荒地上畫一個大區也照樣進帳，而且政策越成功收入也不會
-   * 掉，那就不是壅塞費了。
+   * The congestion charge's revenue follows this figure, which is a **flow**: fewer cars collect
+   * less. Priced against a stock such as the zone's cell count, a large zone over open country
+   * would still pay, and revenue would not fall as the policy succeeded, at which point it is not
+   * a congestion charge.
    *
-   * 逐分區而不是一個總數:一趟車只過一次關卡，只收一次錢。
+   * Per district rather than a single total: a trip crosses one cordon and pays once.
    */
   chargedDriversByDistrict: Map<string, number>;
-  /** 通勤最久的幾個住宅格，最久的排前面。 */
+  /** The residential cells with the longest commutes, longest first. */
   worst: WorstHome[];
 }
 
@@ -79,10 +83,11 @@ function bucketOf(time: number): number {
 }
 
 /**
- * 掃過全體市民，算出圖層與面板要的所有數字。
+ * Walks every citizen and computes everything the overlay and the panels need.
  *
- * 算不出通勤時間的人**整個跳過**，不是當成 0 —— 路網剛改過的那幾 tick 會有一批
- * 人暫時算不出來，當成 0 會讓平均值瞬間跳低，看起來像是城市突然變好了。
+ * Citizens whose commute cannot be computed are **skipped entirely** rather than counted as 0:
+ * for a few ticks after a road change a batch of them are temporarily uncomputable, and counting
+ * them as 0 drops the average sharply and looks like the city suddenly improving.
  */
 export function computeCommuteStats(
   citizens: readonly Citizen[],
@@ -92,7 +97,7 @@ export function computeCommuteStats(
 ): CommuteStats {
   const stats = emptyStats();
   const times: number[] = [];
-  /** 住宅格 → [總時間, 人數] */
+  /** Residential cell to [total time, count]. */
   const homeTotals = new Map<string, [number, number]>();
 
   for (const c of citizens) {
@@ -104,7 +109,7 @@ export function computeCommuteStats(
     if (commute.time > threshold) stats.overThreshold++;
     stats.buckets[bucketOf(commute.time)]!++;
     stats.byMode[commute.mode] = (stats.byMode[commute.mode] ?? 0) + 1;
-    // 算不出通勤的人在上面就被跳過了 —— 收入不該把他們算進去。
+    // Citizens with no computable commute were skipped above, and revenue must not count them.
     if (commute.chargedDistrictId) {
       const id = commute.chargedDistrictId;
       stats.chargedDriversByDistrict.set(id, (stats.chargedDriversByDistrict.get(id) ?? 0) + 1);
@@ -121,8 +126,9 @@ export function computeCommuteStats(
   let sum = 0;
   for (const t of times) sum += t;
   stats.average = sum / times.length;
-  // 中位數只要一個位置上的值。整個排好是 O(n log n)，而且多排的部分沒人讀 ——
-  // 10 萬人實測 47.35ms，換成 quickselect 是 1.34ms，答案逐位元相同。
+  // A median needs the value at one position. A full sort is O(n log n) and nothing reads the
+  // rest of the ordering: 47.35ms measured at 100,000 citizens against 1.34ms for quickselect,
+  // with bit-identical answers.
   stats.median = selectNth(times, Math.floor(times.length / 2))!;
 
   const worst: WorstHome[] = [];

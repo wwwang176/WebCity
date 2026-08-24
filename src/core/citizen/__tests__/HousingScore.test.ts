@@ -106,7 +106,8 @@ describe('scorePollution', () => {
 });
 
 describe('scoreCommute', () => {
-  // 通勤好不好看的是要花多久，不是隔多遠 —— 詳見 CommuteTimeScoring.test.ts。
+  // How good a commute is follows how long it takes rather than how far it is; see
+  // CommuteTimeScoring.test.ts.
   it('a short commute returns +15', () => {
     expect(scoreCommute(15)).toBe(15);
     expect(scoreCommute(0)).toBe(15);

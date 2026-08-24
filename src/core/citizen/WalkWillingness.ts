@@ -1,32 +1,38 @@
 import { EducationLevel } from './types';
 
 /**
- * 走路在市民心裡值幾倍。
+ * How much a citizen weighs walking time.
  *
- * 光比「誰比較快」表達不出願不願意走：模型裡開車與走路都是一格一單位時間，所以走
- * 一格到站牌跟開車走那一格成本相同，走路完全沒有額外的權衡。
+ * Comparing speeds alone cannot express willingness to walk: in the model a cell of driving and a
+ * cell of walking both cost one unit of time, so walking a cell to a stop costs the same as
+ * driving it and walking carries no extra weight at all.
  *
- * 差別來自教育程度。這個遊戲裡沒有獨立的收入欄位 —— 收入由教育推導（見
- * `EDUCATION_SALARY_MULTIPLIERS`），所以教育這一個軸同時代表了知識與收入。
+ * The difference comes from education. The game has no separate income field — income is derived
+ * from education (see `EDUCATION_SALARY_MULTIPLIERS`) — so that one axis carries both knowledge
+ * and income.
  *
- * **低於 1 是刻意的，不是寫錯。** 交通工程的模式選擇模型一律把步行時間加權 1.5~2
- * 倍，因為對一般人來說走路的代價超過它花掉的時間。這裡讓大學畢業者落在 0.8：受過
- * 高等教育的人在意健康與環境，寧可走路，即使那樣慢一點。整條階梯因此跨過 1.0 ——
- * 「勉強忍受」與「主動選擇」是兩種不同的態度，而玩家蓋大學就是在把市民從前者推向
- * 後者，這條線把教育系統與交通系統接了起來。
+ * **Below 1 is deliberate, not a mistake.** Transport engineering's mode choice models weight
+ * walking time at 1.5-2x, because for most people walking costs more than the time it takes. Here
+ * university graduates sit at 0.8: people with higher education care about health and the
+ * environment and would rather walk, even when it is slower. The ladder therefore crosses 1.0 —
+ * tolerating and choosing are two different attitudes, and building a university pushes citizens
+ * from the first towards the second, which is where this connects the education system to the
+ * transport system.
  *
- * 實測（乘車 30 格、班距 12，兩端各能走幾格還願意搭捷運）：
+ * Measured with a 30-cell ride and a headway of 12, in cells walkable at each end while still
+ * choosing the metro:
  *
- *   權重 2.0 → 不塞車只肯走 2 格，塞到 1 才走滿
- *   權重 1.2 → 不塞車走 5 格
- *   權重 0.8 → 不塞車就走滿 8 格
+ *   weight 2.0 walks 2 cells with no congestion, and the full distance only under heavy
+ *   congestion
+ *   weight 1.2 walks 5 cells with no congestion
+ *   weight 0.8 walks the full 8 cells with no congestion
  *
- * 0.8 已經到頂：8 格是捷運的硬上限，所以 0.8 與 0.6、0.4 行為完全相同。要更誇張
- * 的話該動的是 `WalkRange` 的上限，不是這裡。
+ * 0.8 is already at the ceiling: 8 cells is the metro's hard limit, so 0.8, 0.6 and 0.4 behave
+ * identically. Going further means changing `WalkRange`'s limit rather than this.
  *
- * 權重只用在**比較**：市民拿加權後的時間決定要怎麼去，但通勤統計與換工作的門檻
- * 看的是實際花掉的時間。兩者混在一起的話，通勤時間圖層上會出現一個沒有人真的
- * 花掉的數字。
+ * The weight is used for **comparison** alone: citizens decide how to travel with weighted time,
+ * while commute statistics and the job-change threshold use the time actually spent. Mixing the
+ * two puts a number nobody actually spent on the commute time overlay.
  */
 export const WALK_DISUTILITY = {
   BY_EDUCATION: {
@@ -36,15 +42,15 @@ export const WALK_DISUTILITY = {
     [EducationLevel.UNIVERSITY]: 0.8,
   } as Record<EducationLevel, number>,
   /**
-   * 沒有指定市民時用的平均值。
+   * The average used when no citizen is named.
    *
-   * 兩個用途：舊存檔可能沒有教育欄位；以及整城的通勤統計 —— 那是一個分布，用哪
-   * 一位市民的脾氣都不對。取階梯的中間。
+   * Two uses: older saves may have no education field, and city-wide commute statistics are a
+   * distribution, where any one citizen's disposition is the wrong one. The middle of the ladder.
    */
   FALLBACK: 1.4,
 } as const;
 
-/** 這位市民把步行時間放大幾倍來看待。 */
+/** How much this citizen multiplies walking time by. */
 export function walkWeightOf(education: EducationLevel): number {
   return WALK_DISUTILITY.BY_EDUCATION[education] ?? WALK_DISUTILITY.FALLBACK;
 }

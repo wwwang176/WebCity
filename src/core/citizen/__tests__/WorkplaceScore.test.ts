@@ -75,8 +75,9 @@ describe('scoreCommuteByCost', () => {
     expect(scoreCommuteByCost(null)).toBe(-20);
   });
 
-  // 成本的單位是道路通行成本（見 core/road/roadCost.ts）。這裡一律用
-  // COMMUTE_SCORE 的門檻表達，不寫死數字 —— 尺度再變一次也不會鬆掉。
+  // Costs are in road cost units (see core/road/roadCost.ts). Everything here is expressed
+  // through COMMUTE_SCORE's thresholds rather than as literals, so another change of scale does
+  // not loosen it.
   it('very close (cost <= SHORT_DISTANCE) returns +15', () => {
     expect(scoreCommuteByCost(0)).toBe(15);
     expect(scoreCommuteByCost(COMMUTE_SCORE.SHORT_DISTANCE / 2)).toBe(15);
@@ -89,7 +90,7 @@ describe('scoreCommuteByCost', () => {
   });
 
   it('mid-range linearly interpolates', () => {
-    // 正中間的成本 → 獎勵與懲罰的中點 (15 + -15)/2 = 0
+    // A cost exactly halfway gives the midpoint of bonus and penalty: (15 + -15)/2 = 0.
     const mid = (COMMUTE_SCORE.SHORT_DISTANCE + COMMUTE_SCORE.LONG_DISTANCE) / 2;
     expect(scoreCommuteByCost(mid)).toBe(0);
   });
@@ -144,7 +145,8 @@ describe('scoreEducationMatch', () => {
 
   it('COMMUTE_SCORE constants should have correct values', () => {
     expect(COMMUTE_SCORE.NO_PATH_PENALTY).toBe(-20);
-    // 距離門檻與 roadTileCost 同尺度（舊浮點制 10 / 40 × 18）
+    // The distance thresholds are on roadTileCost's scale: 10 and 40 on the old floating-point
+    // scale, x18.
     expect(COMMUTE_SCORE.SHORT_DISTANCE).toBe(180);
     expect(COMMUTE_SCORE.SHORT_BONUS).toBe(15);
     expect(COMMUTE_SCORE.LONG_DISTANCE).toBe(720);
