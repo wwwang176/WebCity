@@ -18,24 +18,26 @@
 export const ZONE_ROAD_REACH = 2;
 
 /**
- * 一格的邊長（公尺）。定義在 `PLANNING.md`：1 格 = 12 m x 12 m。
+ * The edge length of one cell in metres. Defined in `PLANNING.md`: 1 cell = 12 m x 12 m.
  *
- * 放在 core 而不是 renderer，是因為它是遊戲世界的事實、不是渲染選擇 ——
- * 建築高度、車輛尺寸、道路寬度都應該以它為準。
+ * It lives in core rather than the renderer because it is a fact about the game world, not a
+ * rendering choice: building heights, vehicle sizes and road widths all measure against it.
  */
 export const METRES_PER_CELL = 12;
 
 /**
- * 建築基地的最大寬度（公尺）。**行人路網與建築渲染共用的單一來源。**
+ * The maximum width of a building footprint in metres. **The single source shared by the
+ * pedestrian network and building rendering.**
  *
- * 行人的門與走道節點放在建築牆面外側 WALKWAY_OFFSET 處，而走道再往外
- * 還要留在格子內。從半格 0.5 往回推：
+ * Door and walkway nodes sit WALKWAY_OFFSET outside the building's wall, and the walkway
+ * itself still has to stay inside the cell. Working back from a half-cell of 0.5:
  *
- *   角節點 <= 0.5 → 門節點 <= 0.47 → 建築半寬 <= 0.41 → 寬度 <= 9.84 m
+ *   corner node <= 0.5 -> door node <= 0.47 -> building half-width <= 0.41 -> width <= 9.84 m
  *
- * 取 9.8 m。超過這個寬度，行人就會走進建築裡面 —— 而那在畫面上不明顯。
+ * Rounded to 9.8 m. Any wider and pedestrians walk through the building, which is not obvious
+ * on screen.
  *
- * 這個數字原本被寫在兩個地方（SidewalkGraph 的 BUILDING_HALF_SIZE 與
- * 渲染層的基地寬度表），兩邊各自漂移不會有任何東西報錯。
+ * Split across SidewalkGraph's BUILDING_HALF_SIZE and the renderer's footprint table, the two
+ * copies drift apart with nothing reporting it.
  */
 export const MAX_BUILDING_WIDTH_M = 9.8;

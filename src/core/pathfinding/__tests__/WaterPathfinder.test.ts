@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { findWaterPath, type WaterGrid } from '../WaterPathfinder';
 
 /**
- * 建立測試用的水域網格。
- * 'W' = 水域，'L' = 陸地
+ * Builds a water grid for tests.
+ * 'W' = water, 'L' = land
  */
 function createGrid(rows: string[]): WaterGrid {
   const height = rows.length;
@@ -103,7 +103,7 @@ describe('WaterPathfinder', () => {
     });
 
     it('應繞過陸地找到路徑', () => {
-      // 高牆擋在中間，迫使繞行到底部
+      // A wall across the middle forces a detour along the bottom.
       const grid = createGrid([
         'WWLWW',
         'WWLWW',
@@ -112,9 +112,9 @@ describe('WaterPathfinder', () => {
       ]);
       const result = findWaterPath(grid, { x: 0, y: 0 }, { x: 4, y: 0 });
       expect(result).not.toBeNull();
-      // 路徑必須繞行，不能直走 5 格
+      // The path has to detour rather than run 5 cells straight.
       expect(result!.path.length).toBeGreaterThan(5);
-      // 每個路徑點都必須是水域
+      // Every point on the path has to be water.
       for (const p of result!.path) {
         expect(grid.isWater(p.x, p.y)).toBe(true);
       }
@@ -129,7 +129,7 @@ describe('WaterPathfinder', () => {
       ]);
       const result = findWaterPath(grid, { x: 0, y: 0 }, { x: 3, y: 3 });
       expect(result).not.toBeNull();
-      // 對角線移動的路徑長度應少於 7（Manhattan distance）
+      // Diagonal movement makes the path shorter than the Manhattan distance of 7.
       expect(result!.path.length).toBeLessThanOrEqual(5);
     });
 
@@ -166,7 +166,7 @@ describe('WaterPathfinder', () => {
       const grid = createGrid(rows);
       const result = findWaterPath(grid, { x: 0, y: 0 }, { x: 19, y: 19 });
       expect(result).not.toBeNull();
-      // 對角線直走，大約 20 步
+      // A straight diagonal run, roughly 20 steps.
       expect(result!.path.length).toBeLessThanOrEqual(25);
     });
   });

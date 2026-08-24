@@ -29,7 +29,7 @@ export interface ZoneBlockerDeps {
   rciDemand: { residential: number; commercial: number; industrial: number };
   /** District policy gate, if the cell is in a district. */
   canBuildHere?(x: number, y: number, zoneType: ZoneType): boolean;
-  /** 這一格頭上有沒有高架路段。沒填就等於頭上是天空。 */
+  /** Whether an elevated segment passes over this cell. Omitted means open sky. */
   hasElevatedAbove?(x: number, y: number): boolean;
 }
 
@@ -56,7 +56,7 @@ export function getZoneBlocker(
   if (cell.buildingId !== 0) return null;
 
   if (cell.railType !== RailType.NONE) return 'RAIL_IN_THE_WAY';
-  // 跟鐵軌同一級的「這裡就是不能蓋」，而且同樣要拆掉別的東西才解得開。
+  // As hard a refusal as rail, and likewise cleared only by demolishing something else.
   if (deps.hasElevatedAbove?.(x, y)) return 'UNDER_ELEVATED_ROAD';
 
   // Three separate road questions, and they call for three different actions.

@@ -1,29 +1,34 @@
 /**
- * 取第 k 小的值,不用把整個陣列排好。
+ * The k-th smallest value, without sorting the whole array.
  *
- * 中位數只需要一個位置上的值,而排序把**所有**位置都排對了 —— 多做的部分全是浪費。
- * 10 萬筆通勤時間實測:`sort()` 47.35ms、這個 **1.34ms**,而且兩者的答案逐位元相同。
+ * A median needs the value at one position while a sort puts **every** position right, and the
+ * remainder of that work is waste. Measured over 100,000 commute times: `sort()` 47.35 ms,
+ * this **1.34 ms**, with bit-identical answers.
  *
- * ### 為什麼樞紐取中間而不是隨機
+ * ### Why the pivot is the middle element and not a random one
  *
- * 隨機樞紐能擋掉最壞情況,但模擬要**可重現** —— 同一份存檔跑兩次得到不同的中位數,
- * 追 bug 時會分不出是改動造成的還是擲骰造成的。取中間是確定的;它的最壞情況要
- * 特意構造才碰得到,而這裡的輸入是通勤時間,不是攻擊者送進來的。
+ * A random pivot rules out the worst case, but the simulation has to be **reproducible**: two
+ * runs of one save returning different medians make it impossible to tell a code change from a
+ * dice roll while chasing a bug. The middle element is deterministic, and its worst case has
+ * to be constructed on purpose, while the input here is commute times rather than something an
+ * attacker sends.
  *
- * **樞紐怎麼挑沒有測試守得住。** 改成固定取第一個,答案還是全對,只有已經排好的
- * 輸入會退化成 O(n²) —— 那是效能性質,不是行為性質。要照出來得放一個大到會逾時的
- * 陣列進測試,而計時的測試會抖。這裡靠的是這段說明，不是斷言。
+ * **No test guards the pivot choice.** Fixed at the first element the answers are still all
+ * correct, and only already-sorted input degrades to O(n^2), which is a performance property
+ * rather than a behavioural one. Exposing it would take an array large enough to time out, and
+ * timing-based tests are flaky. This note carries it, not an assertion.
  */
 
 /**
- * 第 k 小的值（k 從 0 起算）。k 超出範圍時回傳 `undefined`。
+ * The k-th smallest value, k counted from 0. Out-of-range k returns `undefined`.
  *
- * **不動傳進來的陣列** —— 內部複製一份再重排。
+ * **Leaves the given array untouched**: it copies before rearranging.
  */
 export function selectNth(values: readonly number[], k: number): number | undefined {
-  // k 越界不必另外擋:分割只會把範圍越縮越小然後停下來，最後 `a[k]` 讀到界外，
-  // 而 JS 讀界外就是 `undefined` —— 跟明寫一道防呆的結果一模一樣。明寫的那道
-  // 曾經在這裡，突變驗證證明沒有任何測試分辨得出有沒有它。
+  // Out-of-range k needs no guard of its own: partitioning only narrows the range and then
+  // stops, `a[k]` ends up reading past the end, and reading past the end in JS is `undefined`,
+  // exactly what an explicit guard would produce. Mutation testing showed no test can tell the
+  // two apart.
   const a = values.slice();
   let lo = 0;
   let hi = a.length - 1;
@@ -32,7 +37,7 @@ export function selectNth(values: readonly number[], k: number): number | undefi
     const pivot = a[(lo + hi) >> 1]!;
     let l = lo;
     let r = hi;
-    // Hoare 分割。全部相同時 l 與 r 仍然會互相走過去,不會原地打轉。
+    // Hoare partition. With every element equal, l and r still cross rather than stalling.
     while (l <= r) {
       while (a[l]! < pivot) l++;
       while (a[r]! > pivot) r--;
@@ -44,7 +49,8 @@ export function selectNth(values: readonly number[], k: number): number | undefi
         r--;
       }
     }
-    // 目標落在左段就砍掉右段，反之亦然;夾在兩段中間代表它等於樞紐，已經定位。
+    // A target in the left part discards the right and vice versa; caught between the two it
+    // equals the pivot and is already in place.
     if (k <= r) hi = r;
     else if (k >= l) lo = l;
     else break;

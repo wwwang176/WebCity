@@ -4,10 +4,11 @@ import { createGameState } from '../../simulation/GameState';
 import { citizenName } from '../../citizen/CitizenName';
 
 /**
- * `citySeed` 是這座城市的身分，市民與建築的名字都拿它當鹽。
+ * `citySeed` is this city's identity: citizen and building names all use it as salt.
  *
- * 名字是從流水號算出來的、不逐一存檔，所以種子掉了就等於整座城市的人一起改名 ——
- * 而且是**只在讀檔之後**才發生，玩下去不會有任何異常，只有名字全變了。
+ * Names are derived from sequence numbers rather than stored one by one, so losing the seed
+ * renames everyone in the city at once — and **only after a load**, with nothing else out of
+ * order as play continues.
  */
 function roundTrip(seed: number) {
   const state = createGameState(10, 10);
@@ -27,8 +28,9 @@ describe('城市種子存得下來', () => {
   });
 
   it('should read a save that predates the field as seed 0', () => {
-    // 舊存檔沒有這個欄位。要有一個確定的值，不能是 undefined —— 那會讓
-    // `Math.imul(undefined, k)` 變成 0 而看起來「剛好也能動」，直到有人改了寫法。
+    // Old saves lack the field. It needs a definite value rather than undefined, which turns
+    // `Math.imul(undefined, k)` into 0 and looks like it happens to work until someone
+    // rewrites it.
     const json = JSON.parse(JSON.stringify(snapshotGameState(createGameState(10, 10))));
     delete json.citySeed;
     expect(deserializeGameState(JSON.stringify(json)).citySeed).toBe(0);

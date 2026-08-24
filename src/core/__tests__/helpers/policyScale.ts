@@ -1,10 +1,11 @@
 import type { PolicyScale } from '../../district/PolicyBilling';
 
 /**
- * 補齊計費規模的欄位，沒給的填 0。
+ * Fills out a billing scale, defaulting anything not given to 0.
  *
- * 多數計費測試只關心其中一兩個量。每個字面值都寫滿六個欄位的話，真正在驗的那一個
- * 會被其他五個淹掉 —— 而填 0 本身是安全的:0 個單位就是不收錢。
+ * Most billing tests care about one or two of the quantities. Spelling all six fields into
+ * every literal buries the one under test among the other five, and 0 is a safe default: zero
+ * units means nothing is charged.
  */
 export function scaleOf(partial: Partial<PolicyScale> = {}): PolicyScale {
   return {

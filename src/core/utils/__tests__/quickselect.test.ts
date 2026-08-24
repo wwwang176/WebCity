@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { selectNth } from '../quickselect';
 
-/** 對照組:照現行做法排好再取。 */
+/** The reference implementation: sort, then index. */
 function bySort(values: readonly number[], k: number): number {
   return [...values].sort((a, b) => a - b)[k]!;
 }
@@ -33,7 +33,7 @@ describe('selectNth', () => {
   });
 
   it('should agree with a full sort on a large pseudo-random array', () => {
-    // 固定種子:失敗要重現得出來。
+    // A fixed seed, so a failure can be reproduced.
     let s = 12345;
     const rnd = () => (s = (Math.imul(s, 1103515245) + 12345) >>> 0) / 4294967296;
     const values = Array.from({ length: 5000 }, () => rnd() * 100);
@@ -44,7 +44,8 @@ describe('selectNth', () => {
   });
 
   it('should not modify the array it was given', () => {
-    // 通勤統計那邊 `times` 之後不再用，但這條擋的是「哪天有人拿它算別的」。
+    // The commute statistics do not reuse `times` afterwards, but this guards the day someone
+    // computes something else from it.
     const values = [5, 3, 9, 1];
     const before = [...values];
     selectNth(values, 2);

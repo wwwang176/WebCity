@@ -72,15 +72,15 @@ export function calculateCrimeRate(population: number, stationCount: number): nu
 
 
 /**
- * 全城的犯罪率,還沒夾值。
+ * The citywide crime rate, before clamping.
  *
- * `calculateCrimeRate` 只回「人口 vs 警力」那一半;全城條例（監視器網路、賭場⋯）
- * 加在這裡。
+ * `calculateCrimeRate` returns only the population-versus-police half; citywide ordinances
+ * (surveillance network, casinos and the rest) are added here.
  *
- * 夾值刻意留給 `effectiveCityCrime` 做,而且只做一次 —— 先夾這一半的話,
- * 基礎 1 加上監視器網路的 −100 會先變成 0,賭場的 +120 再加上去就是 120;
- * 全部加完再夾是 21。同一格在地價那條線看到 21、在棄置那條線看到 120,
- * 兩套系統對同一件事會有兩個答案。
+ * Clamping is deliberately left to `effectiveCityCrime`, and happens exactly once. Clamping
+ * this half first turns a base of 1 plus the surveillance network's -100 into 0, so a casino's
+ * +120 on top reads 120, where clamping after everything gives 21. The same cell would then
+ * read 21 on the land-value path and 120 on the abandonment path: two answers to one question.
  */
 export function rawCityCrime(
   population: number, stationCount: number, ordinanceBonus: number,
@@ -89,17 +89,19 @@ export function rawCityCrime(
 }
 
 /**
- * 全城的有效犯罪率 —— 幸福度、移民吸引力、棄置壓力看的都是這個數字。
+ * The effective citywide crime rate: happiness, migration appeal and abandonment pressure all
+ * read this number.
  *
- * ## 為什麼這一支要存在
+ * ## Why this function exists
  *
- * `calculateCrimeRate` 只是其中一半。少了條例那一半、或少了警力那一半,算出來的
- * 就不是模擬正在用的數字 —— Summary 面板曾經自己寫了一條
- * `Math.min(50, population * 0.02)`,那正好是**一座警局都沒有**的基礎值,
- * 於是面板扣的分數永遠比模擬扣的多（BUG-358）。
+ * `calculateCrimeRate` is only half of it. Without the ordinance half, or without the police
+ * half, the result is not the number the simulation uses. A local
+ * `Math.min(50, population * 0.02)` in the Summary panel is exactly the base value with **no
+ * police station at all**, so the panel's penalty stays permanently larger than the
+ * simulation's (BUG-358).
  *
- * 夾在 0 以上:負的犯罪率在下游會變成加分（`calculateLandValue` 是
- * `value -= crimeRate * CRIME_PENALTY`）,疊越多層賺越多。
+ * Clamped at 0: a negative crime rate becomes a bonus downstream (`calculateLandValue` does
+ * `value -= crimeRate * CRIME_PENALTY`), paying more the more layers are stacked.
  */
 export function effectiveCityCrime(
   population: number, stationCount: number, ordinanceBonus: number,

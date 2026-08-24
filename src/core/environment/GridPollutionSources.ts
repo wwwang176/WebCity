@@ -59,10 +59,12 @@ export function forEachGridPollutionSource(
    */
   getElevatedRoadType?: (x: number, y: number) => number,
   /**
-   * 這一格工業地面汙染的乘數 —— 工業排放管制。預設 1。
+   * Multiplier on this cell's industrial ground pollution — the industrial emissions
+   * ordinance. Defaults to 1.
    *
-   * 只乘在地面汙染上，工業噪音與道路噪音都不動:洗滌塔處理的是排放，不是機具的
-   * 聲音，而道路噪音跟工業條例沒有關係。
+   * Applied to ground pollution only, leaving industrial and road noise untouched: scrubbers
+   * treat emissions, not the sound of machinery, and road noise has nothing to do with
+   * industrial ordinances.
    */
   getIndustrialPollutionMultiplier?: (x: number, y: number) => number,
 ): void {

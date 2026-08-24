@@ -1,18 +1,18 @@
 /**
- * ViewMode — 控制遊戲視角模式，影響各 renderer 的透明度與可見性。
+ * ViewMode — the game's view mode, driving each renderer's opacity and visibility.
  */
 export enum ViewMode {
-  /** 正常地面視角 */
+  /** The normal ground-level view. */
   NORMAL = 'NORMAL',
-  /** 地下模式（地鐵隧道可見，地面物體半透明） */
+  /** Underground: metro tunnels visible, surface objects translucent. */
   UNDERGROUND = 'UNDERGROUND',
-  /** 鐵路聚焦（軌道/火車/平交道全彩，其餘白模） */
+  /** Rail focus: track, trains and crossings in full colour, everything else white. */
   RAIL_FOCUS = 'RAIL_FOCUS',
-  /** 渡輪聚焦（水面/渡輪全彩，其餘白模） */
+  /** Ferry focus: water and ferries in full colour, everything else white. */
   FERRY_FOCUS = 'FERRY_FOCUS',
-  /** 公車聚焦（道路/公車全彩，其餘白模） */
+  /** Bus focus: roads and buses in full colour, everything else white. */
   BUS_FOCUS = 'BUS_FOCUS',
-  /** 轉乘路線聚焦（建築半透明，高亮轉乘相關建築） */
+  /** Transfer focus: buildings translucent, with transfer-related buildings highlighted. */
   TRANSFER_FOCUS = 'TRANSFER_FOCUS',
 }
 
@@ -29,7 +29,7 @@ const ROAD_TRANSPORT_OPACITY = {
 };
 
 /**
- * 各 renderer 在不同 ViewMode 下的透明度設定。
+ * Per-renderer opacity for each ViewMode.
  */
 export const VIEW_MODE_OPACITY: Record<ViewMode, {
   building: number;
@@ -94,7 +94,7 @@ export const VIEW_MODE_OPACITY: Record<ViewMode, {
   },
 };
 
-/** 地下模式隧道 Y 位置（負值 = 地面以下） */
+/** Tunnel Y position in underground mode; negative is below ground. */
 export const UNDERGROUND_TUNNEL_Y = -0.15;
 
 // ── Transport stop identification ──
@@ -130,10 +130,11 @@ export function getTransportFocusMode(type: TransportStopKind): ViewMode {
 }
 
 /**
- * 這個視角聚焦的是哪一種交通工具（不是交通聚焦就回 null）。
+ * Which transport kind a view focuses on, or null when it is not a transport focus.
  *
- * 由 `TRANSPORT_FOCUS_MODES` 反過來導出，不另外寫一張表 —— 兩張各寫一次的話，
- * 新增一種交通工具時很容易只更新其中一張，而漏掉的那一邊會靜靜地什麼都不做。
+ * Derived by inverting `TRANSPORT_FOCUS_MODES` rather than written as a second table: with two
+ * tables, adding a transport kind easily updates only one, and the one left behind silently
+ * does nothing.
  */
 const FOCUSED_STOP_KIND = new Map<ViewMode, TransportStopKind>(
   (Object.entries(TRANSPORT_FOCUS_MODES) as [TransportStopKind, ViewMode][])

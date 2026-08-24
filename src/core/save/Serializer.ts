@@ -78,7 +78,7 @@ interface SerializedState {
   ferry?: ReturnType<FerrySystem['toJSON']>;
   airport?: ReturnType<AirportSystem['toJSON']>;
   highwayConnection?: ReturnType<HighwayConnection['toJSON']>;
-  /** 開局的地圖種子。舊存檔沒有，讀回來是 0。 */
+  /** The map seed the city started from. Absent in old saves, which load it as 0. */
   citySeed?: number;
   districts?: ReturnType<DistrictManager['toJSON']>;
   policies?: ReturnType<PolicyManager['toJSON']>;

@@ -1,8 +1,8 @@
 /**
- * WaterPathfinder — A* 水域尋路演算法。
+ * WaterPathfinder — A* pathfinding across water.
  *
- * 渡輪在水面上沿可通行的水域格子移動，支援 8 方向（含對角線）。
- * 純邏輯模組，禁止 import Three.js。
+ * Ferries move over navigable water cells in 8 directions, diagonals included.
+ * Pure logic module; importing Three.js is forbidden.
  */
 
 import { parsePosKeyUnsafe, toPosKey, euclideanDistance } from '../grid/GridHelpers';
@@ -18,7 +18,7 @@ export interface WaterPathResult {
   distance: number;
 }
 
-/** 8 方向移動偏移量（含對角線） */
+/** The 8 movement offsets, diagonals included. */
 const DIRS: ReadonlyArray<{ dx: number; dy: number; cost: number }> = [
   { dx: 0, dy: -1, cost: 1 },        // N
   { dx: 0, dy: 1, cost: 1 },         // S
@@ -35,15 +35,15 @@ const heuristic = euclideanDistance;
 const key = toPosKey;
 
 /**
- * A* 水域尋路。
- * @returns 路徑和總距離，或 null（無路可走）。
+ * A* pathfinding across water.
+ * @returns the path and its total distance, or null when no route exists.
  */
 export function findWaterPath(
   grid: WaterGrid,
   from: { x: number; y: number },
   to: { x: number; y: number },
 ): WaterPathResult | null {
-  // 起終相同
+  // Start equals destination.
   if (from.x === to.x && from.y === to.y) {
     return { path: [{ x: from.x, y: from.y }], distance: 0 };
   }
@@ -58,12 +58,12 @@ export function findWaterPath(
   gScore.set(startKey, 0);
   fScore.set(startKey, heuristic(from.x, from.y, to.x, to.y));
 
-  // 使用簡單的 open set（小地圖效能足夠）
+  // A plain open set; fast enough at these map sizes.
   const openSet = new Set<string>();
   openSet.add(startKey);
 
   while (openSet.size > 0) {
-    // 取 fScore 最小的節點
+    // Take the node with the lowest fScore.
     let currentKey = '';
     let minF = Infinity;
     for (const k of openSet) {
@@ -75,7 +75,7 @@ export function findWaterPath(
     }
 
     if (currentKey === endKey) {
-      // 重建路徑
+      // Rebuild the path.
       const path: Array<{ x: number; y: number }> = [];
       let ck: string | undefined = currentKey;
       while (ck) {
@@ -109,5 +109,5 @@ export function findWaterPath(
     }
   }
 
-  return null; // 無路可走
+  return null; // no route exists
 }
