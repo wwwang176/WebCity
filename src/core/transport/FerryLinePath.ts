@@ -1,8 +1,7 @@
 /**
- * FerryLinePath — 渡輪渲染端路徑插值。
+ * Distance interpolation along the A* water path a ferry follows, for renderer animation.
  *
- * 純邏輯模組，禁止 import Three.js。
- * 提供 A* 水路路徑的距離插值功能，供渲染端動畫使用。
+ * Pure logic: must not import Three.js.
  */
 
 export interface FerryPathInfo {
@@ -12,9 +11,7 @@ export interface FerryPathInfo {
   totalLength: number;
 }
 
-/**
- * 從 A* 路徑建立路徑資訊（預計算段長度）。
- */
+/** Builds path info from an A* path, precomputing segment lengths. */
 export function buildFerryPathInfo(
   path: ReadonlyArray<{ x: number; y: number }>,
 ): FerryPathInfo {
@@ -41,9 +38,7 @@ export function buildFerryPathInfo(
   };
 }
 
-/**
- * 在路徑上按距離插值，取得位置和朝向。
- */
+/** Position and heading at the given distance along the path. */
 export function interpolateFerryPath(
   info: FerryPathInfo,
   distance: number,

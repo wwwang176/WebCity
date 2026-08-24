@@ -13,17 +13,19 @@ import type { AvailableTransport } from '../ModeChoice';
 import { TransportType, type TransportStop } from '../types';
 
 /**
- * 挑站牌改查逐格索引之前，兩支函式都是**逐站掃描**:每問一位市民就把全城每一個
- * 站牌量一次步行距離。索引把它換成查表，而「換一個資料結構」這種改動的失敗方式
- * 是安靜的 —— 少列一條路線、平手時挑了另一站、候選組合的順序變了，任何一個都不會
- * 讓現有的測試變紅，卻會讓某些市民從此搭不到車。
+ * Both functions pick stops by **scanning every stop**, measuring a walk distance per city
+ * stop per citizen asked. The per-cell index replaces that with a lookup, and this kind of
+ * data-structure swap fails silently: a missing route, a tie broken the other way, a
+ * different candidate ordering — none turns an existing test red, yet each leaves some
+ * citizens unable to reach transit.
  *
- * 所以這裡把逐站掃描的版本原樣留下來當**參考實作**，用隨機城市逐一比對。參考版
- * 讀的欄位跟正式版一樣（`FlatRoute` 的班距、載重率、車速）—— 差別只有「怎麼找到
- * 候選站牌」，那正是要驗的東西。
+ * The per-stop scan is therefore retained here as a **reference implementation** and
+ * compared trip by trip against random cities. The reference reads the same fields as
+ * production (`FlatRoute` headway, load factor, speed); the only difference is how
+ * candidate stops are found, which is exactly what is under test.
  */
 
-// ── 參考實作:逐站掃描 ────────────────────────────────────────────
+// ── Reference implementation: per-stop scan ─────────────────────
 
 function naiveAvailable(
   routes: readonly FlatRoute[],
@@ -122,7 +124,7 @@ function naiveMultiModal(
   return results;
 }
 
-// ── 隨機城市 ────────────────────────────────────────────────────
+// ── Random cities ──────────────────────────────────────────────
 
 const GRID = 40;
 const WALK_SPEED = 0.3;
@@ -191,7 +193,8 @@ describe('逐格索引與逐站掃描回報同一件事', () => {
         sawMulti += fastMM.length;
       }
 
-      // 兩邊都回空陣列也會「相等」—— 這一條擋住「城市造得太稀疏，其實什麼都沒比到」。
+      // Two empty arrays also compare equal, so these guard against a city so sparse that
+      // nothing was actually compared.
       expect(sawAvailable, '這座城市沒有任何一趟搭得到車，等於沒比').toBeGreaterThan(0);
       expect(sawMulti, '這座城市沒有任何一趟走得到轉乘路線，等於沒比').toBeGreaterThan(0);
     });

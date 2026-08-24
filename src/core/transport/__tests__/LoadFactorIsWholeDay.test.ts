@@ -3,25 +3,26 @@ import { getRouteRiders } from '../TransitAvailability';
 import { TransportType, type TransportStop } from '../types';
 
 /**
- * 載重要拿**整天**比整天。
+ * Load factor compares a **whole day** against a whole day.
  *
- * 運能是「一天載得動幾人次」。而搭乘量原本讀的是 `dailyRiders` —— **今天到現在為止**
- * 的累計，每個遊戲日歸零。兩者單位不同:每天一開始路線看起來都是空的，隨著這一天
- * 走完慢慢變擠，然後歸零重來。
+ * Capacity is riders per day. `dailyRiders` is the running total for today so far and
+ * resets each game day, a different unit: the route looks empty each morning, fills as the
+ * day runs out, then resets.
  *
- * 玩家 12 600 人的存檔實測（一條公車線、一台車，連續取樣 151 次）:
+ * Measured on a 12,600-citizen save (one bus line, one vehicle, 151 consecutive samples):
  *
  * | | |
  * |---|---|
- * | 載重範圍 | **5.56 ~ 47.34**（平均 29.92） |
- * | 今日累計人次 | **0 → 6 519** 然後歸零 |
+ * | load factor range | **5.56 to 47.34** (mean 29.92) |
+ * | today's running total | **0 to 6,519**, then zero |
  *
- * 玩家回報的「usage 在 80~100% 之間震盪」就是這個鋸齒。而且它同時讓需求失控:
- * 每天早上路線看起來是空的，於是所有人都選它，載重到傍晚才爆掉，隔天再來一次。
+ * That saw-tooth is the reported "usage oscillates between 80% and 100%". It also
+ * destabilises demand: the route looks empty every morning, everyone picks it, it overloads
+ * by evening, and the cycle repeats.
  *
- * 改成讀**完整的一天**（昨天的實數與跨日平滑值取大者）之後，載重一天只變一次 ——
- * 跟運能同一個單位。代價是新路線第一天看起來是空的，第二天才反映真實 —— 那是
- * 「一天的資料要滿一天才有」，不是延遲。
+ * Reading a **complete day** — the larger of yesterday's actual count and the cross-day
+ * smoothed value — makes load change once per day, in the same unit as capacity. The cost
+ * is that a new route looks empty on its first day, since a day of data takes a day.
  */
 
 function stop(id: number, daily: number, lastDay: number, smoothed: number): TransportStop {
@@ -33,7 +34,7 @@ function stop(id: number, daily: number, lastDay: number, smoothed: number): Tra
 
 describe('載重讀的是整天', () => {
   it('should not swing while the day is only half over', () => {
-    // 同一條路線、同一個真實載客量，只差在「今天走到哪裡」。
+    // Same route, same real ridership, differing only in how far into the day it is.
     const morning = { stops: [stop(1, 0, 900, 900)] };
     const evening = { stops: [stop(1, 900, 900, 900)] };
 
@@ -42,13 +43,14 @@ describe('載重讀的是整天', () => {
   });
 
   it('should follow a route whose ridership jumped yesterday', () => {
-    // 昨天暴增的路線，今天就要反映出來 —— 只讀平滑值的話要好幾天才追得上。
+    // A route that spiked yesterday must show today; the smoothed value alone takes days to
+    // catch up.
     const surged = { stops: [stop(1, 0, 5000, 900)] };
     expect(getRouteRiders(surged), '昨天暴增，今天還當它是老樣子').toBe(5000);
   });
 
   it('should keep the smoothed value when yesterday was a fluke dip', () => {
-    // 昨天剛好很少人搭，不代表這條線突然變空。
+    // One quiet day does not mean the line suddenly emptied.
     const dip = { stops: [stop(1, 0, 100, 3000)] };
     expect(getRouteRiders(dip), '一天的低點就把整條線當成空的').toBe(3000);
   });
@@ -59,7 +61,7 @@ describe('載重讀的是整天', () => {
   });
 
   it('should read zero on a brand new route', () => {
-    // 第一天沒有資料 —— 那是「一天的資料要滿一天才有」，不是錯誤。
+    // No data on day one: a day of data takes a day. Not an error.
     expect(getRouteRiders({ stops: [stop(1, 0, 0, 0)] })).toBe(0);
   });
 });

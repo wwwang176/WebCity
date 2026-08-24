@@ -14,10 +14,11 @@ function makeStop(x: number, y: number, id = 1): TransportStop {
 }
 
 /**
- * 這條路線的等車時間。
+ * Waiting time for this route.
  *
- * 底下驗乘車距離的那幾條要把它扣掉才比得出乘車那一段。刻意用同一組公開函式算出來，
- * 而不是假裝等車是 0 —— 班距現在由「整圈時間 ÷ 車輛數」決定，沒有辦法設成零。
+ * The ride-distance tests below subtract it to isolate the ride. Computed from the same
+ * public functions rather than assumed to be zero: headway is cycle time / vehicle count
+ * and cannot be set to zero.
  */
 function waitOf(sys: TransitSystemInfo): number {
   const route = sys.routes[0]!;
@@ -194,8 +195,9 @@ describe('findAvailableTransit', () => {
   });
 
   it('still charges the walk when origin and dest map to the same stop', () => {
-    // 同一站上下車等於沒搭到，但走到站牌的那段路仍然花掉了。舊行為回報 0，
-    // 也就是「這條路線免費又瞬間」—— 它因此永遠贏過任何其他走法。
+    // Boarding and alighting at the same stop is not a ride, but the walk to it was still
+    // spent. Reporting 0 would make the route free and instantaneous, so it would beat
+    // every other option.
     const stops = [makeStop(0, 0, 1), makeStop(10, 0, 2)];
     const systems: TransitSystemInfo[] = [{
       type: TransportType.BUS,
@@ -225,13 +227,14 @@ describe('findAvailableTransit', () => {
 
   // ── Capacity filtering tests ──────────────────────────────────
   //
-  // 人次都由模型自己算出來，不寫死 —— 容量的定義是「車輛數 × 座位 × 一天跑幾圈」，
-  // 寫死數字的話，調一次常數就得回來改一輪魔術數字，而且看不出改的是哪一個假設。
+  // Rider counts are derived from the model rather than hardcoded. Capacity is
+  // vehicles * seats * loops per day, so literal numbers would need updating on every
+  // constant change and would hide which assumption moved.
 
   const SEATS = 50;
   const busStops = () => [makeStop(1, 1, 1), makeStop(9, 9, 2)];
 
-  /** 這條路線一天載得動幾人次。 */
+  /** Riders this route can carry per day. */
   function dailyCapacityOf(stops: TransportStop[], vehicles: number, speed = 2): number {
     return computeDailyCapacity(vehicles, SEATS, computeCycleTime(stops, null, speed));
   }
@@ -250,15 +253,17 @@ describe('findAvailableTransit', () => {
   }
 
   it('punishes a route nobody can squeeze onto with time, not silence', () => {
-    // 沒有拒載門檻了。擠爆的路線照樣列出來，只是等車時間長到自己輸掉 ——
-    // 懸崖會自己造出極限環（玩家 12 600 人的存檔實測過）。
+    // There is no refusal threshold. An overloaded route is still listed; its waiting time
+    // grows until it loses on its own. A cliff produces a limit cycle, observed on a
+    // 12,600-citizen save.
     const stops = busStops();
     stops[0]!.lastDayRiders = dailyCapacityOf(stops, 3) * 2;
     const packed = offeredFor(stops, 3);
     expect(packed, '擠爆的路線被整條藏起來了').toHaveLength(1);
 
-    // 載重 2 = 一半的人上不去 = 平均多等**整整一班**。走路與乘車那兩段不變，
-    // 所以兩者的差就是那一班。比倍數沒有意義 —— 走路與乘車會把它稀釋掉。
+    // Load 2 means half the queue cannot board, i.e. **one whole extra headway** on
+    // average. The walking and riding legs are unchanged, so the difference is exactly that
+    // headway. Comparing ratios would be meaningless: walking and riding dilute them.
     const quiet = busStops();
     const empty = offeredFor(quiet, 3)[0]!.estimatedTime;
     const headway = computeHeadway(computeCycleTime(quiet, null, 2), 3);
@@ -275,7 +280,8 @@ describe('findAvailableTransit', () => {
   });
 
   it('adding vehicles makes an overloaded route usable again', () => {
-    // 加車買到的是**時間**:3 台車時人擠不上去要等好幾班，5 台車就吃得下。
+    // What extra vehicles buy is **time**: at 3 vehicles passengers wait several headways,
+    // at 5 the route absorbs them.
     const stops = busStops();
     stops[0]!.lastDayRiders = dailyCapacityOf(stops, 3) * 1.6;
 
@@ -285,7 +291,8 @@ describe('findAvailableTransit', () => {
   });
 
   it('should make waiting shorter as well, not just raise the ceiling', () => {
-    // 加車買到的不只是容量。班距 = 整圈時間 ÷ 車輛數，車多就班次密。
+    // Extra vehicles buy more than capacity: headway is cycle time / vehicle count, so more
+    // vehicles means more frequent service.
     const stops = busStops();
     stops[0]!.lastDayRiders = dailyCapacityOf(stops, 2) * 0.3;
     const two = offeredFor(stops, 2)[0]!.estimatedTime;
@@ -306,10 +313,11 @@ describe('findAvailableTransit', () => {
   });
 
   it('does not offer a route that is suspended', () => {
-    // 停駛 = 這條路線的道路被拆斷了，車子沒在跑（`BusSystem.onRoadChanged`）。
-    // 轉乘那條路徑早就跳過它（`flattenSystems` 的 `if (route.suspended) continue`），
-    // 單一運具這條沒有 —— 於是同一條停駛的公車，一條路徑說搭不到、另一條說搭得到，
-    // 而搭得到的那條還會把人記成它的乘客。
+    // Suspended means the route's road was demolished and no vehicle is running
+    // (`BusSystem.onRoadChanged`). The transfer path already skips it via
+    // `if (route.suspended) continue` in `flattenSystems`; the single-mode path must too,
+    // otherwise one path calls the same suspended bus unreachable while the other offers it
+    // and credits riders to it.
     const systems: TransitSystemInfo[] = [{
       type: TransportType.BUS,
       speed: 2,
@@ -340,7 +348,7 @@ describe('findAvailableTransit', () => {
       ],
     }];
     const result = availableTransitFor(systems, { x: 0, y: 0 }, { x: 10, y: 10 }, openFieldReach, WALK_SPEED, WAIT_FACTOR);
-    // 兩條都列得出來，但空的那條比較快 —— 運具選擇挑的是最快的那一個。
+    // Both are listed, but the emptier one is faster, and mode choice picks the fastest.
     expect(result).toHaveLength(2);
     const packed = result.find(r => r.boardStop?.id === stopsA[0]!.id)!;
     const roomy = result.find(r => r.boardStop?.id === stopsB[0]!.id)!;
@@ -368,21 +376,24 @@ describe('getRouteDailyRiders', () => {
 
 describe('getRouteRiders', () => {
   it('should fall back to the cross-day average early in the day', () => {
-    // dailyRiders 每天歸零。直接拿它當載重的話，每天早上每條路線看起來都是空的，
-    // 擁擠代價要到傍晚才出現，然後隔天再歸零 —— 一個看得見的鋸齒。
+    // dailyRiders resets each day. Using it directly for load makes every route look empty
+    // each morning, delays the crowding penalty until evening, and resets again the next
+    // day — a visible saw-tooth.
     const stops = [makeStop(0, 0, 1), makeStop(5, 5, 2)];
     stops[0]!.smoothedDailyRiders = 300;
-    stops[0]!.lastDayRiders = 5; // 昨天剛好沒什麼人
+    stops[0]!.lastDayRiders = 5; // yesterday happened to be quiet
     const route = { id: 1, type: TransportType.BUS, stops, vehicles: 1, operatingCost: 100 };
 
     expect(getRouteRiders(route), '昨天的一次低點就把整條線當成空的').toBe(300);
   });
 
   it('should use yesterday when yesterday was busier than usual', () => {
-    // 昨天暴增的路線 —— 平滑值還跟不上，要用昨天的實數。
+    // A route that spiked yesterday: the smoothed value has not caught up, so yesterday's
+    // actual count is used.
     //
-    // 讀的是**完整的一天**而不是「今天到現在為止」:運能的單位是一天，兩者要對得上。
-    // 讀今天的累計會讓載重每個遊戲日鋸齒一次（玩家存檔實測 5.56 ~ 47.34）。
+    // The window is a **complete day** rather than "today so far", because capacity is per
+    // day and the two units must match. Today's running total makes load saw-tooth once per
+    // game day (measured at 5.56 to 47.34 on a player save).
     const stops = [makeStop(0, 0, 1), makeStop(5, 5, 2)];
     stops[0]!.smoothedDailyRiders = 20;
     stops[0]!.lastDayRiders = 400;

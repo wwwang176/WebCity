@@ -4,10 +4,10 @@ import { TransportMode, TransportType } from '../types';
 import type { MultiLegRoute, TransitLeg } from '../MultiModalRouter';
 
 /**
- * 中性的模式選擇參數：走路一格一 tick、不加不情願權重。
+ * Neutral mode-choice parameters: one tile per tick on foot, no reluctance weighting.
  *
- * 這一檔驗的是選擇邏輯本身的算術。步行速度與權重的效果由
- * `WalkCostInModeChoice.test.ts` 單獨驗。
+ * This file checks the arithmetic of the selection logic itself. Walking speed and weight
+ * are covered separately by `WalkCostInModeChoice.test.ts`.
  */
 function neutral(congestionLevel: number) {
   return { congestionLevel, walkSpeed: 1, walkWeight: 1 , driveDeterrence: 1};

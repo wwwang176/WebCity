@@ -6,12 +6,13 @@ import { TransportType, TransportMode, type TransportStop, type TransportRoute }
 import { openFieldReach } from './openFieldReach';
 
 /**
- * 估計時間是照某兩站算的，派車與計數就得記在那兩站上。
+ * The estimate is computed for a specific pair of stops, so dispatch and rider counting
+ * must use those stops.
  *
- * 這裡曾經是分開的兩件事：選完運具之後再用「整個系統裡最近的站」重挑一次。只有
- * 一條路線的時候兩者一致，路線一多就分岔 —— 挑站的條件（沿人行道最近）跟選路線
- * 的條件（整趟最快）本來就不是同一件事。結果是人被記到他沒搭的那條路線頭上，
- * 兩條線的擁擠程度同時被扭曲（BUG-283）。
+ * Re-picking "the nearest stop in the system" after the mode is chosen agrees with the
+ * estimate only while there is one route. With several routes the two diverge: nearest
+ * along the sidewalk and fastest overall are different criteria. Riders then get credited
+ * to a route they did not take, distorting the crowding of both lines (BUG-283).
  */
 
 const WALK_SPEED = 1;
@@ -32,13 +33,13 @@ function route(id: number, stops: TransportStop[]): TransportRoute {
 const HOME = { x: 2, y: 0 };
 const WORK = { x: 20, y: 1 };
 
-/** 他真正搭的那條：兩端都碰得到。 */
+/** The route actually ridden: reachable from both ends. */
 const RIDDEN_BOARD = stop(11, 0, 0);
 const RIDDEN_ALIGHT = stop(12, 20, 0);
 
 /**
- * 幌子：起點端的站比上面那條更近（1 格 vs 2 格），但它往北去，到不了公司。
- * 「最近的站」會挑中它。
+ * A decoy: its origin-side stop is nearer than the route above (1 tile vs 2), but it heads
+ * north and never reaches the workplace. "Nearest stop" picks it.
  */
 const DECOY_NEAR = stop(21, 1, 0);
 const DECOY_FAR = stop(22, 1, 40);
@@ -67,13 +68,14 @@ describe('搭乘記在他真正搭的那條路線上', () => {
   });
 
   it('should not report the nearer stop of a route that cannot reach the destination', () => {
-    // 幌子站離家只有 1 格，比真正要搭的那站近 —— 「挑最近的」會挑中它。
+    // The decoy stop is 1 tile from home, nearer than the one actually ridden, so
+    // "pick the nearest" lands on it.
     const [only] = options();
     expect(only!.boardStop?.id, '記到了到不了目的地的那條路線頭上').not.toBe(DECOY_NEAR.id);
   });
 
   it('should carry the stops through to the chosen mode', () => {
-    // 距離 19，開車 19、門檻 28.5；這條路線約 18，會被選中。
+    // Distance 19: driving is 19 and the threshold is 28.5, so this route at about 18 wins.
     const picked = chooseModeMultiModal(
       HOME, WORK, options(), [],
       { congestionLevel: 0, walkSpeed: WALK_SPEED, walkWeight: 1 , driveDeterrence: 1},
@@ -85,8 +87,8 @@ describe('搭乘記在他真正搭的那條路線上', () => {
   });
 
   it('should carry no stops when driving', () => {
-    // 一站都碰不到的人開車，沒有上下車站可言 —— 留著上一次的值會把人記到
-    // 一個他根本沒去的站。
+    // Someone who reaches no stop drives, and has no boarding or alighting stop. Keeping a
+    // previous value would credit them to a stop they never visited.
     const picked = chooseModeMultiModal(
       HOME, { x: 200, y: 200 }, [], [],
       { congestionLevel: 0, walkSpeed: WALK_SPEED, walkWeight: 1 , driveDeterrence: 1},

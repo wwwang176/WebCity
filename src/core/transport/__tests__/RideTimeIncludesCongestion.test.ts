@@ -10,19 +10,19 @@ import type { TransitSystemInfo } from '../TransitAvailability';
 import { TransportType } from '../types';
 
 /**
- * 公車的**乘車時間估計**要含壅塞。
+ * A bus's **estimated ride time** includes congestion.
  *
- * 運具選擇是把「開車要多久」跟「搭車要多久」擺在一起比大小，而開車那一側滿滿地
- * 計入壅塞（`driveTime = 曼哈頓距離 × (1 + 壅塞)`）。公車那一側傳的卻是
- * `config.speed` 的**原始值** —— 塞車的城市裡，公車看起來不合理地好:路上的車全部
- * 慢下來，只有公車照跑。
+ * Mode choice compares driving time against transit time, and the driving side charges
+ * congestion in full (`driveTime = manhattan * (1 + congestion)`). Passing the raw
+ * `config.speed` on the bus side makes buses look implausibly good in a congested city:
+ * every car slows down while the bus keeps its timetable.
  *
- * 逐路線的壅塞在 BUG-339 就有了（`congestionOn` / `getSpeedMultiplier`），這裡只是
- * 把它接到估計時間上。接上之後壅塞同時吃兩件事:
+ * Per-route congestion already exists (`congestionOn` / `getSpeedMultiplier`, BUG-339);
+ * this wires it into the time estimate, where it affects two things:
  *
- * 1. **乘車時間**變長（`rideDistance / speed`）
- * 2. **班距**跟著變長（整圈時間 ÷ 車輛數）—— 而班距又餵給運能，塞住的路線一天
- *    跑得完的圈數變少。兩件都是真的。
+ * 1. **Ride time** rises (`rideDistance / speed`).
+ * 2. **Headway** rises with it (cycle time / vehicle count), and headway feeds capacity, so
+ *    a congested route completes fewer loops per day.
  */
 
 const WALK_SPEED = 0.3;
@@ -58,7 +58,8 @@ describe('公車的乘車時間含壅塞', () => {
   });
 
   it('should stretch the headway too, not just the ride', () => {
-    // 車開得慢，整圈就跑得久，班距跟著拉長 —— 而班距又決定一天跑幾圈，也就是運能。
+    // A slower vehicle takes longer per loop, which lengthens the headway, which sets loops
+    // per day and therefore capacity.
     const { bus, routeId } = busWithRoute();
     const clear = flattenSystems(infosOf(bus, TransportType.BUS))[0]!;
 
@@ -82,7 +83,7 @@ describe('公車的乘車時間含壅塞', () => {
   });
 
   it('should leave the metro alone — it does not share the road', () => {
-    // 這正是玩家蓋捷運的理由。
+    // Precisely what the player builds a metro for.
     const metro = new MetroSystem();
     const line = metro.createLine([metro.addStation(0, 0), metro.addStation(20, 0)], 2);
     metro.congestionLevel = 1;
@@ -93,8 +94,9 @@ describe('公車的乘車時間含壅塞', () => {
   });
 
   it('should reach the single-mode path as well', () => {
-    // `findAvailableTransit` 是另一條估時間的路徑（單一運具）。兩條各讀各的話，
-    // 同一趟通勤會因為走哪條程式碼而得到不同的答案。
+    // `findAvailableTransit` is the other time-estimating path (single mode). If the two
+    // read different speeds, the same commute gets different answers depending on which
+    // code path served it.
     const { bus, routeId } = busWithRoute();
     const at = (o: { x: number; y: number }, d: { x: number; y: number }) =>
       availableTransitFor(infosOf(bus, TransportType.BUS), o, d, openFieldReach,
@@ -111,9 +113,10 @@ describe('公車的乘車時間含壅塞', () => {
   });
 
   it('should slow the ride itself down, not only the wait', () => {
-    // 上面那條只斷言「估計時間變大」，而壅塞讓班距變長之後 `expectedWait` 那一項
-    // 就已經變大了 —— 乘車那一項有沒有跟上，那個斷言照不出來。這裡把等車與走路
-    // 兩段扣掉，直接看剩下的乘車時間是照哪一個車速算的。
+    // The test above only asserts that the estimate grew, and congestion already grows
+    // `expectedWait` through the headway, so it cannot tell whether the ride term followed.
+    // This subtracts the waiting and walking legs and checks which speed the remaining ride
+    // time was computed at.
     const { bus, routeId } = busWithRoute();
     bus.setRouteCongestion(routeId, 1);
 

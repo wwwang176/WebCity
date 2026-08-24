@@ -12,11 +12,12 @@ import {
 import { TransportType, type TransportStop } from '../types';
 
 /**
- * 一條路線有多好搭，取決於班距與有多擠。
+ * How good a route is to ride depends on headway and crowding.
  *
- * 舊的模型兩件事都沒有：班距寫死成 `站數 × 2`，加車只加了容量上限、不會讓班次
- * 變密；而擠不擠完全不影響等車時間，只有一個「滿了就整條路線從所有人的選項裡
- * 消失」的懸崖。玩家手上最主要的槓桿（加車）因此只做一件事：把懸崖往後推。
+ * Neither exists if headway is hardwired to `stops * 2` and crowding does not affect
+ * waiting: extra vehicles then only raise the capacity ceiling, and the sole effect of
+ * crowding is a cliff where a full route vanishes from everyone's options. The player's
+ * main lever would do one thing only — push the cliff further out.
  */
 
 function stops(n: number, gap: number): TransportStop[] {
@@ -30,17 +31,18 @@ const TICKS_PER_DAY = 24;
 
 describe('整圈時間', () => {
   it('should sum every segment around the loop', () => {
-    // 4 站、每段 5 格、速度 2 → 整圈 20 格 / 2 = 10 tick
+    // 4 stops, 5 tiles per leg, speed 2: a 20-tile loop / 2 = 10 ticks.
     expect(computeCycleTime(stops(4, 5), [5, 5, 5, 5], 2)).toBeCloseTo(10);
   });
 
   it('should fall back to the distance between stops with no segment data', () => {
-    // 頭尾也要接回去，否則長路線的整圈會被少算一段。
+    // The last stop connects back to the first, otherwise a long route loses one leg.
     expect(computeCycleTime(stops(3, 4), null, 1)).toBeCloseTo(16);
   });
 
   it('should ignore segment data that does not line up with the stops', () => {
-    // 站數變了但快取還沒重算 —— 拿它當真會回報別段的距離（同 BUG-064）。
+    // Stop count changed but the cache has not been rebuilt; trusting it reports another
+    // leg's distance (same as BUG-064).
     expect(computeCycleTime(stops(3, 4), [5, 5], 1)).toBeCloseTo(16);
   });
 
@@ -63,16 +65,16 @@ describe('班距', () => {
 
 describe('每日載運能力', () => {
   it('should count how many loops each vehicle completes in a day', () => {
-    // 「一天」用的是運能自己那把尺（TRANSIT_SERVICE_TICKS_PER_DAY），不是日曆上的
-    // 一天 —— 車速是挑來讓畫面好看的，跟日曆本來就不是同一個時鐘。
+    // "Per day" uses capacity's own scale (TRANSIT_SERVICE_TICKS_PER_DAY), not the calendar
+    // day: vehicle speed was chosen to look right on screen and is a different clock.
     const loops = TRANSIT_SERVICE_TICKS_PER_DAY / 6;
     expect(computeDailyCapacity(2, 50, 6)).toBeCloseTo(2 * 50 * loops);
   });
 
   it('should not measure a service day by the calendar day', () => {
-    // 兩個時鐘混用是 BUG-344:玩家存檔的公車路線一圈 141 tick，而日曆上一天只有
-    // 24 tick，一天跑 0.17 圈 —— 50 座的車一天運能剩 8.5 人次，任何路線超過約
-    // 9 人次就爆表。
+    // Mixing the two clocks is BUG-344: a bus route in a player save takes 141 ticks per
+    // loop against a 24-tick calendar day, i.e. 0.17 loops per day, leaving a 50-seat
+    // vehicle with 8.5 riders/day, so any route above about 9 riders saturates.
     expect(TRANSIT_SERVICE_TICKS_PER_DAY, '運能又跟日曆綁在一起了')
       .toBeGreaterThan(100);
   });
@@ -88,8 +90,9 @@ describe('每日載運能力', () => {
   });
 
   it('should be far larger than the seat count of the fleet', () => {
-    // 舊模型拿「一整天的人次」去比「車輛數 × 座位數」—— 一個是累計量、一個是
-    // 瞬間量。兩台公車一天載到第 100 人次就「滿了」，天花板低了一個數量級。
+    // Comparing a day's riders against `vehicles * seats` mixes a cumulative quantity with
+    // an instantaneous one: two buses would be "full" at the 100th rider of the day, an
+    // order of magnitude too low.
     const seats = 2 * 50;
     expect(computeDailyCapacity(2, 50, 6)).toBeGreaterThan(seats * 3);
   });
@@ -107,8 +110,8 @@ describe('載重率', () => {
 });
 
 describe('擁擠對等車時間的影響', () => {
-  // 形狀本身由 GeometricCrowdingWait.test.ts 守著（等比級數推出來的那一條）。
-  // 這裡只守「有位子就不罰、沒位子就開始罰」這個介面層的分界。
+  // The shape of the curve is pinned by GeometricCrowdingWait.test.ts. These only pin the
+  // interface boundary: no penalty while seats remain, a penalty once they run out.
   it('should not punish a route that still has room', () => {
     expect(extraHeadwaysWaited(0)).toBe(0);
     expect(extraHeadwaysWaited(1)).toBe(0);
@@ -141,8 +144,9 @@ describe('預期等車時間', () => {
 
 describe('沒有拒載門檻', () => {
   it('should punish an impossible route with time, not with disappearance', () => {
-    // 舊模型在載重 1.5 那一點把整條線從選項裡拿掉。玩家實測發現那道懸崖自己造出
-    // 一個極限環:加車 → 載重衝過 1.5 → 全部人被踢出去 → 載重掉回來 → 人又回來。
+    // Removing a route from the options at load 1.5 produces a limit cycle, observed on a
+    // player save: add vehicles, load crosses 1.5, everyone is ejected, load falls, the
+    // riders return.
     const wait = expectedWait(20, 0.5, 99);
     expect(Number.isFinite(wait), '等待不是一個有限的數字，無法跟開車比大小').toBe(true);
     expect(wait, '擠成這樣還是很好搭').toBeGreaterThan(expectedWait(20, 0.5, 1) * 50);

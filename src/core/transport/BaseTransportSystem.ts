@@ -37,23 +37,25 @@ export interface BaseTransportJSON {
 }
 
 /**
- * 小於這個數的搭乘量就是沒有人。
+ * Ridership below this counts as nobody.
  *
- * 單位是「人次／日」，所以半個人以下在任何地方都已經是 0 —— 面板本來就是
- * `Math.round` 之後才顯示。存在的理由見 `rolloverDailyRiders()`。
+ * The unit is riders per day, so anything under half a rider already displays as 0 —
+ * the panel rounds before showing it. See `rolloverDailyRiders()` for why it exists.
  */
 export const RIDERS_EPSILON = 0.5;
 
 export const TRANSPORT_SPEED = {
   /**
-   * 塞死也還是要爬得動 —— 速度 0 會讓車永遠到不了下一站，班距變成無限大。
+   * Vehicles must still crawl when fully congested: speed 0 never reaches the next stop
+   * and makes the headway infinite.
    *
-   * **目前摸不到這個下限**:壅塞上限是 1，所以 `1 - 壅塞 × 0.5` 最低是 0.5。
-   * 它守的是「有人把 `CONGESTION_SPEED_IMPACT` 調過 1」那一天 —— 那是平衡旋鈕，
-   * 調得動。沒有測試守得住這一條，因為要照出來就得改常數本身。
+   * **Currently unreachable**: congestion is capped at 1, so `1 - congestion * 0.5`
+   * bottoms out at 0.5. The floor guards against `CONGESTION_SPEED_IMPACT` being tuned
+   * above 1, which is a balance knob. No test covers it, because reaching it requires
+   * changing that constant.
    */
   MIN_CONGESTION_SPEED: 0.1,
-  /** 壅塞對速度的影響強度。**平衡旋鈕**，不是物理常數。 */
+  /** How strongly congestion slows vehicles. A **balance knob**, not a physical constant. */
   CONGESTION_SPEED_IMPACT: 0.5,
 } as const;
 
@@ -113,33 +115,35 @@ export abstract class BaseTransportSystem {
   }
 
   /**
-   * 全系統的路面壅塞（0 = 暢通，1 = 塞死）。
+   * System-wide road congestion (0 = clear, 1 = gridlocked).
    *
-   * 這是**退路** —— 問不到某條路線的逐路線值時才用它。「問不到」代表「還沒算過」，
-   * 不是「暢通」。
+   * This is the **fallback**, used when no per-route value is available. "Not available"
+   * means "not computed yet", not "clear".
    */
   congestionLevel = 0;
 
   /**
-   * 逐路線的路面壅塞。
+   * Per-route road congestion.
    *
-   * 公車跟著幹道跑，而幹道本來就比全城平均塞:玩家 12 600 人的存檔實測，全城平均
-   * 0.211，那條公車路線沿線 **0.380**（1.8 倍），線上最塞的一格已經是 1.0。吃全城
-   * 平均等於告訴玩家「你的公車沒有塞在車陣裡」，而畫面上它明明卡在那裡。
+   * Buses follow arterials, and arterials are more congested than the city average:
+   * measured on a 12,600-citizen save, the city average was 0.211 while the cells along
+   * one bus route averaged **0.380** (1.8x), with the worst cell on the line at 1.0.
+   * Using the city average tells the player their bus is not stuck in traffic while it
+   * visibly is.
    */
   private readonly routeCongestion = new Map<number, number>();
 
-  /** 這條路線沿線有多擠。由模擬迴圈每次重算流量圖之後餵進來。 */
+  /** Congestion along this route, fed in by the simulation loop after each flow rebuild. */
   setRouteCongestion(routeId: number, level: number): void {
     this.routeCongestion.set(routeId, level);
   }
 
-  /** 路線沒了就把它的值丟掉 —— 編號不會重用，不清會一直長。 */
+  /** Drop a deleted route's value; route ids are never reused, so the map would grow. */
   clearRouteCongestion(routeId: number): void {
     this.routeCongestion.delete(routeId);
   }
 
-  /** 這條路線沿線有多擠。沒有逐路線的值時退回全系統的。 */
+  /** Congestion along this route, falling back to the system-wide level. */
   congestionOn(routeId?: number): number {
     if (routeId === undefined) return this.congestionLevel;
     return this.routeCongestion.get(routeId) ?? this.congestionLevel;
@@ -321,20 +325,21 @@ export abstract class BaseTransportSystem {
   }
 
   /**
-   * 跨日結算:平滑昨天的搭乘量，然後把今天歸零。
+   * Day rollover: smooth yesterday's ridership, then zero today's.
    *
-   * 低於半個人就直接寫 0，**不是**讓它自己衰減下去。
+   * Anything below half a rider is written as 0 rather than left to decay.
    *
-   * 路線被刪掉之後沒有人搭，公式退化成「每天乘 0.7」，而乘法碰不到零 —— 浮點數在
-   * 最接近零的地方精度崩掉，`0.7 * 5e-324` 算出來還是 `5e-324`，卡在那裡不動。
-   * 玩家存檔裡真的長出過 `7.7e-44` 與 `5e-324` 這種值。
+   * With no riders the formula degenerates to multiplying by 0.7 each day, and multiplication
+   * never reaches zero: at the bottom of the float range `0.7 * 5e-324` is still
+   * `5e-324`, which sticks. Player saves have held values like `7.7e-44` and `5e-324`.
    *
-   * 而載重率在運能為 0 時看的是「有沒有人要搭」（`riders > 0 ? Infinity : 0`）。
-   * `5e-324 > 0` 成立，於是刪掉路線的運具永遠掛著紅色的 hopeless（BUG-349）。
+   * Load factor at zero capacity keys off whether anyone wants to ride
+   * (`riders > 0 ? Infinity : 0`), and `5e-324 > 0` holds, so a route whose vehicles were
+   * deleted stayed permanently flagged as hopeless (BUG-349).
    *
-   * 門檻取半個人是因為這個欄位的單位是「人次」—— 面板本來就是 `Math.round` 之後才
-   * 顯示的，不到半個人在任何地方都已經是 0。而真的有人搭的站不會掉到這裡:一天沒人
-   * 只會讓平滑值乘 0.7，要連續空好幾十天才跌破半個人。
+   * Half a rider is the threshold because the field counts riders and the panel rounds
+   * before displaying. A stop with real ridership cannot fall this far: an empty day only
+   * multiplies the smoothed value by 0.7, so it takes dozens of consecutive empty days.
    */
   rolloverDailyRiders(): void {
     const alpha = 0.7;
@@ -440,14 +445,16 @@ export abstract class BaseTransportSystem {
   }
 
   /**
-   * 這條路線**現在**實際上開多快。
+   * How fast this route actually runs **right now**.
    *
-   * `getSpeed()` 回的是設定值。車子在畫面上跑的是這個 —— 塞住的公車就是比較慢
-   * （BUG-339）。運具選擇那一關也要讀它:開車那一側滿滿地計入壅塞
-   * （`driveTime = 曼哈頓距離 × (1 + 壅塞)`），公車那一側如果讀設定值，塞車的城市裡
-   * 公車會看起來不合理地好 —— 路上的車全部慢下來，只有公車照跑。
+   * `getSpeed()` returns the configured value. Vehicles on screen move at this one, so a
+   * congested bus is visibly slower (BUG-339). Mode choice must read it too: the driving
+   * side charges congestion in full (`driveTime = manhattan * (1 + congestion)`), so a bus
+   * side reading the configured speed would look implausibly good in a congested city —
+   * every car slowed down while the bus kept its timetable.
    *
-   * 不走地面的系統（捷運、鐵路、渡輪）回的就是設定值。那正是玩家蓋捷運的理由。
+   * Systems that do not run on roads (metro, rail, ferry) return the configured speed.
+   * That is what the player builds a metro for.
    */
   getSpeedOn(routeId: number): number {
     return this.config.speed * this.getSpeedMultiplier(routeId);

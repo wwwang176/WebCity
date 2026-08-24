@@ -6,13 +6,14 @@ import type { AvailableTransport } from './ModeChoice';
 
 export interface TransitSystemInfo {
   type: TransportType;
-  /** 設定值。沒有 `speedOn` 的系統（測試用的簡易 fixture）拿它當退路。 */
+  /** The configured speed, used as the fallback by systems without `speedOn`. */
   speed: number;
   /**
-   * 這條路線現在實際開多快 —— 含壅塞。
+   * How fast this route actually runs right now, including congestion.
    *
-   * 選填是為了讓不在乎壅塞的呼叫端（多數測試）不必造一份。省略時退回 `speed`，
-   * 那是「這個系統不受壅塞影響」，不是「現在不塞」。
+   * Optional so callers that do not care about congestion (most tests) need not supply
+   * one. Omitting it falls back to `speed`, which means "this system is unaffected by
+   * congestion", not "nothing is congested right now".
    */
   speedOn?: (routeId: number) => number;
   /** Single-vehicle passenger capacity (e.g. 50 for bus). 0 or omitted = unlimited. */
@@ -32,22 +33,24 @@ export function getRouteDailyRiders(route: TransportRoute): number {
 }
 
 /**
- * 這條路線的常態載客量，用來判斷有多擠。
+ * A route's steady-state ridership, used to judge crowding.
  *
- * 讀的是**完整的一天** —— 昨天的實數與跨日平滑值取大者。運能的單位是「一天載得動
- * 幾人次」，所以搭乘量也必須是一整天的。
+ * Reads a **complete day**: the larger of yesterday's actual count and the cross-day
+ * smoothed value. Capacity is measured in riders per day, so ridership must span a whole
+ * day too.
  *
- * 這裡曾經讀 `dailyRiders`，那是**今天到現在為止**的累計，每個遊戲日歸零。兩者單位
- * 不同，於是載重每天鋸齒一次:早上路線看起來是空的，隨這一天走完慢慢變擠，然後歸零
- * 重來。玩家 12 600 人的存檔實測（一台公車、連續取樣 151 次）:載重在 **5.56 到
- * 47.34** 之間跳，而今日累計人次在 **0 到 6 519** 之間跑。玩家回報的
- * 「usage 在 80~100% 震盪」就是它。
+ * `dailyRiders` is the running total for today so far and resets each game day. Its unit
+ * differs, which makes load factor saw-tooth daily: the route looks empty in the morning,
+ * fills through the day, then resets. Measured on a 12,600-citizen save (one bus, 151
+ * consecutive samples), load factor swung between **5.56 and 47.34** while today's running
+ * count ran from **0 to 6,519** — the reported "usage oscillates between 80% and 100%".
+ * It also destabilises demand: the route looks empty every morning, everyone picks it, and
+ * it overloads by evening.
  *
- * 而且它同時讓需求失控:每天早上看起來是空的，所有人都選它，載重到傍晚才爆掉。
- *
- * 取兩者的較大者是為了兩件事都顧到 —— 昨天暴增的路線今天就反映得出來（讀
- * `lastDayRiders`），而昨天剛好沒人搭的一次低點不會把整條線當成空的（讀平滑值）。
- * 代價是新路線第一天看起來是空的:一天的資料要滿一天才有。
+ * Taking the larger of the two covers both directions: a route that spiked yesterday shows
+ * up today (`lastDayRiders`), and a single quiet day does not read as empty (the smoothed
+ * value). The cost is that a new route looks empty on its first day, since a day of data
+ * takes a day.
  */
 export function getRouteRiders(route: { stops: readonly TransportStop[] }): number {
   let lastDay = 0;
@@ -65,20 +68,22 @@ export function getRouteRiders(route: { stops: readonly TransportStop[] }): numb
  * A transit route is "available" if it has stops within walkRange
  * of both origin and destination, AND has remaining capacity.
  *
- * 「走得到」由 `StopProximityIndex` 回答，而索引是沿人行道量出來的。這裡曾經自己
- * 逐站量曼哈頓距離，而曼哈頓距離看不見馬路：對街的站牌只有兩格，於是住戶被算成
- * 搭得到，行人被派過去，到了現場才發現行人只在路口過馬路，得繞一大圈。
+ * Reachability is answered by `StopProximityIndex`, which measures along the sidewalk
+ * graph. Manhattan distance cannot see roads — a stop across the street is two tiles away —
+ * so it counts households as served and sends pedestrians who then have to detour to a
+ * junction to cross.
  *
- * 逐站掃描的年代是「每問一位市民 × 全城每一個站牌 × 兩端」—— 3 條路線 19 個站牌
- * 的城市實測 5.74µs/位，查兩次索引是 0.25µs。
+ * A per-stop scan costs one measurement per city stop per end per citizen: 5.74µs per
+ * citizen on a city with 3 routes and 19 stops, against 0.25µs for two index lookups.
  *
- * 估計時間是**整趟**：走到站 + 等車 + 乘車 + 走到目的地。
- *
- * 這裡曾經只回報乘車那一段，而這個數字會直接跟開車時間比大小 —— 一條班距 40
- * tick、站牌在五格外的公車，看起來會跟「門口就有、班班準點」一樣好。它因此幾乎
- * 永遠贏過開車，也永遠贏過含走路與等車的轉乘路線（`chooseModeMultiModal` 是先看
- * 單一運具、更快才換過去）。結果是實際派車的那條路徑對步行距離完全不收費，唯一
- * 擋住「走很遠去搭公車」的只剩下 `walkRange` 那個硬門檻。
+ * The estimate covers the **whole trip**: walk to the stop, wait, ride, walk to the
+ * destination. Reporting only the ride would put a bus on a 40-tick headway with a stop
+ * five tiles away on the same footing as one at the door running to the second, because
+ * this number is compared directly against driving time. Such a bus beats driving almost
+ * always, and also beats transfer routes that do include walking and waiting
+ * (`chooseModeMultiModal` starts from single-mode options and only switches for something
+ * faster), leaving the dispatching path charging nothing for walking distance with only
+ * the hard `walkRange` limit standing between a citizen and a long walk to a bus.
  */
 export function findAvailableTransit(
   routes: readonly FlatRoute[],
@@ -93,8 +98,8 @@ export function findAvailableTransit(
   const toNear = index.at(destination.x, destination.y);
   if (toNear.length === 0) return [];
 
-  // 逐路線最近的那一站。平手時留先看到的 —— 索引是照路線、站牌的順序建的，
-  // 所以「先看到」就是站牌陣列裡比較前面的那一個，跟逐站掃描的年代一樣。
+  // Nearest stop per route. Ties keep the first one seen; the index is built in route then
+  // stop order, so that is the earlier entry in the stops array.
   const nearestFrom = nearestPerRoute(fromNear);
   const nearestTo = nearestPerRoute(toNear);
 
@@ -109,22 +114,25 @@ export function findAvailableTransit(
     const boardStop = route.stops[a.stopIdx]!;
     const alightStop = route.stops[b.stopIdx]!;
 
-    // 同一站上下車 = 沒有真的搭到，但走到站牌的那段路仍然花掉了。
+    // Boarding and alighting at the same stop is not a ride, but the walk to it was still
+    // spent.
     if (a.stopIdx === b.stopIdx) {
       result.push({ type: route.type, estimatedTime: walkTime, walkTime, boardStop, alightStop });
       continue;
     }
 
-    // 班距與載重率讀扁平路線的欄位，不在這裡重算 —— `refreshRouteService()` 已經在
-    // 同一個 tick 的前幾行用一模一樣的輸入算過了（`tick()` 裡就在 `spawnVehicles()`
-    // 之前）。各算各的正是 BUG-343 的形狀:兩條路徑對同一條路線的看法會分岔，
-    // 而分岔的那一刻沒有任何測試會紅。
+    // Headway and load factor are read off the flat route rather than recomputed here:
+    // `refreshRouteService()` already computed them from identical inputs a few lines
+    // earlier in the same tick, inside `tick()` before `spawnVehicles()`. Computing them
+    // separately is the shape of BUG-343 — the two paths diverge on the same route, and no
+    // test turns red at the moment they do.
     //
-    // 沒有拒載門檻。擠爆的路線照樣列出來，只是等車時間長到自己輸掉 ——
-    // 「等到天荒地老」本來就等價於「不能搭」，而懸崖會自己造出極限環。
+    // There is no refusal threshold. An overloaded route is still listed; its waiting time
+    // grows until it loses on its own, and a cliff would produce a limit cycle.
     const rideDistance = computeRideDistance(route.stops, a.stopIdx, b.stopIdx, route.segDists);
-    // 帶著這兩站一起回去。派車時重挑一次「最近的站」會挑到別條路線上，而時間
-    // 是照這兩站估的 —— 人會被記到他沒搭的那條路線頭上（BUG-283）。
+    // Both stops travel back with the estimate. Re-picking "the nearest stop" at dispatch
+    // lands on a different route while the time was estimated for these two, which credits
+    // the citizen to a route they did not ride (BUG-283).
     result.push({
       type: route.type,
       estimatedTime: walkTime
@@ -140,11 +148,11 @@ export function findAvailableTransit(
 }
 
 /**
- * 每條路線留最近的那一站。
+ * Keeps the nearest stop of each route.
  *
- * 路線數是個位數，所以用 `Map` 而不是照 `routes.length` 開一條共用的暫存陣列 ——
- * 共用暫存要嘛每次清空（等於還是掃一遍），要嘛用世代戳記，兩者換來的都不值這裡的
- * 幾個項目。
+ * Route counts are in the single digits, so a `Map` beats a shared scratch array sized by
+ * `routes.length`: a shared array would need either clearing each call (another full pass)
+ * or generation stamps, neither of which pays for itself at this size.
  */
 function nearestPerRoute(near: readonly NearbyStop[]): Map<number, NearbyStop> {
   const best = new Map<number, NearbyStop>();

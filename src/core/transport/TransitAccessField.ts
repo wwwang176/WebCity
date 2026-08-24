@@ -7,29 +7,31 @@ import { walkRangeFor, WALK_RANGE_BY_TYPE } from './WalkRange';
 import type { FlatRoute } from './MultiModalRouter';
 
 /**
- * 大眾運輸可及性圖 —— 每一格走得到哪些路線、要走多久。
+ * Transit accessibility field: which routes each cell can reach, and how long the walk is.
  *
- * 通勤時間取決於「起點 × 終點」這個**配對**：住房分配一輪要評好幾萬組，用多模式
- * 路由器逐一算會直接卡死。這張圖在路線變動時建一次，之後任兩點的通勤時間就是
- * 幾次查表加算術。
+ * Commute time depends on the origin/destination **pair**, and one housing-allocation
+ * pass scores tens of thousands of pairs — routing each one through the multi-modal
+ * router is not affordable. The field is built once per route change, after which the
+ * commute time between any two points is a few lookups and some arithmetic.
  *
- * 精度換速度是刻意的 —— 它只回答「兩端碰不碰得到同一條路線」，不處理轉乘。真正
- * 派車時仍然走完整的多模式路由器；這張圖只用於評分與觸發判斷，那些地方要的是
- * 「這個人的通勤大概多痛苦」，不是精確路線。
+ * It trades accuracy for speed on purpose: it only answers whether both ends touch the
+ * same route, and does not model transfers. Actual dispatch still runs the full
+ * multi-modal router. The field is used for scoring and trigger checks, which need how
+ * painful a commute roughly is, not an exact itinerary.
  *
- * 「走得到」由 `StopReach` 定義，也就是沿著人行道量。這裡曾經自己在地圖上畫一個
- * 曼哈頓菱形，而菱形看不見馬路 —— 對街那一格被算成兩格，但行人只在路口過馬路，
- * 實際上得繞到路口再繞回來。結果是通勤時間被低估、住戶被配給對街的站牌，畫面上
- * 出現繞大圈的行人。
+ * Reachability comes from `StopReach`, i.e. measured along the sidewalk graph. A
+ * Manhattan diamond cannot see roads: it counts the cell across the street as two tiles
+ * even though pedestrians only cross at junctions, which understates commute times and
+ * assigns households to stops on the far side of the road.
  */
 
-/** 從某一格走得到的一個站。 */
+/** One stop reachable on foot from a given cell. */
 export interface TransitAccess {
-  /** `routes` 陣列的索引。 */
+  /** Index into the `routes` array. */
   routeIdx: number;
-  /** 該路線 `stops` 陣列的索引。 */
+  /** Index into that route's `stops` array. */
   stopIdx: number;
-  /** 走到那一站要幾 tick。 */
+  /** Ticks spent walking to that stop. */
   walkTime: number;
 }
 
@@ -41,10 +43,10 @@ export class TransitAccessField {
   private constructor() {}
 
   /**
-   * 把每個站牌走得到的格子記下來，連同走到那一站要多久。
+   * Records the cells each stop can be walked to from, along with the walk time.
    *
-   * 同一條路線只留最近的那一站 —— 留全部的話這張圖會膨脹成站數 × 覆蓋面積，
-   * 而遠一點的那些站永遠不會被選中。
+   * Only the nearest stop of a route is kept: keeping all of them would grow the field
+   * to stops × coverage area, and the further stops are never selected.
    */
   static build(
     routes: readonly FlatRoute[], walkSpeed: number, reach: StopReach,
@@ -53,8 +55,8 @@ export class TransitAccessField {
 
     for (let ri = 0; ri < routes.length; ri++) {
       const route = routes[ri]!;
-      // 願意為這種運具走多遠。掃描一律用最寬的半徑（涵蓋範圍的快取以半徑為鍵，
-      // 各運具各掃一次會讓同一個站牌算好幾份），再由運具自己的上限截斷。
+      // Always scan at the widest radius and truncate per transport type: the coverage
+      // cache is keyed by radius, so scanning per type recomputes the same stop repeatedly.
       const limit = walkRangeFor(route.type);
       for (let si = 0; si < route.stops.length; si++) {
         const s = route.stops[si]!;
@@ -84,22 +86,22 @@ export class TransitAccessField {
     }
   }
 
-  /** 這一格走得到的路線。沒有就是空陣列。 */
+  /** Routes reachable from this cell; empty array when there are none. */
   at(x: number, y: number): readonly TransitAccess[] {
     return this.byCell.get(toPosKey(x, y)) ?? NONE;
   }
 
-  /** 記了幾格（測試與除錯用）。 */
+  /** Number of indexed cells, for tests and debugging. */
   get size(): number {
     return this.byCell.size;
   }
 }
 
 /**
- * 兩端都碰得到的路線，各自要花多久。
+ * Routes both ends can reach, and how long each takes.
  *
- * 時間含走到站、等車與乘車 —— 只算乘車的話，一條班距 40 tick 的公車看起來會
- * 跟捷運一樣好。
+ * The time covers walking to the stop, waiting and riding. Counting only the ride would
+ * make a bus on a 40-tick headway look as good as a metro.
  */
 function transitOptions(
   from: { x: number; y: number }, to: { x: number; y: number },
@@ -132,13 +134,15 @@ function transitOptions(
 }
 
 /**
- * 這一趟通勤要花多久（tick）。
+ * Length of this commute, in ticks.
  *
- * 開車時間隨距離與壅塞上升，搭車時間由路網決定 —— 兩者是同一個尺度，所以
- * 「住得遠但住在站旁邊」與「住得近但天天塞車」比得出高下。
+ * Driving time rises with distance and congestion, transit time is set by the network.
+ * Both are on the same scale, so "far out but next to a station" and "close but stuck in
+ * traffic every day" can be compared.
  *
- * 選哪一種交通方式沿用 `chooseModeMultiModal`，不另外寫一套判斷 —— 兩邊各寫
- * 一次的話，評分認為他搭捷運、實際派車卻讓他開車，兩者會靜靜地不一致。
+ * Mode selection reuses `chooseModeMultiModal` rather than a second implementation: two
+ * copies would silently diverge, with scoring assuming metro while dispatch sends the
+ * citizen by car.
  */
 export function estimateCommuteTime(
   from: { x: number; y: number },
@@ -151,7 +155,7 @@ export function estimateCommuteTime(
   return estimateCommute(from, to, choice, field, routes, waitFactor).time;
 }
 
-/** 同上，但連「怎麼去」一起回報 —— 總覽面板要看交通方式的分布。 */
+/** As above, but also reports the mode; the overview panel shows the mode split. */
 export function estimateCommute(
   from: { x: number; y: number },
   to: { x: number; y: number },

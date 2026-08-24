@@ -14,21 +14,22 @@ export interface AvailableTransport {
   /** Estimated travel time using this transport mode (in ticks). */
   estimatedTime: number;
   /**
-   * 其中有多少是走路。
+   * How much of `estimatedTime` is spent walking.
    *
-   * 分開帶著，是因為比較時要對走路多收一份不情願，而回報時不能收 —— 揉成一個
-   * 數字就沒辦法只加權其中一段。
+   * Carried separately because comparison charges walking an extra reluctance factor
+   * while reporting must not. A single merged number cannot weight one leg only.
    */
   walkTime: number;
   /**
-   * 這個估計是照哪兩站算的。
+   * The two stops this estimate was computed for.
    *
-   * 派車與計數要照著它走。選完運具之後再挑一次「最近的站」會挑到別條路線的站 ——
-   * 挑站的條件（沿人行道最近）跟選路線的條件（整趟最快）不是同一件事，各挑各的
-   * 一定會分岔（BUG-283）。
+   * Dispatch and rider counting must follow them. Re-picking "the nearest stop" after the
+   * mode is chosen lands on a stop of a different route: nearest along the sidewalk and
+   * fastest overall are different criteria, and picking independently diverges (BUG-283).
    *
-   * 可選，是因為只驗算術的呼叫端（以及只做評分、不派車的可及性圖）不需要它。
-   * 產品裡真正會派出行人的那條路徑由 `findAvailableTransit` 產生，它一定填。
+   * Optional because callers that only check the arithmetic — and the accessibility field,
+   * which scores but never dispatches — do not need them. `findAvailableTransit`, the path
+   * that actually sends pedestrians out, always fills them in.
    */
   boardStop?: TransportStop;
   alightStop?: TransportStop;
@@ -101,51 +102,56 @@ export interface MultiModalChoice {
   /** Non-null when a multi-leg transit route was chosen */
   multiLeg: MultiLegRoute | null;
   /**
-   * 選中的那條路要花多久（tick）。
+   * How long the chosen option takes, in ticks.
    *
-   * 每一種走法要花多久本來就得算出來才比得出快慢 —— 這裡把它留下來。通勤時間
-   * 是市民對城市最直接的感受：距離、壅塞與大眾運輸都反映在同一個數字上，所以
-   * 換工作與搬家都拿它判斷，而不是拿直線距離（拿距離的話，住在捷運站旁邊跟住
-   * 在荒郊野外沒有差別）。
+   * Every option's duration has to be computed to compare them, so it is kept. Commute
+   * time is the most direct thing a citizen feels about the city — distance, congestion
+   * and transit all land in this one number — so job changes and relocations decide on it
+   * rather than on straight-line distance, which cannot tell living next to a metro
+   * station apart from living nowhere.
    *
-   * 回報的是**實際選中**那一種的時間，不是最快那一種 —— 大眾運輸只要不比開車
-   * 慢過 1.5 倍就會被選，市民花掉的是那個比較慢的時間。
+   * This is the time of the option **actually chosen**, not the fastest one: transit is
+   * picked as long as it is no more than 1.5x slower than driving, and the citizen spends
+   * that slower time.
    */
   time: number;
   /**
-   * 選中單一運具時，該上哪一站、下哪一站。走路、開車與轉乘路線時為 `null`
-   * ——轉乘的上下車站在 `multiLeg.legs` 裡，一段一組。
+   * Boarding and alighting stops when a single transit mode was chosen. `null` for
+   * walking, driving and transfer routes — a transfer route carries a pair per leg in
+   * `multiLeg.legs`.
    */
   boardStop: TransportStop | null;
   alightStop: TransportStop | null;
 }
 
 export interface ModeChoiceParams {
-  /** 0 = 暢通。開車時間隨它上升。 */
+  /** 0 = clear. Driving time rises with it. */
   congestionLevel: number;
   /**
-   * 步行速度（格/tick）。開車的參考速度是「一格一 tick」，所以這個數字就是
-   * 走路對開車的速度比 —— 走路本來就該花比較久穿越同一格。
+   * Walking speed in tiles per tick. Driving's reference speed is one tile per tick, so
+   * this number is the walk-to-drive speed ratio: walking takes longer over the same tile.
    */
   walkSpeed: number;
   /**
-   * 步行時間放大幾倍來比較。走一分鐘比坐一分鐘難熬。
+   * Factor applied to walking time when comparing. A minute on foot is harder than a
+   * minute seated.
    *
-   * 只影響**比較**：回報的 `time` 一律是實際花掉的時間。兩者混在一起的話，
-   * 通勤統計與通勤圖層上會出現一個沒有任何人真的花掉的數字。
+   * Affects **comparison** only: the reported `time` is always the time actually spent.
+   * Mixing the two would put a number nobody spent into the commute statistics and the
+   * commute overlay.
    */
   walkWeight: number;
   /**
-   * 開車在市民心裡要乘上幾倍（壅塞費）。1 = 沒有收費。
+   * Factor applied to driving in the citizen's perception (a congestion charge).
+   * 1 = no charge.
    *
-   * 跟 `walkWeight` 同一個道理:只影響**比較**，回報的 `time` 一律是實際花掉的
-   * 時間。乘進回報值的話，通勤統計與通勤圖層上會出現一個沒有任何人真的花掉的
-   * 數字，而收費本來就不會讓車開得比較慢。
+   * Same rule as `walkWeight`: comparison only, while the reported `time` is the time
+   * actually spent. A charge does not make a car drive slower.
    */
   driveDeterrence: number;
 }
 
-/** 一種走法在市民心裡的成本 —— 走路那一段多收一份不情願。 */
+/** Perceived cost of an option, charging the walking leg an extra reluctance factor. */
 function perceived(totalTime: number, walkTime: number, walkWeight: number): number {
   return totalTime + walkTime * (walkWeight - 1);
 }
@@ -167,7 +173,7 @@ export function chooseModeMultiModal(
   const distance = dx + dy;
 
   if (distance <= MODE_CHOICE.WALK_MAX_DISTANCE) {
-    // 這麼近就直接走 —— 不比較，因為開車去隔壁本來就不合理。
+    // Short enough to just walk; driving next door is not worth comparing.
     return {
       mode: TransportMode.WALK, multiLeg: null, time: distance / walkSpeed,
       boardStop: null, alightStop: null,
@@ -175,16 +181,18 @@ export function chooseModeMultiModal(
   }
 
   const driveTime = distance * (1 + congestionLevel);
-  // 心裡的成本要收費，路上的時間不收 —— 下面回報 DRIVE 時用的是 driveTime。
+  // The charge applies to perceived cost, not to time on the road: the DRIVE branch below
+  // reports driveTime.
   const driveCost = driveTime * driveDeterrence;
   const threshold = driveCost * MODE_CHOICE.TRANSIT_TIME_MULTIPLIER_THRESHOLD;
 
-  // 比較用加權後的成本，回報用實際時間 —— 兩個數字要分開帶著。
+  // Weighted cost for comparison, real time for reporting: the two are tracked separately.
   let bestCost = Infinity;
   let bestTime = Infinity;
   let bestMode: TransportMode = TransportMode.DRIVE;
   let bestMultiLeg: MultiLegRoute | null = null;
-  // 跟著贏家一起換，不然會留著上一個候選的站 —— 那等於把人記到他沒搭的路線上。
+  // Replaced together with the winner; keeping a previous candidate's stops would credit
+  // the citizen to a route they did not ride.
   let bestBoard: TransportStop | null = null;
   let bestAlight: TransportStop | null = null;
 
@@ -202,8 +210,8 @@ export function chooseModeMultiModal(
     }
   }
 
-  // 轉乘路線按名目時間排序，但加權後名次可能不同 —— 全部比過，否則兩種走法
-  // 等於放在不同的尺上。
+  // Transfer routes are sorted by nominal time, but weighting can reorder them, so all of
+  // them are compared; otherwise the two kinds of option sit on different scales.
   for (const route of multiModalRoutes) {
     const cost = perceived(route.totalTime, route.walkTime, walkWeight);
     if (cost >= bestCost) continue;
@@ -213,7 +221,8 @@ export function chooseModeMultiModal(
     bestMode = (firstRide?.transitType && transportTypeToMode(firstRide.transitType))
       ?? TransportMode.BUS;
     bestMultiLeg = route;
-    // 轉乘路線的上下車站在各段 leg 裡，這兩個欄位只描述單一運具。
+    // A transfer route carries its stops per leg; these two fields describe single-mode
+    // trips only.
     bestBoard = null;
     bestAlight = null;
   }

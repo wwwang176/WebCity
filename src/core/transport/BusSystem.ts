@@ -19,9 +19,9 @@ const BUS_CONFIG: TransportSystemConfig = {
 export class BusSystem extends BaseTransportSystem {
   /** Per-route precomputed LaneEdge segments (stop[i] → stop[i+1]). */
   private routeSegments = new Map<number, LaneEdge[][]>();
-  /** 每一段多長，以段落陣列本身當 key —— 見 getSegmentDistances。 */
+  /** Length of each leg, keyed by the segments array itself; see getSegmentDistances. */
   private segmentDistances = new WeakMap<LaneEdge[][], number[]>();
-  /** 這條路線蓋到哪些格。同樣以段落陣列當 key —— 見 getRouteCells。 */
+  /** Cells this route covers, keyed by the segments array itself; see getRouteCells. */
   private routeCells = new WeakMap<LaneEdge[][], ReadonlySet<string>>();
   /** Per-route TrafficSimulation vehicle IDs. */
   private busVehicleIds = new Map<number, number[]>();
@@ -143,7 +143,6 @@ export class BusSystem extends BaseTransportSystem {
     this.removeVehicleFromRoute(routeId);
   }
 
-  /** Return precomputed segment distances from LaneEdge paths. */
   /**
    * Recompute this route's cached segments after a stop was removed.
    * Mirrors RailSystem/FerrySystem: a route that can no longer be pathed is
@@ -159,23 +158,12 @@ export class BusSystem extends BaseTransportSystem {
   }
 
   /**
-   * 每一段路多長。純幾何 —— 跟今天有幾個人搭車無關。
+   * Cells the vehicles on this route pass through.
    *
-   * `findAvailableTransit` 每問一次「這個人有哪些大眾運輸可選」就呼叫一次，而生成
-   * 通勤車的迴圈每個 tick 要問將近一千次。玩家存檔實測（人口 12 696）:每個 tick
-   * 呼叫約 2 900 次。同場交替 A/B 三輪，`findAvailableTransit` 從 17.53 降到
-   * 12.76ms/tick —— **省下 4.77ms/tick**（BUG-328）。
-   *
-   * 以段落陣列本身當 key:`computeRouteSegments` 每次都存進一個新陣列，而沒有人
-   * 就地改它，所以段落換了 key 就換了 —— 結構上拿不到過期的答案，不需要有人記得
-   * 在哪些地方失效。與 `PathLengthCache`、`PathCellCache` 同一個模式。
-   */
-  /**
-   * 這條路線的車會經過哪些格子。
-   *
-   * 給「這條路線沿線有多擠」用 —— 公車跟著幹道跑，而幹道本來就比全城平均塞。
-   * 以段落陣列本身當 key:路線改了一定是換一整份新的段落，舊的查不到就重算
-   * （同 `getSegmentDistances`）。
+   * Feeds per-route congestion: buses follow arterials, which are more congested than the
+   * city average. Keyed by the segments array itself — a route change always installs a
+   * whole new segments array, so a lookup on the old one misses and the set is recomputed
+   * (same as `getSegmentDistances`).
    */
   getRouteCells(routeId: number): ReadonlySet<string> | null {
     const segments = this.routeSegments.get(routeId);
@@ -192,6 +180,19 @@ export class BusSystem extends BaseTransportSystem {
     return cells;
   }
 
+  /**
+   * Length of each leg. Pure geometry, independent of today's ridership.
+   *
+   * Called once per "which transit options does this citizen have" question, and the
+   * commute-spawning loop asks close to a thousand times per tick — measured at roughly
+   * 2,900 calls per tick on a 12,696-citizen save. Caching cut `findAvailableTransit`
+   * from 17.53 to 12.76ms/tick (BUG-328).
+   *
+   * Keyed by the segments array itself: `computeRouteSegments` always stores a fresh
+   * array and nobody mutates one in place, so new segments mean a new key and a stale
+   * answer is structurally unreachable. Same pattern as `PathLengthCache` and
+   * `PathCellCache`.
+   */
   override getSegmentDistances(routeId: number): number[] | null {
     const segments = this.routeSegments.get(routeId);
     if (!segments) return null;

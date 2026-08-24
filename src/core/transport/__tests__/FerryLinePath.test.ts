@@ -106,8 +106,8 @@ describe('FerryLinePath', () => {
       const info = buildFerryPathInfo([
         { x: 0, y: 0 }, { x: 2, y: 0 }, { x: 2, y: 2 },
       ]);
-      // 第一段 length=2, 第二段 length=2, total=4
-      // distance=3 → 第二段 localT = (3-2)/2 = 0.5
+      // First leg length=2, second leg length=2, total=4.
+      // distance=3 lands on the second leg at localT = (3-2)/2 = 0.5.
       const p = interpolateFerryPath(info, 3);
       expect(p).not.toBeNull();
       expect(p!.x).toBeCloseTo(2);

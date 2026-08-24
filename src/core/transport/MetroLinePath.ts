@@ -1,7 +1,7 @@
 /**
- * MetroLinePath — 建構地鐵路線的連續路徑，供渲染端動畫使用。
+ * Builds the continuous path of a metro line for renderer animation.
  *
- * 純邏輯模組，禁止 import Three.js。
+ * Pure logic: must not import Three.js.
  */
 
 import type { Point2D } from './MetroTunnelPath';

@@ -1,30 +1,33 @@
 import type { TransportStop } from './types';
 
 /**
- * 一條路線有多好搭：班距與擁擠程度。
+ * How good a route is to ride: headway and crowding.
  *
- * 兩者都是從「現在有幾台車、載了多少人」算出來的，不存成欄位。存成欄位的話，每個
- * 會動到路線的地方都得記得重算 —— 加車那條路就漏了，於是加車只提高了容量上限，
- * 班次一點也沒有變密。
+ * Both are derived from the current vehicle count and ridership rather than stored as
+ * fields. Stored fields would have to be recomputed at every site that touches a route,
+ * and the add-vehicle path would miss it, so adding a vehicle would raise the capacity
+ * ceiling without making service any more frequent.
  */
 
 /**
- * 面板把載重分成幾段。**兩個都是顯示用的分界，不是模擬常數。**
+ * Load bands used by the panel. **Both are display thresholds, not simulation constants.**
  *
- * 模擬本身沒有任何門檻 —— 等待是連續的（`extraHeadwaysWaited`），越擠越久，
- * 沒有上限也沒有懸崖。這裡的兩個數字只決定那一格什麼時候變黃、什麼時候變紅。
+ * The simulation itself has no thresholds: waiting is continuous
+ * (`extraHeadwaysWaited`) and rises with crowding, with no cap and no cliff. These two
+ * numbers only decide when the cell turns amber and when it turns red.
  */
 export const CROWDING = {
-  /** 多等超過半個班距 —— 該加車了。 */
+  /** More than half a headway of extra waiting — time to add a vehicle. */
   OVERLOADED_LOAD: 1.5,
-  /** 眼睜睜看兩班滿載的車開過去。 */
+  /** Watching two full vehicles go past. */
   HOPELESS_LOAD: 3,
 } as const;
 
 /**
- * 一台車跑完整圈要多久（tick）。
+ * Ticks for one vehicle to complete a full loop.
  *
- * 是整圈而不是單程：路線是環狀的，車子回到起點才輪到下一班。
+ * A full loop rather than a one-way trip: routes are circular, and the next departure
+ * comes when the vehicle is back at the start.
  */
 export function computeCycleTime(
   stops: readonly TransportStop[],
@@ -34,8 +37,9 @@ export function computeCycleTime(
   const n = stops.length;
   if (n < 2 || speed <= 0) return 0;
 
-  // 快取的段距要與站數 1:1 才能用。站數變了而快取還沒重算時拿它當真，會回報
-  // 別一段的距離（同 BUG-064 的理由）—— 寧可退回站與站之間的直線距離。
+  // Cached segment distances are only usable when they match the stop count 1:1. Trusting
+  // them after a stop change but before a recompute reports another leg's distance (same
+  // reason as BUG-064); falling back to straight-line distances is safer.
   const safe = segDists && segDists.length === n ? segDists : null;
 
   let total = 0;
@@ -49,10 +53,11 @@ export function computeCycleTime(
 }
 
 /**
- * 班距：整圈時間 ÷ 車輛數。
+ * Headway: cycle time divided by vehicle count.
  *
- * 這是加車真正買到的東西。原本班距寫死成站數的倍數，加車只把容量上限往上推，
- * 等車一秒都沒有變短 —— 玩家最主要的槓桿其實不改善服務品質。
+ * This is what adding a vehicle actually buys. A headway hardwired to a multiple of the
+ * stop count would let extra vehicles raise the capacity ceiling without shortening the
+ * wait by a second, leaving the player's main lever with no effect on service quality.
  */
 export function computeHeadway(cycleTime: number, vehicles: number): number {
   if (vehicles <= 0) return Infinity;
@@ -60,48 +65,52 @@ export function computeHeadway(cycleTime: number, vehicles: number): number {
 }
 
 /**
- * 一台車一天算在班上多久（tick）。**運能專用，不是日曆上的一天。**
+ * Ticks a vehicle counts as in service per day. **For capacity only; not a calendar day.**
  *
- * 這個遊戲裡有兩個時鐘:
+ * The game runs two clocks:
  *
  * | | |
  * |---|---|
- * | 日曆 | `ticksPerDay = 24` —— 老化、薪資、成長、統計都靠它 |
- * | 動畫 | 車子每 tick 前進幾格 —— 挑的是「看起來像不像公車」 |
+ * | Calendar | `ticksPerDay = 24`, driving ageing, wages, growth and statistics |
+ * | Animation | tiles a vehicle advances per tick, chosen to look like a bus |
  *
- * 車速從來不是從物理推出來的。所以拿 `ticksPerDay`（日曆）去除 `cycleTime`（動畫）
- * 是把兩個時鐘當成同一個 —— 玩家 12 500 人的存檔實測，一條 282 格的公車路線一圈
- * 要 141 tick，而一天只有 24 tick:一天跑 **0.17 圈**，50 座的車一天運能剩
- * **8.5 人次**。任何路線超過約 9 人次就爆表，玩家得買三百台車。
+ * Vehicle speed was never derived from physics, so dividing `cycleTime` (animation) by
+ * `ticksPerDay` (calendar) treats the two clocks as one. Measured on a 12,500-citizen
+ * save, a 282-tile bus route takes 141 ticks per loop against a 24-tick day: **0.17 loops
+ * per day**, leaving a 50-seat vehicle with a daily capacity of **8.5 riders**. Any route
+ * above roughly 9 riders would saturate, and the player would need three hundred vehicles.
  *
- * 分開之後，運能用自己這把尺。**畫面上那台車一天還是只跑 0.17 圈** —— 兩個時鐘
- * 不同步，這是明知道的取捨。要同步就只能把車速調成每 tick 跨二十幾格，那是拿
- * 畫面去換公式好看。
+ * With the clocks separated, capacity uses its own scale. **The on-screen vehicle still
+ * runs 0.17 loops per day** — the two clocks are deliberately not synchronised. Syncing
+ * them would require vehicles to cross twenty-odd tiles per tick, trading the visuals for
+ * a tidier formula.
  *
- * 480 的來由（玩家存檔的那條公車路線，2 623 人次/日）:
+ * Where 480 comes from (the bus route in that save, 2,623 riders/day):
  *
- * | | 一天跑幾圈 | 單車運能/日 | 一條線要幾台車 |
+ * | | loops/day | capacity/vehicle/day | vehicles needed |
  * |---|---|---|---|
- * | 24（日曆，錯的） | 0.17 | 8.5 | 309 |
+ * | 24 (calendar, wrong) | 0.17 | 8.5 | 309 |
  * | **480** | **3.4** | **170** | **15** |
  * | 960 | 6.8 | 340 | 8 |
  *
- * 選 480 而不是 960:960 之下捷運永遠吃不滿（四列車 12 400 人次/日，而全城一天
- * 約 17 600 趟通勤），擁擠模型在捷運上等於不存在。
+ * 480 over 960 because at 960 a metro can never fill up (four trains carry 12,400
+ * riders/day against roughly 17,600 commutes city-wide), which makes the crowding model
+ * inert on metro.
  *
- * **這是平衡旋鈕**，不是物理常數。
+ * **This is a balance knob**, not a physical constant.
  */
 export const TRANSIT_SERVICE_TICKS_PER_DAY = 480;
 
 /**
- * 一天載得動多少人次。
+ * Riders carried per day.
  *
- * 座位數要乘上「一天跑幾圈」才是同一個單位。原本是拿一整天的累計人次去比
- * `車輛數 × 座位數` —— 一個是累計量、一個是瞬間量，兩台公車一天載到第 100 人次
- * 就算滿了，天花板低了一個數量級。
+ * Seat count must be multiplied by loops per day to be in the same unit as ridership.
+ * Comparing a day's cumulative riders against `vehicles * seats` mixes a cumulative
+ * quantity with an instantaneous one, which would call two buses full at the 100th rider
+ * of the day and put the ceiling an order of magnitude too low.
  *
- * 「一天」用的是 `TRANSIT_SERVICE_TICKS_PER_DAY`，不是日曆上的一天，理由見上面。
- * 這裡**不收**時鐘參數 —— 收的話下一個呼叫端還是會把 `ticksPerDay` 傳進來。
+ * "Per day" means `TRANSIT_SERVICE_TICKS_PER_DAY`, not a calendar day; see above. This
+ * function deliberately takes no clock parameter, so no caller can pass `ticksPerDay` in.
  */
 export function computeDailyCapacity(
   vehicles: number,
@@ -113,46 +122,52 @@ export function computeDailyCapacity(
   return vehicles * seatsPerVehicle * loopsPerDay;
 }
 
-/** 載重率。沒有運能卻有人要搭，就是無窮大。 */
+/** Load factor. No capacity but riders wanting to board is infinite. */
 export function computeLoadFactor(dailyRiders: number, dailyCapacity: number): number {
   if (dailyCapacity > 0) return dailyRiders / dailyCapacity;
   return dailyRiders > 0 ? Infinity : 0;
 }
 
 /**
- * 擠不上這班，平均還要多等幾班。
+ * Extra vehicles a passenger waits for after failing to board.
  *
- * 一句話推出來的:這班上不去的機率是 `q`，那要等 1、2、3⋯ 班的機率是等比級數，
- * 期望值 `q / (1 - q)`。以 `q = 1 - 1 / 載重` 代入（想搭的人是位子的 L 倍，
- * 就有 `1 - 1/L` 的人這班上不去），化簡剛好是 **載重 - 1**。
+ * With `q` the probability of not boarding a given vehicle, the number of vehicles waited
+ * for is geometric with expectation `q / (1 - q)`. Substituting `q = 1 - 1 / load` (when
+ * L times as many people want to board as there are seats, a fraction `1 - 1/L` is left
+ * behind) simplifies to exactly **load - 1**.
  *
- * 沒有上限:載重 11 就是多等 10 班。舊模型封在 4 倍，而「再擠也不會更糟」不是真的。
+ * Uncapped: load 11 means waiting for 10 extra vehicles. A cap would assert that crowding
+ * stops getting worse past some point, which is not true.
  *
- * 沒有懸崖:舊模型在載重 1.5 那一點從「還能搭」變成「這條線不存在」，中間差一個
- * 乘客。玩家 12 600 人的存檔實測，那道懸崖自己造出一個極限環 —— 加車讓載重衝過
- * 1.5，全部人被踢出去，載重掉回來，人又回來，再衝過去。
+ * No cliff either. A step at load 1.5 from "still rideable" to "this line does not exist"
+ * turns on a single passenger, and measured on a 12,600-citizen save that step produced a
+ * limit cycle: adding vehicles pushed load past 1.5, everyone was ejected, load fell back,
+ * the riders returned, and it crossed again.
  *
- * 也不需要另外一條拒載線:等待自己會發散，而「等到天荒地老」本來就等價於
- * 「不能搭」—— 運具選擇是比大小的，一條要等十班的路線自己就輸了。
+ * A separate refusal threshold is unnecessary: waiting diverges on its own, and waiting
+ * forever is equivalent to not being able to board — mode choice compares magnitudes, so a
+ * route requiring ten waits loses by itself.
  */
 export function extraHeadwaysWaited(loadFactor: number): number {
   return Math.max(0, loadFactor - 1);
 }
 
 /**
- * 載重的四個階段。顏色與文案照這個分。
+ * The four load bands, which drive colour and wording.
  *
- * 分界點挑的是**模型裡真的會發生事情**的那幾點，不是好看的整數:
- * - `comfortable`（< 1）：位子夠，沒有人被留在站牌上。
- * - `crowded`（>= 1）：**開始有人上不去**，多等的班數從零往上走。
- * - `overloaded`（>= 1.5）：多等超過半個班距 —— 比基本等待還久，該加車了。
- * - `hopeless`（>= 3）：眼睜睜看兩班滿載的車開過去。
+ * The boundaries mark points where **something actually changes in the model**, not round
+ * numbers:
+ * - `comfortable` (< 1): enough seats, nobody is left at the stop.
+ * - `crowded` (>= 1): **people start failing to board** and extra waits rise from zero.
+ * - `overloaded` (>= 1.5): more than half a headway of extra waiting, longer than the base
+ *   wait — time to add a vehicle.
+ * - `hopeless` (>= 3): watching two full vehicles go past.
  *
- * 最後一段是**標籤，不是懸崖** —— 模擬不會把這條路線藏起來，只是讓它非常慢。
- * 舊模型那道 `refusing` 懸崖在載重 1.5 那一點把整條線從選項裡拿掉，而玩家實測
- * 發現它自己造出一個極限環。
+ * The last band is a **label, not a cliff**: the simulation does not hide the route, it
+ * only makes it very slow.
  *
- * 抽出來是為了讓面板跟模擬讀同一組數字 —— 各寫一份的話，兩邊會靜靜地分家。
+ * Extracted so the panel and the simulation read the same numbers; two copies would
+ * silently diverge.
  */
 export type RouteLoadStatus = 'comfortable' | 'crowded' | 'overloaded' | 'hopeless';
 
@@ -164,13 +179,13 @@ export function routeLoadStatus(loadFactor: number): RouteLoadStatus {
 }
 
 /**
- * 面板上那一欄的字。**不夾在 100%**。
+ * The usage column in the panel. **Not clamped at 100%.**
  *
- * 夾住的話，一條 105% 的路線跟一條 400% 的路線長得一模一樣 —— 而前者加一台車就
- * 夠，後者要加三倍。那一欄是玩家決定「該加幾台車」的唯一依據，夾住等於把要做
- * 決定的那個資訊藏起來。
+ * Clamping would make a 105% route look identical to a 400% one, when the first needs one
+ * extra vehicle and the second needs three times the fleet. That column is the player's
+ * only basis for deciding how many vehicles to add.
  *
- * 沒有運能的路線印 `—` 而不是 0%：0% 會讓玩家以為它很空。
+ * A route with no capacity prints an em dash rather than 0%, which would read as empty.
  */
 export function formatRouteUsage(riders: number, capacity: number): string {
   if (capacity <= 0) return '\u2014';
@@ -178,26 +193,28 @@ export function formatRouteUsage(riders: number, capacity: number): string {
 }
 
 /**
- * 站在站牌前預期要等多久。
+ * Expected wait at a stop.
  *
- * 單一運具、轉乘路線與可及性圖三處都要算這個數字，寫在同一個地方 —— 各寫一次的話，
- * 評分認為他搭得很順、實際派車卻讓他等到天荒地老，兩邊會靜靜地不一致。
+ * Single-mode routing, transfer routing and the accessibility field all need this number,
+ * so it lives in one place; separate copies would silently disagree, with scoring assuming
+ * a smooth trip while dispatch leaves the citizen waiting.
  */
 export function expectedWait(headway: number, waitFactor: number, loadFactor: number): number {
-  // 基本等待是**半個**班距（乘客隨機到站），多等的則是**整班** —— 兩者的單位不同，
-  // 所以是相加不是相乘。舊寫法是整段乘上一個倍率，那讓「多等一班」的意思被
-  // `waitFactor` 稀釋掉了。
+  // The base wait is **half** a headway (passengers arrive at random) while extra waits are
+  // **whole** headways. The two have different units, so they add rather than multiply;
+  // scaling the whole term by one factor would dilute "one more vehicle" by `waitFactor`.
   return headway * (waitFactor + extraHeadwaysWaited(loadFactor));
 }
 
 /**
- * 一條路線現在有多好搭：班距與載重率。
+ * How good a route currently is to ride: headway and load factor.
  *
- * 兩個都從「現在有幾台車、載了多少人」算出來，不從欄位讀 —— 存成欄位的話，每個
- * 會動到路線的地方都得記得重算，而加車那條路就漏了。
+ * Both are computed from the current vehicle count and ridership rather than read from
+ * fields, which would have to be recomputed at every site that touches a route and would
+ * be missed on the add-vehicle path.
  *
- * `seatsPerVehicle` 給 0 代表這個系統不受運能限制（機場走的是另一套模型），
- * 沿用舊行為。
+ * `seatsPerVehicle` of 0 means the system is not capacity-limited; airports use a separate
+ * model.
  */
 export function routeService(
   route: { stops: readonly TransportStop[]; vehicles: number },

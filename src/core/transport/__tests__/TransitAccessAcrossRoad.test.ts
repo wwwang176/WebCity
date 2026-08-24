@@ -6,11 +6,13 @@ import { TransportType, type TransportStop } from '../types';
 import type { FlatRoute } from '../MultiModalRouter';
 
 /**
- * 站牌的涵蓋範圍要照人行道量。
+ * Stop catchment is measured along the sidewalk graph.
  *
- * 這張圖決定「誰算是搭得到公車」。用直線距離量的話，馬路對面只有兩格，於是住戶
- * 被算成走得到 —— 通勤時間因此被低估，行人被派去對面的站牌，到了現場才發現得繞
- * 到路口。畫面上那個繞大圈的人，是這張圖算錯的結果，不是行人走錯。
+ * This field decides who counts as served by a bus. Straight-line distance puts the far
+ * side of a road two tiles away, so households there count as reachable: commute times are
+ * understated and pedestrians are sent to a stop they can only reach by detouring to a
+ * junction. The pedestrian visibly walking the long way round is this field's error, not a
+ * pathfinding one.
  */
 
 function stop(id: number, x: number, y: number): TransportStop {
@@ -27,7 +29,7 @@ function busRoute(stops: TransportStop[]): FlatRoute {
   };
 }
 
-/** 捷運的步行上限比公車寬（8 vs 4）—— 人願意為捷運多走。 */
+/** Metro has a wider walk limit than bus, because people walk further for it. */
 function metroRoute(stops: TransportStop[]): FlatRoute {
   return {
     routeId: 1, type: TransportType.METRO, speed: 3, stops,
@@ -48,8 +50,9 @@ describe('涵蓋範圍不跨越馬路', () => {
   });
 
   it('should not cover a home across the road from the stop', () => {
-    // 路口在 x=8 與 x=16，站牌在 x=12。過馬路要走 4 格到路口、過去、再走 4 格
-    // 回來 —— 遠超過 5 格的步行上限，這個住戶其實搭不到這班公車。
+    // Junctions sit at x=8 and x=16, the stop at x=12. Crossing means 4 tiles to a junction,
+    // across, and 4 tiles back — well beyond the 5-tile walk limit, so this household cannot
+    // actually reach the bus.
     const { graph } = cityWithMainRoad(8);
     const route = busRoute([stop(1, 12, 11), stop(2, 4, 11)]);
     const field = TransitAccessField.build([route], SPEED, new SidewalkStopReach(graph));
@@ -61,8 +64,8 @@ describe('涵蓋範圍不跨越馬路', () => {
   });
 
   it('should cover both sides when the stop sits by an intersection', () => {
-    // 同一條路，站牌改蓋在路口旁邊，對面就真的走得到了。
-    // 「站牌蓋在哪」因此成為一個有後果的決定。
+    // Same road, but a stop placed next to the junction really is reachable from the other
+    // side, which makes stop placement a decision with consequences.
     const { graph } = cityWithMainRoad(8);
     const route = busRoute([stop(1, 9, 11), stop(2, 4, 11)]);
     const field = TransitAccessField.build([route], SPEED, new SidewalkStopReach(graph));
@@ -71,8 +74,9 @@ describe('涵蓋範圍不跨越馬路', () => {
   });
 
   it('should charge the real walking distance, not the straight line', () => {
-    // 同一個位置換成捷運站：上限 8 格，容得下繞路口的 7.44 格 —— 所以對面這次
-    // 算得到，但它記下的是真的走了多遠，不是直線的兩格。
+    // The same position as a metro station: an 8-tile limit accommodates the 7.44-tile
+    // detour, so the far side is reachable — but the recorded distance is the real walk, not
+    // the straight-line 2 tiles.
     const { graph } = cityWithMainRoad(8);
     const route = metroRoute([stop(1, 12, 11), stop(2, 4, 11)]);
     const field = TransitAccessField.build([route], SPEED, new SidewalkStopReach(graph));
@@ -83,7 +87,7 @@ describe('涵蓋範圍不跨越馬路', () => {
   });
 
   it('should let people walk further for a metro than for a bus', () => {
-    // 完全同一個位置、同一張圖，差別只在運具。
+    // Identical position and graph; only the transport type differs.
     const { graph } = cityWithMainRoad(8);
     const stops = [stop(1, 12, 11), stop(2, 4, 11)];
     const reach = new SidewalkStopReach(graph);

@@ -5,14 +5,15 @@ import { TRANSPORT_SPEED } from '../BaseTransportSystem';
 import type { LaneEdge } from '../../traffic/LaneGraph';
 
 /**
- * 公車的壅塞要**逐路線**算，不是吃全城平均。
+ * Bus congestion is computed **per route**, not from the city average.
  *
- * 公車跟著幹道跑，而幹道本來就比平均塞。玩家 12 600 人的存檔實測:全城平均 0.211，
- * 那條公車路線沿線 **0.380**（1.8 倍），路線上最塞的一格已經是 1.0（塞死）。
- * 吃全城平均等於告訴玩家「你的公車沒有塞在車陣裡」，而畫面上它明明卡在那裡。
+ * Buses follow arterials, and arterials are more congested than average. Measured on a
+ * 12,600-citizen save: city average 0.211 against **0.380** along one bus route (1.8x),
+ * with the worst cell on the line at 1.0 (gridlocked). The city average tells the player
+ * their bus is not stuck in traffic while it visibly is.
  *
- * `congestionLevel` 是系統層級的單一數字，逐路線的值疊在它上面 —— 問不到某條路線時
- * 退回它，那是「還沒算過」，不是「暢通」。
+ * `congestionLevel` is a single system-wide number that per-route values sit on top of.
+ * A route with no value falls back to it, which means "not computed yet", not "clear".
  */
 
 const IMPACT = TRANSPORT_SPEED.CONGESTION_SPEED_IMPACT;
@@ -31,7 +32,7 @@ describe('逐路線的壅塞', () => {
   });
 
   it('should fall back to the system-wide level for a route it has no number for', () => {
-    // 退回全城平均而不是 0 —— 問不到是「還沒算過」，不是「暢通」。
+    // Falls back to the city average rather than 0: no value means "not computed yet".
     const bus = new BusSystem();
     bus.congestionLevel = 0.2;
 
@@ -53,7 +54,8 @@ describe('逐路線的壅塞', () => {
   });
 
   it('should not touch systems that do not share the road', () => {
-    // 捷運走自己的軌道。地面塞不塞跟它無關 —— 這正是玩家蓋捷運的理由。
+    // Metro runs on its own track and is unaffected by surface congestion, which is what
+    // the player builds it for.
     const metro = new MetroSystem();
     metro.congestionLevel = 0.9;
     metro.setRouteCongestion(1, 0.9);
@@ -63,11 +65,12 @@ describe('逐路線的壅塞', () => {
   });
 
   it('should still crawl at full gridlock', () => {
-    // 塞死也還是要爬得動 —— 速度 0 會讓車永遠到不了下一站，班距變成無限大。
+    // Vehicles must still crawl when fully congested: speed 0 never reaches the next stop
+    // and makes the headway infinite.
     //
-    // 注意這**不是**在守 `MIN_CONGESTION_SPEED`:壅塞上限是 1，所以
-    // `1 - 壅塞 × 0.5` 最低就是 0.5，那個下限目前摸不到（見常數本身的說明）。
-    // 這裡守的是「塞死時速度倍率仍然是正的」。
+    // This does **not** pin `MIN_CONGESTION_SPEED`: congestion is capped at 1, so
+    // `1 - congestion * 0.5` bottoms out at 0.5 and that floor is currently unreachable
+    // (see the constant). What is pinned is that the multiplier stays positive at gridlock.
     const bus = new BusSystem();
     bus.setRouteCongestion(1, 1);
 
@@ -77,7 +80,7 @@ describe('逐路線的壅塞', () => {
   });
 
   it('should forget a route once it is gone', () => {
-    // 路線刪掉之後編號不會重用，不清的話會一直長。
+    // Route ids are never reused after deletion, so an uncleared map grows forever.
     const bus = new BusSystem();
     bus.setRouteCongestion(1, 0.9);
     bus.clearRouteCongestion(1);
@@ -89,8 +92,9 @@ describe('逐路線的壅塞', () => {
 
 describe('路線蓋到哪些格', () => {
   /**
-   * 期望值**手寫**，不從 `getRouteCells` 自己算 —— 這一輪原本的接線測試就是用被測
-   * 函式算期望值，兩邊一起變，永遠對得上。突變驗證照出來的。
+   * Expected values are **written out by hand** rather than derived from `getRouteCells`.
+   * Computing the expectation with the function under test makes both sides move together
+   * and always agree.
    */
   function edge(from: string, to: string): LaneEdge {
     const [fx, fy] = from.split(',').map(Number);
@@ -104,7 +108,8 @@ describe('路線蓋到哪些格', () => {
   }
 
   it('should cover both ends of every edge', () => {
-    // 只收起點那一端的話，每一段的**終點**會漏掉 —— 路線末端那一格永遠不算進壅塞。
+    // Collecting only the `from` end drops each leg's **destination**, so the last cell of
+    // a route never counts towards its congestion.
     const bus = new BusSystem();
     const a = bus.addStop(0, 0);
     const b = bus.addStop(3, 0);

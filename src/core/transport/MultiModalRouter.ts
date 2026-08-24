@@ -36,7 +36,7 @@ export interface MultiLegRoute {
   legs: TransitLeg[];
   /** Sum of all legs' estimatedTime */
   totalTime: number;
-  /** 其中有多少是走路 —— 比較時要多收一份不情願，回報時不收。 */
+  /** How much of it is walking; charged an extra reluctance factor when comparing, not when reporting. */
   walkTime: number;
 }
 
@@ -70,26 +70,28 @@ export interface FlatRoute {
   speed: number;
   stops: readonly TransportStop[];
   segDists: number[] | null;
-  /** 班距（tick）：整圈時間 ÷ 車輛數。加車會讓它變短。 */
+  /** Headway in ticks: cycle time / vehicle count. Adding vehicles shortens it. */
   headway: number;
-  /** 載重率。等車時間隨它上升，沒有上限也沒有拒載門檻。 */
+  /** Load factor. Waiting time rises with it, with no cap and no refusal threshold. */
   loadFactor: number;
   /**
-   * 來源路線本身，不是它的車輛數。
+   * The source route itself, not a copy of its vehicle count.
    *
-   * 複製一份 `vehicles` 進來就是 `TransportRoute` 自己警告過的那個錯:玩家加車之後
-   * 有兩個地方記著車輛數，而其中一個會忘記更新。這裡存參照，`refreshRouteService()`
-   * 每次現讀。
+   * Copying `vehicles` in would leave two places recording it after the player adds a
+   * vehicle, and one of them would go stale. This holds the reference and
+   * `refreshRouteService()` reads it fresh.
    */
   source: { readonly stops: readonly TransportStop[]; readonly vehicles: number };
   seatsPerVehicle: number;
   /**
-   * 現在的車速。壅塞會讓它變 —— `refreshRouteService()` 每個 tick 重讀。
+   * The current vehicle speed, which congestion changes; `refreshRouteService()` re-reads
+   * it every tick.
    *
-   * `speed` 只是它最後一次的值。不重讀的話就是 BUG-343 換一個欄位再犯一次:
-   * 幹道塞住了，而估計時間還用著路網剛蓋好時的車速。
+   * `speed` is only its last value. Without the re-read, estimates use the speed the
+   * network had when it was built while the arterials are congested (BUG-343).
    *
-   * 選填，理由同 `TransitSystemInfo.speedOn` —— 不模擬壅塞的 fixture 不必造一份。
+   * Optional for the same reason as `TransitSystemInfo.speedOn`: fixtures that do not
+   * simulate congestion need not supply one.
    */
   speedOn?: () => number;
 }
@@ -110,8 +112,9 @@ export function flattenSystems(
     for (const route of sys.routes) {
       if (route.suspended) continue;
       const segDists = sys.getSegmentDistances?.(route.id) ?? null;
-      // 含壅塞的車速。乘車時間與班距都吃它 —— 車開得慢，整圈就跑得久，班距跟著
-      // 拉長，而班距又決定一天跑幾圈也就是運能。三件都是真的。
+      // Speed including congestion. Ride time and headway both depend on it: a slower
+      // vehicle takes longer per loop, which lengthens the headway, which sets loops per
+      // day and therefore capacity.
       const speedOn = sys.speedOn ? () => sys.speedOn!(route.id) : undefined;
       const speed = speedOn?.() ?? sys.speed;
       result.push({
@@ -133,21 +136,23 @@ export function flattenSystems(
 }
 
 /**
- * 把每條扁平路線的班距與載重率更新成**當下**的數字。
+ * Updates every flat route's headway and load factor to their **current** values.
  *
- * 這兩個值原本只在 `flattenSystems()` 算一次，而扁平路線只有玩家動到路網拓樸時
- * 才重建 —— 搭乘人數之後怎麼漲都回不到這裡。玩家 12 500 人的存檔實測:記著的
- * 載重率 0.0000192，照當下人數重算是 **308**。整套擁擠模型因此形同不存在:
- * `expectedWait()` 的擁擠加成
- * 永遠是 1。而同一份判斷在 `findAvailableTransit()` 裡是每次現算的 —— 兩條路徑
- * 對同一條路線的看法差了一千六百萬倍（BUG-343）。
+ * Computing them once in `flattenSystems()` is not enough: flat routes are only rebuilt
+ * when the player changes the network topology, so ridership growth never reaches them.
+ * Measured on a 12,500-citizen save, the stored load factor was 0.0000192 while
+ * recomputing against current ridership gave **308**, which left the whole crowding model
+ * inert — `expectedWait()`'s crowding term was always 1 — while `findAvailableTransit()`
+ * computed the same quantity fresh, so the two paths disagreed by a factor of 16 million
+ * (BUG-343).
  *
- * 就地改而不是重建陣列:`TransferGraph` 與 `TransitAccessField` 都以索引指回這裡，
- * 換掉陣列等於把那兩份快取一起作廢。而它們存的是幾何，本來就不需要跟著變。
+ * Mutates in place rather than rebuilding the array: `TransferGraph` and
+ * `TransitAccessField` index back into it, and replacing the array would invalidate both
+ * caches even though they store geometry that has not changed.
  */
 export function refreshRouteService(routes: FlatRoute[]): void {
   for (const r of routes) {
-    // 車速先重讀 —— 底下兩個都從它算出來。
+    // Speed first: both values below are derived from it.
     if (r.speedOn) r.speed = r.speedOn();
     const { headway, loadFactor } = routeService(
       r.source, getRouteRiders(r.source), r.seatsPerVehicle, r.speed, r.segDists,
@@ -182,8 +187,10 @@ export function buildTransferGraph(
       const b = all[j]!;
       if (a.ri === b.ri) continue; // same route → skip
 
-      // 轉乘也是用走的，一樣照人行道量 —— 只差一條馬路的兩個站牌，直線是三格，
-      // 實際上得繞到路口。四個挑站的地方留一個用直線，就是留一個會不一致的縫。
+      // Transfers are walked too, so they are measured along the sidewalk graph. Two stops
+      // separated only by a road are three tiles apart in a straight line but require a
+      // detour to the junction. Leaving one of the four stop-picking sites on straight-line
+      // distance leaves one place where they disagree.
       const dist = walkDistanceToStop(reach, a.stop.x, a.stop.y, b.stop.x, b.stop.y, transferRange);
       if (dist > transferRange) continue;
 
@@ -258,7 +265,7 @@ export function buildStopRouteCache(
     for (const edge of edges) {
       if (usedRoutes.has(edge.toRI)) continue;
       const targetRoute = routes[edge.toRI]!;
-      // 擠爆的路線不再被藏起來 —— `expectedWait()` 會讓它慢到自己輸掉。
+      // Overloaded routes are not hidden; `expectedWait()` makes them slow enough to lose.
 
       const targetStop = targetRoute.stops[edge.toSI]!;
       const transferWalkTime = edge.walkDistance / walkSpeed;
@@ -311,7 +318,7 @@ export function buildStopRouteCache(
   // For each entry stop, explore all reachable exits
   for (let ri = 0; ri < routes.length; ri++) {
     const route = routes[ri]!;
-    // 同上:沒有拒載門檻，慢就是它的懲罰。
+    // As above: no refusal threshold, slowness is the penalty.
 
     for (let si = 0; si < route.stops.length; si++) {
       const entryStop = route.stops[si]!;
@@ -353,12 +360,13 @@ export function buildStopRouteCache(
 export const MAX_RESULTS = 20;
 
 /**
- * 用預先算好的站對站快取找轉乘路線。
+ * Finds transfer routes from the precomputed stop-to-stop cache.
  *
- * 每問一位市民的成本是「走得到的進站 × 走得到的出站」次查表 —— 逐站掃描的年代是
- * 「全城站牌數 + 走得到的進站數 × 全城站牌數」，因為出站那一側的步行距離被寫在
- * 進站迴圈**裡面**，而它跟進站選哪一站無關。192 個站牌、一位市民走得到 9.8 個的
- * 合成城市實測:每位市民 2 005 次步行距離查詢，其中 1 882 次是重算的。
+ * Cost per citizen is reachable-entries x reachable-exits lookups. A per-stop scan costs
+ * city-stops + reachable-entries x city-stops instead, because the exit-side walk distance
+ * is measured **inside** the entry loop even though it does not depend on the entry stop.
+ * Measured on a synthetic city with 192 stops and 9.8 reachable per citizen: 2,005
+ * walk-distance queries per citizen, 1,882 of them redundant.
  */
 export function findMultiModalRoutes(
   routes: readonly FlatRoute[],
@@ -372,8 +380,9 @@ export function findMultiModalRoutes(
 ): MultiLegRoute[] {
   if (routes.length === 0) return [];
 
-  // 索引已經照運具的步行上限截過了（人願意為捷運多走，為公車不肯），而且是沿
-  // 人行道量的 —— 直線看不見馬路，會把住戶從對街「走」到站牌。
+  // The index is already truncated to each transport type's walk limit and measured along
+  // the sidewalk graph; straight-line distance cannot see roads and would walk households
+  // to a stop across the street.
   const entries = index.at(origin.x, origin.y);
   if (entries.length === 0) return [];
   const exits = index.at(destination.x, destination.y);
@@ -412,8 +421,8 @@ export function findMultiModalRoutes(
       results.push({
         legs,
         totalTime: firstWalkTime + cached.totalTime + lastWalkTime,
-        // 中間那幾段可能還有轉乘步行，所以是把 walk 腿全部加起來，
-        // 不是只算頭尾兩段。
+        // The middle legs may include transfer walks, so every walk leg is summed rather
+        // than only the first and last.
         walkTime: legs.reduce((s, l) => l.type === 'walk' ? s + l.estimatedTime : s, 0),
       });
 

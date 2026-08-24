@@ -3,8 +3,8 @@ import { FerrySystem, type WaterChecker } from '../FerrySystem';
 import { findWaterPath, type WaterGrid } from '../../pathfinding/WaterPathfinder';
 
 /**
- * 建立測試用的水域格和岸邊檢查器。
- * checker.isWater 現在檢查「岸邊」：非水域且至少一個相鄰格是水。
+ * Builds a water grid and a shore checker for tests.
+ * `checker.isWater` tests for shore: not water, with at least one adjacent water cell.
  */
 function createWaterEnv(rows: string[]) {
   const height = rows.length;
@@ -44,7 +44,7 @@ describe('FerrySystem with A* water navigation', () => {
     expect(d2).not.toBeNull();
     ferry.createRoute([d1, d2], 1);
 
-    // 初始化：渡輪應在第一個碼頭
+    // On initialisation the vessel sits at the first dock.
     ferry.tick();
     const vessels = ferry.getVessels();
     expect(vessels).toHaveLength(1);
@@ -63,7 +63,7 @@ describe('FerrySystem with A* water navigation', () => {
     const d2 = ferry.addDock(4, 0, checker)!;
     ferry.createRoute([d1, d2], 1);
 
-    // Tick 足夠多次讓渡輪到達（初始 dwell + travel + dwell 來回）
+    // Tick long enough for the vessel to arrive: initial dwell, travel, then dwell again.
     let reachedDock = false;
     for (let i = 0; i < 50; i++) {
       ferry.tick();
@@ -84,11 +84,11 @@ describe('FerrySystem with A* water navigation', () => {
       'WWWWW',
     ]);
 
-    // 驗證 A* 能找到繞行路徑
+    // A* must find a way around the land.
     const path = findWaterPath(grid, { x: 0, y: 0 }, { x: 4, y: 0 });
     expect(path).not.toBeNull();
     expect(path!.path.length).toBeGreaterThan(5);
-    // 所有路徑點必須在水域
+    // Every point on the path must be water.
     for (const p of path!.path) {
       expect(grid.isWater(p.x, p.y)).toBe(true);
     }
@@ -160,15 +160,15 @@ describe('FerrySystem with A* water navigation', () => {
     const d2 = ferry.addDock(4, 0, checker)!;
     ferry.createRoute([d1, d2], 1);
 
-    // Tick 到渡輪開始移動
+    // Tick until the vessel starts moving.
     for (let i = 0; i < 10; i++) ferry.tick();
 
     const vessels = ferry.getVessels();
     const v = vessels[0]!;
-    // 渡輪有 waterPath 資訊可供 heading 計算
+    // The vessel carries waterPath data for heading calculation.
     const pathInfo = ferry.getVesselPath(v.id);
     if (pathInfo && pathInfo.length > 1) {
-      // 路徑存在且有多個點
+      // A path exists and has more than one point.
       expect(pathInfo.length).toBeGreaterThanOrEqual(2);
     }
   });

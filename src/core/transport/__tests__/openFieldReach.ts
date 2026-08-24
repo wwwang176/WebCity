@@ -1,14 +1,15 @@
 import type { StopReach } from '../../traffic/StopWalkReach';
 
 /**
- * 一片沒有任何障礙的空地：走到哪裡的距離都等於曼哈頓距離。
+ * Open ground with no obstacles: every walk distance equals the Manhattan distance.
  *
- * 這是**測試替身**，不是產品裡的第二套算法 —— 產品只有 `SidewalkStopReach`
- * 一個實作。用它的測試要驗的是路線挑選、換乘與時間估計本身的算術，把「走到站牌
- * 多遠」固定成一個好預測的數字，算術錯了才看得出來。
+ * A **test double**, not a second production algorithm — production has only
+ * `SidewalkStopReach`. Tests using it check the arithmetic of route selection, transfers
+ * and time estimation, and pinning walk distance to a predictable number is what makes an
+ * arithmetic error visible.
  *
- * 「馬路會擋住行人」那一面不在這裡驗，由 `StopChoiceAcrossRoad.test.ts` 與
- * `TransitAccessAcrossRoad.test.ts` 拿真的人行道圖去驗。
+ * That roads obstruct pedestrians is checked elsewhere, against a real sidewalk graph, by
+ * `StopChoiceAcrossRoad.test.ts` and `TransitAccessAcrossRoad.test.ts`.
  */
 export const openFieldReach: StopReach = {
   cellsWithin(x, y, maxDist) {

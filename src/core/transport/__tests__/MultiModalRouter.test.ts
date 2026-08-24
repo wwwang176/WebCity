@@ -34,7 +34,7 @@ function makeRoute(
   };
 }
 
-/** 擠到幾乎沒指望的載重 —— 平均要多等 19 班。 */
+/** A load factor deep in the hopeless band: 19 extra vehicles waited for on average. */
 const PACKED = 20;
 
 // ── buildTransferGraph ──────────────────────────────────────────
@@ -50,7 +50,7 @@ describe('buildTransferGraph', () => {
       makeRoute(1, TransportType.BUS, 2, [makeStop(0, 0, 1), makeStop(10, 0, 2)]),
       makeRoute(2, TransportType.METRO, 3, [makeStop(10, 1, 3), makeStop(20, 0, 4)]),
     ];
-    // (10,0) ↔ (10,1) distance 1 ≤ 3
+    // (10,0) to (10,1) is distance 1, within the transfer range of 3.
     const graph = buildTransferGraph(routes, 3, openFieldReach);
     expect(graph.byStop.size).toBe(2);
   });
@@ -243,8 +243,9 @@ describe('findMultiModalRoutes', () => {
   });
 
   it('punishes a packed route with time instead of hiding it', () => {
-    // 沒有拒載門檻了。擠爆的路線照樣列得出來，但等車時間長到它自己輸掉 ——
-    // 而懸崖會自己造出極限環（玩家 12 600 人的存檔實測過）。
+    // There is no refusal threshold. An overloaded route is still listed; its waiting time
+    // grows until it loses on its own. A cliff produces a limit cycle, observed on a
+    // 12,600-citizen save.
     const packed: FlatRoute[] = [
       makeRoute(1, TransportType.BUS, 2,
         [makeStop(1, 0, 1), makeStop(9, 0, 2)], { loadFactor: PACKED }),
@@ -311,9 +312,10 @@ describe('findMultiModalRoutes', () => {
   });
 
   it('stops reporting once it has MAX_RESULTS of them', () => {
-    // 站牌密集的市中心，起點與終點兩邊各站著好幾條路線 —— 組合數是「進站候選 ×
-    // 出站候選」，很快就多到沒有意義。沒有上限的話每問一位市民都要把那些全部
-    // 組出來（每一條都配一份 legs 陣列），而運具選擇只會挑最快的那一條。
+    // In a dense centre several routes serve both ends, and the combination count is
+    // entries * exits, which grows past usefulness quickly. Without a cap, every citizen
+    // asked would materialise all of them, each with its own legs array, while mode choice
+    // only ever takes the fastest.
     const routes: FlatRoute[] = [];
     for (let i = 0; i < 6; i++) {
       routes.push(makeRoute(i + 1, TransportType.BUS, 2,
@@ -342,7 +344,8 @@ describe('findMultiModalRoutes', () => {
       WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
       StopProximityIndex.build(routes, openFieldReach),
     );
-    // 轉乘那一段的捷運擠爆了 —— 路線還在，但慢到不值得。
+    // The metro leg of the transfer is overloaded: the route still exists but is too slow to
+    // be worth it.
     const fiveLegs = result.find(r => r.legs.length === 5);
     const direct = result.find(r => r.legs.length < 5);
     expect(fiveLegs, '擠爆的轉乘鏈被整條藏起來了').toBeDefined();
@@ -378,7 +381,8 @@ describe('flattenSystems', () => {
   });
 
   it('halves the headway when the fleet doubles', () => {
-    // 加車真正買到的東西。班距原本寫死成站數的倍數，加車一秒也沒有變短。
+    // What extra vehicles actually buy. With headway hardwired to a multiple of the stop
+    // count, adding vehicles would not shorten it by a second.
     const stops = [makeStop(0, 0, 1), makeStop(10, 0, 2)];
     const sys = (vehicles: number) => [{
       type: TransportType.BUS, speed: 2, vehicleCapacity: 50,
@@ -404,17 +408,19 @@ describe('flattenSystems', () => {
       getSegmentDistances: () => [10, 10],
     }];
     const flat = flattenSystems(systems);
-    // 整圈 20 格 / 速度 2 = 10 tick。一天跑幾圈由 TRANSIT_SERVICE_TICKS_PER_DAY 決定
-    // —— 期望值跟著它算，寫死的話調一次刻度就得回來改魔術數字。
+    // A 20-tile loop at speed 2 is 10 ticks. Loops per day come from
+    // TRANSIT_SERVICE_TICKS_PER_DAY, so the expectation is derived from it; a literal would
+    // need updating whenever the scale is retuned.
     const loops = TRANSIT_SERVICE_TICKS_PER_DAY / 10;
-    // 舊模型拿 100 人次去比「2 台 × 50 座 = 100」，這條線在這裡就滿了。
+    // Comparing 100 riders against `2 vehicles * 50 seats = 100` would call this line full.
     expect(flat[0]!.loadFactor).toBeCloseTo(100 / (2 * 50 * loops));
     expect(flat[0]!.loadFactor, '一天才 100 人次就算滿了').toBeLessThan(1);
   });
 
   it('reports a load factor well past capacity', () => {
     const stops = [makeStop(0, 0, 1), makeStop(10, 0, 2)];
-    // 「沒指望」那條線是 3，運能是 2 台 × 50 座 × 一天跑幾圈 —— 人次要壓過它。
+    // The hopeless band starts at 3 and capacity is 2 vehicles * 50 seats * loops per day,
+    // so ridership has to exceed that.
     stops[0]!.lastDayRiders = 2 * 50 * (TRANSIT_SERVICE_TICKS_PER_DAY / 10) * 4;
     const systems = [{
       type: TransportType.BUS, speed: 2, vehicleCapacity: 50,

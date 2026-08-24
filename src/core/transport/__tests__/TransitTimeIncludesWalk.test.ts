@@ -5,13 +5,15 @@ import { openFieldReach } from './openFieldReach';
 import { TransportType, type TransportStop } from '../types';
 
 /**
- * 單一運具的估計時間要含走到站與等車，不能只算乘車。
+ * A single-mode estimate covers the walk to the stop and the wait, not just the ride.
  *
- * 這支的結果會直接跟開車時間比大小。只算乘車的話，一條班距 40 tick、站牌在五格外
- * 的公車，看起來會跟「門口就有、班班準點」一樣好 —— 於是它幾乎永遠贏過開車，也
- * 永遠贏過含走路與等車的轉乘路線（`chooseModeMultiModal` 是先看單一運具、更快才
- * 換過去）。結果是實際派車走的那條路徑對步行距離完全不收費，唯一擋住「走很遠去
- * 搭公車」的東西只剩下步行上限那個硬門檻。
+ * This result is compared directly against driving time. Counting only the ride puts a bus
+ * on a 40-tick headway with a stop five tiles away on the same footing as one at the door
+ * running to the second, so it beats driving almost always, and also beats transfer routes
+ * that do include walking and waiting (`chooseModeMultiModal` starts from single-mode
+ * options and only switches for something faster). The dispatching path would then charge
+ * nothing for walking distance, leaving only the hard walk-range limit between a citizen
+ * and a long walk to a bus.
  */
 
 function stop(x: number, y: number, id: number): TransportStop {
@@ -26,7 +28,7 @@ const WALK_SPEED = 1;
 const WAIT_FACTOR = 0.5;
 const TICKS_PER_DAY = 24;
 
-/** 兩站的公車路線。車輛數決定班距 —— 整圈時間 ÷ 車輛數。 */
+/** A two-stop bus route. Vehicle count sets the headway: cycle time / vehicles. */
 function busLine(
   originStop: { x: number; y: number },
   destStop: { x: number; y: number },
@@ -62,7 +64,8 @@ describe('單一運具的估計時間', () => {
   });
 
   it('should cost more when the service is infrequent', () => {
-    // 班距由車輛數決定：同一條路線，車少班次就疏。
+    // Headway comes from the vehicle count: the same route with fewer vehicles runs less
+    // often.
     const frequent = timeOf(busLine({ x: 1, y: 0 }, { x: 19, y: 0 }, 8), home, work);
     const rare = timeOf(busLine({ x: 1, y: 0 }, { x: 19, y: 0 }, 1), home, work);
 
@@ -74,7 +77,8 @@ describe('單一運具的估計時間', () => {
     const near = timeOf(busLine({ x: 1, y: 0 }, { x: 19, y: 0 }, 4), home, work);
     const far = timeOf(busLine({ x: 1, y: 0 }, { x: 16, y: 0 }, 4), home, work);
 
-    // 下車站往回退三格：乘車段短了，但走路段長了三格 —— 淨值要變大。
+    // Moving the alighting stop three tiles back shortens the ride but lengthens the walk by
+    // three, so the total must grow.
     expect(far, '下車後那段路沒有被算進去').toBeGreaterThan(near);
   });
 
@@ -85,7 +89,7 @@ describe('單一運具的估計時間', () => {
   });
 
   it('should still report zero-ish when origin and destination share a stop', () => {
-    // 同一站上下車等於沒搭到 —— 但走到站牌的那段路仍然要算。
+    // Boarding and alighting at the same stop is not a ride, but the walk to it still counts.
     const sys = busLine({ x: 1, y: 0 }, { x: 19, y: 0 }, 4);
     const result = availableTransitFor([sys], { x: 0, y: 0 }, { x: 2, y: 0 }, openFieldReach, WALK_SPEED, WAIT_FACTOR);
     expect(result).toHaveLength(1);

@@ -3,14 +3,15 @@ import { WALK_RANGE_BY_TYPE, walkRangeFor } from '../WalkRange';
 import { TransportType } from '../types';
 
 /**
- * 願意為哪一種運具走多遠，不是同一個數字。
+ * How far people will walk differs by transport type.
  *
- * 一個全域的步行上限意味著公車站與捷運站的服務範圍一模一樣。現實剛好相反：人願意
- * 為捷運多走，因為它快、班次密、而且站本來就稀疏；為一班很久才來一次的公車，走三
- * 分鐘就不肯了 —— 何況公車站密集，本來就不必走遠。
+ * A single global walk limit would give a bus stop and a metro station identical catchments.
+ * People walk further for metro — it is fast, frequent and sparsely stationed — and less far
+ * for an infrequent bus, whose stops are dense enough not to need it.
  *
- * 這個上限是「絕對走不到」的硬邊界，不是行為規則。真正做細部取捨的是時間本身：
- * 走路花的時間會進到比較裡，還要再乘一份不情願（見 `WalkWillingness`）。
+ * These are hard "cannot reach" bounds, not behaviour rules. The finer trade-off is handled
+ * by time itself: walking time enters the comparison and is scaled by a reluctance factor
+ * (see `WalkWillingness`).
  */
 
 describe('分運具的步行上限', () => {
@@ -22,7 +23,7 @@ describe('分運具的步行上限', () => {
   });
 
   it('should put the ferry between the two', () => {
-    // 渡輪碼頭稀疏（要臨水），但慢 —— 兩邊拉扯。
+    // Ferry docks are sparse (they must be on water) but slow, which pulls both ways.
     expect(walkRangeFor(TransportType.FERRY))
       .toBeGreaterThan(walkRangeFor(TransportType.BUS));
     expect(walkRangeFor(TransportType.FERRY))
@@ -46,8 +47,8 @@ describe('分運具的步行上限', () => {
   });
 
   it('should expose the widest range for sizing the walk-coverage scan', () => {
-    // 站牌的步行涵蓋範圍是一次算出來的，要用最寬的那一個當半徑，否則捷運站
-    // 掃出來的範圍會被公車的上限截掉。
+    // Walk coverage is computed once per stop and must use the widest limit as its radius,
+    // otherwise a metro station's coverage is truncated by the bus limit.
     const widest = Math.max(...Object.values(TransportType).map(walkRangeFor));
     expect(WALK_RANGE_BY_TYPE.WIDEST).toBe(widest);
   });

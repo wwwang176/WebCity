@@ -18,7 +18,7 @@ function makeRoute(routeId: number, type: TransportType, stops: TransportStop[])
   };
 }
 
-/** 一格人行道都沒有的城市 —— 每個站牌都是孤島。 */
+/** A city with no sidewalks at all, leaving every stop an island. */
 const noReach: StopReach = { cellsWithin: () => new Map() };
 
 describe('StopProximityIndex', () => {
@@ -35,13 +35,14 @@ describe('StopProximityIndex', () => {
       [makeRoute(1, TransportType.BUS, [makeStop(10, 10, 1, TransportType.BUS)])],
       openFieldReach,
     );
-    // 空地上的步行距離就是曼哈頓距離。
+    // On open ground the walk distance equals the Manhattan distance.
     expect(index.at(12, 11)).toEqual([{ routeIdx: 0, stopIdx: 0, walkDistance: 3 }]);
   });
 
   it('keeps EVERY stop of a route in range, not just the nearest', () => {
-    // 這是它跟 `TransitAccessField` 的差別 —— 轉乘要在候選站牌之間挑，
-    // 每條路線只留一站的話，比較好的那組轉乘會在建索引時就被丟掉。
+    // This is the difference from `TransitAccessField`: transfers choose among candidate
+    // stops, so keeping one stop per route would discard the better transfer at index-build
+    // time.
     const route = makeRoute(1, TransportType.BUS, [
       makeStop(10, 10, 1, TransportType.BUS),
       makeStop(12, 10, 2, TransportType.BUS),
@@ -54,7 +55,7 @@ describe('StopProximityIndex', () => {
   });
 
   it('stops at the walk range of that transit type', () => {
-    // 公車 5 格，捷運 12 —— 人願意為捷運多走。
+    // Bus 5 tiles, metro 12: people walk further for a metro.
     const index = StopProximityIndex.build([
       makeRoute(1, TransportType.BUS, [makeStop(20, 20, 1, TransportType.BUS)]),
       makeRoute(2, TransportType.METRO, [makeStop(20, 20, 2, TransportType.METRO)]),
@@ -67,7 +68,8 @@ describe('StopProximityIndex', () => {
   });
 
   it('scans once at the widest range, whatever the type', () => {
-    // 涵蓋範圍的快取以半徑為鍵。各運具各掃各的半徑，同一個站牌會被重算好幾份。
+    // The coverage cache is keyed by radius, so scanning each type at its own radius
+    // recomputes the same stop several times.
     const asked: number[] = [];
     const spy: StopReach = {
       cellsWithin(x, y, maxDist) { asked.push(maxDist); return openFieldReach.cellsWithin(x, y, maxDist); },
@@ -91,8 +93,8 @@ describe('StopProximityIndex', () => {
   });
 
   it('records nothing for a stop that touches no sidewalk', () => {
-    // 站牌沒接上人行道 = 它服務不到任何人。刻意不退回直線距離 —— 那會讓
-    // 「站牌沒進圖」這種錯誤靜靜地被蓋掉。
+    // A stop not connected to a sidewalk serves nobody. Deliberately no fallback to
+    // straight-line distance, which would quietly paper over a stop missing from the graph.
     const index = StopProximityIndex.build(
       [makeRoute(1, TransportType.BUS, [makeStop(10, 10, 1, TransportType.BUS)])],
       noReach,

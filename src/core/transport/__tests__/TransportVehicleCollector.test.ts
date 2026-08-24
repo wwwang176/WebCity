@@ -12,8 +12,8 @@ function emptySystems() {
 }
 
 // ---------------------------------------------------------------------------
-// collectTransportVehicles — 將各交通系統的車輛轉換為渲染用資料
-// Bus vehicles are now rendered via TrafficSimulation (not collected here).
+// collectTransportVehicles — turns each transit system's vehicles into render data.
+// Bus vehicles are rendered via TrafficSimulation and are not collected here.
 // ---------------------------------------------------------------------------
 describe('collectTransportVehicles', () => {
   it('should return empty array when no vehicles in any system', () => {

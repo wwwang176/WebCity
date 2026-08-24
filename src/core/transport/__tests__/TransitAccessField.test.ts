@@ -5,28 +5,30 @@ import type { FlatRoute } from '../MultiModalRouter';
 import { openFieldReach } from './openFieldReach';
 import { walkRangeFor, WALK_RANGE_BY_TYPE } from '../WalkRange';
 
-/** 中性的模式選擇參數：走路一格一 tick、不加不情願權重。 */
+/** Neutral mode-choice parameters: one tile per tick on foot, no reluctance weighting. */
 function neutral(congestionLevel: number) {
   return { congestionLevel, walkSpeed: 1, walkWeight: 1 , driveDeterrence: 1};
 }
 
 
 /**
- * 大眾運輸可及性圖。
+ * Transit accessibility field.
  *
- * 通勤時間取決於「起點 × 終點」這個**配對**，而住房分配一輪要評好幾萬組 ——
- * 用多模式路由器逐一算會直接卡死。這張圖把「這一格走得到哪些站、要走多久」
- * 先算好（路線變動時才重算），之後任兩點的通勤時間就是 O(1)。
+ * Commute time depends on the origin/destination **pair**, and one housing-allocation pass
+ * scores tens of thousands of pairs, which the multi-modal router cannot afford. The field
+ * precomputes which stops each cell can walk to and how long that takes (rebuilt only when
+ * routes change), making commute time between any two points O(1).
  *
- * 精度換速度是刻意的：它只看「兩端都碰得到同一條路線」，不處理轉乘。真正要
- * 派車時仍然走完整的多模式路由器，這張圖只用來評分與觸發判斷。
+ * It trades accuracy for speed on purpose: it only checks whether both ends touch the same
+ * route and does not model transfers. Dispatch still runs the full multi-modal router; the
+ * field is used for scoring and trigger checks.
  */
 
 function stop(id: number, x: number, y: number, type = TransportType.METRO): TransportStop {
   return { id, x, y, type, passengers: 0, dailyRiders: 0, lastDayRiders: 0, smoothedDailyRiders: 0 };
 }
 
-/** 一條沿 y 軸、每 gap 格一站的路線。 */
+/** A route running along the y axis with a stop every `gap` tiles. */
 function verticalLine(
   routeId: number, x: number, y0: number, y1: number, gap: number,
   speed = 3, frequency = 10, type = TransportType.METRO,
@@ -62,17 +64,19 @@ describe('可及性圖', () => {
   });
 
   it('should report nothing beyond walking range', () => {
-    // 距離從上限推出來，不寫死 —— 寫死的話上限一調就變成「這個數字剛好還在範圍
-    // 內」，測試看起來仍然在驗邊界，實際上驗的是另一件事。
+    // The distance is derived from the limit rather than hardcoded. A literal would quietly
+    // fall inside the range after a limit change, leaving a test that looks like a boundary
+    // check but is checking something else.
     const beyond = walkRangeFor(TransportType.METRO) + 1;
     const f = fieldFor([line]);
     expect(f.at(30 + beyond, 12), `離站 ${beyond} 格還走得到`).toHaveLength(0);
   });
 
   it('should cut coverage at the per-mode limit, not the scan radius', () => {
-    // 掃描一律用最寬的半徑，再由運具自己的上限截斷。只有上限小於掃描半徑的運具
-    // 驗得到那道截斷 —— 拿捷運驗的話，擋掉遠處那一格的其實是掃描範圍本身，把
-    // 截斷整個拿掉測試也不會紅。
+    // Scanning always uses the widest radius, truncated per transport type. Only a type
+    // whose limit is below the scan radius can exercise that truncation: with metro, the
+    // distant cell is excluded by the scan radius itself, and removing the truncation
+    // entirely would not turn the test red.
     const busLimit = walkRangeFor(TransportType.BUS);
     expect(busLimit, '公車上限沒有小於掃描半徑，這個測試驗不到截斷')
       .toBeLessThan(WALK_RANGE_BY_TYPE.WIDEST);
@@ -88,8 +92,8 @@ describe('可及性圖', () => {
   });
 
   it('should keep one entry per route, the nearest stop', () => {
-    // 同一條路線有很多站，只留最近的那一個 —— 留全部的話這張圖會膨脹成
-    // 站數 × 覆蓋面積，而遠一點的那些站永遠不會被選。
+    // A route has many stops but only the nearest is kept: keeping all of them would grow
+    // the field to stops * coverage area, and the further ones are never selected.
     const f = fieldFor([line]);
     const access = f.at(30, 15);
     expect(access).toHaveLength(1);
@@ -114,7 +118,7 @@ describe('通勤時間估計', () => {
   });
 
   it('should cut the commute of someone living and working near the line', () => {
-    // 這是整件事的重點：住得遠，但兩端都在站旁邊。
+    // The whole point: a long distance, but both ends next to a station.
     const f = fieldFor([line]);
     const home = { x: 31, y: 6 };
     const work = { x: 29, y: 54 };
@@ -127,15 +131,16 @@ describe('通勤時間估計', () => {
 
   it('should not help someone who can only reach a stop at one end', () => {
     const f = fieldFor([line]);
-    const home = { x: 31, y: 6 };   // 站旁
-    const work = { x: 55, y: 54 };  // 荒郊
+    const home = { x: 31, y: 6 };   // next to a station
+    const work = { x: 55, y: 54 };  // nowhere near one
     const t = estimateCommuteTime(home, work, neutral(0.3), f, [line], WAIT_FACTOR);
     const drive = (Math.abs(55 - 31) + Math.abs(54 - 6)) * 1.3;
     expect(t, '只有一端有站也算得到好處').toBeCloseTo(drive, 5);
   });
 
   it('should not connect two stops that belong to different routes', () => {
-    // 這張圖不處理轉乘。兩端各碰到一條不同的路線，等於沒有直達的選擇。
+    // The field does not model transfers. Two ends touching different routes means no
+    // direct option.
     const a = verticalLine(1, 30, 0, 20, 6);
     const b = verticalLine(2, 30, 40, 60, 6);
     const f = fieldFor([a, b]);
@@ -144,7 +149,7 @@ describe('通勤時間估計', () => {
   });
 
   it('should include waiting and walking, not just the ride', () => {
-    // 只算乘車時間的話，一條班距很長的路線看起來會跟捷運一樣好。
+    // Counting only ride time would make a route with a long headway look as good as metro.
     const frequent = verticalLine(1, 30, 0, 60, 6, 3, 2);
     const rare = verticalLine(1, 30, 0, 60, 6, 3, 40);
     const home = { x: 30, y: 6 }, work = { x: 30, y: 54 };

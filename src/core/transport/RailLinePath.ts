@@ -1,10 +1,11 @@
 /**
- * RailLinePath — 根據實際軌道座標建構鐵路路線的連續路徑，供渲染端動畫使用。
+ * Builds the continuous path of a rail line from actual track coordinates, for renderer
+ * animation.
  *
- * 與 MetroLinePath 類似，但使用 RailNetwork.findPath 回傳的逐格路徑
- * 而非站對站直線。
+ * Like MetroLinePath, except it follows the per-cell path returned by
+ * RailNetwork.findPath rather than straight lines between stations.
  *
- * 純邏輯模組，禁止 import Three.js。
+ * Pure logic: must not import Three.js.
  */
 
 export interface RailPathPoint {

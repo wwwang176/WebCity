@@ -2,14 +2,16 @@ import { describe, it, expect } from 'vitest';
 import { sampleRouteArc, buildRoutePolyline, ARC } from '../RouteArc';
 
 /**
- * 站與站之間的連線畫成拋物線。
+ * Stop-to-stop connectors are drawn as parabolas.
  *
- * 直線連線在密集的路網上會糊成一團 —— 兩條共用同一段的路線完全重疊，看不出
- * 哪一條經過哪一站。拱起來之後每一跳各自成弧，長短一眼看得出來。
+ * Straight connectors smear together on a dense network: two routes sharing a stretch
+ * overlap exactly, so it is impossible to tell which one serves which stop. Arcing gives
+ * every hop its own curve and makes hop length readable.
  *
- * 三件事在這裡把關：**端點必須落在站上**（浮起來的話線就接不到站牌）、
- * **水平投影必須是直線**（歪掉的話弧會繞過不相干的街區）、
- * **拱高有上限**（照比例長下去的話，跨城的路線會拱到鏡頭外）。
+ * Three properties are pinned here: **endpoints must sit on the stops** (a floating line
+ * does not connect to the stop), **the horizontal projection must stay straight** (a skewed
+ * arc bends around unrelated blocks), and **the rise must be capped** (a proportional rise
+ * takes a cross-city route out of frame).
  */
 
 const A = { x: 0, y: 0 };
@@ -48,13 +50,14 @@ describe('拋物線連線', () => {
   });
 
   it('should keep the horizontal projection on the straight line', () => {
-    // 弧只在垂直方向拱。水平也偏出去的話，線會繞過不相干的街區。
+    // The arc rises vertically only; a horizontal deviation would bend the line around
+    // unrelated blocks.
     const from = { x: 2, y: 3 };
     const to = { x: 8, y: 11 };
     const dx = to.x - from.x;
     const dz = to.y - from.y;
     for (const p of sampleRouteArc(from, to, BASE_Y)) {
-      // 叉積 = 0 表示點落在 from→to 這條線上
+      // A zero cross product means the point lies on the from->to line.
       const cross = (p.x - from.x) * dz - (p.z - from.y) * dx;
       expect(Math.abs(cross), '弧在水平方向也偏掉了').toBeLessThan(1e-9);
     }
@@ -72,7 +75,8 @@ describe('拋物線連線', () => {
   });
 
   it('should survive two stops on the same cell', () => {
-    // 同一格上的兩站（剛蓋好還沒挪開）距離是 0 —— 正規化會除以零。
+    // Two stops on the same cell (just placed, not yet moved apart) are 0 apart, and
+    // normalising divides by zero.
     const pts = sampleRouteArc(A, { ...A }, BASE_Y);
     for (const p of pts) {
       expect(Number.isFinite(p.x) && Number.isFinite(p.y) && Number.isFinite(p.z)).toBe(true);
@@ -91,8 +95,8 @@ describe('整條路線的折線', () => {
   });
 
   it('should not repeat the joint between two hops', () => {
-    // 每一跳都自己從頭取樣，接起來的話中間那一站會出現兩次 —— 虛線的節拍會在
-    // 每個站牌打結。
+    // Every hop samples its own start, so concatenating directly repeats the intermediate
+    // stop and breaks the dash cadence at every stop.
     const pts = buildRoutePolyline(STOPS, BASE_Y);
     for (let i = 1; i < pts.length; i++) {
       const a = pts[i - 1]!;

@@ -2,20 +2,22 @@ import { describe, it, expect } from 'vitest';
 import { RailSystem } from '../RailSystem';
 
 /**
- * 路線的路徑點只解析一次。
+ * A route's path points are parsed once.
  *
- * `getRoutePathPoints()` 原本每次呼叫都把整條路徑的節點字串重新 `parsePosKeyUnsafe`
- * 一遍 —— 而 `TrainAnimator` **每一幀、每一列車**呼叫它，其中一次還只是為了讀
- * `segments.length` 來判斷路線有沒有變。
+ * Without a cache, `getRoutePathPoints()` reruns `parsePosKeyUnsafe` over every node
+ * string of the path on each call, and `TrainAnimator` calls it **per frame per train** —
+ * once of those only to read `segments.length` and check whether the route changed.
  *
- * 實測(玩家 12 400 人的存檔，速度 10):`parsePosKeyUnsafe` 佔主執行緒 CPU 的
- * **9.3%**，是所有 JS 函式裡最大的一個，而 **74% 的呼叫來自 RailSystem**。
+ * Measured on a 12,400-citizen save at speed 10: `parsePosKeyUnsafe` took **9.3%** of
+ * main-thread CPU, the largest single JS function, with **74% of its calls from
+ * RailSystem**.
  *
- * ### 失效靠身分比對，不靠記得清快取
+ * ### Invalidation is by identity, not by remembering to clear
  *
- * 快取存著「我是從哪一個陣列建出來的」。`routePaths` 換過（新的陣列）就對不上，
- * 自動重建。這個 repo 在「記得清快取」上吃過九次虧（BUG-331 那一整類），所以這裡
- * 不留任何需要人記得的失效點。
+ * The cache records which array it was built from. A replaced `routePaths` is a different
+ * array, misses, and is rebuilt. This repo has been bitten nine times by caches that had
+ * to be cleared by hand (the BUG-331 family), so no invalidation here depends on anyone
+ * remembering.
  */
 
 type Internals = { routePaths: Map<number, string[][]> };
@@ -37,7 +39,7 @@ describe('路線路徑點的快取', () => {
   });
 
   it('should hand back the same arrays instead of re-parsing', () => {
-    // 每幀重解一次是整個問題的來源。同一個物件回來就代表沒有重解。
+    // Reparsing every frame is the whole problem. The same object back means no reparse.
     const sys = systemWithPath(1, [['0,0', '1,0']]);
 
     const first = sys.getRoutePathPoints(1);
@@ -47,8 +49,8 @@ describe('路線路徑點的快取', () => {
   });
 
   it('should notice when the route path is replaced', () => {
-    // 車站被拆、路線被改 → `routePaths` 換成新的陣列。沒發現的話列車會沿著
-    // 一條已經不存在的軌道跑。
+    // Demolishing a station or editing a route replaces `routePaths` with a new array.
+    // Missing that leaves trains running along track that no longer exists.
     const sys = systemWithPath(1, [['0,0', '1,0']]);
     expect(sys.getRoutePathPoints(1)).toEqual([[{ x: 0, y: 0 }, { x: 1, y: 0 }]]);
 
@@ -68,15 +70,18 @@ describe('路線路徑點的快取', () => {
   });
 
   it('should key on the source array, not on the route id', () => {
-    // 快取認的是**那個陣列**，不是路線編號。這一條同時釘住兩件事:
+    // The cache keys on **the array**, not on the route id. This pins two things:
     //
-    // 1. 換走再換回同一份來源，拿得回原本那份結果 —— 證明鍵是陣列不是 id。
-    // 2. 用 `WeakMap` 才做得到這件事，而用 `WeakMap` 的真正理由是**不必清理**:
-    //    路線刪掉之後那份陣列變成不可達，快取跟著被 GC 收走。
+    // 1. Swapping away and back to the same source returns the original result, which is
+    //    only possible if the key is the array rather than the id.
+    // 2. That behaviour requires a `WeakMap`, and the real reason for `WeakMap` is that
+    //    **nothing has to be cleaned up**: once a route is deleted its array becomes
+    //    unreachable and the cached value is collected with it.
     //
-    // 這裡原本有一條「路線刪掉要清快取」的測試，是**假綠** —— 它在刪掉來源之後
-    // 又手動呼叫了一次 getter 來製造清理機會，而正式流程永遠不會那樣做:路線一旦
-    // 刪除就再也沒有人用那個 id 來問。Codex 審查抓到的。
+    // A "clearing the cache when a route is deleted" test cannot be written honestly here:
+    // it would have to call the getter again after removing the source to create the
+    // cleanup opportunity, and production never does that — after deletion nobody asks
+    // about that id again.
     const sys = new RailSystem();
     const inner = sys as unknown as Internals;
     const first = [['0,0', '1,0']];
@@ -109,11 +114,13 @@ describe('路線路徑點的快取', () => {
   });
 
   it('should not let the two caches feed each other', () => {
-    // 兩份快取以**同一個來源陣列**為鍵。如果不小心傳成同一個 WeakMap，先算的那一份
-    // 會被後算的當成自己的結果拿走 —— 段落長度會變成一串座標物件，或反過來。
+    // Both caches key on **the same source array**. Passing the same WeakMap to both would
+    // let whichever is computed first be picked up by the other as its own result, turning
+    // segment distances into coordinate objects or the reverse.
     //
-    // 前面每一組測試都各用各的 RailSystem，從來沒有交錯呼叫過，所以照不出這件事。
-    // 兩個順序都要試:誰先算都不能污染對方。
+    // Every test above uses its own RailSystem and never interleaves the two calls, so
+    // none of them can catch this. Both orders are exercised: neither may contaminate the
+    // other.
     for (const pointsFirst of [true, false]) {
       const sys = systemWithPath(1, [['0,0', '3,0', '3,4']]);
       if (pointsFirst) { sys.getRoutePathPoints(1); } else { sys.getSegmentDistances(1); }
@@ -132,23 +139,22 @@ describe('路線路徑點的快取', () => {
 
 describe('每一段路多長只算一次（鐵路）', () => {
   /**
-   * `BusSystem.getSegmentDistances()` 早就有快取（BUG-328，實測省 4.77ms/tick），
-   * 但 `RailSystem` **覆寫了它而且沒有快取** —— 而鐵路這一支沒有任何測試守著，
-   * 所以漏掉之後沒人發現。
+   * `RailSystem` overrides `BusSystem.getSegmentDistances()`, which is cached (BUG-328,
+   * measured at 4.77ms/tick saved), so the override needs its own cache.
    *
-   * `findAvailableTransit` 每問一個人、每條路線就呼叫它一次:實測 12 秒 20 萬次，
-   * 每次把整條路徑的每個節點解析兩遍。
+   * `findAvailableTransit` calls it once per citizen per route: 200,000 calls in 12 seconds
+   * when measured, each reparsing every node of the path twice.
    */
   it('should give the same numbers as walking the path', () => {
     const sys = systemWithPath(1, [['0,0', '3,0', '3,4'], ['3,4', '0,0']]);
 
-    // 第一段 3 + 4 = 7；第二段是 (3,4) 到 (0,0) 的直線 = 5。
+    // First leg 3 + 4 = 7; second leg is the straight line from (3,4) to (0,0) = 5.
     expect(sys.getSegmentDistances(1)).toEqual([7, 5]);
   });
 
   it('should hand back the very same array on a second ask', () => {
-    // 這是整個修法的唯一理由。內容相同但每次新建的陣列等於沒有快取，
-    // 而所有比內容的斷言都還是會綠。
+    // This is the entire point of the cache. A fresh array with identical contents on each
+    // call is no cache at all, and every content-comparing assertion still passes.
     const sys = systemWithPath(1, [['0,0', '1,0', '2,0']]);
 
     expect(sys.getSegmentDistances(1), '第二次又把整條路徑重解了一遍')

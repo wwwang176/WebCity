@@ -4,8 +4,8 @@ import { findWaterPath, type WaterGrid, type WaterPathResult } from '../pathfind
 
 const FERRY_CONFIG: TransportSystemConfig = {
   type: TransportType.FERRY,
-  // 邏輯速度（世界單位/tick），匹配渲染端視覺速度：
-  // FERRY_VISUAL_SPEED(1.5) × base_tick_interval(0.25s) = 0.375
+  // Logical speed in world units per tick, matched to the renderer's visual speed:
+  // FERRY_VISUAL_SPEED(1.5) * base_tick_interval(0.25s) = 0.375
   speed: 0.375,
   capacity: 100,
   dwellTicks: 6,
@@ -17,16 +17,16 @@ export interface WaterChecker {
   isWater(x: number, y: number): boolean;
 }
 
-/** 渡輪的 A* 水路路徑（渲染端動畫用） */
+/** A vessel's A* water path, used for renderer animation. */
 interface VesselPathInfo {
   waterPath: Array<{ x: number; y: number }>;
 }
 
 export class FerrySystem extends BaseTransportSystem {
   private waterGrid: WaterGrid | null = null;
-  /** 每艘渡輪的 A* 路徑資訊 */
+  /** A* path info per vessel. */
   private vesselPaths = new Map<number, VesselPathInfo>();
-  /** A* 路徑快取：key = "fromX,fromY>toX,toY"，路線建立時預計算 */
+  /** A* path cache keyed by "fromX,fromY>toX,toY", precomputed when a route is created. */
   private waterPathCache = new Map<string, WaterPathResult | null>();
 
   constructor() {
@@ -34,8 +34,8 @@ export class FerrySystem extends BaseTransportSystem {
   }
 
   /**
-   * 設定水域網格，用於 A* 水路尋路。
-   * 清除快取並為現有路線重新預計算。
+   * Sets the water grid used for A* water pathfinding.
+   * Clears the cache and re-precomputes the existing routes.
    */
   setWaterGrid(grid: WaterGrid): void {
     this.waterGrid = grid;
@@ -49,7 +49,7 @@ export class FerrySystem extends BaseTransportSystem {
     return `${from.x},${from.y}>${to.x},${to.y}`;
   }
 
-  /** 預計算路線所有航段的 A* 路徑並快取 */
+  /** Precomputes and caches the A* path for every leg of a route. */
   private precomputeRoutePaths(route: TransportRoute): void {
     if (!this.waterGrid) return;
     for (let i = 0; i < route.stops.length; i++) {
@@ -62,7 +62,7 @@ export class FerrySystem extends BaseTransportSystem {
     }
   }
 
-  /** 查詢快取的 A* 路徑，未命中則即時計算並快取 */
+  /** Cached A* path; computes and caches it on a miss. */
   private getCachedPath(
     from: { x: number; y: number },
     to: { x: number; y: number },
@@ -71,7 +71,7 @@ export class FerrySystem extends BaseTransportSystem {
     if (this.waterPathCache.has(key)) {
       return this.waterPathCache.get(key)!;
     }
-    // 快取未命中 — 即時計算並存入
+    // Cache miss: compute now and store.
     const result = this.waterGrid ? findWaterPath(this.waterGrid, from, to) : null;
     this.waterPathCache.set(key, result);
     return result;
@@ -117,15 +117,13 @@ export class FerrySystem extends BaseTransportSystem {
   /**
    * Drop every cached A* result that starts or ends at a departed dock.
    *
-   * waterPathCache is keyed by COORDINATES, so nothing tied its entries to the
-   * dock's lifetime. BUG-089 fixed the vesselPaths leak on the route-dissolve
-   * path, but this is a separate map: every dock the player ever built and
-   * demolished left its results behind for good. The staleness is the worse
-   * half — demolish a dock, reshape the water, rebuild on the same tile, and
-   * connectivity was answered from the old map.
+   * waterPathCache is keyed by COORDINATES, so nothing ties its entries to a dock's
+   * lifetime. Without this, every dock ever built and demolished leaves its results
+   * behind, and rebuilding on the same tile after reshaping the water answers
+   * connectivity from the old map.
    *
-   * Scoped to the removed dock deliberately: clearing the whole cache would
-   * throw away every other route's paths on each demolition.
+   * Scoped to the removed dock deliberately: clearing the whole cache would throw away
+   * every other route's paths on each demolition.
    */
   override removeStop(stopId: number): void {
     const dock = this.stops.find(s => s.id === stopId);
@@ -168,9 +166,7 @@ export class FerrySystem extends BaseTransportSystem {
     return route;
   }
 
-  /**
-   * 驗證碼頭之間是否存在水路連通（使用快取）。
-   */
+  /** Whether the docks are connected by water, answered from the cache. */
   validateRouteConnectivity(docks: TransportStop[]): boolean {
     if (!this.waterGrid || docks.length < 2) return false;
     for (let i = 0; i < docks.length - 1; i++) {
@@ -188,27 +184,21 @@ export class FerrySystem extends BaseTransportSystem {
     return this.getStops();
   }
 
-  /** 取得渡輪的 A* 路徑（用於 heading 計算和渲染） */
+  /** A vessel's A* path, used for heading calculation and rendering. */
   getVesselPath(vesselId: number): Array<{ x: number; y: number }> | null {
     const info = this.vesselPaths.get(vesselId);
     return info ? info.waterPath : null;
   }
 
 
-  /**
-   * Drop the departing vessel's cached A* path.
-   *
-   * This used to be a full override of removeVehicleFromRoute that duplicated
-   * the base body just to reach this one line — and the copy predated the
-   * version counter, so it never bumped it. The base class now offers a hook.
-   */
+  /** Drops the departing vessel's cached A* path. */
   protected override onVehicleRemoved(vehicleId: number): void {
     this.vesselPaths.delete(vehicleId);
   }
 
   override deleteRoute(routeId: number): void {
     const route = this.routes.find(r => r.id === routeId);
-    // 清除快取中此路線的航段路徑
+    // Drop this route's leg paths from the cache.
     if (route) {
       for (let i = 0; i < route.stops.length; i++) {
         const from = route.stops[i]!;
@@ -227,7 +217,7 @@ export class FerrySystem extends BaseTransportSystem {
   protected override onDepart(vehicle: TransportVehicle, route: TransportRoute): void {
     const nextDock = route.stops[vehicle.currentStopIndex]!;
 
-    // 從快取取得 A* 路徑（路線建立時已預計算）
+    // Take the A* path from the cache; it was precomputed when the route was created.
     const result = this.getCachedPath(vehicle.position, nextDock);
     if (result && result.path.length > 1) {
       this.vesselPaths.set(vehicle.id, {

@@ -32,9 +32,11 @@ export class TransferTracker {
   /** Callback fired when daily data rolls over. */
   onDataChanged: (() => void) | null = null;
 
-  /** Record a transfer trip for the given route label. */
   /**
-   * @param count 這一筆代表幾個人。生成迴圈是抽樣的，抽少了就要放大回去（BUG-328）。
+   * Record a transfer trip for the given route label.
+   *
+   * @param count How many citizens this entry stands for. The spawn loop samples, so an
+   *   undersampled entry is scaled back up (BUG-328).
    */
   recordTransfer(label: string, count = 1): void {
     this.today.set(label, (this.today.get(label) ?? 0) + count);

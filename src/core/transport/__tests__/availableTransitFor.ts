@@ -5,10 +5,12 @@ import type { AvailableTransport } from '../ModeChoice';
 import type { StopReach } from '../../traffic/StopWalkReach';
 
 /**
- * 從「運具系統」問到「有哪些選擇」—— 產品裡分成兩步的那條路，測試用一行走完。
+ * From transit systems to available options in one call: the two-step production path
+ * collapsed for tests.
  *
- * 產品在路線變動時建一次扁平路線與逐格索引（`rebuildTransferGraphIfDirty`），之後
- * 每個 tick 問幾百次。測試的城市小、只問幾次，每次重建一份反而讀得清楚。
+ * Production builds the flat routes and the per-cell index once per route change
+ * (`rebuildTransferGraphIfDirty`) and then asks hundreds of times per tick. Test cities are
+ * small and ask a few times, so rebuilding per call reads more clearly.
  */
 export function availableTransitFor(
   systems: readonly TransitSystemInfo[],

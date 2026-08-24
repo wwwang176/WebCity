@@ -1,7 +1,7 @@
 /**
- * MetroTunnelPath — 計算地鐵隧道的幾何路徑（純邏輯，禁止 import Three.js）。
+ * Geometry of the metro tunnels, read by MetroTunnelRenderer to build its TubeGeometry.
  *
- * 供 MetroTunnelRenderer 讀取並生成 TubeGeometry。
+ * Pure logic: must not import Three.js.
  */
 
 export interface Point2D {
@@ -12,22 +12,23 @@ export interface Point2D {
 export interface TunnelSegment {
   from: Point2D;
   to: Point2D;
-  /** 平滑曲線控制點（含 from 和 to） */
+  /** Smoothing control points, including `from` and `to`. */
   controlPoints: Point2D[];
 }
 
 /**
- * 根據站點列表計算隧道段。
- * 地鐵路線為環形（% stops.length），但 2 站時正向和反向路徑重疊，只需 1 段。
- * 3+ 站時產生完整環形（N 段）。
+ * Tunnel segments for a list of stations.
+ *
+ * Metro lines are loops (% stops.length). With 2 stations the forward and return paths
+ * overlap, so one segment is enough; with 3 or more the loop needs N segments.
  */
 export function computeTunnelSegments(stations: readonly Point2D[]): TunnelSegment[] {
   if (stations.length < 2) return [];
 
   const segments: TunnelSegment[] = [];
 
-  // 2 站：只需 A→B（B→A 視覺重疊）
-  // 3+ 站：完整環形 A→B→C→...→A
+  // 2 stations: A->B only, since B->A overlaps visually.
+  // 3+ stations: the full loop A->B->C->...->A.
   const count = stations.length === 2 ? 1 : stations.length;
 
   for (let i = 0; i < count; i++) {

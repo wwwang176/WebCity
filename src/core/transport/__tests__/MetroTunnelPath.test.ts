@@ -19,7 +19,7 @@ describe('MetroTunnelPath', () => {
         { x: 10, y: 0 },
       ];
       const segments = computeTunnelSegments(stations);
-      // 環形：A→B, B→C, C→A
+      // Loop: A->B, B->C, C->A
       expect(segments).toHaveLength(3);
     });
 
@@ -62,11 +62,11 @@ describe('MetroTunnelPath', () => {
       ];
       const segments = computeTunnelSegments(stations);
       expect(segments[0]!.controlPoints.length).toBeGreaterThanOrEqual(2);
-      // 起點應與 from 一致
+      // The first control point matches `from`.
       const first = segments[0]!.controlPoints[0]!;
       expect(first.x).toBe(0);
       expect(first.y).toBe(0);
-      // 終點應與 to 一致
+      // The last control point matches `to`.
       const last = segments[0]!.controlPoints[segments[0]!.controlPoints.length - 1]!;
       expect(last.x).toBe(10);
       expect(last.y).toBe(10);
@@ -85,7 +85,7 @@ describe('MetroTunnelPath', () => {
       const seg2 = computeTunnelSegments(line2Stations);
       expect(seg1).toHaveLength(1);
       expect(seg2).toHaveLength(1);
-      // 路線 1 在 y=0, 路線 2 在 y=5
+      // Line 1 is at y=0, line 2 at y=5.
       expect(seg1[0]!.from.y).toBe(0);
       expect(seg2[0]!.from.y).toBe(5);
     });

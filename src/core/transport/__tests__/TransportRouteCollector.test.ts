@@ -6,7 +6,7 @@ import { RailSystem } from '../RailSystem';
 import { FerrySystem } from '../FerrySystem';
 
 // ---------------------------------------------------------------------------
-// collectTransportRoutes — 收集路線資料供 TransportRouteRenderer 使用
+// collectTransportRoutes — collects route data for TransportRouteRenderer.
 // ---------------------------------------------------------------------------
 describe('collectTransportRoutes', () => {
   it('應該返回空陣列當所有系統都沒有路線時', () => {
@@ -37,7 +37,7 @@ describe('collectTransportRoutes', () => {
 
     expect(result).toHaveLength(1);
     expect(result[0]!.system).toBe('BUS');
-    expect(result[0]!.color).toBe(0xff9800); // 橘色
+    expect(result[0]!.color).toBe(0xff9800); // orange
     expect(result[0]!.stops).toHaveLength(3);
     expect(result[0]!.stops[0]).toEqual({ x: 0, y: 0 });
     expect(result[0]!.stops[1]).toEqual({ x: 5, y: 0 });
@@ -60,7 +60,7 @@ describe('collectTransportRoutes', () => {
 
     expect(result).toHaveLength(1);
     expect(result[0]!.system).toBe('METRO');
-    expect(result[0]!.color).toBe(0x00bcd4); // 青色
+    expect(result[0]!.color).toBe(0x00bcd4); // cyan
     expect(result[0]!.stops).toHaveLength(2);
   });
 
@@ -80,7 +80,7 @@ describe('collectTransportRoutes', () => {
 
     expect(result).toHaveLength(1);
     expect(result[0]!.system).toBe('RAIL');
-    expect(result[0]!.color).toBe(0xff5722); // 橘紅色
+    expect(result[0]!.color).toBe(0xff5722); // orange-red
   });
 
   it('應該收集 FerrySystem 路線並附上正確顏色', () => {
@@ -99,7 +99,7 @@ describe('collectTransportRoutes', () => {
 
     expect(result).toHaveLength(1);
     expect(result[0]!.system).toBe('FERRY');
-    expect(result[0]!.color).toBe(0x0097a7); // 深青色
+    expect(result[0]!.color).toBe(0x0097a7); // dark cyan
   });
 
   it('應該同時收集多個系統的多條路線', () => {
@@ -107,13 +107,13 @@ describe('collectTransportRoutes', () => {
     const bs1 = bus.addStop(0, 0);
     const bs2 = bus.addStop(5, 0);
     const bs3 = bus.addStop(10, 0);
-    bus.createRoute([bs1, bs2]); // 路線 1
-    bus.createRoute([bs2, bs3]); // 路線 2
+    bus.createRoute([bs1, bs2]); // route 1
+    bus.createRoute([bs2, bs3]); // route 2
 
     const metro = new MetroSystem();
     const ms1 = metro.addStation(0, 0);
     const ms2 = metro.addStation(5, 5);
-    metro.createLine([ms1, ms2]); // 路線 3
+    metro.createLine([ms1, ms2]); // route 3
 
     const result = collectTransportRoutes({
       bus,

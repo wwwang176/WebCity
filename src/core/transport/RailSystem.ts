@@ -52,40 +52,41 @@ export class RailSystem extends BaseTransportSystem {
   private routePaths = new Map<number, string[][]>();
 
   /**
-   * `getRoutePathPoints()` 的結果，連同它是從哪一份 `routePaths` 建出來的。
+   * Result of `getRoutePathPoints()`, keyed by the `routePaths` array it was built from.
    *
-   * 那個方法原本每次呼叫都把整條路徑重新解析一遍，而 `TrainAnimator` **每一幀、
-   * 每一列車**呼叫它 —— 其中一次還只是為了讀 `segments.length` 判斷路線變了沒有。
-   * 實測玩家 12 400 人的存檔:`parsePosKeyUnsafe` 佔主執行緒 CPU 的 9.3%（所有 JS
-   * 函式裡最大的一個），而其中 74% 的呼叫來自這裡。
+   * Without it, that method reparses the whole path on every call, and `TrainAnimator`
+   * calls it **per frame per train** — once of those only to read `segments.length` and
+   * check whether the route changed. Measured on a 12,400-citizen save,
+   * `parsePosKeyUnsafe` accounted for 9.3% of main-thread CPU, the largest single JS
+   * function, with 74% of its calls coming from here.
    *
-   * **失效靠身分比對，不靠記得清。** 存著來源陣列的參照，`routePaths` 換過就對不上，
-   * 自動重建 —— 五個改動點沒有任何一個需要記得通知這裡。
+   * **Invalidation is by identity, not by remembering to clear.** Holding a reference to
+   * the source array means a replaced `routePaths` no longer matches and the value is
+   * rebuilt, so none of the five mutation sites has to notify this cache.
    */
   private pathPointsCache =
     new WeakMap<string[][], ReadonlyArray<ReadonlyArray<{ x: number; y: number }>>>();
 
   /**
-   * `getSegmentDistances()` 的結果，失效方式同上。
+   * Result of `getSegmentDistances()`, invalidated the same way.
    *
-   * `BusSystem` 那一支早就有快取（BUG-328，實測省 4.77ms/tick），但這裡**覆寫了它
-   * 而且沒有跟著加** —— 而鐵路這條路徑沒有測試守著，所以漏掉之後沒人發現。
-   * `findAvailableTransit` 每問一個人、每條路線就呼叫一次:實測 12 秒 20 萬次，
-   * 每次把整條路徑的每個節點解析兩遍。
+   * `findAvailableTransit` calls it once per citizen per route: 200,000 calls in 12
+   * seconds when measured, each reparsing every node of the path twice.
    */
   private segmentDistCache = new WeakMap<string[][], number[]>();
 
   /**
-   * 兩份衍生資料共用的取用方式:**以來源陣列本身當鍵**。
+   * Shared accessor for both derived caches: **keyed by the source array itself**.
    *
-   * 換路線一定是換一整個新陣列（見 `routePaths` 的所有寫入點），所以新陣列查不到、
-   * 自動重算 —— 五個改動點沒有任何一個需要記得通知這裡。
+   * A route change always installs a whole new array (see every write site of
+   * `routePaths`), so the new array misses and the value is recomputed; none of the five
+   * mutation sites has to notify this cache.
    *
-   * 用 `WeakMap` 而不是 `Map<routeId, …>`:路線被刪掉之後，那份陣列變成不可達，
-   * 連同快取一起被 GC 收走。改用 routeId 當鍵的話就得有一個「路線刪了要清快取」的
-   * 收尾動作，而那個動作在正式流程裡**永遠不會被執行到** —— 路線一旦刪除，就再也
-   * 沒有人會用那個 id 來問，於是每一條被查詢過又刪掉的路線都會永久留著。
-   * （`BusSystem.segmentDistances` 同一個做法。）
+   * A `WeakMap` rather than `Map<routeId, …>`: once a route is deleted its array becomes
+   * unreachable and the cached value is collected with it. Keying by routeId would need a
+   * "clear the cache when a route is deleted" step, and that step can never run in
+   * practice — after deletion nobody asks about that id again, so every route ever queried
+   * and then deleted would be retained forever. `BusSystem.segmentDistances` does the same.
    */
   private cachedFromPaths<T>(
     cache: WeakMap<string[][], T>,
@@ -130,9 +131,9 @@ export class RailSystem extends BaseTransportSystem {
   /**
    * Get precomputed track paths for a route.
    *
-   * 回傳的是**實際的那個陣列**。就地改它（push/splice/排序）會讓
-   * `getSegmentDistances()` 與 `getRoutePathPoints()` 兩份快取都察覺不到 ——
-   * 它們認的是陣列的身分。要改路線請整份換掉。
+   * Returns the **live array**. Mutating it in place (push/splice/sort) is invisible to
+   * the `getSegmentDistances()` and `getRoutePathPoints()` caches, which key on array
+   * identity. Replace the array wholesale to change a route.
    */
   getRoutePaths(routeId: number): string[][] | undefined {
     return this.routePaths.get(routeId);

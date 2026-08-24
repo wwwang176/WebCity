@@ -1,18 +1,19 @@
 /**
- * collectTransportVehicles — 將各交通系統的車輛資料收集為渲染層可用的統一格式。
+ * Collects vehicles from the transit systems into one render format.
  *
- * 這是純邏輯模組，禁止 import Three.js。
- * 渲染層 (VehicleRenderer) 根據 type 欄位選擇對應的幾何模型。
+ * Pure logic: must not import Three.js. The renderer (VehicleRenderer) picks a geometry
+ * from the `type` field.
  *
- * NOTE: Bus vehicles are no longer collected here — they are rendered via
- * TrafficSimulation (same as regular cars). See BUS-ROAD-MOVEMENT-PLAN.md.
+ * Buses are not collected here — they are rendered via TrafficSimulation like ordinary
+ * cars. See BUS-ROAD-MOVEMENT-PLAN.md.
  */
 
 import type { RailSystem } from './RailSystem';
 import type { FerrySystem } from './FerrySystem';
 import type { TransportVehicle } from './types';
 
-/** 交通系統車輛渲染資料型別（與 VehicleData 相容）— metro_train 已移至 MetroTunnelRenderer */
+/** Render data for a transit vehicle, compatible with VehicleData. Metro trains live in
+ *  MetroTunnelRenderer instead. */
 export interface TransportVehicleRenderData {
   id: number;
   x: number;
@@ -50,7 +51,7 @@ function mapVehicle(
   idOffset: number,
   route?: { stops: readonly { x: number; y: number }[] },
 ): TransportVehicleRenderData {
-  // 計算 heading：根據當前站與下一站的方向
+  // Heading points from the current stop towards the next one.
   let heading = 0;
   if (route && route.stops.length >= 2) {
     const curIdx = v.currentStopIndex;
@@ -77,8 +78,8 @@ function mapVehicle(
 }
 
 /**
- * 收集非公車交通系統的車輛資料，轉換為統一的渲染格式。
- * Bus vehicles are now rendered via TrafficSimulation.vehicles (with busState).
+ * Collects vehicles from the non-bus transit systems into one render format.
+ * Buses are rendered via TrafficSimulation.vehicles, which carry busState.
  */
 export function collectTransportVehicles(systems: TransportSystems): TransportVehicleRenderData[] {
   const result: TransportVehicleRenderData[] = [];
@@ -90,7 +91,8 @@ export function collectTransportVehicles(systems: TransportSystems): TransportVe
     result.push(mapVehicle(t, 'rail_train', VEHICLE_ID_OFFSETS.rail_train, line));
   }
 
-  // Ferry — 位置和 heading 由渲染端動畫覆蓋，此處僅提供基礎資料
+  // Ferry: position and heading are overridden by the renderer's animation; this only
+  // supplies the base data.
   const ferryRoutes = systems.ferry.getRoutes();
   for (const v of systems.ferry.getVessels()) {
     const route = ferryRoutes.find(r => r.id === v.routeId);

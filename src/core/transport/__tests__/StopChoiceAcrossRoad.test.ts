@@ -8,12 +8,13 @@ import { cityWithMainRoad } from '../../traffic/__tests__/gridCityFixture';
 import { TransportType, type TransportStop, type TransportRoute } from '../types';
 
 /**
- * 挑上下車的站牌，也要照人行道量。
+ * Boarding and alighting stops are also picked along the sidewalk graph.
  *
- * `TransitAccessField` 管的是評分與換工作判斷；真正生出行人的是這兩支 ——
- * `findAvailableTransit`（單一運具）與 `findMultiModalRoutes`（含轉乘）。它們各自
- * 拿曼哈頓距離挑站，於是把住戶配給對街的站牌，行人到了現場才發現得繞到路口。
- * 玩家看到的那個繞大圈的人，是從這裡派出去的。
+ * `TransitAccessField` handles scoring and job-change decisions; the functions that actually
+ * produce pedestrians are `findAvailableTransit` (single mode) and `findMultiModalRoutes`
+ * (with transfers). Picking stops by Manhattan distance assigns households to stops across
+ * the street, and the pedestrian then has to detour to a junction. The visible long way
+ * round is dispatched from here.
  */
 
 function stop(id: number, x: number, y: number): TransportStop {
@@ -27,7 +28,7 @@ const WALK_SPEED = 1;
 const WAIT_FACTOR = 0.5;
 const TICKS_PER_DAY = 24;
 
-/** 站牌都在路南；(12,9) 與 (4,9) 在路北，正對面。 */
+/** Both stops sit south of the road; (12,9) and (4,9) are directly opposite, to the north. */
 const SOUTH_STOPS = [stop(1, 12, 11), stop(2, 4, 11)];
 
 function busSystem(): TransitSystemInfo {
@@ -57,8 +58,9 @@ describe('挑站牌不跨越馬路', () => {
   });
 
   it('should not offer transit to someone across the road from every stop', () => {
-    // 路口在 x=8 與 x=16，站牌在 x=12 的路南。住在 (12,9) 的人要過馬路得走到
-    // 路口再繞回來，遠超過 5 格 —— 他其實搭不到這班公車。
+    // Junctions sit at x=8 and x=16, the stop at x=12 south of the road. Someone at (12,9)
+    // must walk to a junction and back to cross, well beyond 5 tiles, so they cannot
+    // actually reach this bus.
     const { graph } = cityWithMainRoad(8);
     const reach = new SidewalkStopReach(graph);
 
@@ -86,8 +88,10 @@ describe('挑站牌不跨越馬路', () => {
   });
 
   it('should board at the same-side stop, not the nearer one across the road', () => {
-    // 住在 (12,9)：對街的 (12,11) 直線只有 2 格，同側的 (9,9) 要 3 格。用直線量
-    // 的話對街永遠贏，行人於是被派去繞路口。回報的上車站就是行人會走去的那一站。
+    // From (12,9): the stop across the street at (12,11) is 2 tiles away in a straight line,
+    // the same-side stop at (9,9) is 3. Straight-line distance always picks the far side and
+    // sends the pedestrian round the junction. The reported boarding stop is the one the
+    // pedestrian walks to.
     const { graph } = cityWithMainRoad(8);
     const reach = new SidewalkStopReach(graph);
     const acrossRoad = stop(1, 12, 11);

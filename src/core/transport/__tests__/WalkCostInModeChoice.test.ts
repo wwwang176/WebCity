@@ -4,15 +4,17 @@ import { TransportType, TransportMode } from '../types';
 import type { MultiLegRoute } from '../MultiModalRouter';
 
 /**
- * 走路要花真的走路的時間，而且走起來比坐著難熬。
+ * Walking costs real walking time, and walking is harder than sitting.
  *
- * 模型裡開車是「一格一 tick」，而走路原本也是 —— 走一格到站牌跟開車走那一格成本
- * 相同。於是「走很遠去搭車」完全免費，唯一擋住它的是步行上限那個硬門檻。
+ * Driving is one tile per tick in the model. Walking at the same rate makes a tile on foot
+ * cost the same as a tile by car, so a long walk to a stop is free and the only thing
+ * stopping it is the hard walk-range limit.
  *
- * 兩件事分開處理：
- * - **速度**：走路穿越一格就是比開車久（9 km/h vs 60 km/h）。
- * - **不情願**：同樣一分鐘，走的比坐的難熬。這個只影響**比較**，回報的通勤時間
- *   仍然是實際花掉的時間 —— 混在一起的話，通勤圖層會顯示一個沒人真的花掉的數字。
+ * Two separate effects:
+ * - **Speed**: crossing a tile on foot takes longer than by car (9 km/h vs 60 km/h).
+ * - **Reluctance**: a minute walking is harder than a minute seated. This affects
+ *   **comparison** only; the reported commute time is the time actually spent, otherwise
+ *   the commute overlay shows a number nobody spent.
  */
 
 const WALK_SPEED = 0.15;
@@ -34,7 +36,7 @@ describe('走路的時間', () => {
   it('should take longer to walk a cell than to drive it', () => {
     const walk = chooseModeMultiModal({ x: 0, y: 0 }, { x: 2, y: 0 }, [], [], NEUTRAL);
     expect(walk.mode).toBe(TransportMode.WALK);
-    // 兩格：開車 2 tick，走路 2 / 0.15 ≈ 13.3
+    // Two tiles: 2 ticks by car, 2 / 0.15 = about 13.3 on foot.
     expect(walk.time, '走兩格跟開兩格一樣快').toBeGreaterThan(2);
     expect(walk.time).toBeCloseTo(2 / WALK_SPEED);
   });
@@ -53,8 +55,8 @@ describe('步行的不情願權重', () => {
   const work = { x: 40, y: 0 };
 
   it('should not change the reported time', () => {
-    // 加權只用於比較。回報的必須是實際花掉的時間，否則通勤圖層上會出現一個
-    // 沒有任何人真的花掉的數字。
+    // Weighting is for comparison only. The reported value must be the time actually spent,
+    // otherwise the commute overlay shows a number nobody spent.
     const patient = chooseModeMultiModal(home, work, [transit(30, 20)], [],
       { ...NEUTRAL, walkWeight: 1 , driveDeterrence: 1});
     const impatient = chooseModeMultiModal(home, work, [transit(30, 20)], [],
@@ -66,8 +68,8 @@ describe('步行的不情願權重', () => {
   });
 
   it('should turn someone away from a trip that is mostly walking', () => {
-    // 開車 40 tick。大眾運輸名目上 30 tick，但其中 25 tick 在走路 ——
-    // 對走路很沒耐性的人來說，那是 25 × 2.5 + 5 = 67.5，比開車還差。
+    // Driving takes 40 ticks. Transit is nominally 30, but 25 of them are on foot, so for
+    // someone impatient about walking that is 25 * 2.5 + 5 = 67.5, worse than driving.
     const mostlyWalking = [transit(30, 25)];
 
     expect(
@@ -82,7 +84,7 @@ describe('步行的不情願權重', () => {
   });
 
   it('should leave a trip that is mostly riding alone', () => {
-    // 同樣 30 tick，但只有 3 tick 在走路 —— 加權幾乎不影響。
+    // The same 30 ticks, but only 3 on foot, so weighting barely moves it.
     const mostlyRiding = [transit(30, 3)];
     expect(
       chooseModeMultiModal(home, work, mostlyRiding, [], { ...NEUTRAL, walkWeight: 2.5 , driveDeterrence: 1}).mode,
@@ -102,7 +104,8 @@ describe('步行的不情願權重', () => {
   });
 
   it('should compare single-transit and transfers on the same scale', () => {
-    // 名目上轉乘比較快，但它幾乎全在走路 —— 加權之後應該輸給單一運具。
+    // The transfer is nominally faster but almost entirely on foot, so weighting must put it
+    // behind the single-mode option.
     const single = transit(32, 4);
     const transfer = multiLeg(30, 24);
     const choice = chooseModeMultiModal(home, work, [single], [transfer],

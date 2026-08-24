@@ -4,10 +4,10 @@ import { TransportMode, TransportType } from '../types';
 import type { MultiLegRoute, TransitLeg } from '../MultiModalRouter';
 
 /**
- * 中性的模式選擇參數：走路一格一 tick、不加不情願權重。
+ * Neutral mode-choice parameters: one tile per tick on foot, no reluctance weighting.
  *
- * 這一檔驗的是選擇邏輯本身的算術。步行速度與權重的效果由
- * `WalkCostInModeChoice.test.ts` 單獨驗。
+ * This file checks the arithmetic of the selection logic itself. Walking speed and weight
+ * are covered separately by `WalkCostInModeChoice.test.ts`.
  */
 function neutral(congestionLevel: number) {
   return { congestionLevel, walkSpeed: 1, walkWeight: 1 , driveDeterrence: 1};
@@ -15,12 +15,13 @@ function neutral(congestionLevel: number) {
 
 
 /**
- * 選交通方式的時候本來就得把每一種走法要花多久算出來，才知道哪一種比較快 ——
- * 但算完只留下「他要搭捷運」，時間本身被丟掉了。
+ * Choosing a mode already requires computing how long each option takes, so the chosen
+ * option's time is reported alongside the mode rather than discarded.
  *
- * 通勤時間是市民對城市最直接的感受：它同時反映距離、壅塞與大眾運輸。換工作與
- * 搬家該用它來判斷，而不是用直線距離 —— 用距離的話，住在捷運站旁邊跟住在荒郊
- * 野外是一樣的。
+ * Commute time is the most direct thing a citizen feels about the city: it reflects
+ * distance, congestion and transit at once. Job changes and relocations decide on it rather
+ * than on straight-line distance, which cannot tell living next to a metro station apart
+ * from living nowhere.
  */
 
 function rideLeg(time: number, type = TransportType.METRO): TransitLeg {
@@ -38,7 +39,8 @@ describe('通勤時間要跟著交通方式一起回傳', () => {
   });
 
   it('should report drive time including congestion', () => {
-    // 開車時間 = 距離 × (1 + 壅塞)。塞車讓同一段路變久，這是玩家該感受到的。
+    // Drive time = distance * (1 + congestion). Congestion lengthens the same trip, which is
+    // what the player should feel.
     const clear = chooseModeMultiModal({ x: 0, y: 0 }, { x: 20, y: 0 }, [], [], neutral(0));
     const jammed = chooseModeMultiModal({ x: 0, y: 0 }, { x: 20, y: 0 }, [], [], neutral(1));
 
@@ -69,8 +71,9 @@ describe('通勤時間要跟著交通方式一起回傳', () => {
   });
 
   it('should report the transit time even when transit is the slower choice', () => {
-    // 大眾運輸只要不比開車慢過 1.5 倍就會被選 —— 市民實際花掉的是那個比較慢的
-    // 時間，回報開車時間的話，換工作與搬家會以為他過得比實際好。
+    // Transit is chosen as long as it is no more than 1.5x slower than driving, and the
+    // citizen spends that slower time. Reporting the driving time would make job changes and
+    // relocations believe they are better off than they are.
     const driveTime = 20;
     const transitTime = driveTime * MODE_CHOICE.TRANSIT_TIME_MULTIPLIER_THRESHOLD - 1;
     const r = chooseModeMultiModal(
@@ -83,7 +86,7 @@ describe('通勤時間要跟著交通方式一起回傳', () => {
   });
 
   it('should let a metro line cut the commute of a distant citizen', () => {
-    // 這是整件事的重點：同一個家、同一份工作，蓋了捷運之後通勤時間下降。
+    // The whole point: same home, same job, and the commute shortens once a metro exists.
     const home = { x: 0, y: 0 };
     const work = { x: 45, y: 0 };
     const before = chooseModeMultiModal(home, work, [], [], neutral(0.5));
