@@ -5,19 +5,19 @@ import { TRADE } from '../../traffic/FreightSystem';
 import { ZoneType } from '../../grid/types';
 
 /**
- * 貨運供應鏈。
+ * Freight supply chain.
  *
- * ## 為什麼這一份要抽出來
+ * ## Why this is a module of its own
  *
- * 這些數字原本算在 `FreightPage.tsx` 的 `createMemo` 裡 —— 只有玩家的螢幕看得到。
- * 抄一份到 API 那邊就是 BUG-342 那個錯:同一個數字兩個地方各記一份，然後靜靜地分家。
- * 所以面板跟 API 都呼叫這一支。
+ * Computed inside `FreightPage.tsx`'s `createMemo`, these numbers reach only the player's
+ * screen, and a second copy on the API side is BUG-342: one figure recorded in two places,
+ * drifting apart in silence. The panel and the API both call this instead.
  *
- * ## 有效供給不是產量
+ * ## Effective supply is not production
  *
- * `production` 是本地工廠做出來的量,但商店真正拿得到的是
- * **產量 − 出口 + 進口**。少算進出口的話,一座靠進口撐著的城市會顯示成缺貨,
- * 而玩家螢幕上明明寫著 75%。
+ * `production` is what local factories make, but what shops can actually get is
+ * **production - exported + imported**. Leave the trade terms out and a city sustained by
+ * imports reads as out of stock while the player's screen says 75%.
  */
 
 function commercialAt(state: ReturnType<typeof createGameState>, x: number, y: number) {
@@ -39,7 +39,7 @@ describe('貨運供應鏈', () => {
   });
 
   it('should subtract what the city exported', () => {
-    // 出口出去的貨本地商店就吃不到了。
+    // Goods that leave as exports are no longer available to local shops.
     const state = createGameState(8, 8);
     state.freight.getLastDemand().production = 100;
     state.freight.getLastDemand().consumption = 100;
@@ -49,7 +49,8 @@ describe('貨運供應鏈', () => {
   });
 
   it('should call it fully supplied when nobody is consuming anything', () => {
-    // 除以零。空城的供應率是 1,不是 NaN —— 面板會把 NaN 印成「NaN%」。
+    // Division by zero. An empty city's supply ratio is 1, not NaN, which the panel would
+    // print as "NaN%".
     const state = createGameState(8, 8);
     state.freight.getLastDemand().consumption = 0;
 
@@ -69,7 +70,8 @@ describe('貨運供應鏈', () => {
   });
 
   it('should not count zoned-but-empty land as a shop', () => {
-    // 劃了商業區還沒長出建築的地不算店家。算進去的話供貨率會被莫名其妙地拉低。
+    // Zoned commercial land with nothing built is not a shop; counting it drags the supply
+    // ratio down for no visible reason.
     const state = createGameState(8, 8);
     state.grid.setCell(1, 1, { zoneType: ZoneType.COMMERCIAL_LOW });
 
@@ -77,7 +79,7 @@ describe('貨運供應鏈', () => {
   });
 
   it('should rate rail by the stations that reach the edge, not by every station', () => {
-    // 蓋在城市中間、接不到邊界的車站運不出去。
+    // A station in the middle of the city with no path to the edge ships nothing out.
     const state = createGameState(8, 8);
     state.rail.addStop(3, 3);
     state.rail.addStop(4, 4);
@@ -103,7 +105,8 @@ describe('貨運供應鏈', () => {
   });
 
   it('should give a dead airport no throughput', () => {
-    // 沒水沒電的機場照樣列出來（玩家要看得到它壞了）,但吞吐是 0。
+    // An airport without power or water is still listed (the player has to see it is down)
+    // but its throughput is 0.
     const state = createGameState(8, 8);
     state.airport.build(2, 2, 'SMALL', 1_000_000);
     state.airport.updateOperationalStatus(() => false, () => false);
@@ -117,7 +120,7 @@ describe('貨運供應鏈', () => {
   });
 
   it('should count a working airport', () => {
-    // 反過來也要成立 —— 不然「吞吐永遠是 0」也會讓上面那條通過。
+    // The converse has to hold too, or "throughput is always 0" would pass the case above.
     const state = createGameState(8, 8);
     state.airport.build(2, 2, 'SMALL', 1_000_000);
     state.airport.updateOperationalStatus(() => true, () => true);
@@ -136,8 +139,8 @@ describe('貨運供應鏈', () => {
   });
 
   it('should carry the multipliers the panel prints as Income Impact', () => {
-    // 面板底下那一段寫著進口 ×0.7、出口 ×0.5。呼叫端要能算出「多蓋一條鐵路值不值」
-    // 就需要這兩個數。
+    // The panel's footer states import x0.7 and export x0.5. A caller needs both numbers to
+    // work out whether another rail line is worth building.
     const s = buildFreightStats(createGameState(8, 8));
 
     expect(s.importIncomeMultiplier).toBe(TRADE.IMPORT_INCOME_MULTIPLIER);

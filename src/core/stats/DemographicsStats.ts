@@ -4,21 +4,22 @@ import { ZoneType, isCommercialZone } from '../grid/types';
 import { getBuildingType } from '../building/types';
 
 /**
- * 人口組成 —— Overview 的 Demographics 頁。
+ * Population makeup — the Demographics page of Overview.
  *
- * ## 交叉表才是這一頁的重點
+ * ## The cross-tabs are the point of this page
  *
- * 「大學畢業 300 人」跟「大學畢業 300 人，其中 210 人在做工業區的工作」是兩件事。
- * 前者看不出教育投資有沒有回收,後者看得出來。所以除了兩條分佈,這裡也給出
- * **教育 × 職業**與**教育 × 住宅等級**兩張交叉表。
+ * "300 university graduates" and "300 university graduates, 210 of them working industrial
+ * jobs" are different facts, and only the second shows whether the education spending paid
+ * off. So alongside the two distributions this exposes an **education x work** and an
+ * **education x housing level** cross-tab.
  *
- * ## 分母不是人口
+ * ## The denominator is not population
  *
- * 就業率的分母是**成年人**,不是總人口 —— 把嬰兒算成失業人口的話,一座年輕的城市
- * 永遠看起來像在崩潰。
+ * The employment rate divides by **adults**, not total population: counting babies as
+ * unemployed makes a young city look permanently on the brink of collapse.
  */
 
-/** 交叉表的欄。`unemployed` 只出現在職業那張。 */
+/** Cross-tab columns. `unemployed` appears only in the work table. */
 export const WORK_KEYS = ['commercial', 'industrial', 'office', 'unemployed'] as const;
 export const HOUSING_LEVELS = [1, 2, 3] as const;
 
@@ -38,9 +39,9 @@ export interface Bucket {
 }
 
 export interface CrossRow {
-  /** 這一列的教育程度。 */
+  /** The education level this row covers. */
   education: string;
-  /** 對應 `WORK_KEYS` / `HOUSING_LEVELS` 的欄。 */
+  /** Columns matching `WORK_KEYS` / `HOUSING_LEVELS`. */
   counts: number[];
   total: number;
 }
@@ -50,36 +51,36 @@ export interface DemographicsStats {
   avgHappiness: number;
   avgHealth: number;
 
-  /** 成年人數。就業率的分母。 */
+  /** Adult count, the denominator of the employment rate. */
   adults: number;
   employed: number;
-  /** 找過工作但沒找到的成年人。 */
+  /** Adults who looked for work and did not find any. */
   unemployed: number;
-  /** 沒有住處的居民。 */
+  /** Residents with no home. */
   homeless: number;
-  /** `employed / adults`。沒有成年人時是 0。 */
+  /** `employed / adults`. 0 when there are no adults. */
   employmentRate: number;
 
-  /** 生命階段分佈。 */
+  /** Life-stage distribution. */
   lifeStages: Bucket[];
-  /** 教育程度分佈。 */
+  /** Education-level distribution. */
   education: Bucket[];
-  /** 住在各等級住宅的人數。 */
+  /** How many residents live in housing of each level. */
   housingLevels: Bucket[];
-  /** 有住處的人數 —— 住宅分佈的分母。 */
+  /** Residents with a home: the denominator of the housing distribution. */
   withHome: number;
-  /** 在各類分區上班的人數。 */
+  /** How many residents work in each zone category. */
   workZones: Bucket[];
-  /** 有工作的人數 —— 職業分佈的分母。 */
+  /** Residents with a job: the denominator of the work distribution. */
   workers: number;
 
-  /** 教育 × 職業。欄依 `WORK_KEYS`。 */
+  /** Education x work. Columns follow `WORK_KEYS`. */
   educationByWork: CrossRow[];
-  /** 教育 × 住宅等級。欄依 `HOUSING_LEVELS`。 */
+  /** Education x housing level. Columns follow `HOUSING_LEVELS`. */
   educationByHousing: CrossRow[];
 }
 
-/** 工作地那一格屬於哪一類。無法歸類的算商業 —— 面板也是這樣算的。 */
+/** Which category the workplace cell falls into. Unclassifiable cells count as commercial, matching the panel. */
 function workKey(zoneType: number): string {
   if (isCommercialZone(zoneType)) return 'commercial';
   if (zoneType === ZoneType.INDUSTRIAL) return 'industrial';
@@ -133,7 +134,8 @@ export function buildDemographicsStats(state: GameState): DemographicsStats {
       }
     }
 
-    // 就業只問成年人。把嬰兒算成失業人口的話，一座年輕的城市永遠看起來像在崩潰。
+    // Employment asks about adults only. Counting babies as unemployed makes a young city
+    // look permanently on the brink of collapse.
     if (c.lifeStage !== LifeStage.ADULT) continue;
     adults++;
 
@@ -147,7 +149,8 @@ export function buildDemographicsStats(state: GameState): DemographicsStats {
         workCross[c.education]![k] = (workCross[c.education]![k] ?? 0) + 1;
       }
     } else {
-      // 剛生成、還沒找過工作的不算失業 —— `unemployedSince` 才是「找過但沒找到」。
+      // Freshly spawned citizens who have not looked for work are not unemployed;
+      // `unemployedSince` marks "looked and did not find".
       if (c.unemployedSince !== null) unemployed++;
       workCross[c.education]!.unemployed = (workCross[c.education]!.unemployed ?? 0) + 1;
     }

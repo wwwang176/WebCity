@@ -9,25 +9,26 @@ import { countResidentialCapacity, countWorkplaceJobs, isActiveZoneCell } from '
 import { SIMULATION } from '../simulation/SimulationConstants';
 
 /**
- * 城市總覽 —— Overview 的 Summary 頁。
+ * City overview — the Summary page of Overview.
  *
- * ## 這一頁在回答的問題是「為什麼沒有人搬進來」
+ * ## The question this page answers is "why is nobody moving in"
  *
- * 中間那組勾選項（房子、工作、失業率、吸引力）不是裝飾:它們就是遷入的閘門。
- * 所以除了分數,這裡也給出**拖累分數最多的那一項**，那才是玩家（或呼叫端）該去修的東西。
+ * The checklist in the middle (homes, jobs, unemployment, appeal) is the migration gate
+ * itself. So alongside the score this reports **the item dragging it down hardest**, which is
+ * what the player (or the caller) has to fix.
  */
 
 export interface ZoneCount {
   zone: string;
-  /** 蓋起來的建築數。 */
+  /** Buildings actually standing. */
   count: number;
-  /** 這些建築加起來能裝多少人（住戶 + 工作機會）。 */
+  /** How many people those buildings hold in total (residents + jobs). */
   capacity: number;
 }
 
 export interface AppealDrag {
   reason: string;
-  /** 這一項扣了幾分。 */
+  /** How many points this item costs. */
   penalty: number;
 }
 
@@ -37,7 +38,7 @@ export interface SummaryStats {
   totalHomes: number;
   totalJobs: number;
   vacantHomes: number;
-  /** `totalJobs − employed`。跟模擬用的定義同一個（BUG-166）。 */
+  /** `totalJobs - employed`, the same definition the simulation uses (BUG-166). */
   jobOpenings: number;
   avgHappiness: number;
   unemploymentRate: number;
@@ -45,15 +46,15 @@ export interface SummaryStats {
   crimeRate: number;
   taxRate: number;
 
-  /** 0–100。低於門檻就沒有人會搬進來。 */
+  /** 0-100. Below the threshold nobody moves in. */
   attractiveness: number;
-  /** 遷入的門檻。 */
+  /** The migration threshold. */
   attractivenessThreshold: number;
-  /** 三個條件同時成立才有人搬進來:夠吸引人、有空房、有職缺。 */
+  /** All three have to hold before anyone moves in: appealing enough, homes free, jobs open. */
   canMigrate: boolean;
-  /** 分數不夠時，扣最多分的那一項。夠的話是 `null`。 */
+  /** When the score falls short, the item costing the most. `null` when it does not. */
   worstDrag: AppealDrag | null;
-  /** 每一項各扣了幾分,由大到小。 */
+  /** What each item costs, largest first. */
   drags: AppealDrag[];
 
   zones: ZoneCount[];
@@ -79,10 +80,10 @@ const ZONE_KEYS: Record<number, string> = {
 };
 
 /**
- * 人口是 0 時的幸福度 —— 空城沒有人可以不開心。
+ * Happiness at zero population: an empty city has nobody to be unhappy.
  *
- * 用模擬的那個常數，不自己寫 70:兩邊各寫一次的話，調了一邊另一邊不會跟上，
- * 而分家的徵兆是「面板說沒吸引力、人卻一直搬進來」。
+ * Takes the simulation's constant rather than a literal 70. Two copies drift as soon as one
+ * is tuned, and the symptom is "the panel says unappealing while people keep moving in".
  */
 const EMPTY_CITY_HAPPINESS = SIMULATION.DEFAULT_HAPPINESS;
 
@@ -95,9 +96,10 @@ export function buildSummaryStats(state: GameState): SummaryStats {
   for (const zt of ZONE_ORDER) counts[zt] = { count: 0, capacity: 0 };
 
   grid.forEachCell((cell) => {
-    // 廢墟與燒毀的樓不算。它們住不了人也雇不了人 —— 算進去的話「空房 6889」
-    // 裡有一部分是永遠住不進去的（BUG-359）。`isActiveZoneCell` 就是模擬那邊
-    // `sumBuildingCapacity` 用的同一道篩子，順便擋掉多格建築的次要格。
+    // Ruined and burned buildings do not count: they house nobody and employ nobody, so
+    // including them puts permanently unreachable homes into a figure like "6889 free"
+    // (BUG-359). `isActiveZoneCell` is the same filter the simulation's `sumBuildingCapacity`
+    // uses, and it also rejects the secondary cells of multi-cell buildings.
     if (!isActiveZoneCell(cell) || cell.zoneType === ZoneType.NONE) return;
     const entry = counts[cell.zoneType];
     if (!entry) return;
@@ -107,29 +109,32 @@ export function buildSummaryStats(state: GameState): SummaryStats {
   });
 
   /**
-   * 汙染要跟模擬問同一個問題。
+   * Pollution has to ask the question the simulation asks.
    *
-   * 這裡曾經自己掃一次「有建築**或**有劃分區」的所有格子求平均 —— 那包含工業區,
-   * 而工業區的汙染是設計上就該有的,於是面板算出來的數字被工業區拉高,吸引力被
-   * 多扣了分。模擬看的是**住宅區**的平均:居民感受得到的是自家門口的空氣,
-   * 遠處工廠的煙不該算在他們頭上（BUG-359）。
+   * The simulation reads the average over **residential** cells: what residents feel is the
+   * air at their own door, not smoke from a distant factory (BUG-359). Averaging over every
+   * cell with a building **or** a zone pulls industry in, whose pollution is intentional, and
+   * over-penalises appeal.
    *
-   * Environment 頁那個「Ground Avg」是另一個問題（全城平均），兩者本來就不同。
+   * The Environment page's "Ground Avg" answers a different question (the citywide average).
    */
   const avgPollution = getAvgResidentialPollution(grid);
 
-  // 容量也走模擬用的那兩支，不從上面的分區表加總 —— 分區表是給人看的，
-  // 這兩個數字是要拿去跟模擬對答案的。
+  // Capacity also goes through the simulation's own two helpers instead of summing the zone
+  // table above: the zone table is for display, these two numbers are checked against the
+  // simulation.
   const totalHomes = countResidentialCapacity(grid);
   const totalJobs = countWorkplaceJobs(grid);
 
   const vacantHomes = Math.max(0, totalHomes - population);
-  // 跟模擬用的是同一個定義。舊的 `totalJobs − population` 會在成熟城市印出
-  // 「0 職缺、無法遷入」，而模擬那邊回報幾百個職缺並照樣讓人搬進來（BUG-166）。
+  // The same definition the simulation uses. `totalJobs - population` prints "0 openings,
+  // cannot migrate" in a mature city while the simulation reports hundreds of openings and
+  // keeps letting people in (BUG-166).
   const jobOpenings = Math.max(0, totalJobs - employed);
 
-  // 不四捨五入 —— 模擬那邊餵給 `calculateAttractiveness` 的是原始值。這裡先 round
-  // 再算的話，兩邊的吸引力會差到 0.25 分，而門檻是一條硬線。顯示要幾位數是面板的事。
+  // No rounding: the simulation feeds `calculateAttractiveness` the raw value. Rounding first
+  // moves appeal by as much as 0.25 points, and the threshold is a hard line. Display
+  // precision is the panel's business.
   const avgHappiness = population > 0
     ? state.citizens.getAverageHappiness()
     : EMPTY_CITY_HAPPINESS;
@@ -143,9 +148,9 @@ export function buildSummaryStats(state: GameState): SummaryStats {
     if (c.workplaceId === null) jobless++;
   }
   const unemploymentRate = workingAge > 0 ? jobless / workingAge : 0;
-  // 模擬那邊（`SimulationLoop.getCityCrime`）用的是同一支。這裡曾經自己寫了一條
-  // `Math.min(50, population * 0.02)` —— 那正好是 `calculateCrimeRate` 在
-  // **一座警局都沒有**時的回傳值,所以蓋了警局面板照樣扣滿分（BUG-358）。
+  // The same helper the simulation uses (`SimulationLoop.getCityCrime`). A local
+  // `Math.min(50, population * 0.02)` is exactly what `calculateCrimeRate` returns with **no
+  // police station at all**, so building one leaves the panel's penalty untouched (BUG-358).
   const crimeRate = effectiveCityCrime(
     population,
     state.police.getStations().length,
@@ -158,7 +163,8 @@ export function buildSummaryStats(state: GameState): SummaryStats {
   });
   const threshold = IMMIGRATION.ATTRACTIVENESS_THRESHOLD;
 
-  // 分數不夠的時候，光說「不吸引人」沒有用 —— 要知道是哪一項在扣分。
+  // When the score falls short, "unappealing" on its own is not actionable; the caller needs
+  // to know which item is costing what.
   const drags: AppealDrag[] = [
     { reason: 'low happiness', penalty: (EMPTY_CITY_HAPPINESS - avgHappiness) * ATTRACTIVENESS.HAPPINESS_WEIGHT },
     { reason: 'high taxes', penalty: taxRate * ATTRACTIVENESS.TAX_WEIGHT },

@@ -5,7 +5,8 @@ import { RoadType } from '../../road/types';
 
 describe('服務統計', () => {
   it('should list every service the coverage panel scores', () => {
-    // 面板左上角的平均覆蓋率就是這九項的平均。少一項，平均就跟畫面對不起來。
+    // The panel's top-left average coverage is the mean of these nine. Drop one and the
+    // average stops matching the screen.
     const s = buildServicesStats(createGameState(8, 8));
 
     expect(s.services.map(x => x.service)).toEqual([
@@ -15,8 +16,8 @@ describe('服務統計', () => {
   });
 
   it('should not count a dead station towards the capacity the city can use', () => {
-    // 停電的警局不巡邏。把它的容量加進總量，面板會說「還有餘裕」而街上正在失控
-    // （BUG-138、BUG-100）。
+    // An unpowered police station patrols nothing. Adding its capacity makes the panel say
+    // "spare capacity" while the streets are out of control (BUG-138, BUG-100).
     const state = createGameState(8, 8);
     state.police.addStation(3, 3);
     state.police.updateOperationalStatus(() => false);
@@ -29,8 +30,9 @@ describe('服務統計', () => {
   });
 
   it('should still list the dead station so the player can see it is dead', () => {
-    // 從清單裡拿掉的話，玩家只會看到覆蓋率掉了卻找不到原因 ——
-    // 所以帳面容量要留在那一筆上，只是不計入全市可用容量。
+    // Dropped from the list, the facility leaves the player watching coverage fall with no
+    // visible cause. Its nominal capacity stays on the entry; it just does not count toward
+    // citywide usable capacity.
     const state = createGameState(8, 8);
     state.police.addStation(3, 3);
     state.police.updateOperationalStatus(() => false);
@@ -41,7 +43,7 @@ describe('服務統計', () => {
   });
 
   it('should count a working station', () => {
-    // 反過來也要成立 —— 不然「容量永遠是 0」也會讓上面兩條通過。
+    // The converse has to hold too, or "capacity is always 0" would pass both cases above.
     const state = createGameState(8, 8);
     state.police.addStation(3, 3);
     state.police.updateOperationalStatus(() => true);
@@ -53,10 +55,11 @@ describe('服務統計', () => {
   });
 
   it('should call it a shortage even when there is no capacity at all', () => {
-    // 舊的 `capacity > 0 && load > capacity` 在全城停電時把警示關掉了 ——
-    // 正是最該亮的時候。這裡把負載分配好之後才讓警局斷電:負載留著，容量歸零。
+    // `capacity > 0 && load > capacity` silences the warning during a citywide blackout,
+    // exactly when it belongs. The load is assigned before the station loses power, so load
+    // stays and capacity drops to zero.
     const state = createGameState(8, 8);
-    // 要有路才有覆蓋，要有覆蓋才有人收得到需求（BUG-363）。
+    // Coverage needs a road, and demand only reaches facilities that have coverage (BUG-363).
     for (let x = 0; x < 8; x++) {
       state.grid.setCell(x, 4, { roadType: RoadType.TWO_LANE, roadFlags: 0b1111 });
     }
@@ -84,7 +87,8 @@ describe('服務統計', () => {
   });
 
   it('should average coverage across every service, not just the ones with facilities', () => {
-    // 一座只蓋了警局的城市，平均覆蓋率不該因為「其他八項沒有設施」而被跳過。
+    // In a city with only a police station, the average still covers the eight services that
+    // have no facilities.
     const s = buildServicesStats(createGameState(8, 8));
 
     expect(s.avgCoverage).toBeCloseTo(
@@ -99,7 +103,8 @@ describe('服務統計', () => {
   });
 
   it('should say how many students want a school, not just how many got in', () => {
-    // 在學人數頂多等於容量。想讀的人可以更多 —— 差額就是該再蓋幾間的依據。
+    // Enrolment tops out at capacity while demand can exceed it; the gap is what tells the
+    // player how many more to build.
     const state = createGameState(8, 8);
     state.education.addSchool(3, 3, 'elementary' as never);
 
@@ -110,7 +115,7 @@ describe('服務統計', () => {
   });
 
   it('should carry the flows that the standing totals cannot show', () => {
-    // 「掩埋場七成滿」看不出還撐幾週。每週進來多少才看得出。
+    // "70% full" does not say how many weeks are left; the weekly intake does.
     const s = buildServicesStats(createGameState(8, 8));
 
     expect(s.garbageProducedPerWeek).toBe(0);

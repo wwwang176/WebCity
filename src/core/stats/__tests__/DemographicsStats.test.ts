@@ -4,7 +4,7 @@ import { buildDemographicsStats, WORK_KEYS } from '../DemographicsStats';
 import { EducationLevel, LifeStage } from '../../citizen/types';
 import { ZoneType } from '../../grid/types';
 
-/** 一個住在 `home`、在 `work` 上班的成年人。 */
+/** An adult living at `home` and working at `work`. */
 function adult(state: GameState, over: {
   education?: string; homeId?: string | null; workplaceId?: string | null;
   happiness?: number; health?: number;
@@ -23,7 +23,8 @@ function adult(state: GameState, over: {
 
 describe('人口組成', () => {
   it('should divide employment by adults, not by everyone', () => {
-    // 嬰兒不是失業人口。用總人口當分母的話,一座年輕的城市永遠看起來像在崩潰。
+    // Babies are not unemployed. With total population as the denominator, a young city looks
+    // permanently on the brink of collapse.
     const state = createGameState(8, 8);
     state.grid.setCell(2, 2, { zoneType: ZoneType.INDUSTRIAL, buildingId: 1 });
     adult(state, { workplaceId: '2,2' });
@@ -38,7 +39,8 @@ describe('人口組成', () => {
   });
 
   it('should not call a newborn adult unemployed before they ever looked', () => {
-    // `unemployedSince === null` 代表還沒開始找。算進失業會虛報。
+    // `unemployedSince === null` means the search has not started; counting it inflates
+    // unemployment.
     const state = createGameState(8, 8);
     const c = state.citizens.restoreCitizen({ age: 100 });
     c.workplaceId = null;
@@ -51,7 +53,8 @@ describe('人口組成', () => {
   });
 
   it('should still put that adult in the unemployed column of the cross-table', () => {
-    // 交叉表回答的是「這些人在做什麼」——沒有工作就是沒有工作,跟找沒找過無關。
+    // The cross-tab answers "what are these people doing"; no job is no job, whether or not
+    // they ever looked.
     const state = createGameState(8, 8);
     const c = state.citizens.restoreCitizen({ age: 100 });
     c.workplaceId = null;
@@ -78,8 +81,8 @@ describe('人口組成', () => {
   });
 
   it('should cross education against where people work', () => {
-    // 「大學畢業 300 人」看不出教育投資有沒有回收;
-    // 「其中 210 人在工業區」看得出來。
+    // "300 university graduates" does not show whether the education spending paid off;
+    // "210 of them in industry" does.
     const state = createGameState(8, 8);
     state.grid.setCell(2, 2, { zoneType: ZoneType.INDUSTRIAL, buildingId: 1 });
     adult(state, { education: EducationLevel.UNIVERSITY, workplaceId: '2,2' });
@@ -92,7 +95,7 @@ describe('人口組成', () => {
   });
 
   it('should give every education level a row even when nobody is in it', () => {
-    // 缺列的表格讀的人得自己去猜是 0 還是漏抓。
+    // A table with rows missing leaves the reader guessing between "0" and "not collected".
     const s = buildDemographicsStats(createGameState(4, 4));
 
     expect(s.educationByWork).toHaveLength(4);
@@ -120,8 +123,8 @@ describe('人口組成', () => {
   });
 
   it('should keep the life-stage buckets in the order the panel draws them', () => {
-    // 面板畫的是一條由左到右的分佈條。順序換掉的話,呼叫端講的「最左邊那一段」
-    // 就跟玩家看到的不是同一段。
+    // The panel draws a left-to-right distribution bar. Reorder it and the caller's "leftmost
+    // segment" is no longer the one the player sees.
     const s = buildDemographicsStats(createGameState(4, 4));
 
     expect(s.lifeStages.map(b => b.key)).toEqual([

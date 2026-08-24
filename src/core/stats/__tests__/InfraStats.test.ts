@@ -4,7 +4,7 @@ import { buildInfraStats } from '../InfraStats';
 
 describe('基礎設施統計', () => {
   it('should call an empty grid neither supplied nor short', () => {
-    // 沒發電廠也沒人用電。比值是 0,不是 NaN。
+    // No plants and no consumers. The ratio is 0, not NaN.
     const s = buildInfraStats(createGameState(4, 4));
 
     expect(s.power.ratio).toBe(0);
@@ -12,8 +12,8 @@ describe('基礎設施統計', () => {
   });
 
   it('should describe the landfills with both halves of the same set', () => {
-    // `getActiveLoad` 只算接得到路而且有電的那幾座,容量也必須只數那幾座。
-    // 混用的話畫面會印出「1800 / 0」而且標成健康的 0%（BUG-155）。
+    // `getActiveLoad` counts only road-connected, powered facilities, so capacity has to count
+    // the same ones. Mixing them prints "1800 / 0" flagged as a healthy 0% (BUG-155).
     const state = createGameState(4, 4);
     const s = buildInfraStats(state);
 
@@ -22,7 +22,8 @@ describe('基礎設施統計', () => {
   });
 
   it('should say how much landfill capacity is built but unusable', () => {
-    // 蓋了掩埋場卻沒接路 —— 玩家要看得到「你有容量，只是用不到」。
+    // A landfill built without a road connection: the player has to see "you have capacity, it
+    // just cannot be reached".
     const state = createGameState(4, 4);
 
     expect(buildInfraStats(state).landfillStrandedCapacity)
@@ -40,7 +41,8 @@ describe('基礎設施統計', () => {
   });
 
   it('should carry the weekly flows, not just the standing totals', () => {
-    // 「掩埋場七成滿」跟「每週進來多少」是兩個問題。只給存量看不出還撐幾週。
+    // "70% full" and "how much arrives per week" are different questions; the level alone does
+    // not say how many weeks are left.
     const s = buildInfraStats(createGameState(4, 4));
 
     expect(s.garbageProducedPerWeek).toBe(0);

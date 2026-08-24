@@ -1,26 +1,26 @@
 import type { GameState } from '../simulation/GameState';
 
 /**
- * 基礎設施 —— Overview 的 Infra 頁。
+ * Infrastructure — the Infra page of Overview.
  *
- * ## 容量的兩半必須講同一批設施
+ * ## Both halves of capacity must describe the same facilities
  *
- * `getTotalCapacity()` 只數**接得到路而且有電**的掩埋場,`getActiveLoad()` 也只算
- * 那幾座的載重。把其中一半換成未過濾的總量，畫面就會印出「1800 / 0」而且標成健康的
- * 0%（BUG-155）。這裡兩邊都用過濾後的那一組,離線的容量另外用
- * `landfillStrandedCapacity` 講。
+ * `getTotalCapacity()` counts only landfills that are **road-connected and powered**, and
+ * `getActiveLoad()` sums the load of those same ones. Swapping either half for an unfiltered
+ * total prints "1800 / 0" flagged as a healthy 0% (BUG-155). Both sides here use the filtered
+ * set; offline capacity is reported separately as `landfillStrandedCapacity`.
  */
 
 export interface InfraStats {
   power: { supply: number; demand: number; ratio: number };
   water: { supply: number; demand: number; ratio: number };
 
-  /** 掩埋場的載重與**可用**容量。 */
+  /** Landfill load and **usable** capacity. */
   landfillLoad: number;
   landfillCapacity: number;
-  /** 蓋了但用不到的容量（沒路或沒電）。 */
+  /** Capacity that is built but unreachable (no road or no power). */
   landfillStrandedCapacity: number;
-  /** 還沒被收走、正在製造污染的垃圾。 */
+  /** Garbage not yet collected, generating pollution where it sits. */
   garbageUncollected: number;
   garbageProducedPerWeek: number;
   garbageBurnedPerWeek: number;
@@ -32,13 +32,13 @@ export interface InfraStats {
 
   cemeteryUsed: number;
   cemeteryCapacity: number;
-  /** 還沒被處理的遺體。滿了會讓全城幸福度 −20。 */
+  /** Bodies not yet processed. A backlog costs the city -20 happiness. */
   unprocessedDeaths: number;
   deathsPerWeek: number;
   cremationsPerWeek: number;
 }
 
-/** 供需比。需求是 0 時有供給就算 2（面板的「綽綽有餘」），全空就是 0。 */
+/** Supply-to-demand ratio. With zero demand, any supply reads 2 (the panel's "ample"); nothing at all reads 0. */
 function supplyRatio(supply: number, demand: number): number {
   if (demand > 0) return supply / demand;
   return supply > 0 ? 2 : 0;
@@ -61,7 +61,7 @@ export function buildInfraStats(state: GameState): InfraStats {
     power: { supply: pwrSupply, demand: pwrDemand, ratio: supplyRatio(pwrSupply, pwrDemand) },
     water: { supply: wtrSupply, demand: wtrDemand, ratio: supplyRatio(wtrSupply, wtrDemand) },
 
-    // 兩邊都是過濾後的那一組設施 —— 混用會印出「1800 / 0」而且標成健康（BUG-155）。
+    // Both sides use the filtered facility set; mixing them prints "1800 / 0" flagged as healthy (BUG-155).
     landfillLoad: state.garbage.getActiveLoad(),
     landfillCapacity: state.garbage.getTotalCapacity(),
     landfillStrandedCapacity: state.garbage.getStrandedCapacity(),

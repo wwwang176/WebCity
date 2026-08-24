@@ -2,37 +2,36 @@ import type { GameState } from '../simulation/GameState';
 import { BURNED, ABANDONED } from '../building/InfraPlacement';
 
 /**
- * 環境 —— Overview 的 Environment 頁。
+ * Environment — the Environment page of Overview.
  *
- * ## 兩種平均，兩組格子
+ * ## Two averages, two sets of cells
  *
- * - **地面污染**算在「有建築**或**有劃分區」的格子上,跟面板一樣。
- * - **噪音**只算**有建築**的格子。`noiseLevel` 只有 `updateLandValue` 會寫，而它在
- *   `buildingId === 0` 就提早回去了 —— 空的分區地永遠讀到 0,把它們算進平均會依
- *   「還沒蓋起來的比例」稀釋掉整個數字（BUG-092 就是這樣被發現的）。
- *
- * 面板的 Noise 欄位長期印著「-」:那份 memo 裡的 `totalNoise` 宣告了卻沒有人加值。
- * 資料一直都在格子裡,只是沒有人去讀。
+ * - **Ground pollution** averages over cells that have a building **or** a zone, matching
+ *   the panel.
+ * - **Noise** averages over cells that have a building only. `noiseLevel` is written solely
+ *   by `updateLandValue`, which returns early when `buildingId === 0`, so empty zoned land
+ *   always reads 0 and including it dilutes the average by the share of land not yet built
+ *   on (BUG-092).
  */
 
 export interface EnvironmentStats {
-  /** 有建築或有分區的格子上的平均地面污染。 */
+  /** Average ground pollution over cells with a building or a zone. */
   avgGroundPollution: number;
-  /** 有建築的格子上的平均噪音。 */
+  /** Average noise over cells with a building. */
   avgNoise: number;
-  /** 排放口的水污染。 */
+  /** Water pollution at the outlets. */
   waterPollution: number;
 
-  /** 正在燒的火。 */
+  /** Fires currently burning. */
   activeFires: number;
-  /** 今天撲滅的。 */
+  /** Extinguished today. */
   extinguishedToday: number;
-  /** 最近 30 天撲滅的。 */
+  /** Extinguished over the last 30 days. */
   extinguishedRecent: number;
 
-  /** 燒成焦黑的建築。 */
+  /** Buildings burned to a shell. */
   burnedBuildings: number;
-  /** 被居民遺棄的建築。 */
+  /** Buildings abandoned by their occupants. */
   abandonedBuildings: number;
 }
 
@@ -49,7 +48,7 @@ export function buildEnvironmentStats(state: GameState): EnvironmentStats {
       pollutionTotal += cell.pollution;
       pollutionCells++;
     }
-    // 空的分區地讀到的 0 不是「這裡很安靜」，是「沒有人寫過這一格」。
+    // A 0 on empty zoned land means "nothing has written this cell", not "it is quiet here".
     if (cell.buildingId > 0) {
       noiseTotal += cell.noiseLevel;
       noiseCells++;

@@ -10,13 +10,14 @@ describe('環境統計', () => {
     state.grid.setCell(0, 0, { buildingId: 1, pollution: 40 });
     state.grid.setCell(1, 0, { zoneType: ZoneType.RESIDENTIAL_LOW, pollution: 20 });
 
-    // 空地不算 —— 一整張沒人碰過的地圖會把平均稀釋成 0。
+    // Empty land does not count; an untouched map would dilute the average to 0.
     expect(buildEnvironmentStats(state).avgGroundPollution).toBeCloseTo(30, 6);
   });
 
   it('should average noise over built cells only', () => {
-    // `noiseLevel` 只有 `updateLandValue` 會寫,而它在 `buildingId === 0` 提早回去。
-    // 空的分區地讀到的 0 不是「很安靜」,是「沒有人寫過這一格」（BUG-092）。
+    // `noiseLevel` is written only by `updateLandValue`, which returns early at
+    // `buildingId === 0`. A 0 on empty zoned land means "nothing wrote this cell", not "it is
+    // quiet here" (BUG-092).
     const state = createGameState(4, 4);
     state.grid.setCell(0, 0, { buildingId: 1, noiseLevel: 60 });
     state.grid.setCell(1, 0, { zoneType: ZoneType.RESIDENTIAL_LOW, noiseLevel: 0 });
@@ -32,8 +33,8 @@ describe('環境統計', () => {
   });
 
   it('should count burned and abandoned separately', () => {
-    // 兩者在畫面上都是深灰的廢墟,但一個是火燒的、一個是住戶走光的 ——
-    // 要修的東西不一樣（蓋消防隊 vs 提升地價）。
+    // Both render as dark grey ruins, but one burned and one was walked out of, and the fix
+    // differs (build a fire station vs raise land value).
     const state = createGameState(4, 4);
     state.grid.setCell(0, 0, { buildingId: 1, reserved: BURNED });
     state.grid.setCell(1, 0, { buildingId: 1, reserved: BURNED });

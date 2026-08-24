@@ -11,11 +11,13 @@ import { SIMULATION } from '../../simulation/SimulationConstants';
 
 describe('城市總覽', () => {
   it('should count job openings the way the simulation does', () => {
-    // `totalJobs − employed`,不是 `totalJobs − population`。舊的定義會在成熟城市
-    // 印出「0 職缺、無法遷入」,而模擬那邊回報幾百個職缺並照樣讓人搬進來（BUG-166）。
+    // `totalJobs - employed`, not `totalJobs - population`. The latter prints "0 openings,
+    // cannot migrate" in a mature city while the simulation reports hundreds of openings and
+    // keeps letting people in (BUG-166).
     //
-    // 這裡刻意讓人口 ≠ 就業人數:四個座位的商店、兩個居民，其中一個有工作。
-    // 用人口當被減數會算出 2,用就業人數才是對的 3。
+    // Population is deliberately not equal to employment here: a four-seat shop, two residents,
+    // one of them employed. Subtracting population gives 2; subtracting employment gives the
+    // correct 3.
     const state = createGameState(8, 8);
     state.grid.setCell(2, 2, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
     const worker = state.citizens.restoreCitizen({ age: 100 });
@@ -31,7 +33,7 @@ describe('城市總覽', () => {
   });
 
   it('should never report negative vacancy or negative openings', () => {
-    // 人比房子多的時候空房是 0,不是 −37。
+    // With more people than homes, free homes is 0, not -37.
     const state = createGameState(8, 8);
     const s = buildSummaryStats(state);
 
@@ -40,14 +42,16 @@ describe('城市總覽', () => {
   });
 
   it('should give an empty city a neutral happiness instead of zero', () => {
-    // 沒有居民的城市不是「大家都很不開心」。給 0 的話吸引力會被平白扣掉 35 分。
+    // A city with no residents is not "everyone is miserable"; a 0 would cost appeal 35 points
+    // for nothing.
     const s = buildSummaryStats(createGameState(4, 4));
 
     expect(s.avgHappiness).toBe(70);
   });
 
   it('should require appeal, a spare home and an open job all at once', () => {
-    // 三個條件缺一不可 —— 只看分數會說「很吸引人」，然後沒有半個人搬進來。
+    // All three conditions are required; the score alone reads "appealing" while nobody moves
+    // in.
     const s = buildSummaryStats(createGameState(4, 4));
 
     expect(s.canMigrate).toBe(
@@ -61,7 +65,8 @@ describe('城市總覽', () => {
   });
 
   it('should name the single thing hurting appeal the most', () => {
-    // 「不吸引人」本身沒有可以動作的資訊。要知道是稅太高還是污染太重。
+    // "Unappealing" on its own carries no action; the caller needs to know whether it is tax
+    // or pollution.
     const state = createGameState(8, 8);
     state.taxRates.residential = 20;
     const s = buildSummaryStats(state);
@@ -100,10 +105,11 @@ describe('城市總覽', () => {
 
 describe('犯罪那一項要跟模擬說同一句話', () => {
   /**
-   * 一座有人的城。
+   * A city with people in it.
    *
-   * 人口是參數:基礎犯罪率是 `人口 × 0.02`,要測「條例扣了 13 點」就得先有
-   * 超過 13 點可以扣,不然結果會被 0 的下限吃掉,測到的是夾值不是加法。
+   * Population is a parameter because the base crime rate is `population * 0.02`: checking
+   * that an ordinance takes 13 points off needs more than 13 points to take, or the 0 floor
+   * absorbs the result and the case measures clamping rather than arithmetic.
    */
   function city(population = 30) {
     const state = createGameState(16, 16);
@@ -114,8 +120,9 @@ describe('犯罪那一項要跟模擬說同一句話', () => {
   }
 
   it('should come down when the player builds police stations', () => {
-    // 這就是使用者問的那件事:面板寫著「犯罪 −15」,蓋了警局卻一動也不動 ——
-    // 因為那條式子是 `min(50, 人口 × 0.02)`,正好是**一座警局都沒有**的基礎值。
+    // Building a police station has to move the panel's crime figure. A local
+    // `min(50, population * 0.02)` is exactly what the rate is with **no police station at
+    // all**, so the panel would never move.
     const before = buildSummaryStats(city()).crimeRate;
 
     const withPolice = city();
@@ -126,8 +133,8 @@ describe('犯罪那一項要跟模擬說同一句話', () => {
   });
 
   it('should raise the appeal score by exactly what the crime drop is worth', () => {
-    // 犯罪少 1 點,吸引力多 CRIME_WEIGHT 分。兩邊要對得起來,不然玩家會看到
-    // 「犯罪降了但分數沒動」。
+    // One point less crime is CRIME_WEIGHT points more appeal. The two have to line up, or the
+    // player watches crime fall while the score stays put.
     const plain = buildSummaryStats(city());
     const policed = city();
     policed.police.addStation(4, 4);
@@ -138,9 +145,9 @@ describe('犯罪那一項要跟模擬說同一句話', () => {
   });
 
   it('should count the city ordinances the simulation counts', () => {
-    // 監視器網路第 2 級是 crime −13。少了這一項,面板寫著 Crime −13 而
-    // 居民一點感覺也沒有。人口開到 800 是為了讓基礎犯罪率（16）大於 13 ——
-    // 小城市會被 0 的下限吃掉,那樣測到的是夾值不是加法。
+    // Surveillance network level 2 is crime -13. Without it the panel reads Crime -13 while
+    // residents feel nothing. Population is 800 so that the base crime rate (16) exceeds 13; in
+    // a small city the 0 floor absorbs it and the case measures clamping, not arithmetic.
     const plain = city(800);
     plain.police.addStation(4, 4);
     const before = buildSummaryStats(plain).crimeRate;
@@ -155,7 +162,8 @@ describe('犯罪那一項要跟模擬說同一句話', () => {
   });
 
   it('should clamp instead of turning a heavy ordinance into a bonus', () => {
-    // 小城市套上 −13,加完是負的。負的犯罪率在下游會變成加分。
+    // In a small city, -13 takes the total below zero, and a negative crime rate becomes a
+    // bonus downstream.
     const tiny = city(30);
     tiny.ordinances.setLevel(PolicyType.SURVEILLANCE_NETWORK, 2);
 
@@ -163,14 +171,14 @@ describe('犯罪那一項要跟模擬說同一句話', () => {
   });
 
   it('should never let crime turn into a bonus', () => {
-    // 負的犯罪率在下游會變成加分。
+    // A negative crime rate becomes a bonus downstream.
     expect(buildSummaryStats(city()).crimeRate).toBeGreaterThanOrEqual(0);
   });
 });
 
 
 describe('廢墟不是房子', () => {
-  /** 一棟 High Rise（320 人）。 */
+  /** One High Rise (320 residents). */
   const HIGH_RISE = 6;
 
   function withRuin(reserved: number) {
@@ -181,8 +189,8 @@ describe('廢墟不是房子', () => {
   }
 
   it('should not count a burned tower as housing anyone', () => {
-    // 燒掉的大樓住不了人。算進去的話「空房 6889」裡有一部分是永遠住不進去的,
-    // 而遷入的閘門就是看空房。
+    // A burned tower houses nobody. Counted, a figure like "6889 free" includes homes nobody
+    // can ever move into, and free homes is the migration gate.
     expect(withRuin(BURNED).totalHomes, '燒毀的樓還在提供床位').toBe(320);
   });
 
@@ -191,7 +199,8 @@ describe('廢墟不是房子', () => {
   });
 
   it('should keep the ruin out of the zone table as well', () => {
-    // 表格說「97 棟」而其中 9 棟是焦黑的，那張表就不是在描述這座城市有什麼。
+    // A table reading "97 buildings" where 9 of them are charred is not describing what the
+    // city has.
     const zone = withRuin(BURNED).zones.find(z => z.zone === 'residential_high')!;
 
     expect(zone.count, '廢墟還算在建築數裡').toBe(1);
@@ -206,9 +215,10 @@ describe('廢墟不是房子', () => {
   });
 
   it('should count jobs by what the building employs, not by its capacity column', () => {
-    // 分區表那一欄是「容量」= 住戶 + 員工，給人看的一個數字。職缺不能從它加總 ——
-    // 一棟住宅如果坐落在工業區的格子上（改劃分區時就會這樣），它的 4 個住戶會被
-    // 當成 4 個工作機會，而模擬那邊問的是 `bt.workers`，答案是 0。
+    // The zone table's column is "capacity" = residents + workers, a display figure. Job
+    // openings cannot be summed from it: a house standing on an industrial cell (which happens
+    // when zoning is changed) contributes its 4 residents as 4 jobs, while the simulation asks
+    // `bt.workers` and gets 0.
     const state = createGameState(16, 16);
     state.grid.setCell(2, 2, { zoneType: ZoneType.INDUSTRIAL, buildingId: 1 });
 
@@ -220,7 +230,8 @@ describe('廢墟不是房子', () => {
   });
 
   it('should agree with the counters the simulation uses', () => {
-    // 這一條才是重點:兩邊分家的話，玩家看到的空房與職缺就不是遷入用的那一組。
+    // If the two diverge, the free homes and job openings the player sees are not the ones the
+    // migration gate uses.
     const state = createGameState(16, 16);
     state.grid.setCell(2, 2, { zoneType: ZoneType.RESIDENTIAL_HIGH, buildingId: HIGH_RISE });
     state.grid.setCell(4, 2, { zoneType: ZoneType.RESIDENTIAL_HIGH, buildingId: HIGH_RISE, reserved: BURNED });
@@ -235,8 +246,8 @@ describe('廢墟不是房子', () => {
 
 describe('汙染要跟模擬問同一個問題', () => {
   it('should measure the air where people live, not the whole map', () => {
-    // 工業區的汙染是設計上就該有的。把它算進「居民感受到的汙染」,一座正常運作的
-    // 工業城會被扣到搬不進人 —— 而模擬那邊根本沒有這樣扣。
+    // Industrial pollution is intentional. Folded into "pollution residents feel", a working
+    // industrial city is penalised until nobody moves in, which the simulation never does.
     const state = createGameState(16, 16);
     state.grid.setCell(2, 2, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1, pollution: 10 });
     state.grid.setCell(8, 8, { zoneType: ZoneType.INDUSTRIAL, buildingId: 19, pollution: 90 });
@@ -254,7 +265,7 @@ describe('汙染要跟模擬問同一個問題', () => {
   });
 
   it('should ignore a burned house when averaging', () => {
-    // `avgResidentialMetric` 只看 `isActiveZoneCell`。面板要跟著。
+    // `avgResidentialMetric` looks only at `isActiveZoneCell`, and the panel follows it.
     const state = createGameState(16, 16);
     state.grid.setCell(2, 2, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1, pollution: 10 });
     state.grid.setCell(3, 2, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1, pollution: 90, reserved: BURNED });
@@ -265,8 +276,8 @@ describe('汙染要跟模擬問同一個問題', () => {
 
 describe('幸福度不要先四捨五入', () => {
   it('should hand the raw average to the appeal formula', () => {
-    // 模擬餵給 `calculateAttractiveness` 的是原始值。先 round 再算，兩邊的吸引力
-    // 會差到 0.25 分 —— 而門檻 40 是一條硬線。
+    // The simulation feeds `calculateAttractiveness` the raw value. Rounding first moves appeal
+    // by as much as 0.25 points, and the threshold of 40 is a hard line.
     const state = createGameState(16, 16);
     for (let i = 0; i < 3; i++) state.citizens.restoreCitizen({ age: 100 });
     const cs = state.citizens.getCitizens();
@@ -279,7 +290,7 @@ describe('幸福度不要先四捨五入', () => {
   });
 
   it('should take the empty-city default from the simulation constants', () => {
-    // 兩邊各寫一個 70 的話，調了一邊另一邊不會跟上。
+    // With a literal 70 written on both sides, tuning one leaves the other behind.
     expect(buildSummaryStats(createGameState(8, 8)).avgHappiness)
       .toBe(SIMULATION.DEFAULT_HAPPINESS);
   });
