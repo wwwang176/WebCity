@@ -31,9 +31,9 @@ export interface OverlayBuildContext {
   };
   policies: { getCrimeBonus(districtId: string | null): number };
   ordinances: { getCrimeBonus(): number };
-  /** 住宅格 → 住戶的平均通勤時間（tick）。查不到代表那一格沒有通勤人口。 */
+  /** Residential cell to its residents' average commute in ticks. A miss means the cell has no commuters. */
   commuteByHome: ReadonlyMap<string, number>;
-  /** 通勤時間超過這個值就是滿格的紅色。 */
+  /** Commutes at or above this render as full red. */
   commuteMax: number;
   grid: { getCell(x: number, y: number): { terrainType: number } | null };
 }
@@ -42,26 +42,28 @@ type OverlayBuilder = (ctx: OverlayBuildContext, cell: OverlayCell, x: number, y
 
 const O = OVERLAY_SCALE;
 
-/** 黃金比例的共軛。乘上它取小數部分，就是那條前 N 項永遠分得最開的低差異序列。 */
+/** The golden ratio conjugate. Multiplying and taking the fractional part gives the low-discrepancy sequence whose first N terms are always the most widely spread. */
 const GOLDEN_RATIO_CONJUGATE = 0.618033988749895;
 
 /**
- * 分區在覆蓋層上的數值。渲染端把它當**色相**用（value / 100）。
+ * A district's value on the overlay. The renderer uses it as a **hue** (value / 100).
  *
- * 用流水號走黃金比例展開，不用雜湊。分區 id 的形狀是 `district_${nextId++}`
- * （`recoverNextId` 也是這樣讀的），所以玩家連續畫出來的幾區必然是連號 —— 而
- * 均勻雜湊把連號變成亂數，亂數就會撞在一起：八個分區裡有將近三成機率出現兩個
- * 肉眼分不開的色相。黃金比例序列沒有這個問題，前 N 項就是那 N 個裡分得最開的
- * 一組。
+ * The sequence number is expanded through the golden ratio rather than hashed. District ids
+ * have the form `district_${nextId++}` (which is also how `recoverNextId` reads them), so
+ * districts the player draws in a row carry consecutive numbers. A uniform hash turns
+ * consecutive numbers into random ones, and random ones collide: across eight districts there
+ * is close to a 30% chance that two hues are indistinguishable. The golden-ratio sequence has
+ * no such problem — its first N terms are the most widely spread N.
  *
- * 回傳值落在 [1, 100):0 會被 `buildOverlayData` 當成「這一格沒東西」丟掉，而
- * 100 會讓 `setHSL` 的色相繞回 0，跟下限撞色。
+ * The result lies in [1, 100): `buildOverlayData` reads 0 as "nothing on this cell", and 100
+ * wraps `setHSL`'s hue back to 0, colliding with the lower bound.
  */
 export function districtOverlayValue(
   district: { id: string; colorIndex?: number },
 ): number {
-  // 玩家選過顏色就用那一個。色票存的就是圖層數值，不必再換算 —— 換算漏掉
-  // 一邊的話，面板上的色塊跟地圖上的顏色就是會不一樣。
+  // A colour the player picked wins. The swatch stores the overlay value itself, so nothing
+  // is converted; a conversion missing on one side leaves the panel's swatch and the map's
+  // colour different.
   if (isValidSwatchIndex(district.colorIndex)) {
     return DISTRICT_SWATCHES[district.colorIndex!]!.value;
   }
@@ -74,8 +76,8 @@ export function districtOverlayValue(
   if (seq) {
     n = Number(seq[1]);
   } else {
-    // 沒有流水號的 id（測試夾具、將來可能的自訂 id）退回雜湊 —— 分不開總比
-    // 全部同色好。
+    // Ids with no sequence number — test fixtures, possible custom ids later — fall back to a
+    // hash: poorly separated beats all one colour.
     let h = 0;
     for (let i = 0; i < id.length; i++) h = (Math.imul(h, 31) + id.charCodeAt(i)) >>> 0;
     n = h;
@@ -86,11 +88,13 @@ export function districtOverlayValue(
 }
 
 /**
- * id → 色值。純函式的記憶表，鍵的數量就是這局出現過的分區數。
+ * id to colour value. A memo table for a pure function, holding one key per district seen this
+ * session.
  *
- * 這個 builder 是逐格呼叫的:200×200 的地圖如果整張都畫進分區，就是四萬次 regex
- * （實測約 4.8 ms）。雖然只發生在切換圖層或分區改動時、不在每幀路徑上，但那是
- * 重建當幀會多出來的時間。快取之後 regex 的次數等於分區數。
+ * The builder is called per cell: a 200x200 map covered entirely by districts is 40,000 regex
+ * runs, measured at about 4.8 ms. That happens only when the overlay is switched or a district
+ * changes, never on the per-frame path, but it is time added to the rebuilding frame. Cached,
+ * the regex runs once per district.
  */
 const DISTRICT_VALUE_CACHE = new Map<string, number>();
 
@@ -133,8 +137,8 @@ export const OVERLAY_BUILDERS: Record<string, OverlayBuilder> = {
   crime: (ctx, cell, x, y) => {
     if (cell.buildingId <= 0) return 0;
     const reduction = ctx.police.getCrimeReduction(x, y);
-    // 條例算進來 —— 條例上寫著 Crime +12，圖層卻只畫警察局的涵蓋範圍的話，
-    // 玩家沒有辦法看見自己剛才買下的代價。
+    // Ordinances are included. With Crime +12 written on an ordinance and the overlay drawing
+    // only police coverage, the player cannot see the cost they just bought.
     const districtId = ctx.districts.getDistrictAt(x, y)?.id ?? null;
     const policy = ctx.policies.getCrimeBonus(districtId) + ctx.ordinances.getCrimeBonus();
     return Math.max(0, O.CRIME_BASE + reduction + policy);
@@ -160,10 +164,10 @@ export const OVERLAY_BUILDERS: Record<string, OverlayBuilder> = {
     ctx.garbage.getCoverage(x, y) ? O.COVERAGE_VALUE : 0,
 
   /**
-   * 住在這一格的人，通勤平均要多久。
+   * How long residents of this cell commute on average.
    *
-   * 沒有通勤人口的格子回 0（不上色），而不是回滿格 —— 空地與「通勤很短」在
-   * 視覺上必須分得開。
+   * Cells with no commuters return 0 and stay uncoloured rather than reading full: empty land
+   * and "a very short commute" have to look different.
    */
   commute: (ctx, _cell, x, y) => {
     const avg = ctx.commuteByHome.get(`${x},${y}`);
@@ -185,9 +189,10 @@ export function buildOverlayValue(
 }
 
 /**
- * 圖層上每個分區的名稱要標在哪裡。
+ * Where each district's name sits on the overlay.
  *
- * 取格子座標的平均。沒有格子的分區不給標籤 —— 硬算會得到 NaN，標籤會飛到畫面外。
+ * The mean of its cell coordinates. A district with no cells gets no label; averaging nothing
+ * gives NaN and sends the label off screen.
  */
 export function districtLabelAnchors(
   districts: readonly { id: string; name: string; cells: ReadonlySet<string> }[],

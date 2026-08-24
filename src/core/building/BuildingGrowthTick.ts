@@ -37,7 +37,7 @@ export interface BuildingGrowthTickDeps {
   isPowered(x: number, y: number): boolean;
   isWatered(x: number, y: number): boolean;
 
-  /** 這一格頭上有沒有高架路段（含高架鐵路）。橋下不長房子。 */
+  /** Whether an elevated segment (road or rail) passes over this cell. Nothing grows under a bridge. */
   hasElevatedAbove(x: number, y: number): boolean;
 
 

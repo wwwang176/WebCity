@@ -220,7 +220,7 @@ describe('ElevatedRoadBuilder', () => {
     expect(result.reason).toBe('PATH_TOO_SHORT');
   });
 
-  // --- High架 under blocking zone ---
+  // --- Elevated road over a blocking zone ---
 
   it('blocks zone placement under elevated road', () => {
     placeGroundRoad(grid, 2, 5);

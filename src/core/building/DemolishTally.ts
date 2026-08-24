@@ -9,41 +9,45 @@ import { isInfrastructureBuilding } from './InfraConfig';
 import { findPrimaryCell } from './InfraPlacement';
 
 /**
- * 這一下拆除會清掉什麼。
+ * What one demolish pass will clear.
  *
- * ## 為什麼要有這一份
+ * ## Why this exists
  *
- * 拆除的回傳值原本是**三個常數**:`cost` 恆 0（拆除不動錢包）、`ok` 恆 true
- * （拆除不產生 notification）、沒有 `reason` 也沒有 `info`。於是拆 42 格和拆 0 格
- * 收到的回應一字不差，程式無法判斷自己是不是白做工（BUG-366）。
+ * Without a tally, demolish answers with **three constants**: `cost` always 0 (demolition
+ * does not touch the wallet), `ok` always true (demolition raises no notification), no
+ * `reason` and no `info`. Clearing 42 cells and clearing 0 cells then produce identical
+ * responses, and a program cannot tell whether it achieved anything (BUG-366).
  *
- * ## 為什麼是拆之前掃一遍，而不是在拆的迴圈裡累加
+ * ## Why it scans before demolishing instead of counting inside the loop
  *
- * 計數與破壞分開，計數就完全是純函式 —— `Game.demolish()` 直接 import Three.js，
- * 寫在那條迴圈裡的規則單元測試載不動，改壞了整套測試照樣全綠。
+ * Separating counting from destruction keeps counting a pure function. `Game.demolish()`
+ * imports Three.js directly, so rules written inside that loop cannot be loaded by unit tests
+ * and can break with every test still green.
  *
- * 代價是同一塊矩形走兩遍。分類**共用 `classifyDemolishCell`**，所以兩遍看到的是
- * 同一套規則 —— 抄一份判斷過來才是這個 repo 一再出事的那個錯。
+ * The price is walking the same rectangle twice. Classification is **shared through
+ * `classifyDemolishCell`**, so both passes apply one set of rules; a second copy of the
+ * judgement is the mistake this repo keeps paying for.
  */
 export interface DemolishTally {
-  /** 有東西被清掉的格子數。**不重複計算** —— 橋和它底下的路是一格。 */
+  /** Cells where something was cleared. **Counted once each**: a bridge and the road under it are one cell. */
   cells: number;
-  /** 分區建築（住商工辦）。 */
+  /** Zoned buildings (residential, commercial, industrial, office). */
   buildings: number;
-  /** 地面道路格。 */
+  /** Ground-level road cells. */
   roads: number;
-  /** 地面鐵軌格。 */
+  /** Ground-level rail cells. */
   rails: number;
-  /** 公共設施。多格建築算**一座**，不是一格一座。 */
+  /** Civic and utility facilities. A multi-cell building counts as **one**, not one per cell. */
   infrastructure: number;
   /**
-   * 被清掉的分區格。
+   * Zoned cells cleared.
    *
-   * 與 `buildings` 是**兩個問題**（幾棟房子沒了／幾格分區被清掉），所以一格上有
-   * 建築的住宅地會同時落在兩類。不重複的總數看 `cells`。
+   * A **different question** from `buildings` (how many buildings went vs how many zoned
+   * cells were cleared), so residential land carrying a building falls into both. For the
+   * de-duplicated total, read `cells`.
    */
   zones: number;
-  /** 高架**段**數。同一格疊了兩層就是 2。 */
+  /** Elevated **segments**. Two levels stacked on one cell count as 2. */
   elevated: number;
 }
 
@@ -52,9 +56,10 @@ export const EMPTY_DEMOLISH_TALLY: DemolishTally = {
 };
 
 /**
- * 掃一遍矩形，數出這一下拆除會清掉什麼。**不改任何東西。**
+ * Scans the rectangle and counts what this demolish pass would clear. **Mutates nothing.**
  *
- * 界外的格子不算（`grid.getCell` 回 null），矩形反過來給也可以。
+ * Out-of-bounds cells are skipped (`grid.getCell` returns null), and the rectangle may be
+ * given corners in either order.
  */
 export function tallyDemolish(
   grid: Grid,
@@ -63,7 +68,7 @@ export function tallyDemolish(
 ): DemolishTally {
   const { minX, maxX, minY, maxY } = normalizeRect(x1, y1, x2, y2);
   const t: DemolishTally = { ...EMPTY_DEMOLISH_TALLY };
-  // 多格設施會被它佔到的每一格各碰到一次，只認第一次。
+  // A multi-cell facility is met once per cell it occupies; only the first one counts.
   const infraSeen = new Set<string>();
 
   for (let y = minY; y <= maxY; y++) {
@@ -98,9 +103,10 @@ export function tallyDemolish(
           if (cell.roadType !== RoadType.NONE) { t.roads++; touched = true; }
           if (action.hasTrack) { t.rails++; touched = true; }
           if (cell.zoneType !== ZoneType.NONE) { t.zones++; touched = true; }
-          // `reserved`（廢棄、焦黑、旋轉、多格佔位）沒有自己的分類，也不需要:
-          // 整份 repo 沒有任何地方在 `buildingId === 0` 的格子上寫它，所以它永遠
-          // 跟著建築或設施一起被算到。單獨判它會是一條測不出來的死枝。
+          // `reserved` (abandoned, burned, rotation, multi-cell occupancy) has no category of
+          // its own and needs none: nowhere in the repo is it written on a cell whose
+          // `buildingId === 0`, so it is always counted alongside a building or a facility.
+          // A branch of its own would be dead code no test could reach.
           break;
       }
 

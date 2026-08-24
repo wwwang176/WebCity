@@ -136,12 +136,11 @@ describe('ElevationManager', () => {
   // --- hasAnySegment / hasAnyElevatedRoad ---
 
   describe('hasAnyElevatedRoad', () => {
-    // 這兩條原本在 ElevatedAwareReachability.test.ts，名字叫「會不會停用快取」。
-    // 那道閘門已經隨 BUG-109 治本移除（快取現在也是樓層感知的），所以它們
-    // 測的其實只是這兩個 predicate 本身 —— 搬回它們該在的地方。
+    // Both cases exercise the predicates themselves. The workplace-distance cache has been
+    // level-aware since BUG-109 and no longer gates on elevation.
     it('should not count an elevated RAIL line as an elevated road', () => {
-      // 高架捷運與地面共用同一個 layers map，但 roadType 是 NONE，
-      // 對道路可達性沒有貢獻。
+      // Elevated metro shares the same layers map as roads but carries roadType NONE and
+      // contributes nothing to road reachability.
       em.set(5, 6, 1, {
         roadType: 0, roadFlags: 0, railType: 1, railFlags: 12,
         isRamp: false, rampAscendDirection: 0,

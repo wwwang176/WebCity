@@ -6,14 +6,14 @@ import {
   type OverlaySourceGrid,
 } from '../OverlaySources';
 
-/** 一張只有指定格子有建築的地圖。沒列到的格子回 null，等同界外。 */
+/** A map where only the listed cells hold a building. Unlisted cells return null, the same as out of bounds. */
 function gridWith(cells: Record<string, { buildingId: number; reserved: number }>): OverlaySourceGrid {
   return { getCell: (x, y) => cells[`${x},${y}`] ?? null };
 }
 
 type Pos = { x: number; y: number };
 
-/** 每一種服務預設都是空的，測哪一個就只給哪一個，這樣才看得出讀錯來源。 */
+/** Every service starts empty and only the one under test is filled, so reading the wrong source shows up. */
 function makeCtx(over: Partial<Record<
   'power' | 'water' | 'police' | 'fire' | 'health' | 'education' | 'parks' | 'garbage' | 'transit',
   Pos[]
@@ -40,12 +40,13 @@ describe('overlaySourceCells', () => {
       makeCtx({ fire: [{ x: 10, y: 10 }] }),
       'fire',
     );
-    // 2×2:整棟都要標。只標錨點的話，高亮是照格子查的，多格建築會查不到。
+    // 2x2: the whole building is marked. Highlighting is looked up by cell, so the anchor
+    // alone would miss a multi-cell building.
     expect(keys(cells)).toEqual(['10,10', '10,11', '11,10', '11,11']);
   });
 
   it('多格建築整個佔地都算來源', () => {
-    // 醫院 2×3，轉 90 度變 3×2。
+    // The hospital is 2x3, and 3x2 rotated 90 degrees.
     const cells = overlaySourceCells(
       gridWith({ '4,7': { buildingId: 250, reserved: 5 } }),
       makeCtx({ health: [{ x: 4, y: 7 }] }),
@@ -56,7 +57,8 @@ describe('overlaySourceCells', () => {
 
   it.each([
     ['police', 'police'],
-    // 犯罪率的製造點是治安的來源 —— 圖上的紅色是「這裡離警局多遠」的結果。
+    // The crime overlay's sources are the police stations; its red is the result of distance
+    // from one.
     ['crime', 'police'],
     ['fire', 'fire'],
     ['health', 'health'],
@@ -71,7 +73,8 @@ describe('overlaySourceCells', () => {
     const ctx = makeCtx({ [service]: [{ x: 3, y: 4 }] });
     expect(overlaySourceCells(grid, ctx, overlay)).toEqual([{ x: 3, y: 4 }]);
 
-    // 讀錯來源就會抓到別人的設施:所有服務都給一個位置，只有自己那一個對得上。
+    // Reading the wrong source picks up another service's facilities: every service is given a
+    // position, and only the right one matches.
     const all = makeCtx({
       power: [{ x: 1, y: 1 }], water: [{ x: 2, y: 2 }], police: [{ x: 3, y: 3 }],
       fire: [{ x: 4, y: 4 }], health: [{ x: 5, y: 5 }], education: [{ x: 6, y: 6 }],
@@ -97,7 +100,8 @@ describe('overlaySourceCells', () => {
   );
 
   it('查不到那一格就只標錨點', () => {
-    // 設施剛被拆、或存檔裡的位置已經不在地圖上。標一格總比整個漏掉好，也不能爆掉。
+    // The facility was just demolished, or a saved position no longer lies on the map. One
+    // marked cell beats missing it entirely, and it must not throw.
     const cells = overlaySourceCells(gridWith({}), makeCtx({ fire: [{ x: 10, y: 10 }] }), 'fire');
     expect(cells).toEqual([{ x: 10, y: 10 }]);
   });
@@ -114,7 +118,8 @@ describe('overlaySourceCells', () => {
 
 describe('OVERLAY_SOURCE_COLOR', () => {
   it('是藍的', () => {
-    // 「藍色＝影響的製造點」是跨圖層的一致語彙。這個常數不藍，整套就不成立。
+    // "Blue marks the source of influence" is one vocabulary across overlays; if this constant
+    // is not blue, none of it holds.
     const r = (OVERLAY_SOURCE_COLOR >> 16) & 0xff;
     const g = (OVERLAY_SOURCE_COLOR >> 8) & 0xff;
     const b = OVERLAY_SOURCE_COLOR & 0xff;

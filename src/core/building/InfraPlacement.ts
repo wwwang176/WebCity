@@ -62,10 +62,11 @@ export function canPlaceInfra(
   groundwaterFn?: (x: number, y: number) => number,
   overrideSize?: { width: number; height: number },
   /**
-   * 這一格頭上有沒有高架路段。
+   * Whether an elevated segment passes over this cell.
    *
-   * 選填，因為高架不在格子上 —— 它住在 `ElevationManager` 裡，而這個模組只拿得到
-   * `Grid`。不傳就等於這座城市沒有高架（`WaterPlantSites` 之類的呼叫端就是如此）。
+   * Optional, because elevated segments are not on the grid: they live in `ElevationManager`
+   * while this module only sees the `Grid`. Omitted means the city has none, which is how
+   * callers such as `WaterPlantSites` use it.
    */
   hasElevatedAbove?: (x: number, y: number) => boolean,
 ): PlaceResult {
@@ -86,8 +87,8 @@ export function canPlaceInfra(
       const cell = grid.getCell(cx, cy);
       if (!cell) return { ok: false, reason: 'OUT_OF_BOUNDS' };
       if (cell.terrainType === TerrainType.WATER) return { ok: false, reason: 'WATER_TILE' };
-      // 橋下不蓋房子。整片佔地都要淨空 —— 只有一角在橋下也不行，房子不會為了橋
-      // 讓出一個角。
+      // Nothing is built under a bridge. The whole footprint has to be clear: one corner under
+      // the deck is enough to refuse, because a building does not give up a corner for a bridge.
       if (hasElevatedAbove?.(cx, cy)) return { ok: false, reason: 'UNDER_ELEVATED_ROAD' };
       if (cell.roadType !== RoadType.NONE) return { ok: false, reason: 'TILE_OCCUPIED' };
       if (cell.buildingId !== 0 && isInfrastructureBuilding(cell.buildingId)) {

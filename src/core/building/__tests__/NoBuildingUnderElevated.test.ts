@@ -7,24 +7,25 @@ import { BuildingGrowth } from '../BuildingGrowth';
 import { getZoneBlocker } from '../../zone/ZoneBlocker';
 
 /**
- * 高架下方不能有房子。
+ * Nothing may stand under an elevated segment.
  *
- * 實測:醫院蓋得進高架橋底下。`canPlaceInfra` 只看格子上的東西 —— 地形、道路、
- * 鐵軌、既有建築 —— 而高架路段不在格子上，它住在 `ElevationManager` 裡，所以每一
- * 條檢查都通過。
+ * `canPlaceInfra` inspects only what is on the cell — terrain, roads, rail, existing
+ * buildings — and an elevated segment is not on the cell: it lives in `ElevationManager`, so
+ * every check passes and a hospital fits under a bridge.
  *
- * 三個入口都要擋:玩家自己蓋的公共建築、建商長出來的房子、以及告訴玩家「這塊地為
- * 什麼不長東西」的那份診斷。少擋一個就等於沒擋。
+ * All three entry points have to refuse: civic buildings the player places, buildings the
+ * developer grows, and the diagnostic that tells the player why a plot grows nothing. Missing
+ * one is the same as guarding none.
  */
 
 function gridWithRoad(): Grid {
   const grid = new Grid(20, 20);
-  // 沿著 y=0 給一條路，這樣公共建築與分區都連得到路。
+  // A road along y=0 so civic buildings and zones both reach one.
   for (let x = 0; x < 20; x++) grid.setCell(x, 0, { roadType: RoadType.TWO_LANE });
   return grid;
 }
 
-/** 高架橋壓在這幾格上。 */
+/** The bridge passes over these cells. */
 const elevatedAt = (...cells: [number, number][]) =>
   (x: number, y: number) => cells.some(([cx, cy]) => cx === x && cy === y);
 
@@ -37,7 +38,8 @@ describe('公共建築不能蓋在高架下', () => {
   });
 
   it('should refuse when the viaduct only clips one corner of the footprint', () => {
-    // 醫院是 2×3。只有角落那一格在橋下也算 —— 房子不會為了橋讓出一角。
+    // The hospital is 2x3. One corner under the deck is enough, because a building does not
+    // give up a corner for a bridge.
     const grid = gridWithRoad();
     const r = canPlaceInfra(grid, 2, 1, 'hospital', 0, undefined, undefined, elevatedAt([3, 3]));
     expect(r.ok).toBe(false);
@@ -51,7 +53,7 @@ describe('公共建築不能蓋在高架下', () => {
   });
 
   it('should behave exactly as before when nobody asks about elevation', () => {
-    // 參數是選填的:`WaterPlantSites` 之類的呼叫端沒有 ElevationManager。
+    // The parameter is optional: callers such as `WaterPlantSites` have no ElevationManager.
     const grid = gridWithRoad();
     expect(canPlaceInfra(grid, 2, 1, 'hospital', 0).ok).toBe(true);
   });
@@ -106,8 +108,8 @@ describe('空地不長東西的時候要說是因為高架', () => {
   });
 
   it('should mirror canGrow — whatever growth refuses, this explains', () => {
-    // ZoneBlocker 的存在理由就是「跟 canGrow 問同一組條件」。兩邊漂開的話，玩家
-    // 會看到一塊寫著「沒問題」卻永遠不長東西的地。
+    // ZoneBlocker exists to ask the same set of conditions canGrow asks. If the two drift, the
+    // player sees a plot reported as fine that never grows anything.
     const grid = gridWithRoad();
     grid.setCell(3, 1, { zoneType: ZoneType.RESIDENTIAL_LOW });
     const growth = new BuildingGrowth(grid);

@@ -8,8 +8,9 @@ import { RoadType } from '../road/types';
  * Pure logic module — no Three.js imports.
  */
 /**
- * 位置鍵的 y 上限。摺成一個數字是為了讓它留在 SMI 範圍內 —— 超出去 V8 會把
- * 鍵裝箱成堆積數字，Map 查詢就慢下來，而這個索引存在的唯一理由就是快。
+ * Upper bound on y in a position key. Folding to one number keeps it inside SMI range; past
+ * that V8 boxes the key as a heap number and Map lookups slow down, which defeats the only
+ * reason this index exists.
  */
 const POS_STRIDE = 8192;
 
@@ -18,15 +19,17 @@ export class ElevationManager {
   private layers = new Map<string, ElevatedSegment>();
 
   /**
-   * 「這一格佔了哪幾層」的位元遮罩，鍵是摺起來的數字座標。
+   * Bitmask of which levels a cell occupies, keyed by folded numeric coordinates.
    *
-   * **衍生資料** —— `layers` 仍然是唯一的真相，這裡只是一張避免逐層問三次的
-   * 索引。所有寫入點（`set` / `delete` / `clear` / `fromJSON`）都要維護它。
+   * **Derived data**: `layers` remains the single source of truth and this is only an index
+   * that avoids asking three times, once per level. Every write path (`set`, `delete`,
+   * `clear`, `fromJSON`) has to maintain it.
    *
-   * 存在的理由是量出來的:`UnifiedRoadLookup.getCompatibleNeighborKeys` 每探一個
-   * 鄰居就無條件問三層，每問一次配一個 `x,y,level` 字串再查一次 Map。4 萬人的
-   * 存檔實測 `ElevationManager.get` 佔主執行緒 **5.8%**，而那座城市總共只有
-   * **7 段高架**。改成先問遮罩之後，沒有高架的位置一次數字查詢就結束。
+   * The justification is measured. `UnifiedRoadLookup.getCompatibleNeighborKeys` asks all
+   * three levels for every neighbour it probes, building an `x,y,level` string and a Map
+   * lookup each time. On a 40,000-population save `ElevationManager.get` took **5.8%** of the
+   * main thread in a city holding **7 elevated segments** in total. Asking the mask first
+   * ends a position with no elevation in a single numeric lookup.
    */
   private levelMask = new Map<number, number>();
 
@@ -39,19 +42,20 @@ export class ElevationManager {
   }
 
   /**
-   * 這一格佔了哪幾層 —— 第 `level` 個位元為 1 代表那一層有東西。0 = 什麼都沒有。
+   * Which levels this cell occupies: bit `level` set means something is there, 0 means nothing.
    *
-   * 這是**佔用**，不分道路或鐵軌;要區分的呼叫端仍然得取出 segment 看 `roadType`。
+   * This is **occupancy**, not road versus rail; a caller that needs the distinction still has
+   * to fetch the segment and read `roadType`.
    */
   levelsAt(x: number, y: number): number {
     return this.levelMask.get(ElevationManager.posKey(x, y)) ?? 0;
   }
 
   /**
-   * 位置鍵摺得出來的範圍。超出去就會跟別的格子撞在同一個鍵上。
+   * The range a position key can fold. Past it, two cells collide on one key.
    *
-   * 實務上碰不到:`SaveValidator.IMPORT_LIMITS.MAX_GRID_DIMENSION` 是 500，
-   * 而遊戲自己開的地圖更小。這裡擋的是「有人直接 `new Grid(2, 9000)`」那種。
+   * Out of reach in practice: `SaveValidator.IMPORT_LIMITS.MAX_GRID_DIMENSION` is 500 and the
+   * game's own maps are smaller. This guards against a direct `new Grid(2, 9000)`.
    */
   private static validatePosition(x: number, y: number): void {
     if (x < 0 || y < 0 || y >= POS_STRIDE) {
@@ -78,18 +82,19 @@ export class ElevationManager {
   }
 
   delete(x: number, y: number, level: number): void {
-    // 跟 `set` 同一組把關。少了它索引會跟 `layers` 分家:`1 << 33` 在 JS 等於
-    // `1 << 1`（位移取模 32），所以 `delete(x, y, 33)` 會清掉**真正 level 1**
-    // 的位元而 `layers` 裡那一段還在 —— 那一段從此對所有查詢都不存在。
-    // 座標同理:`(0, 8192)` 與 `(1, 0)` 摺出同一個鍵。
+    // The same guards as `set`. Without them the index diverges from `layers`: `1 << 33` is
+    // `1 << 1` in JS (shifts are taken mod 32), so `delete(x, y, 33)` clears the bit for the
+    // **actual level 1** while that segment stays in `layers`, invisible to every query
+    // afterwards. Coordinates behave the same way: `(0, 8192)` and `(1, 0)` fold to one key.
     ElevationManager.validateLevel(level);
     ElevationManager.validatePosition(x, y);
     this.layers.delete(ElevationManager.key(x, y, level));
     const pk = ElevationManager.posKey(x, y);
     const mask = (this.levelMask.get(pk) ?? 0) & ~(1 << level);
-    // 空的那一格移出索引而不是留一個 0。**這是等價變異** —— `levelsAt` 對
-    // 「沒有這個鍵」與「值是 0」的回答一樣，所以沒有測試守得住它。理由是記憶體:
-    // 不刪的話，拆光高架的城市會留下一張跟它曾經蓋過的橋一樣大的死表。
+    // An emptied cell leaves the index rather than keeping a 0. **This is an equivalent
+    // mutation**: `levelsAt` answers the same for a missing key and a 0 value, so no test can
+    // guard it. The reason is memory — without the delete, a city whose elevation was all torn
+    // down keeps a dead table as large as every bridge it ever built.
     if (mask === 0) this.levelMask.delete(pk); else this.levelMask.set(pk, mask);
   }
 
@@ -124,15 +129,14 @@ export class ElevationManager {
   /**
    * Does the city contain any elevated ROAD anywhere?
    *
-   * **目前沒有 production 呼叫端。** 它原本只服務一件事：workplace 距離快取
-   * 的高架閘門（「有高架就別用快取」）。BUG-109 治本之後快取本身就是樓層
-   * 感知的，閘門已移除。保留是因為「城裡有沒有高架道路」本身是個合理的查詢，
-   * 但如果一直沒人用，刪掉它比留著誤導好。
+   * **No production caller.** The workplace-distance cache has been level-aware since
+   * BUG-109, so the elevation gate this once fed is gone. Kept because "does the city have
+   * elevated road" is a reasonable question in itself; if nothing takes it up, deleting it
+   * beats leaving it to mislead.
    *
    * Not hasAnySegment(): elevated RAIL lives in the same `layers` map with
-   * roadType NONE, so asking the broader question let a single elevated metro
-   * tile — which contributes nothing to road reachability — permanently
-   * disable the workplace-distance cache for the whole city.
+   * roadType NONE, so the broader question lets a single elevated metro tile —
+   * which contributes nothing to road reachability — answer yes.
    */
   hasAnyElevatedRoad(): boolean {
     for (const seg of this.layers.values()) {
@@ -257,8 +261,8 @@ export class ElevationManager {
   }
 
   fromJSON(entries: Array<{ x: number; y: number; level: number; data: ElevatedSegment }>): void {
-    // 走 clear() + set() 而不是自己寫進 layers —— 索引的維護只有一份，讀檔這條路
-    // 少維護一次就會靜靜地跟真相分家。
+    // Goes through clear() + set() rather than writing `layers` directly: index maintenance
+    // lives in one place, and a load path that skips it diverges from the truth in silence.
     this.clear();
     for (const entry of entries) {
       this.set(entry.x, entry.y, entry.level, entry.data);

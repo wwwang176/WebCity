@@ -18,10 +18,10 @@ export interface GrowthConditions {
   hasWater: boolean;
   rciDemand: RCIDemand;
   /**
-   * 這一格頭上有沒有高架路段。橋下不長房子。
+   * Whether an elevated segment passes over this cell. Nothing grows under a bridge.
    *
-   * 由呼叫端算好傳進來，跟 `hasPower`／`hasWater` 一樣 —— 高架不在格子上，這個
-   * 類別只拿得到 `Grid`。沒填就等於頭上是天空。
+   * Computed by the caller and passed in, like `hasPower` and `hasWater`: elevated segments
+   * are not on the grid and this class only sees the `Grid`. Omitted means open sky.
    */
   underElevated?: boolean;
 }

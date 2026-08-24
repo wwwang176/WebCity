@@ -11,14 +11,14 @@ function emptyGrid(): Grid {
   return new Grid(20, 20);
 }
 
-/** 一段最陽春的高架路段。 */
+/** The plainest possible elevated segment. */
 function segment(roadType = RoadType.TWO_LANE) {
   return { roadType, roadFlags: 0, railType: 0, railFlags: 0, isRamp: false, rampAscendDirection: 0 };
 }
 
 describe('拆除前先數一次:到底會拆掉什麼', () => {
   it('should count nothing on empty land', () => {
-    // 這一條就是整件事的理由。拆 42 格和拆 0 格必須答得不一樣。
+    // Clearing 42 cells and clearing 0 cells have to answer differently.
     const t = tallyDemolish(emptyGrid(), new ElevationManager(), 0, 0, 6, 6);
 
     expect(t).toEqual(EMPTY_DEMOLISH_TALLY);
@@ -37,7 +37,8 @@ describe('拆除前先數一次:到底會拆掉什麼', () => {
   });
 
   it('should count zoning that has nothing built on it yet', () => {
-    // 劃了分區但還沒長出建築 —— 拆除會把分區清掉，所以它不是「什麼也沒做」。
+    // Zoned land with nothing built yet: demolition clears the zone, so this is not
+    // "nothing happened".
     const grid = emptyGrid();
     grid.setCell(2, 2, { zoneType: ZoneType.RESIDENTIAL_LOW });
 
@@ -49,8 +50,8 @@ describe('拆除前先數一次:到底會拆掉什麼', () => {
   });
 
   it('should count a built zone cell once in cells but in both categories', () => {
-    // 分類回答的是不同的問題（幾棟房子沒了／幾格分區被清掉），所以同一格會同時
-    // 落在兩類。`cells` 是不重複的那一個。
+    // The categories answer different questions (buildings gone vs zoned cells cleared), so
+    // one cell falls into both. `cells` is the de-duplicated count.
     const grid = emptyGrid();
     grid.setCell(2, 2, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 10 });
 
@@ -82,7 +83,8 @@ describe('拆除前先數一次:到底會拆掉什麼', () => {
   });
 
   it('should count a facility that is only clipped by the rect', () => {
-    // 只框到警局的一角。那一下仍然會拆掉整座 —— 所以它不是零。
+    // The selection catches one corner of the police station. That still demolishes the whole
+    // building, so the count is not zero.
     const grid = emptyGrid();
     placeInfraOnGrid(grid, 3, 3, 'police', 0);
 
@@ -103,8 +105,9 @@ describe('拆除前先數一次:到底會拆掉什麼', () => {
   });
 
   it('should count an orphaned infrastructure cell', () => {
-    // 找不到主格的設施格 —— 存檔壞掉或多格建築被拆到一半留下的（BUG-052）。
-    // 拆除仍然會清掉它並試著解除註冊，所以它不是零。
+    // A facility cell whose primary cell cannot be found, left behind by a corrupt save or a
+    // half-demolished multi-cell building (BUG-052). Demolition still clears it and tries to
+    // unregister, so the count is not zero.
     const grid = emptyGrid();
     grid.setCell(5, 5, { buildingId: getInfraBuildingId('police'), reserved: MULTI_CELL_OCCUPIED });
 
@@ -115,7 +118,8 @@ describe('拆除前先數一次:到底會拆掉什麼', () => {
   });
 
   it('should count an elevated segment standing over empty ground', () => {
-    // 一座橫過空地的橋。地面什麼都沒有,只看 Grid 會回答「什麼也沒拆」。
+    // A bridge crossing empty land. Nothing sits on the ground, so reading the Grid alone
+    // answers "nothing was demolished".
     const elevation = new ElevationManager();
     elevation.set(7, 7, 1, segment());
 
@@ -139,7 +143,8 @@ describe('拆除前先數一次:到底會拆掉什麼', () => {
   });
 
   it('should count one cell per stacked level', () => {
-    // 同一格疊了兩層。拆除把兩層都清掉,所以 `elevated` 要看得出來有兩段。
+    // Two levels stacked on one cell. Demolition clears both, so `elevated` has to show two
+    // segments.
     const elevation = new ElevationManager();
     elevation.set(7, 7, 1, segment());
     elevation.set(7, 7, 2, segment());

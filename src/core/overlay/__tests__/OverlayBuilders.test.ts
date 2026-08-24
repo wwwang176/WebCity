@@ -137,7 +137,7 @@ describe('buildOverlayValue', () => {
   });
 
   it('crime: carries the policies a district switched on', () => {
-    // 圖層只畫警察局的話，條例上寫的 Crime +12 在畫面上完全看不見。
+    // Drawing only police stations leaves an ordinance's Crime +12 invisible on screen.
     const ctx = makeCtx({
       districts: { getDistrictAt: () => ({ id: 'strip' }) },
       policies: { getCrimeBonus: (id) => (id === 'strip' ? 12 : 0) },
@@ -160,21 +160,22 @@ describe('buildOverlayValue', () => {
       districts: { getDistrictAt: () => ({ id: 'downtown' }) },
     });
     const v = buildOverlayValue(ctx, 'district', makeCell(), 0, 0);
-    // 0 會被 buildOverlayData 當成「這一格沒東西」丟掉；超過 100 會被夾成 1。
+    // buildOverlayData reads 0 as "nothing on this cell", and anything over 100 clamps to 1.
     expect(v).toBeGreaterThan(0);
     expect(v).toBeLessThanOrEqual(100);
   });
 
   it('district: keeps consecutively created districts far apart', () => {
-    // 這個值是拿去當色相用的，而分區 id 是流水號 —— 玩家連續畫出來的幾區必然
-    // 是連號。均勻雜湊在這裡沒有用:它讓連號變成亂數，而亂數會撞在一起。
+    // The value is used as a hue and district ids are sequential, so districts the player
+    // draws in a row carry consecutive numbers. A uniform hash does not help here: it turns
+    // consecutive numbers into random ones, and random ones collide.
     const values = [1, 2, 3, 4, 5, 6, 7, 8].map(n =>
       buildOverlayValue(
         makeCtx({ districts: { getDistrictAt: () => ({ id: `district_${n}` }) } }),
         'district', makeCell(), 0, 0,
       ));
 
-    // 色相是環狀的，99 與 2 其實只差 3 —— 比大小要繞回去算。
+    // Hue is circular: 99 and 2 are 3 apart, so comparisons have to wrap.
     const gap = (a: number, b: number) => {
       const d = Math.abs(a - b) % 100;
       return Math.min(d, 100 - d);
@@ -213,8 +214,9 @@ describe('buildOverlayValue', () => {
 
 describe('通勤圖層', () => {
   /**
-   * 顏色的刻度是絕對值：紅色代表「這裡的人已經在想換工作了」。相對刻度的話，
-   * 一座通勤全都很好的城市裡最慢的那一格照樣會被畫成紅色。
+   * The colour scale is absolute: red means these residents are already thinking about
+   * changing jobs. On a relative scale, the slowest cell in a city with uniformly good
+   * commutes would still be drawn red.
    */
   const ctx = (byHome: [string, number][]) =>
     makeCtx({ commuteByHome: new Map(byHome), commuteMax: 60 });
@@ -238,7 +240,8 @@ describe('通勤圖層', () => {
   });
 
   it('keeps a very short commute visible', () => {
-    // 通勤 0 與「這一格沒有人住」在畫面上必須分得開，所以有住戶就至少上一點色。
+    // A zero commute and an unoccupied cell have to look different, so any resident gets at
+    // least some colour.
     expect(buildOverlayValue(ctx([['3,3', 0]]), 'commute', makeCell(), 3, 3)).toBeGreaterThan(0);
   });
 });

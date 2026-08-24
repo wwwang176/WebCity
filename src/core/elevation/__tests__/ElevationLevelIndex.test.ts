@@ -3,15 +3,15 @@ import { ElevationManager } from '../ElevationManager';
 import { RoadType } from '../../road/types';
 
 /**
- * 「這一格有哪幾層」的索引。
+ * The "which levels does this cell occupy" index.
  *
- * 存在的理由是量出來的:`UnifiedRoadLookup.getCompatibleNeighborKeys` 每探一個
- * 鄰居就無條件問三層，每問一次配一個 `x,y,level` 字串再查一次 Map。4 萬人的
- * 存檔實測 `ElevationManager.get` 佔主執行緒 **5.8%**，而那座城市總共只有
- * **7 段高架**。
+ * The justification is measured. `UnifiedRoadLookup.getCompatibleNeighborKeys` asks all three
+ * levels for every neighbour it probes, building an `x,y,level` string and a Map lookup each
+ * time. On a 40,000-population save `ElevationManager.get` took **5.8%** of the main thread in
+ * a city holding **7 elevated segments** in total.
  *
- * 索引是**衍生資料** —— `layers` 仍然是唯一的真相。所以測的重點是它會不會跟
- * 真相分家:新增、刪除、覆寫、清空、讀檔各一條。
+ * The index is **derived data**; `layers` remains the single source of truth. So what is under
+ * test is whether it diverges: one case each for insert, delete, overwrite, clear and load.
  */
 function seg(roadType = RoadType.TWO_LANE) {
   return { roadType, roadFlags: 0, railType: 0, railFlags: 0, isRamp: false, rampAscendDirection: 0 };
@@ -31,7 +31,8 @@ describe('這一格有哪幾層', () => {
   });
 
   it('should not leak between positions', () => {
-    // 位置鍵算錯的話（例如 x 與 y 摺在一起）隔壁格會拿到別人的層。
+    // A wrong position key — x and y folded together, say — gives a neighbouring cell
+    // someone else's levels.
     const em = new ElevationManager();
     em.set(3, 4, 1, seg());
 
@@ -80,7 +81,7 @@ describe('這一格有哪幾層', () => {
     src.set(9, 9, 2, seg());
 
     const dst = new ElevationManager();
-    dst.set(1, 1, 3, seg());       // 讀檔前的舊內容必須整個被換掉
+    dst.set(1, 1, 3, seg());       // pre-load content, has to be replaced wholesale
     dst.fromJSON(src.toJSON());
 
     expect(dst.levelsAt(3, 4)).toBe(1 << 1);
@@ -89,7 +90,7 @@ describe('這一格有哪幾層', () => {
   });
 
   it('should agree with the layer map itself', () => {
-    // 索引是衍生的，分家就沒有意義了。逐格對一次。
+    // The index is derived; once it diverges it is worthless. Checked cell by cell.
     const em = new ElevationManager();
     em.set(2, 2, 1, seg());
     em.set(2, 2, 2, seg());
@@ -120,9 +121,9 @@ describe('這一格有哪幾層', () => {
 
 describe('索引不會被無效的座標或層級弄壞', () => {
   it('should refuse a level outside 1-3 on delete, like set does', () => {
-    // `1 << 33` 在 JS 等於 `1 << 1`（位移取模 32）。不驗證的話，`delete(x, y, 33)`
-    // 會清掉**真正 level 1** 的那個位元，而 `layers` 裡那一段還在 —— 索引與真相
-    // 從此分家，那一段高架對所有查詢都變成不存在。
+    // `1 << 33` is `1 << 1` in JS (shifts are taken mod 32). Unvalidated, `delete(x, y, 33)`
+    // clears the bit for the **actual level 1** while that segment stays in `layers`: index
+    // and truth diverge, and that elevated segment stops existing for every query.
     const em = new ElevationManager();
     em.set(1, 0, 1, seg());
 
@@ -132,8 +133,8 @@ describe('索引不會被無效的座標或層級弄壞', () => {
   });
 
   it('should refuse a position the key cannot represent, like set does', () => {
-    // 位置鍵是 `x * 8192 + y`。`(0, 8192)` 與 `(1, 0)` 摺出同一個數字。
-    // `set` 已經擋了，`delete` 不擋的話會清掉鄰居的遮罩。
+    // The position key is `x * 8192 + y`, so `(0, 8192)` and `(1, 0)` fold to the same number.
+    // `set` already refuses; without the same guard, `delete` would clear a neighbour's mask.
     const em = new ElevationManager();
     em.set(1, 0, 1, seg());
 
@@ -142,7 +143,7 @@ describe('索引不會被無效的座標或層級弄壞', () => {
   });
 
   it('should still accept the levels it is supposed to', () => {
-    // 反面 —— 不然「全部都丟例外」也會讓上面兩條通過。
+    // The converse, or "throws on everything" would pass both cases above.
     const em = new ElevationManager();
     em.set(2, 2, 1, seg());
     em.set(2, 2, 3, seg());

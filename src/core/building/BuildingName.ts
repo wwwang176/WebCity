@@ -3,19 +3,21 @@ import { FAMILY_NAMES } from '../citizen/CitizenName';
 import { hash32 } from '../utils/hash32';
 
 /**
- * 建築的名字。
+ * Building names.
  *
- * 跟市民的名字一樣，是從**位置**與城市種子算出來的，不存進存檔:一座城市有上萬棟
- * 房子，每棟多背一個字串就是幾百 KB，而名字只是給玩家看的裝飾。舊存檔一載入就有
- * 名字，不必寫遷移。
+ * Like citizen names, derived from **position** and the city seed rather than stored in the
+ * save: a city holds tens of thousands of buildings, and one extra string each is hundreds of
+ * KB for what is decoration. Old saves get names the moment they load, with no migration.
  *
- * 名字跟著**那一棟建築**走:分區換了會換，升級也會換 —— 升級是把整棟拆掉換成另一
- * 款，那是一間更大的新店開在同一塊地上。
+ * A name belongs to **that building**: it changes with the zone, and it changes on upgrade,
+ * because an upgrade tears the building down and replaces it with another model — a bigger
+ * new shop on the same plot.
  *
- * 重複是允許的。一座城市裡有兩間 Rowan Market 很正常，玩家真正要分辨的是位置。
+ * Duplicates are allowed. Two Rowan Markets in one city is normal; what the player tells
+ * apart is the location.
  */
 
-/** 填進樣板的名詞。都市與自然各半，念起來像招牌。 */
+/** Nouns filled into the templates. Half urban, half natural, all reading like signage. */
 export const BUILDING_NOUNS: readonly string[] = [
   'Alder', 'Amber', 'Anchor', 'Ashford', 'Aspen', 'Beacon', 'Birch', 'Bramble',
   'Bridgeway', 'Cedar', 'Clover', 'Copper', 'Crescent', 'Crown', 'Dockside', 'Elm',
@@ -28,9 +30,11 @@ export const BUILDING_NOUNS: readonly string[] = [
 ];
 
 /**
- * 每一種用途自己的取名法。`{family}` 抽姓氏表，`{noun}` 抽上面那張。
+ * A naming scheme per land use. `{family}` draws from the surname table, `{noun}` from the
+ * list above.
  *
- * 姓氏跟市民共用一張表，所以 Novak Works 的老闆可能真的住在城裡。
+ * Surnames come from the same table as citizens', so the owner of Novak Works may well live
+ * in the city.
  */
 export const BUILDING_NAME_TEMPLATES: Record<number, readonly string[]> = {
   [ZoneType.RESIDENTIAL_LOW]: [
@@ -59,44 +63,49 @@ export const BUILDING_NAME_TEMPLATES: Record<number, readonly string[]> = {
   ],
 };
 
-/** 沒有分區的格子也要答得出東西 —— 面板拿到什麼就問什麼。 */
+/** Unzoned cells still need an answer; the panel asks about whatever it is given. */
 const FALLBACK_TEMPLATES: readonly string[] = ['{noun} Building', '{family} Property'];
 
 /**
- * 座標揉成一個鍵。
+ * Folds coordinates into one key.
  *
- * 不是 `x + y`:那樣 (3,4) 與 (4,3) 會同名，而整條反對角線都是同一個名字 ——
- * 而城市裡的建築正好是排成格線的。乘一個比地圖還寬的質數，每一格才各自獨立。
+ * Not `x + y`: that gives (3,4) and (4,3) the same name and one name to every cell along an
+ * anti-diagonal, and city buildings sit on exactly such a grid. Multiplying by a prime wider
+ * than the map keeps every cell independent.
  */
 function plotKey(x: number, y: number): number {
   return (Math.imul(x | 0, 0x2545f491) ^ (y | 0)) >>> 0;
 }
 
 /**
- * 這一格上這一棟建築叫什麼。
+ * The name of this building on this cell.
  *
- * `buildingId` 是建築的款式（`BUILDING_TYPES` 的 id）。升級會換掉款式，名字因此跟
- * 著換;不給的話（空地、還沒蓋的預覽）就只看分區。
+ * `buildingId` is the building model (an id from `BUILDING_TYPES`). An upgrade swaps the
+ * model, so the name follows. Omitted — empty land, an unbuilt preview — the zone alone
+ * decides.
  */
 export function buildingName(
   x: number, y: number, zoneType: number, citySeed = 0, buildingId = 0,
 ): string {
   const templates = BUILDING_NAME_TEMPLATES[zoneType] ?? FALLBACK_TEMPLATES;
   const key = plotKey(x, y);
-  // 分區與款式一起決定「這是哪一棟」。互斥或就夠 —— `hash32` 的 finalizer 會把
-  // 一個位元的差擴散到整個雜湊上，所以連號的款式不會拿到相近的名字。
+  // Zone and model together identify which building this is. XOR is enough: `hash32`'s
+  // finalizer spreads a one-bit difference across the whole hash, so consecutive model ids do
+  // not produce similar names.
   //
-  // 不同的 (分區, 款式) 組合可能撞出同一個 variant，那沒有關係:樣板是另外照
-  // 分區選的，撞到的兩棟本來就長在不同用途的地上。
+  // Different (zone, model) pairs can collide on the same variant, which is harmless: the
+  // template is chosen separately by zone, and two colliding buildings stand on land of
+  // different uses.
   //
-  // 分區其實只在「還沒蓋」（buildingId = 0）時起作用 —— 有建築的時候款式本身
-  // 就唯一決定了分區。**這一半沒有測試守得到**:拿掉 zoneType 之後所有測試照樣
-  // 全綠，因為樣板清單本來就是照分區選的，名字仍然分得開。留著是為了讓空地的
-  // 預設名字也跟著分區走。
+  // The zone term only matters while nothing is built (buildingId = 0); with a building, the
+  // model already determines the zone. **No test guards that half**: dropping zoneType leaves
+  // every test green, because the template list is picked by zone regardless and names stay
+  // distinct. It is kept so empty land's default name follows its zone.
   const variant = zoneType ^ buildingId;
 
-  // 三個欄位各一顆鹽。共用一顆的話樣板、姓、名詞會鎖在一起，一個樣板永遠只配
-  // 一個詞 —— 城裡的 Foundry 就會全部叫 Granite Foundry。
+  // One salt per field. Sharing a salt locks template, surname and noun together, so each
+  // template pairs with exactly one word and every Foundry in the city becomes Granite
+  // Foundry.
   const template = templates[hash32(key, variant ^ 0x5f356495, citySeed) % templates.length]!;
   const family = FAMILY_NAMES[hash32(key, variant ^ 0x1b873593, citySeed) % FAMILY_NAMES.length]!;
   const noun = BUILDING_NOUNS[hash32(key, variant ^ 0xcc9e2d51, citySeed) % BUILDING_NOUNS.length]!;
