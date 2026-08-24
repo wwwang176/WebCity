@@ -1,51 +1,55 @@
 import { METRES_PER_CELL } from '../core/grid/constants';
 
 /**
- * 陰影相機的深度範圍，以及兩個 bias 換算成地面上的位移。
+ * The shadow camera's depth range, and both biases converted into an offset on the ground.
  *
- * 純算術、不 import Three.js —— 這裡的數字全都是「算得出來但看不出來」的
- * 那一類：bias 調錯只會表現成陰影與物體有點距離，或是地面長出條紋，
- * 兩者都沒有任何東西會報錯。BUG-234 第一次就修錯了項，因為推導留在腦子裡
- * 而不是在程式碼裡。
+ * Pure arithmetic with no Three.js import. Every number here is the computable-but-invisible kind:
+ * a wrong bias shows up only as a shadow sitting a little away from its object, or as stripes
+ * across the ground, and neither reports anything. BUG-234 was first fixed on the wrong term,
+ * because the derivation lived in someone's head rather than in the code.
  */
 
-/** 建築最高 48 m = 4 格。投影者高過焦點平面的部分要算進深度範圍。 */
+/** Buildings reach 48 m = 4 cells. A caster's height above the focus plane counts toward the depth range. */
 export const MAX_CASTER_HEIGHT = 4;
 
 /**
- * 陰影相機的 near / far。
+ * The shadow camera's near and far.
  *
- * 深度範圍要剛好包住投影者，不能更寬：`shadow.bias` 是 [0, 1] 深度空間的值，
- * 換算成世界距離要**乘上 (far - near)**。開得越寬，同一個 bias 推得越遠，
- * 陰影就離物體越遠。原本寫死的 1 / 200 給了 199 格 = 2388 公尺的深度，
- * 而光源距焦點只有約 107 格。
+ * The depth range encloses the casters exactly and no wider: `shadow.bias` is a value in [0, 1]
+ * depth space, and converting it to a world distance **multiplies by (far - near)**. The wider it
+ * opens, the further the same bias pushes and the further the shadow sits from its object. A
+ * hard-coded 1 / 200 gives 199 cells = 2388 m of depth while the light is only about 107 cells from
+ * the focus.
  *
- * @param lightDistance 光源到焦點的距離（格）
- * @param padded        陰影相機的半寬（格），已含 off-screen 投影者的餘裕
+ * @param lightDistance The light-to-focus distance, in cells.
+ * @param padded        The shadow camera's half-width in cells, already including margin for
+ *                      off-screen casters.
  */
 export function shadowDepthRange(
   lightDistance: number, padded: number,
 ): { near: number; far: number } {
   const span = padded + MAX_CASTER_HEIGHT;
   return {
-    // 不能小於等於 0：正交相機的 near 為負沒有意義，也會讓深度精度失衡。
+    // It cannot be 0 or below: a negative near on an orthographic camera is meaningless and unbalances
+    // the depth precision.
     near: Math.max(1, lightDistance - span),
     far: lightDistance + span,
   };
 }
 
 /**
- * 陰影在地面上偏離物體的距離，單位是公尺。
+ * How far a shadow sits from its object on the ground, in metres.
  *
- * 兩個 bias 的幾何完全不同：
+ * The two biases have entirely different geometry:
  *
- *   normalBias 沿接收面的法線推。地面法線朝上，抬高 h 會讓陰影沿地面
- *              平移 `h / tan(仰角)`。
- *   bias       在深度空間推，等於把接收點沿**光軸**朝光源移動
- *              `bias × (far - near)`。那個位移同時有水平與垂直分量，
- *              兩者都會讓陰影退開 —— 合計約 `2d × cos(仰角)`。
+ *   normalBias pushes along the receiving surface's normal. The ground's normal points up, so
+ *              raising by h slides the shadow along the ground by `h / tan(elevation)`.
+ *   bias       pushes in depth space, which moves the receiving point along the **light axis**
+ *              toward the light by `bias * (far - near)`. That displacement has both a horizontal
+ *              and a vertical component and both push the shadow away, for about
+ *              `2d * cos(elevation)` in total.
  *
- * 太陽越低 `tan` 越小，所以最糟的情況是清晨與黃昏，不是正午。
+ * The lower the sun the smaller the `tan`, so the worst case is dawn and dusk rather than noon.
  */
 export function shadowOffsetMetres(opts: {
   normalBias: number;
@@ -62,10 +66,12 @@ export function shadowOffsetMetres(opts: {
 }
 
 /**
- * WeatherRenderer 擺太陽的方式，抽成純函式好讓陰影的算式吃得到。
+ * How WeatherRenderer places the sun, extracted as a pure function so the shadow arithmetic can
+ * read it.
  *
- * `sunY` 的下限是 `80 × 0.1` —— 太陽不會真的落到地平線，否則影子會無限長。
- * 那個下限決定了**最糟的仰角**，而陰影的偏移正是在那裡最大。
+ * `sunY` is floored at `80 x 0.1`: the sun never actually reaches the horizon, or shadows would be
+ * infinitely long. That floor decides the **worst elevation**, and the shadow's offset is largest
+ * exactly there.
  */
 export function sunElevationRad(dayFraction: number): number {
   const sunAngle = dayFraction * Math.PI * 2 - Math.PI / 2;
@@ -75,7 +81,7 @@ export function sunElevationRad(dayFraction: number): number {
   return Math.atan2(y, Math.hypot(x, 50));
 }
 
-/** 一天之中最低的太陽 —— 陰影偏移的最壞情況。 */
+/** The lowest sun of the day: the worst case for shadow offset. */
 export function worstSunElevationRad(): number {
   let worst = Infinity;
   for (let i = 0; i <= 200; i++) worst = Math.min(worst, sunElevationRad(i / 200));

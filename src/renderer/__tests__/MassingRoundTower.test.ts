@@ -14,14 +14,16 @@ import { appearanceOf } from '../BuildingAppearance';
 import { paletteFor } from '../ColorPalettes';
 
 /**
- * 商業高密度的圓塔。
+ * High-density commercial's round tower.
  *
- * 階段 2C-1 把 17 個手寫變體換成參數化生成器時，`makeComHighV2`（八角柱身 +
- * 圓盤簷）沒有被搬過來 —— 八個組合器產出的全是長方體。圓柱這個形狀後來為了
- * 工業的煙囪與筒倉才回到 `VolumeShape`，但只有工業拿得到。
+ * Replacing 17 hand-written variants with parameterised generators left `makeComHighV2` — an
+ * octagonal shaft plus a disc eave — behind: all eight composers produce rectangular solids. The
+ * cylinder returned to `VolumeShape` later for industry's stacks and silos, reachable by industry
+ * alone.
  *
- * 規格從頭到尾沒有討論過「圓形塔身」要不要留，驗收線（剪影種類、不對稱比例、
- * 三角形預算）也不會因為少一根圓塔而變紅 —— 所以測試全綠、東西沒了。
+ * Whether a round shaft should survive is nowhere in the spec, and none of the acceptance lines —
+ * silhouette variety, asymmetric share, triangle budget — turns red for a missing round tower. So
+ * the tests stay green and the thing is gone.
  */
 
 const ROUND_ZONE = ZoneType.COMMERCIAL_HIGH;
@@ -41,14 +43,16 @@ describe('commercial high round tower', () => {
   });
 
   it('should stay a rarity, not become the whole skyline', () => {
-    // 圓塔是地標。八棟裡有一半是圓的就不叫特色了，而且它完全旋轉對稱 ——
-    // 四向旋轉在它身上一點變化都生不出來，占比越高整區越單調。
+    // A round tower is a landmark. Half of eight being round is no longer distinctive, and it is
+    // fully rotationally symmetric: four rotations produce no variation at all on it, so the larger
+    // its share the more uniform the district.
     expect(roundVariants(3).length, '圓塔太常見').toBeLessThanOrEqual(2);
   });
 
   it('should make the round part the building itself, not equipment', () => {
-    // 工業的煙囪與筒倉也是圓柱，但它們是 PART_DETAIL。分辨兩者的是零件標籤，
-    // 而不是「有沒有圓柱」—— 否則工業的廠房也會被當成圓形建築。
+    // Industry's stacks and silos are cylinders too, but they are PART_DETAIL. What separates them
+    // is the part tag rather than "is there a cylinder", or an industrial shed counts as a round
+    // building.
     const vi = roundVariants(3)[0]!;
     const round = volumesFor(ROUND_ZONE, 'HIGH', 3, vi)
       .filter(v => v.shape === 'cylinder');
@@ -57,7 +61,8 @@ describe('commercial high round tower', () => {
   });
 
   it('should not call an industrial chimney a round building', () => {
-    // 反向：工業每個等級都有煙囪或筒倉，但廠房本體是方的。
+    // The converse: industry has a stack or a silo at every level while the shed itself is
+    // rectangular.
     for (let vi = 0; vi < VARIANT_COUNT; vi++) {
       expect(isRoundBodied(ZoneType.INDUSTRIAL, 'LOW', 3, vi), `工業變體 ${vi} 被當成圓形建築`)
         .toBe(false);
@@ -65,8 +70,8 @@ describe('commercial high round tower', () => {
   });
 
   it('should keep a circular footprint, not an ellipse', () => {
-    // 寬深是各自抖動的，直接拿 (w, d) 會得到橢圓柱。圓形之所以有特色是因為
-    // 它是圓的。
+    // Width and depth are jittered independently, and taking (w, d) directly gives an elliptical
+    // cylinder. Being round is the whole point of the shape.
     const vi = roundVariants(3)[0]!;
     const body = volumesFor(ROUND_ZONE, 'HIGH', 3, vi)
       .find(v => v.shape === 'cylinder' && (v.part ?? PART_WALL) === PART_WALL)!;
@@ -74,8 +79,8 @@ describe('commercial high round tower', () => {
   });
 
   it('should cap the round tower with a cornice disc', () => {
-    // 原本的 makeComHighV2 就是「柱身 + 略微外挑的圓盤」，而那片圓盤是它
-    // 看起來像建築而不是一根管子的原因。
+    // The earlier makeComHighV2 was a shaft plus a slightly projecting disc, and that disc is why it
+    // reads as a building rather than a pipe.
     const vi = roundVariants(3)[0]!;
     const cap = volumesFor(ROUND_ZONE, 'HIGH', 3, vi)
       .filter(v => v.part === PART_ROOF && v.shape === 'cylinder');
@@ -87,11 +92,11 @@ describe('commercial high round tower', () => {
   });
 
   it('should not put a square parapet or crown on a round top', () => {
-    // 直接測 `buildRoof`，不透過變體。
+    // Tested against `buildRoof` directly rather than through a variant.
     //
-    // 這一條的第一版是「掃過圓塔的所有屋頂量體，斷言每一個都是圓的」——
-    // 而圓塔落在 `roofFor` 的 `flat`，那條分支回傳空陣列，於是迴圈一個都
-    // 沒檢查到、測試空轉綠燈。回退驗證才抓到。
+    // Written as "sweep the round tower's roof masses and assert each is round", the round tower
+    // falls on `roofFor`'s `flat`, which returns an empty array, so the loop checks nothing and the
+    // case runs empty and green. Regression checking is what caught it.
     const top: Volume = {
       x: 0, z: 0, w: 0.4, d: 0.4, y0: 0, y1: 1.2, shape: 'cylinder',
     };
@@ -110,7 +115,7 @@ describe('commercial high round tower', () => {
 describe('round buildings get no overhead props', () => {
   type Internals = { overheadLayer: InstancedLayer; propLayer: InstancedLayer };
 
-  /** 這一格會落到哪個量體變體 —— 與 BuildingRenderer 的算法一致。 */
+  /** Which massing variant this cell falls on, computed the same way BuildingRenderer does. */
   function variantAt(x: number, y: number, level: number): number {
     return appearanceOf({
       x, y, zoneType: ROUND_ZONE, level, seedByte: 0,
@@ -130,8 +135,9 @@ describe('round buildings get no overhead props', () => {
   }
 
   it('should skip the awning and signage layer on a round tower', () => {
-    // 雨遮與招牌都是平板，貼在圓弧牆上會穿出去或懸空 —— 那是 BUG-226
-    // （雨遮貼在假想牆上）的同一類錯誤，只是這次牆是彎的。
+    // Canopies and signage are flat panels, and against a curved wall they either pierce it or
+    // float — the same class of fault as BUG-226, where a canopy clung to an imagined wall, except
+    // that here the wall is curved.
     const renderer = new BuildingRenderer();
     renderer.build(new THREE.Scene(), new Grid(40, 40));
     const internals = renderer as unknown as Internals;
@@ -144,7 +150,7 @@ describe('round buildings get no overhead props', () => {
   });
 
   it('should still give a square tower its awnings', () => {
-    // 反向：這條擋的是「乾脆整個分區都不要懸挑」。
+    // The converse: this guards against dropping overhangs from the whole zone.
     const renderer = new BuildingRenderer();
     renderer.build(new THREE.Scene(), new Grid(40, 40));
     const internals = renderer as unknown as Internals;
@@ -157,7 +163,8 @@ describe('round buildings get no overhead props', () => {
   });
 
   it('should keep the ground props on a round tower', () => {
-    // 只有懸挑該關。矮物件站在地上，牆彎不彎與它無關。
+    // Only overhangs are dropped. Low props stand on the ground and do not care about wall
+    // curvature.
     const renderer = new BuildingRenderer();
     renderer.build(new THREE.Scene(), new Grid(40, 40));
     const internals = renderer as unknown as Internals;

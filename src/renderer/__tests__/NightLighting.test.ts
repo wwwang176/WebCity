@@ -11,11 +11,12 @@ import { Grid } from '../../core/grid/Grid';
 import { ZoneType } from '../../core/grid/types';
 
 /**
- * 夜間發光的零件。
+ * The pieces that glow at night.
  *
- * `PART_DETAIL` 原本同時裝了「該是冷金屬的設備」（水塔、管架、煙囪）與
- * 「該發光的東西」（燈頭、招牌、看板）。一個標籤兩種語意，所以沒有辦法只讓
- * 後者亮 —— 唯一的選擇是兩者都不亮，而那正是改版前的狀態。
+ * `PART_DETAIL` carrying both the equipment that should be cold metal — water tanks, pipe racks,
+ * stacks — and the things that should glow — lamp heads, signage, billboards — gives one tag two
+ * meanings, and there is then no way to light only the second. The only option is that neither
+ * lights.
  */
 const isLampTag = (p: number) => p > PART_THRESHOLDS.LAMP_MIN && p < PART_THRESHOLDS.FOLIAGE_MIN;
 
@@ -34,14 +35,16 @@ describe('the lamp tag is its own band', () => {
   });
 
   it('should not swallow the cold metal that used to share the detail tag', () => {
-    // 水塔、管架、煙囪標的是 PART_DETAIL 0.2 —— 它必須落在燈的門檻**之下**。
+    // Water tanks, pipe racks and stacks are tagged PART_DETAIL at 0.2, which has to fall **below**
+    // the lamp threshold.
     expect(0.2).toBeLessThan(PART_THRESHOLDS.LAMP_MIN);
   });
 });
 
 describe('what glows at night', () => {
   it('should light the shop sign and the billboard', () => {
-    // 招牌是燈箱。商業低密度 L2 以上的懸挑層一定有側招。
+    // A sign is a light box. From low-density commercial L2 upward the overhead layer always has a
+    // projecting sign.
     let found = 0;
     for (const level of LEVELS) {
       for (const build of getOverheadVariants(ZoneType.COMMERCIAL_LOW, 'LOW', level)) {
@@ -54,7 +57,7 @@ describe('what glows at night', () => {
   });
 
   it('should light the lamp head but not the pole', () => {
-    // 整支都標成發光的話，夜裡會看到一根從地上亮到頂的柱子。
+    // Tagging the whole thing as glowing gives a post lit from the ground to the top at night.
     const geo = getGroundPropVariants(ZoneType.OFFICE, 'LOW', 3)
       .map(b => b())
       .reduce((a, b) => (countTagged(a, isLampTag) >= countTagged(b, isLampTag) ? a : b));
@@ -67,7 +70,7 @@ describe('what glows at night', () => {
   });
 
   it('should keep the massing free of lamps', () => {
-    // 煙囪、筒倉、水塔是冷的。量體層長出發光標籤就是標錯了。
+    // Stacks, silos and water tanks are cold. A glowing tag in the massing layer is a mis-tag.
     for (const key of Object.keys(TARGET_HEIGHTS_M)) {
       const [zs, ds] = key.split(':');
       for (const level of LEVELS) {
@@ -81,7 +84,7 @@ describe('what glows at night', () => {
   });
 
   it('should gate the glow on occupancy', () => {
-    // 沒有人的建築不應該發光。
+    // An empty building should not glow.
     const branch = BUILDING_FRAG.slice(
       BUILDING_FRAG.indexOf('} else if (isLamp)'),
       BUILDING_FRAG.indexOf('} else if (isDetail)'),
@@ -92,7 +95,7 @@ describe('what glows at night', () => {
   });
 
   it('should branch on the lamp tag before it reaches the wall branch', () => {
-    // 落到牆的分支就會長出窗戶 —— 一面招牌上一格一格的窗。
+    // Falling to the wall branch grows windows: a grid of them across a sign.
     const lampAt = BUILDING_FRAG.indexOf('isLamp');
     const wallAt = BUILDING_FRAG.indexOf('=== WALL');
     expect(lampAt).toBeGreaterThan(-1);
@@ -101,16 +104,16 @@ describe('what glows at night', () => {
 });
 
 describe('no zone is left dark', () => {
-  /** 立面 shader 裡各分區分支的起點標記，照原始碼的順序。 */
+  /** The start markers of each zone's branch in the facade shader, in source order. */
   const MARKERS = [
     'RESIDENTIAL LOW', 'RESIDENTIAL HIGH', 'COMMERCIAL LOW',
     'COMMERCIAL HIGH', 'INDUSTRIAL', 'OFFICE',
   ];
 
   it('should let every zone put something behind glass', () => {
-    // 工業原本完全沒有設 windowMask —— 沒有窗格、捲門只是一塊暗色，所以
-    // 整個工業區在夜裡是全黑的。這一條是那件事的機器可檢查形式：分區分支
-    // 一旦漏掉夜間的處理，它就轉紅。
+    // With industry setting no windowMask at all — no panes, and a roller door as a dark patch — the
+    // whole industrial zone is black at night. This is that in machine-checkable form: a zone branch
+    // missing its night handling turns it red.
     const idx = MARKERS.map((m) => {
       const at = BUILDING_FRAG.indexOf(m);
       expect(at, `找不到 ${m} 分支`).toBeGreaterThan(-1);
@@ -141,7 +144,7 @@ describe('occupancy reaches the layers that need it', () => {
     return { renderer, internals: renderer as unknown as Internals };
   }
 
-  /** 四層都建起來、都放了實例的渲染器。 */
+  /** A renderer with all four layers built and populated. */
   function populated(): Internals {
     const { renderer, internals } = fresh();
     renderer.addBuilding(0, 0, ZoneType.COMMERCIAL_LOW, 'LOW', 3, false);
@@ -149,9 +152,10 @@ describe('occupancy reaches the layers that need it', () => {
   }
 
   it('should write occupancy onto the attachment layers, not just the massing', () => {
-    // 招牌與燈頭住在懸挑層與矮物件層。updateOccupancy 原本只走量體層，
-    // 所以那兩層的 aOccupancy 永遠停在 0 —— 整座城市的招牌都是暗的，
-    // 而畫面上完全看不出是「資料沒送到」還是「本來就設計成不亮」。
+    // Signage and lamp heads live in the overhead and low-prop layers. With updateOccupancy walking
+    // the massing layer alone, those two layers' aOccupancy stays at 0 forever and every sign in the
+    // city is dark, with nothing on screen distinguishing "the data never arrived" from "it was
+    // designed not to light".
     const r = populated();
     r.updateOccupancy(new Map([['0,0', 0.8]]));
 
@@ -170,13 +174,14 @@ describe('occupancy reaches the layers that need it', () => {
   });
 
   it('should start a freshly placed attachment dark, not wearing the last tenant`s glow', () => {
-    // 取到的位置可能留著**上一個佔用者**的值 —— swap-with-last 在移除時把
-    // 最後一個實例的資料搬進空出來的槽，那份資料還留在原本的位置上。
-    // 空的緩衝區本來就是 0，所以只放一棟建築測不出這件事。
+    // An acquired slot can still hold the **previous occupant's** value: on removal, swap-with-last
+    // moves the last instance's data into the vacated slot and that data remains at its original
+    // position too. An empty buffer is 0 to begin with, so one building tests nothing here.
     const { renderer, internals } = fresh();
     const Z = ZoneType.COMMERCIAL_LOW;
-    // 整片放滿再整片拆掉，才保證每個桶的緩衝區裡都留著舊值 —— 只放兩棟的話
-    // 新建築會不會落到髒的槽要看雜湊，測試變成擲骰子。
+    // Filling the area and clearing it is what guarantees every bucket's buffer holds stale values.
+    // With two buildings, whether a new one lands on a dirty slot depends on the hash and the test
+    // becomes a dice roll.
     const ratios = new Map<string, number>();
     for (let x = 0; x < 6; x++) {
       for (let y = 0; y < 6; y++) {

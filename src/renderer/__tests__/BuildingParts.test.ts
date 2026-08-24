@@ -8,9 +8,9 @@ import {
 import { ZoneType } from '../../core/grid/types';
 
 /**
- * BUG-223：`position.count / 3` 數的是頂點不是三角形。所有建築幾何都是索引
- * 幾何，頂點被多個面共用，所以那個算法少報三到五成 —— 展示區的預算計數器
- * 因此一直在低報。
+ * BUG-223: `position.count / 3` counts vertices rather than triangles. All building geometry is
+ * indexed and shares vertices between faces, so that formula under-reports by 30 to 50% — leaving
+ * the showcase's budget counter reading low.
  */
 describe('triangleCount', () => {
   it('should count faces, not vertices, on an indexed geometry', () => {
@@ -27,7 +27,7 @@ describe('triangleCount', () => {
   });
 
   it('should never return a fraction', () => {
-    // 小數就是在數頂點 —— 那是這個 bug 現形的方式。
+    // A fractional result means it is counting vertices, which is how this fault surfaces.
     for (const geo of [
       new THREE.BoxGeometry(1, 1, 1),
       new THREE.SphereGeometry(1, 5, 4),
@@ -40,9 +40,10 @@ describe('triangleCount', () => {
 });
 
 /**
- * 零件標籤是頂點色的 R 通道，shader 用門檻把它切成四段。標籤與門檻分屬
- * 兩個檔案時，改了一邊忘了另一邊不會有任何東西報錯 —— 屋頂物件被畫上
- * 窗戶就是這樣來的。這裡把兩者放在一起，並且斷言它們一致。
+ * Part tags live in the vertex colour's R channel, which the shader cuts into segments by
+ * threshold. With tags and thresholds in two files, changing one and forgetting the other reports
+ * nothing — which is how rooftop objects end up with windows drawn on them. This keeps the two
+ * together and asserts they agree.
  */
 describe('part tags sit in the buckets the shader cuts', () => {
   it('should keep every tag distinct', () => {
@@ -55,8 +56,8 @@ describe('part tags sit in the buckets the shader cuts', () => {
   });
 
   it('should keep detail out of every other bucket', () => {
-    // 高於「法線可判定為屋頂」的上限，所以水平面的細節不會變成屋頂；
-    // 低於植栽下限，所以不會被上成綠色；遠低於屋頂下限。
+    // Above the bound at which a normal decides a roof, so horizontal detail does not become roof;
+    // below the foliage bound, so it is not coloured green; and far below the roof bound.
     expect(PART_DETAIL).toBeGreaterThan(PART_THRESHOLDS.ROOF_BY_NORMAL);
     expect(PART_DETAIL).toBeLessThan(PART_THRESHOLDS.FOLIAGE_MIN);
     expect(PART_DETAIL).toBeLessThan(PART_THRESHOLDS.ROOF_MIN);
@@ -72,14 +73,15 @@ describe('part tags sit in the buckets the shader cuts', () => {
   });
 
   /**
-   * 每個標籤只能落進**一個**桶。
+   * Every tag falls into **exactly one** bucket.
    *
-   * 前面那幾條是一個標籤一條、手寫的，所以新增一個標籤時沒有任何東西會問
-   * 「它跟別人撞了嗎」。`PART_SHELL` 加進來的時候正是這個處境：它要塞進
-   * 一段沒有人用的號碼，而塞錯的表現是「水塔忽然變成屋頂色」——
-   * 那在畫面上看起來只是「顏色怪怪的」。
+   * The cases above are one hand-written case per tag, so adding a tag leaves nothing asking
+   * whether it collides with another. `PART_SHELL` arrived in exactly that position: it had to fit
+   * into an unused range, and getting it wrong shows up as a water tank suddenly taking roof
+   * colours, which on screen reads only as "the colour looks off".
    *
-   * 這條把 shader 的門檻**照抄成述詞**，然後要求分類是一對一的。
+   * This **transcribes the shader's thresholds as predicates** and requires the classification to
+   * be one to one.
    */
   it('should put every tag in exactly one bucket', () => {
     const t = PART_THRESHOLDS;
@@ -104,11 +106,12 @@ describe('part tags sit in the buckets the shader cuts', () => {
   });
 
   /**
-   * 標籤與門檻之間要留得下浮點誤差。
+   * Tags leave room for floating-point error against their thresholds.
    *
-   * 頂點色是 Float32，而這些數字要在 TS 端寫進屬性、在 GLSL 端拿字面值比較。
-   * 兩邊都只有約 7 位有效數字，所以標籤壓在門檻上是不行的 —— 而「差一點點」
-   * 的表現是某些三角形走錯分支，也就是一根柱子上零星幾片別的顏色。
+   * Vertex colours are Float32, and these numbers are written into an attribute on the TS side and
+   * compared against literals in GLSL. Both carry about 7 significant digits, so a tag sitting on a
+   * threshold does not work — and "off by a little" shows up as some triangles taking the wrong
+   * branch, that is, a few patches of another colour on a post.
    */
   it('should leave slack between every tag and its bucket walls', () => {
     const t = PART_THRESHOLDS;
@@ -163,8 +166,9 @@ describe('stampZoneCategory', () => {
 });
 
 /**
- * 地面貼片需要自己的標籤：標成 PART_WALL 會長出窗戶，標成 PART_ROOF 會拿到
- * 屋瓦顏色。0.7 落在 shader 留在樹葉與屋頂之間的空號段。
+ * Ground decals need a tag of their own: tagged PART_WALL they grow windows, and tagged PART_ROOF
+ * they take roof tile colours. 0.7 falls in the range the shader leaves unused between foliage and
+ * roof.
  */
 describe('PART_GROUND', () => {
   it('should sit in the gap the shader leaves between foliage and roof', () => {
@@ -191,7 +195,7 @@ describe('PART_GROUND', () => {
   });
 
   it('should survive stampZoneCategory running after it', () => {
-    // 兩個函式都在改同一個屬性，呼叫順序不該影響結果。
+    // Both functions modify the same attribute, and the call order should not change the result.
     const geo = new THREE.BoxGeometry(1, 1, 1);
     tagPart(geo, PART_GROUND);
     setGroundShade(geo, 0.8);

@@ -21,13 +21,14 @@ function eachBucket(fn: (zoneType: number, density: Density, key: string) => voi
 }
 
 /**
- * 階段 2B 只推導了矮物件那一類，結論是「只有住宅低密度有空間」。那個結論
- * 沒有錯，但它只涵蓋「站在地上、佔據高度、行人會撞到」的東西。另外兩類的
- * 限制不同 —— 貼片行人走在上面，懸挑行人從下面走過。
+ * Deriving only the low-prop band gives "only low-density residential has room", which is correct
+ * as far as it goes but covers only things that stand on the ground, occupy height, and can be
+ * walked into. The other two have different constraints: decals are walked on and overhangs are
+ * walked under.
  */
 describe('decalBand', () => {
   it('should exist for every zone at every level', () => {
-    // 本階段的核心主張：貼片不受行人包絡線限制。
+    // The central claim here: decals are not bounded by the pedestrian envelope.
     eachBucket((z, d, key) => {
       for (const lv of LEVELS) {
         const band = decalBand(z, d, lv);
@@ -39,7 +40,7 @@ describe('decalBand', () => {
   });
 
   it('should stop at the cell edge', () => {
-    // 越過格子邊界就是鋪到鄰居家或馬路上。
+    // Past the cell boundary it paves a neighbour's plot or the road.
     eachBucket((z, d, key) => {
       for (const lv of LEVELS) {
         expect(decalBand(z, d, lv)!.outer, `${key} L${lv}`)
@@ -49,8 +50,9 @@ describe('decalBand', () => {
   });
 
   it('should reach in far enough to meet the narrowest building', () => {
-    // BUG-226：鋪面原本從**最寬**的牆面起算，所以窄的那些建築腳下露出一圈
-    // 0.68–1.17 m 的裸地。伸進建築底下的部分被建築本身擋住，看不見。
+    // BUG-226: measured from the **widest** wall, paving leaves a ring of 0.68 to 1.17 m of bare
+    // ground at the narrower buildings' feet. The part reaching under a building is hidden by the
+    // building itself.
     eachBucket((z, d, key) => {
       for (const lv of LEVELS) {
         expect(decalBand(z, d, lv)!.inner, `${key} L${lv}`)
@@ -60,7 +62,8 @@ describe('decalBand', () => {
   });
 
   it('should reach further out than the low prop band', () => {
-    // 貼片可以蓋過走道，矮物件不行 —— 兩者若一樣寬，就是有一邊算錯了。
+    // Decals may cover the walkway and low props may not: equal widths mean one of the two is
+    // computed wrongly.
     eachBucket((z, d, key) => {
       for (const lv of LEVELS) {
         const low = lowPropBand(z, d, lv);
@@ -83,8 +86,9 @@ describe('lowPropBand', () => {
   });
 
   it('should exist for every zone once the buildings make room', () => {
-    // 縮寬（商業低／辦公低 8.4→7.8、鋪滿基地者 9.8→9.0）之後每個分區都有
-    // 0.4 m 以上，放得下矮柱、垃圾桶、單車架。
+    // With the widths trimmed — low-density commercial and office from 8.4 to 7.8, plot-filling
+    // types from 9.8 to 9.0 — every zone has at least 0.4 m, enough for bollards, bins and bike
+    // racks.
     eachBucket((z, d, key) => {
       for (const lv of LEVELS) {
         const band = lowPropBand(z, d, lv);
@@ -96,8 +100,8 @@ describe('lowPropBand', () => {
   });
 
   it('should refuse a band too narrow to hold anything', () => {
-    // 給一條 0.07 m 的帶子，等於默許幾何作者去猜自己塞不塞得下。
-    // 用一個不在表上的分區驗證這條路徑。
+    // Handing back a 0.07 m band leaves the geometry's author guessing whether anything fits. This
+    // exercises that path with a zone absent from the table.
     expect(lowPropBand(999, 'LOW', 1)).toBeNull();
   });
 
@@ -113,7 +117,7 @@ describe('lowPropBand', () => {
 
 describe('overheadBand', () => {
   it('should clear a walking person', () => {
-    // 2.2 m 是雨遮不會打到頭的下限。
+    // 2.2 m is the lower bound at which a canopy clears people's heads.
     expect(OVERHEAD_CLEARANCE * METRES_PER_CELL).toBeGreaterThanOrEqual(2.2);
   });
 
@@ -130,8 +134,9 @@ describe('overheadBand', () => {
 
 describe('building edges', () => {
   it('should measure the edges from the variants, not from a jitter formula', () => {
-    // 以前是「目標寬 × (1 ± 抖動)」—— 那是推出來的，而推導與幾何各走各的
-    // 正是 BUG-226 發生的方式。現在量八個變體的實際值。
+    // As "target width times (1 +/- jitter)" this is a derivation, and a derivation running
+    // separately from the geometry is exactly how BUG-226 happened. It now measures the eight
+    // variants' actual values.
     eachBucket((z, d, key) => {
       for (const lv of LEVELS) {
         let lo = Infinity;
@@ -148,8 +153,8 @@ describe('building edges', () => {
   });
 
   it('should leave a real gap between the narrowest and the widest', () => {
-    // 兩者若相等，BUG-226 的整個分辨就沒有意義。基地在目標的 85%–100% 之間
-    // 取，所以八個變體之間本來就該有距離。
+    // If the two were equal, BUG-226's whole distinction would mean nothing. Footprints take 85% to
+    // 100% of the target, so the eight variants should differ.
     eachBucket((z, d, key) => {
       for (const lv of LEVELS) {
         const gap = (widestBuildingEdge(z, d, lv)! - narrowestBuildingEdge(z, d, lv)!)
@@ -160,8 +165,8 @@ describe('building edges', () => {
   });
 
   it('should never let the widest variant cross the pedestrian envelope', () => {
-    // 這是 BUG-221 的不變式，而且現在是量出來的 —— 公式算對但幾何沒照著長，
-    // 正是 BUG-222 發生的方式。
+    // BUG-221's invariant, and now measured: a correct formula with geometry that does not follow
+    // it is exactly how BUG-222 happened.
     eachBucket((z, d, key) => {
       for (const lv of LEVELS) {
         expect(widestBuildingEdge(z, d, lv)!, `${key} L${lv}`)
@@ -171,8 +176,9 @@ describe('building edges', () => {
   });
 
   it('should keep the widest variant close to the target width', () => {
-    // 基地在目標的 85%–100% 之間取，所以最寬的那一個不該低於 85%。
-    // 低於的話前庭鋪面與矮物件帶會被拉開，牆腳露出一圈裸地。
+    // Footprints take 85% to 100% of the target, so the widest should not fall below 85%. Below it,
+    // the forecourt paving and the low-prop band pull apart and a ring of bare ground shows at the
+    // wall's foot.
     eachBucket((z, d, key) => {
       const targetHalf = TARGET_WIDTHS_M[key]! / METRES_PER_CELL / 2;
       for (const lv of LEVELS) {
@@ -190,14 +196,16 @@ describe('building edges', () => {
 
 describe('SHOPFRONT_CEILING', () => {
   it('should be the lowest floor the facade shader can draw', () => {
-    // 樓高由變體決定，懸挑物的幾何是整桶共用的一份 —— 取最低值才保證永遠
-    // 不會越過一樓。取平均或最高值都會在矮的那些樓上掛到二樓去。
+    // The storey height comes from the variant while an overhang's geometry is one copy shared
+    // across the bucket, so only the lowest value guarantees it never crosses the first floor. The
+    // mean or the maximum hangs it at second-floor height on the shorter ones.
     expect(SHOPFRONT_CEILING).toBe(FLOOR_HEIGHT_UNITS.MIN);
     expect(FLOOR_HEIGHT_UNITS.MIN).toBeLessThan(FLOOR_HEIGHT_UNITS.MAX);
   });
 
   it('should leave room above a walking person', () => {
-    // 雨遮要塞進 [行人淨空, 一樓樓板線] 這條帶子裡。帶子歸零就無解。
+    // A canopy has to fit between the pedestrian clearance and the first-floor line. A zero-width
+    // band has no solution.
     expect((SHOPFRONT_CEILING - OVERHEAD_CLEARANCE) * METRES_PER_CELL)
       .toBeGreaterThan(0.3);
   });
