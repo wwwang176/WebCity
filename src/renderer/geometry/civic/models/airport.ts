@@ -13,120 +13,130 @@ import type { PropSpec } from '../../props';
 import type { CivicPlan, CivicVolume, CivicDecal, CivicVehicle } from '../types';
 
 /**
- * 三座機場 —— 小 5×4、中 7×4、大 9×6。全專案最大的單體。
+ * The three airports — small 5x4, medium 7x4, large 9x6. The largest single models in the
+ * project.
  *
- * **整座機場的配置從 `airportPaths.ts` 推導，這個檔案不決定任何一個 z。**
+ * **The whole layout is derived from `airportPaths.ts`; this file decides no z of its own.**
  *
- * 第一版不是這樣：它照「一座機場長什麼樣」自己畫了跑道帶（在後側）、滑行道帶
- * 與停機坪，而 `AirplaneAnimator` 的航路表把跑道放在**前側**（z = +1.20）。
- * 兩份都合理，只是講的不是同一座機場 —— 接起來的那一刻，飛機會沿著航廈的
- * 屋頂降落（BUG-239）。航路表是調過、測過、而且在畫面上會動的東西，所以它是
- * 權威，貼片跟著它走。
+ * `AirplaneAnimator`'s path table puts the runway at the **front** (z = +1.20). Drawing the
+ * runway band, taxiway band and apron here from what an airport looks like gives two
+ * descriptions that are each reasonable but do not describe the same airport, and the moment
+ * they meet, aircraft land along the terminal's roof (BUG-239). The path table is tuned,
+ * tested and visibly in motion on screen, so it is the authority and the decals follow it.
  *
- * 由後往前三（或四）條帶，邊界全部算出來的：
+ * Three or four bands from back to front, every boundary computed:
  *
  * ```
  *   z-  ┌────────────────────────────────┐
- *       │  航廈（＋塔台）                    │  到 gates.z − 0.55 為止
+ *       │  terminal (+ tower)             │  up to gates.z - 0.55
  *       ├────────────────────────────────┤
- *       │  停機坪                          │  含 gates.z 與 apronZ
- *       │   ┊ 空橋 ┊ 空橋 ┊               │
- *       │   ●機位  ●機位  ●機位            │  ← paths.gates
- *       │  ━━━━━━━━━━━━━━━━━  橫向滑行道   │  ← paths.apronZ
- *       │  ┃                          ┃   │  ← 縱向滑行道 ±taxiwayX
+ *       │  apron                          │  covers gates.z and apronZ
+ *       │   ┊ bridge ┊ bridge ┊           │
+ *       │   ● gate   ● gate   ● gate      │  <- paths.gates
+ *       │  ━━━━━━━━━━━━━━━━━ cross taxiway │  <- paths.apronZ
+ *       │  ┃                          ┃   │  <- taxiways at +/-taxiwayX
  *       ├──╂──────────────────────────╂───┤
- *   z+  │  ┸  跑道（中線在 threshold.z）  ┸  │  大型機場有兩條
+ *   z+  │  ┸  runway, centreline at threshold.z  ┸ │  two on the large airport
  *       └────────────────────────────────┘
  * ```
  *
- * 夜間語彙（spec §7）：跑道邊燈、頭端燈、滑行道中線燈、停機坪高桿燈、塔台頂的
- * 旋轉信標。一座夜裡的機場**就是**一組排好的燈。
+ * Night vocabulary (spec §7): runway edge lights, threshold lights, taxiway centreline lights,
+ * apron high masts, and the rotating beacon on the tower. An airport at night **is** a set of
+ * arranged lights.
  */
 
-/** 跑道中線到跑道帶後緣的距離（格）。大型機場兩條中線相距 1.4 格，所以不能更寬。 */
+/** Distance from a runway centreline to its band's back edge, in cells. The large airport's two centrelines are 1.4 cells apart, so it cannot be wider. */
 const RUNWAY_HALF = 0.7;
 /**
- * 停機位中心到航廈牆面的淨距（格）。
+ * Clearance from a gate's centre to the terminal wall, in cells.
  *
- * 飛機停在機位上時機身**沿 z 佔 0.98 格**（11.7 m），也就是機尾伸到機位中心
- * 後方 0.49 格。原本這個值是 0.55 —— 牆與機尾之間只剩 0.06 格（0.7 m），
- * 放什麼都會卡：空橋卡到飛機、地勤車卡到空橋。
+ * A parked aircraft occupies **0.98 cells along z** (11.7 m), so its tail reaches 0.49 cells
+ * behind the gate centre. At 0.55 the gap between wall and tail is 0.06 cells (0.7 m) and
+ * nothing fits: the jet bridge fouls the aircraft, the ground vehicle fouls the jet bridge.
  *
- * 0.75 讓那條縫有 0.26 格（3.1 m），剛好放得下一道空橋與一台地勤車，而且
- * 兩者都在飛機的**外面**。代價是航廈帶淺了 0.2 格 —— 小型機場因此是 10.9 m
- * 深，仍然是一棟站得住的航廈。
+ * 0.75 leaves that gap 0.26 cells (3.1 m), enough for one jet bridge and one ground vehicle,
+ * both **outside** the aircraft. The cost is 0.2 cells off the terminal band, leaving the small
+ * airport's terminal 10.9 m deep, still a building that holds up.
  */
 const GATE_CLEAR = 0.75;
 /**
- * 航廈牆與機尾之間那條縫的深度（格）。空橋與地勤車都住在這裡。
+ * Depth of the gap between the terminal wall and an aircraft's tail, in cells. Jet bridges and
+ * ground vehicles both live here.
  *
- * 它必須小於 `GATE_CLEAR − 0.49`，否則就伸進飛機裡了。
+ * It has to be less than `GATE_CLEAR - 0.49`, or it reaches into the aircraft.
  */
 const APRON_GAP = 0.24;
-/** 跑道邊燈與滑行道中線燈的間距（公尺）。 */
+/** Spacing of runway edge lights and taxiway centreline lights, in metres. */
 const LIGHT_SPACING = 10;
-/** 一顆燈的邊長（公尺）。 */
+/** Edge length of one light, in metres. */
 const LIGHT_W = 0.5;
-/** 標線寬（格）。 */
+/** Marking width, in cells. */
 const LINE_W = 0.04;
 /**
- * 空橋橋面的高度（公尺）。
+ * Jet bridge deck height in metres.
  *
- * 機身（`buildAirplaneGeometry`）從 −0.06 到 1.44 m —— 這個模型的飛機是壓扁
- * 的低多邊形，不是實際比例。空橋要接得到門，所以跟著**機身**走而不是跟著
- * 行人淨空走。1.0 m 落在機身高度的中段。
+ * The fuselage (`buildAirplaneGeometry`) runs from -0.06 to 1.44 m: this model's aircraft is a
+ * flattened low-poly shape, not to scale. A jet bridge has to reach a door, so it follows the
+ * **fuselage** rather than pedestrian clearance. 1.0 m sits mid-way up that range.
  */
 const JET_BRIDGE_DECK = 1.0;
-/** 空橋前端與機頭之間留的淨距（格）。太大接不到，太小就插進機頭。 */
+/** Clearance between a jet bridge's tip and the nose, in cells. Larger and it does not reach; smaller and it enters the nose. */
 const NOSE_CLEAR = 0.06;
 /**
- * 機頭到機位中心的距離（格）。
+ * Distance from the nose to the gate centre, in cells.
  *
- * `buildAirplaneGeometry` 的機身 0.72 加上蛋形機頭 1.6 × 0.06。飛機停妥時
- * 機頭朝著航廈（−z），所以機頭在 `gate.z − PLANE_NOSE`。
+ * `buildAirplaneGeometry`'s fuselage is 0.72 plus an ovoid nose of 1.6 x 0.06. A parked
+ * aircraft faces the terminal (-z), so its nose lies at `gate.z - PLANE_NOSE`.
  *
- * 寫成常數是因為這個檔案不准 import 幾何（那會在載入時建一份 mesh），
- * 而 `Airport.test.ts` 用**實際的幾何**驗這個值 —— 有人改了機身，那條會紅。
+ * It is a constant because this file must not import the geometry, which would build a mesh at
+ * load time. `Airport.test.ts` checks the value against the **actual geometry**, so a change to
+ * the fuselage turns that case red.
  */
 const PLANE_NOSE = 0.456;
-/** 陸側車道的深度（格）。接駁車、雨庇與行道樹全部住在這條帶上。 */
+/** Depth of the landside lane, in cells. Shuttles, the canopy and the street trees all live in this band. */
 const LANDSIDE = 0.28;
 /**
- * 空橋的長度（格）。
+ * Jet bridge length, in cells.
  *
- * 長度 ×2、寬度 ÷1.5，而且擺在飛機的左舷（看起來像在機頭旁邊）。
+ * Twice as long and two thirds as wide as a bridge on the gate's own centreline, and set to the
+ * aircraft's port side so it reads as reaching alongside the nose.
  *
- * 上一版的長度剛好停在機頭前（`GATE_CLEAR − 機頭 − 淨距` = 2.8 m），而那是
- * 因為它與機位同一條中線 —— 再長就插進機頭。改到左舷之後那個限制沒有了：
- * 現在它**開過機頭**，沿著機身走一段，這才是空橋接登機門的樣子。
+ * On the gate centreline the length has to stop in front of the nose
+ * (`GATE_CLEAR - nose - clearance` = 2.8 m) or it enters it. Offset to port that limit is gone:
+ * it runs **past** the nose and along the fuselage, which is what a jet bridge reaching a door
+ * looks like.
  *
- * 5.6 m 停在機翼前緣之前 1.9 m —— 停機坪上唯一還算寬的那塊空地。
+ * 5.6 m stops 1.9 m short of the wing's leading edge, the only reasonably wide gap left on the
+ * apron.
  */
 const BRIDGE_LEN = (GATE_CLEAR - PLANE_NOSE - NOSE_CLEAR) * 2;
 /**
- * 空橋中心線離機位中心線的側向偏移（格）。
+ * Lateral offset of the jet bridge's centreline from the gate's, in cells.
  *
- * 飛機停妥時機頭朝 −z，所以**左舷是 −x**（up × forward = (0,1,0) × (0,0,−1)）。
- * 0.16 格 = 1.9 m：機身半寬 0.72 m 加上橋寬的一半，兩者之間還留 0.5 m。
+ * A parked aircraft faces -z, so **port is -x** (up x forward = (0,1,0) x (0,0,-1)). 0.16 cells
+ * = 1.9 m: a 0.72 m fuselage half-width plus half the bridge width, with 0.5 m still between
+ * them.
  */
 const BRIDGE_SIDE = -0.16;
 
 interface AirportSpec {
   type: InfraType;
   size: AirportSize;
-  /** 佔地格。與 `InfraConfig` 一致。 */
+  /** Footprint in cells. Matches `InfraConfig`. */
   w: number;
   h: number;
-  /** 塔台高度（公尺）。 */
+  /** Tower height in metres. */
   towerM: number;
 }
 
 /**
- * 沿一條線排一串座標，**間距固定**、整串置中，兩端至少留 `margin`。
+ * Lays out a run of coordinates along a line at **fixed spacing**, centred, keeping at least
+ * `margin` at each end.
  *
- * 「把可用長度等分成 n 段」是錯的：那樣三座機場的跑道燈距會變成 9.25、
- * 9.94、10.35 m —— 三座並排時那個不一致比任何一座畫得不好都明顯。實際的
- * 跑道燈本來就是固定間距的，尾端剩多少就剩多少。
+ * Dividing the usable length into n equal parts is wrong: the three airports' runway light
+ * spacings would come out as 9.25, 9.94 and 10.35 m, and side by side that inconsistency is
+ * more visible than any one of them being drawn badly. Real runway lights are at fixed spacing,
+ * and whatever is left at the ends is left.
  */
 function spread(halfSpan: number, margin: number, spacing: number): number[] {
   const usable = (halfSpan - margin) * 2;
@@ -135,26 +145,20 @@ function spread(halfSpan: number, margin: number, spacing: number): number[] {
   return Array.from({ length: n + 1 }, (_, i) => -span / 2 + spacing * i);
 }
 
-/** 一條沿 x 的標線。 */
+/** One marking running along x. */
 const lineX = (x: number, z: number, len: number, shade: number): CivicDecal =>
   ({ x, z, w: len, d: LINE_W, shade, layer: 'mark' });
-/** 一條沿 z 的標線。 */
+/** One marking running along z. */
 const lineZ = (x: number, z: number, len: number, shade: number): CivicDecal =>
   ({ x, z, w: LINE_W, d: len, shade, layer: 'mark' });
 
-/**
- * 一座機場。
- *
- * 座標一律是**格**（與航路表同一套）。只有燈與建築的尺寸用 `M(公尺)` ——
- * 那些是「一顆燈多大」的問題，與配置無關。
- */
-/** 從航路表推導出來的地面配置。全部單位是格。 */
+/** The ground layout derived from the path table. Every unit is cells. */
 export interface AirportLayout {
-  /** 每條跑道帶的中線與前後緣。最後一條一路鋪到佔地前緣。 */
+  /** Each runway band's centreline and its back and front edges. The last one runs to the plot's front edge. */
   runwayBands: Array<{ c: number; z0: number; z1: number }>;
-  /** 航廈帶的前緣 = 停機坪帶的後緣。 */
+  /** The terminal band's front edge, which is the apron band's back edge. */
   termFront: number;
-  /** 停機坪帶的前緣 = 第一條跑道帶的後緣。 */
+  /** The apron band's front edge, which is the first runway band's back edge. */
   apronBack: number;
   taxiX: number;
   laneZ: number;
@@ -162,11 +166,12 @@ export interface AirportLayout {
 }
 
 /**
- * 把航路表換算成地面上的帶。
+ * Converts the path table into ground bands.
  *
- * 抽成獨立的函式是為了讓「這張表填了離譜的值會怎樣」測得到：跑道往後挪
- * 0.8 格，停機坪就只剩 0.59 格深 —— 放不下一架 10.8 m 的飛機，而每一條
- * 「幾何與航路一致」的測試仍然是綠的（它們是相對的，表一動幾何跟著動）。
+ * A separate function so that "what if this table holds an absurd value" is testable: move the
+ * runway 0.8 cells back and the apron is 0.59 cells deep, too little for a 10.8 m aircraft,
+ * while every "geometry agrees with the paths" test stays green, since those are relative and
+ * the geometry follows the table.
  */
 export function airportLayout(size: AirportSize, h: number): AirportLayout {
   const halfH = h / 2;
@@ -187,13 +192,20 @@ export function airportLayout(size: AirportSize, h: number): AirportLayout {
   };
 }
 
+/**
+ * One airport.
+ *
+ * Coordinates are always in **cells**, the same units as the path table. Only light and
+ * building dimensions use `M(metres)`, since those answer "how big is one light" and have
+ * nothing to do with the layout.
+ */
 export function buildAirport(spec: AirportSpec): CivicPlan {
   const halfW = spec.w / 2;
   const halfH = spec.h / 2;
-  /** 量體可用的半寬（格）。貼片不吃內縮，量體要。 */
+  /** Usable half-width for masses, in cells. Decals take no inset; masses do. */
   const limX = halfW - CIVIC_INSET;
 
-  // ── 全部從航路表推導 ──────────────────────────────────────
+  // ── All derived from the path table ───────────────────────
   const { runwayBands, termFront, apronBack, taxiX, laneZ, gates } =
     airportLayout(spec.size, spec.h);
   const runways = runwayBands.map(r => r.c);
@@ -208,13 +220,15 @@ export function buildAirport(spec: AirportSpec): CivicPlan {
     ...runwayBands.map(r => band(r.z0, r.z1, 0.12)),
   ];
 
-  // ── 跑道標線 ──────────────────────────────────────────────
+  // ── Runway markings ───────────────────────────────────────
   for (const { c } of runwayBands) {
-    // 中線虛線。畫**虛**線而不是連續的白線 —— 連續的那條是滑行道的畫法。
+    // The centreline, drawn **dashed** rather than continuous: a continuous line is how
+    // taxiways are marked.
     for (const x of spread(halfW, 0.34, 0.75)) {
       decals.push(lineX(x, c, 0.38, 1.0));
     }
-    // 兩端的頭端橫槓。五道並排的粗白槓 —— 跑道最好認的標線。
+    // Threshold bars at both ends: five thick white bars side by side, a runway's most
+    // recognisable marking.
     for (const side of [-1, 1]) {
       for (let i = 0; i < 5; i++) {
         decals.push({
@@ -225,15 +239,16 @@ export function buildAirport(spec: AirportSpec): CivicPlan {
     }
   }
 
-  // ── 滑行道標線 —— 就是飛機真正走的那條路 ────────────────────
+  // ── Taxiway markings, along the path aircraft actually take ─
   const farRunway = runways[runways.length - 1]!;
   for (const side of [-1, 1]) {
-    // 縱向滑行道：從橫向聯絡道一路接到最遠的那條跑道。中線是**連續**的。
+    // The longitudinal taxiway, from the cross taxiway to the furthest runway. Its centreline
+    // is **continuous**.
     decals.push(lineZ(
       side * taxiX, (laneZ + farRunway) / 2, farRunway - laneZ, 0.82,
     ));
-    // 每條跑道前的等待線。滑行道語彙裡唯一「有規則意義」的標記：
-    // 飛機在這裡停下來等許可。
+    // The holding position before each runway: the one marking in the taxiway vocabulary that
+    // carries a rule, where an aircraft stops for clearance.
     for (const { c } of runwayBands) {
       decals.push({
         x: side * taxiX, z: c - RUNWAY_HALF + 0.12,
@@ -241,23 +256,24 @@ export function buildAirport(spec: AirportSpec): CivicPlan {
       });
     }
   }
-  // 橫向聯絡道。
+  // The cross taxiway.
   decals.push(lineX(0, laneZ, taxiX * 2, 0.82));
 
-  // ── 機位與導引線 ──────────────────────────────────────────
+  // ── Gates and lead-in lines ───────────────────────────────
   for (const g of gates) {
     decals.push(lineZ(g.x, (laneZ + g.z) / 2, Math.abs(laneZ - g.z), 0.9));
     decals.push(lineX(g.x, g.z, 0.34, 0.9));
   }
 
-  // ── 量體 ──────────────────────────────────────────────────
-  // 航廈**貼著停機坪帶**，把整條陸側車道讓到它後面。原本它置中在自己那條帶
-  // 裡，於是陸側只剩 1.2 m —— 接駁車、貨車、雨庇柱與行道樹全部埋在航廈的
-  // 牆裡（而每一條既有的驗收都是綠的）。
+  // ── Masses ────────────────────────────────────────────────
+  // The terminal sits **against the apron band**, leaving the whole landside lane behind it.
+  // Centred in its own band it leaves 1.2 m of landside, burying shuttles, trucks, canopy posts
+  // and street trees inside the terminal's wall, with every existing acceptance check green.
   const termD = (termFront + halfH) - LANDSIDE;
   const termCz = termFront - termD / 2;
   const termTop = spec.h >= 6 ? 15 : 11;
-  // 塔台站在航廈左端**之外**。塞在航廈裡的話是 275 m3 的內部面。
+  // The tower stands **outside** the terminal's left end. Inside it, that is 275 m3 of interior
+  // faces.
   const towerX = -limX + 0.4;
   const termX0 = towerX + 0.45;
   const termCx = (termX0 + (limX - 0.3)) / 2;
@@ -278,38 +294,40 @@ export function buildAirport(spec: AirportSpec): CivicPlan {
       x: towerX, z: termCz, w: 0.42, d: 0.42, y0: 0, y1: M(spec.towerM),
     },
     {
-      // 頂樓比塔身寬一圈 —— 那個外挑就是「這是塔台」而不是「一根柱子」。
+      // The cab is wider than the shaft; that overhang is what makes it a control tower rather
+      // than a post.
       tag: 'towerCab', part: PART_ROOF,
       x: towerX, z: termCz, w: 0.58, d: 0.58,
       y0: M(spec.towerM), y1: M(spec.towerM + 3.2),
     },
     {
-      // 旋轉信標。夜裡的機場先被看到的是它。
+      // The rotating beacon: the first thing seen of an airport at night.
       tag: 'beacon', part: PART_LAMP,
       x: towerX, z: termCz, w: 0.1, d: 0.1,
       y0: M(spec.towerM + 3.2), y1: M(spec.towerM + 4.0),
     },
   ];
 
-  // ── 燈 ────────────────────────────────────────────────────
+  // ── Lights ────────────────────────────────────────────────
   const light = (tag: string, x: number, z: number): CivicVolume => ({
     tag, part: PART_LAMP,
     x, z, w: M(LIGHT_W), d: M(LIGHT_W), y0: 0, y1: M(0.4),
   });
   for (const { c } of runwayBands) {
-    // 兩側的邊燈。貼著中線兩邊 —— 排在帶的邊緣的話兩條跑道的燈會黏在一起。
+    // Edge lights on both sides, hugging the centreline; at the band's edges the two runways'
+    // lights would run together.
     for (const x of spread(limX, 0.17, M(LIGHT_SPACING))) {
       massing.push(light('runwayLight', x, c - 0.5));
       massing.push(light('runwayLight', x, c + 0.5));
     }
-    // 兩端的頭端燈，橫著排一列。
+    // Threshold lights at both ends, in a row across.
     for (const side of [-1, 1]) {
       for (const z of spread(0.45, 0.1, 0.22)) {
         massing.push(light('thresholdLight', side * (limX - 0.07), c + z));
       }
     }
   }
-  // 滑行道中線燈 —— 沿著飛機真正走的路。
+  // Taxiway centreline lights, along the path aircraft actually take.
   for (const side of [-1, 1]) {
     for (const z of spread((farRunway - laneZ) / 2, 0.1, M(LIGHT_SPACING))) {
       massing.push(light('taxiwayLight', side * taxiX, (laneZ + farRunway) / 2 + z));
@@ -319,22 +337,23 @@ export function buildAirport(spec: AirportSpec): CivicPlan {
     massing.push(light('taxiwayLight', x, laneZ));
   }
 
-  // ── 空橋。從航廈的牆伸出去，停在機頭前面。 ──────────────────
+  // ── Jet bridges, reaching from the terminal wall to just short of the nose ──
   //
-  // 空橋是**一條臂**，兩端都要對上：根部接在航廈的外牆上，前端停在機頭
-  // 前一點點。前兩版各錯一端 ——
+  // A jet bridge is **an arm** and both ends have to meet something: its root joins the
+  // terminal's outer wall and its tip stops just in front of the nose.
   //
-  // 1. 第一版與機位同一個 x、朝飛機伸過去，而飛機就停在那裡（插進機身）。
-  // 2. 第二版改成沿 x 擺在牆與機尾之間那條縫裡、往旁邊偏半個機位 ——
-  //    不再卡到飛機，但它與航廈、與飛機**都沒有接觸**，讀起來是停機坪上
-  //    飄著的一塊板。
+  // On the gate's own x, reaching toward the aircraft, it enters the fuselage. Laid along x in
+  // the gap between wall and tail and offset half a gate sideways, it fouls nothing but touches
+  // **neither** the terminal nor the aircraft, reading as a slab floating over the apron.
   //
-  // 現在長度是算出來的：從 `termFront`（航廈的前牆）到 `gateZ − 機頭 − 淨距`。
-  // 機位往前挪、機身改長，它跟著變 —— 不是寫死的一個 d。
+  // The length is computed: from `termFront`, the terminal's front wall, to
+  // `gateZ - nose - clearance`. Move the gates forward or lengthen the fuselage and it follows,
+  // rather than being a hard-coded d.
   //
-  // 高度也是一起修好的：它原本掛在 `overhead` 層，而那一層有「要高過 2.2 m
-  // 行人淨空」的規則，於是空橋停在 4.6 m，遠遠飄在 1.44 m 高的機身上方。
-  // 空橋接的是飛機不是路人，所以它在 `props`，橋面高度跟著機身走。
+  // Height goes with it. In the `overhead` layer, whose rule is to clear 2.2 m of pedestrian
+  // headroom, a jet bridge sits at 4.6 m, far above a 1.44 m fuselage. A jet bridge reaches an
+  // aircraft, not a pedestrian, so it lives in `props` with its deck height following the
+  // fuselage.
   const gateSpacing = gates.length > 1
     ? Math.abs(gates[1]!.x - gates[0]!.x)
     : 0.6;
@@ -348,7 +367,7 @@ export function buildAirport(spec: AirportSpec): CivicPlan {
       y0: M(JET_BRIDGE_DECK), y1: M(JET_BRIDGE_DECK + 0.35),
     },
     {
-      // 前端的支撐腳。少了它，橋面是一塊浮在 1 m 高的板子。
+      // The support leg at the tip. Without it the deck is a slab floating 1 m up.
       tag: 'jetBridgeLeg', part: PART_DETAIL,
       x: g.x + BRIDGE_SIDE, z: bridgeTip - 0.03,
       w: 0.05, d: 0.05, y0: 0, y1: M(JET_BRIDGE_DECK),
@@ -356,11 +375,11 @@ export function buildAirport(spec: AirportSpec): CivicPlan {
   ]);
   const overhead: CivicVolume[] = [];
 
-  // ── 自訂矮物件 ────────────────────────────────────────────
+  // ── Custom low props ──────────────────────────────────────
   const props: CivicVolume[] = [
     ...jetBridges,
-    // 航廈後方（陸側）的旅客雨庇柱。整條陸側帶只有 LANDSIDE 深，所以柱子
-    // 貼著外緣站 —— 站到 0.34 的話它們在航廈的牆**裡面**。
+    // Passenger canopy posts behind the terminal, on the landside. That band is only LANDSIDE
+    // deep, so the posts hug its outer edge; at 0.34 they stand **inside** the terminal wall.
     ...spread(spec.w * 0.3, 0, 1.0).map((x): CivicVolume => ({
       tag: 'canopyPost', part: PART_DETAIL,
       x, z: -halfH + 0.26, w: 0.025, d: 0.025, y0: 0, y1: M(4.2),
@@ -373,28 +392,29 @@ export function buildAirport(spec: AirportSpec): CivicPlan {
   });
 
   /**
-   * **停機坪上沒有靜態飛機。**
+   * **No static aircraft on the apron.**
    *
-   * 原本大型機場的兩側各停一架（小型與中型算出來就放不下）。三件事把它擠掉：
+   * Three things rule one out:
    *
-   * 1. 機位那條線上的飛機，機尾會壓到橫向聯絡道的滑行道燈；
-   * 2. 往航廈挪就撞上地勤車那條服務帶 —— 停機坪只有 14.8 m 深，飛機 11.7 m，
-   *    剩下的 3.1 m 恰好就是服務帶的寬度，兩個都要就差 0.1 m；
-   * 3. 而它本來就是多餘的：`AirplaneAnimator` 會讓真的飛機降落、滑進來、
-   *    停 5 秒再推出去 —— 遊戲裡與 showcase 裡都是。一架永遠不動的靜態飛機
-   *    停在旁邊，只會讓人以為那一架壞了。
+   * 1. On the gate line, an aircraft's tail covers the cross taxiway's centreline lights.
+   * 2. Moved toward the terminal it hits the ground-vehicle service band: the apron is 14.8 m
+   *    deep, an aircraft 11.7 m, and the remaining 3.1 m is exactly the service band's width, so
+   *    fitting both misses by 0.1 m.
+   * 3. It is redundant anyway. `AirplaneAnimator` lands a real aircraft, taxis it in, holds it
+   *    for 5 seconds and pushes it back, in the game and in the showcase alike. A permanently
+   *    motionless aircraft parked beside it only reads as broken.
    */
   const vehicles: CivicVehicle[] = [];
-  // 陸側（航廈後方）的接駁車與貨車。z 由 `LANDSIDE` 推導 —— 寫死 0.62 的
-  // 話它們停在航廈的三樓。
+  // Shuttles and trucks on the landside, behind the terminal. Their z is derived from
+  // `LANDSIDE`; hard-coded at 0.62 they park on the terminal's third floor.
   vehicles.push(
     { kind: 'bus', tag: 'landside', x: -spec.w * 0.26, z: -halfH + 0.15 },
     { kind: 'truck', tag: 'landside', x: spec.w * 0.26, z: -halfH + 0.15, tint: 0xcfd8dc },
   );
-  // 停機坪側的**地勤車輛**。淺色是機場地勤的實際樣子，也讓它們在深色的柏油
-  // 上讀得出來。工程車擺在建築旁邊 —— 停在機位列的**兩端**，貼著航廈牆：那裡既不在任何一個機位上，也不在任何
-  // 一道空橋旁邊。原本它們逐機位擺在 `g.x + 0.42`，而那個位置正好落在**下一個**
-  // 機位的空橋底下。
+  // **Ground vehicles** on the apron side. Pale is what airport ground crews actually look
+  // like, and it also keeps them readable against dark asphalt. They park at the **two ends** of
+  // the gate row against the terminal wall, which is neither on a gate nor beside a jet bridge;
+  // placed per gate at `g.x + 0.42` they land under the **next** gate's bridge.
   const rowLeft = Math.min(...gates.map(g => g.x));
   const rowRight = Math.max(...gates.map(g => g.x));
   const serviceZ = termFront + APRON_GAP / 2;
@@ -403,20 +423,20 @@ export function buildAirport(spec: AirportSpec): CivicPlan {
     { kind: 'truck', tag: 'groundCrew', x: rowRight + gateSpacing * 1.25, z: serviceZ, tint: 0xdce3e6 },
   );
 
-  // ── 共用矮物件 ────────────────────────────────────────────
+  // ── Shared low props ──────────────────────────────────────
   const fixtures: PropSpec[] = [
-    // 停機坪的高桿燈。站在橫向聯絡道與機位之間那條縫上。
+    // Apron high masts, standing in the gap between the cross taxiway and the gates.
     ...spread(limX, 0.5, 2.2).map((x): PropSpec =>
       ({ kind: 'lamp', x, z: (laneZ + gateZ) / 2, heightM: 8.0 })),
-    // 陸側車道的燈。位置是**指定**的（兩端各一支），不走 `spread` ——
-    // `spread` 在小型機場算出來剛好是 ±1.1，而接駁車就停在那裡。
+    // Landside lane lights, at **stated** positions, one at each end, rather than through
+    // `spread`: on the small airport `spread` lands exactly on +/-1.1, where the shuttle parks.
     ...([-1, 1] as const).map((s): PropSpec =>
       ({ kind: 'lamp', x: s * (limX - 0.6), z: -halfH + 0.15, heightM: 5.0 })),
-    // 場區圍籬。機場的界線是它最真實的一件事。
+    // The perimeter fence. An airport's boundary is the most literal thing about it.
     { kind: 'fence', x: -limX + 0.02, z: 0, axis: 'x', length: spec.h - 0.08 },
     { kind: 'fence', x: limX - 0.02, z: 0, axis: 'x', length: spec.h - 0.08 },
     { kind: 'fence', x: 0, z: halfH - 0.03, axis: 'z', length: spec.w - 0.08 },
-    // 陸側的綠化。全部在陸側車道那條帶上 —— 停機坪那一側是飛機在走的。
+    // Landside greenery, all within the landside lane; the apron side is where aircraft move.
     { kind: 'tree', x: -limX + 0.25, z: -halfH + 0.24, heightM: 6, crownRadius: 0.1 },
     { kind: 'tree', x: limX - 0.25, z: -halfH + 0.24, heightM: 6, crownRadius: 0.1 },
     { kind: 'hedge', x: 0, z: -halfH + 0.04, axis: 'z', length: spec.w * 0.4, depth: 0.03, heightM: 1.0 },
@@ -432,7 +452,8 @@ export function buildAirport(spec: AirportSpec): CivicPlan {
     footprint: { w: spec.w, h: spec.h },
     facade: FACADE_TRANSIT,
     color: civicColorOf(spec.type),
-    // 三座共用同一組 seed —— 它們是同一種建築的三個尺寸，立面節奏該一致。
+    // The three share one seed: they are three sizes of the same building and their facade
+    // rhythm should match.
     seed: [0.52, 0.34, 0.68],
     massing,
     decals,
