@@ -12,27 +12,30 @@ import { createSyncFakeWorker } from '../../traffic/__tests__/SyncFakeWorker';
 import { useSeededRandom } from '../../__tests__/helpers/seededRandom';
 
 /**
- * 載入之後，模擬讀到的城市要跟載入之前一樣大。
+ * After a load, the simulation must see a city the same size as the one saved.
  *
- * `warmup` 有兩份工作：讓一部分人立刻上路，以及**替全體通勤人口建立路線快取**。
- * 第二份工作沒有名字，所以在把第一份工作最佳化掉的時候被一起丟了 —— 2 146 人的
- * 存檔實測，1 752 位有工作的市民有 1 377 位完全沒有快取條目，預測車流從 3 504
- * 掉到 353，道路平均噪音密度 4.70 → 2.74，最高那一級的 49 格全部歸零。
+ * `warmup` has two jobs: putting a fraction of citizens on the road immediately, and
+ * **building route cache entries for the whole commuting population**. Losing the second
+ * while optimising the first was measured on a 2,146-citizen save as 1,377 of 1,752 employed
+ * citizens with no cache entry at all, predicted traffic falling from 3,504 to 353, average
+ * road noise density from 4.70 to 2.74, and all 49 cells in the top band dropping to zero.
  *
- * 而且補不回來：車輛一到上限，`spawnCommuteVehicles` 立刻 break，不再寫任何
- * 快取條目 —— pathfinding worker 正常運作下實測跑 40 個 tick，停在 643／1 750
- * 就不動了。
+ * It cannot recover on its own: once the vehicle cap is reached `spawnCommuteVehicles`
+ * breaks immediately and writes no further cache entries — measured over 40 ticks with the
+ * pathfinding worker running normally, it stalled at 643 of 1,750.
  *
- * 所以這裡釘三件事：warmup 之後沒有人是「查無此人」、背景會把路線補完、
- * 以及沒算到的人不會被下游當成「算過了，結果是這樣」。
+ * These pin three things: nobody is unknown to the cache after warmup, the background fill
+ * completes the routes, and citizens not yet computed are not treated downstream as
+ * "computed, and this is the answer".
  */
 
 /**
- * 一座住得下人的小城：棋盤路網，北半部住宅、南半部商業。
+ * A small liveable city: a grid road network, housing in the north half and commerce in the
+ * south.
  *
- * 房子是必要的 —— 沒有住宅容量，`updateResidentialCapacity(0)` 會在跑 tick 的
- * 過程中把市民一路趕走（實測 60 tick 從 120 人掉到 62 人），量到的覆蓋率就不是
- * 覆蓋率而是人口曲線。
+ * The housing is necessary. With no residential capacity, `updateResidentialCapacity(0)`
+ * evicts citizens as the ticks run (measured: 120 down to 62 over 60 ticks), and the
+ * coverage measured would be a population curve rather than coverage.
  */
 function makeCity(citizenCount: number): GameState {
   const state = createGameState(24, 24);
@@ -48,7 +51,8 @@ function makeCity(citizenCount: number): GameState {
       state.grid.setCell(i, j, { roadType: RoadType.TWO_LANE, roadFlags: flags });
     }
   }
-  // 路網的縫隙裡插房子：北半部小住宅（每棟 4 人），南半部小商店（每棟 4 個工作）。
+  // Buildings fill the gaps in the road network: small homes in the north (4 residents each)
+  // and small shops in the south (4 jobs each).
   const homes: string[] = [];
   const works: string[] = [];
   for (let i = 1; i < 24; i += 3) {
@@ -62,9 +66,10 @@ function makeCity(citizenCount: number): GameState {
       }
     }
   }
-  // 全城只有 8 組起迄。真實城市是 2 146 人對 842 組，補完要跑好幾分鐘；這裡
-  // 要的是「補得完」，而這座沒有任何公共服務的小城撐不了那麼久（實測 75 個
-  // tick 之後沒有人還有工作），所以把配對數收到補完能在衰退之前結束。
+  // Only 8 origin-destination pairs city-wide. A real city has 842 for 2,146 citizens and
+  // takes minutes to fill; what is under test here is that the fill completes, and this city
+  // has no public services to survive that long (measured: nobody is still employed after 75
+  // ticks), so the pair count is kept low enough for the fill to finish before the decline.
   const PAIRS = 8;
   for (let n = 0; n < citizenCount; n++) {
     const c = state.citizens.createCitizen({ age: 100 });
@@ -75,7 +80,7 @@ function makeCity(citizenCount: number): GameState {
   return state;
 }
 
-/** 一個活著、會回應、但每一組起迄都交白卷的 pathfinding worker。 */
+/** A pathfinding worker that is alive and responsive but returns nothing for every pair. */
 function createEmptyAnswerWorker(): Worker {
   const listeners: ((e: MessageEvent) => void)[] = [];
   const fake = {
@@ -107,12 +112,12 @@ function jobHolders(state: GameState) {
   return state.citizens.getCitizens().filter(c => c.homeId && c.workplaceId);
 }
 
-/** 有幾位有工作的市民，快取裡查不到任何條目。 */
+/** How many employed citizens have no cache entry at all. */
 function unknownCitizens(state: GameState, loop: SimulationLoop): number {
   return jobHolders(state).filter(c => !loop.commuteCache.get(c.id)).length;
 }
 
-/** 有幾位有工作的市民，快取裡有真正的路徑。 */
+/** How many employed citizens have a real path in the cache. */
 function readyCitizens(state: GameState, loop: SimulationLoop): number {
   return jobHolders(state).filter(c => loop.commuteCache.get(c.id)?.status === 'ready').length;
 }
@@ -124,9 +129,10 @@ function totalRefCount(loop: SimulationLoop): number {
 }
 
 describe('warmup 之後的快取覆蓋率', () => {
-  // 覆蓋率是在固定的 tick 預算下量的，而那個預算會被建築成長、解僱、車輛抖動的
-  // 骰子推來推去 —— 24 個種子跑下來有 2 個會讓「接得上路網的人」少算到一個。
-  // 預算收緊是這幾條測試的訊號來源，不能放寬;能拿掉的是抽樣的干擾。
+  // Coverage is measured against a fixed tick budget, and that budget is pushed around by
+  // the dice behind building growth, layoffs and vehicle jitter: across 24 seeds, 2 leave one
+  // road-connected citizen short. The tight budget is where these tests get their signal and
+  // cannot be relaxed; the sampling noise can be removed instead.
   useSeededRandom();
 
   it('should leave no commuting citizen unknown to the cache', async () => {
@@ -141,7 +147,7 @@ describe('warmup 之後的快取覆蓋率', () => {
   });
 
   it('should not let a not-computed-yet citizen inflate predicted flow', async () => {
-    // 「還不知道」不可以被當成車流算進去 —— 那會反過來高估。
+    // "Not known yet" must not count towards traffic, which would overstate it instead.
     const state = makeCity(120);
     const loop = makeLoop(state);
     await loop.warmup(0);
@@ -151,10 +157,11 @@ describe('warmup 之後的快取覆蓋率', () => {
   });
 
   /**
-   * 跑 tick 直到全體通勤人口都有路徑為止，回報是否等到。
+   * Ticks until the whole commuting population has a path, reporting whether it got there.
    *
-   * 比對的是**同一個時間點**的兩個數字：換工作與死亡會讓通勤人口一直變，拿
-   * warmup 當下的人數去比對後來的覆蓋數，量到的會是人口變化不是覆蓋率。
+   * Both numbers come from **the same moment**: job changes and deaths keep the commuting
+   * population moving, so comparing the coverage count against the population at warmup time
+   * would measure population change rather than coverage.
    */
   function tickUntilCovered(state: GameState, loop: SimulationLoop, maxTicks: number) {
     let covered = false;
@@ -168,8 +175,9 @@ describe('warmup 之後的快取覆蓋率', () => {
   }
 
   it('should finish computing every commuter route in the background', async () => {
-    // 車輛一到上限 `spawnCommuteVehicles` 就 break，所以靠生成車輛是補不完的
-    // —— 實測 2 146 人的存檔跑到 643／1 750 就停住。補完這件事要有自己的來源。
+    // `spawnCommuteVehicles` breaks at the vehicle cap, so spawning cannot finish the fill:
+    // measured on a 2,146-citizen save it stalled at 643 of 1,750. The fill needs its own
+    // driver.
     const state = makeCity(120);
     const loop = makeLoop(state);
     loop.setPathfindingWorker(createSyncFakeWorker());
@@ -184,9 +192,10 @@ describe('warmup 之後的快取覆蓋率', () => {
   });
 
   it('should not let unroutable citizens starve everyone else', async () => {
-    // 接不上路網的人（房子離馬路太遠）每個 tick 都會被重新試一次。如果這種
-    // 試法也算進預算，排在他們後面的人就永遠輪不到 —— 2 146 人的存檔實測，
-    // 補完的速度從每個 tick 32 條掉到 2 條。
+    // Citizens with no road connection (a house too far from any road) are retried every
+    // tick. If those retries count against the budget, everyone behind them never gets a
+    // turn: measured on a 2,146-citizen save, the fill rate fell from 32 routes per tick to
+    // 2.
     const state = createGameState(24, 24);
     for (let x = 0; x < 24; x++) {
       let flags = RoadDirection.EAST | RoadDirection.WEST;
@@ -201,12 +210,13 @@ describe('warmup 之後的快取覆蓋率', () => {
       state.grid.setCell(x, 13, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
       homes.push(`${x},11`);
       works.push(`${x},13`);
-      // 離馬路 11 格的孤島住宅 —— 路網上根本沒有它的出入口
+      // An isolated home 11 tiles from the road, with no access point on the network at all.
       state.grid.setCell(x, 0, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 });
     }
 
-    // 接不上的人排在前面，正常人排在後面。數量要夠多 —— 每個 tick 的名額是
-    // 32，人少的話輪轉自己就繞過去了，量不出「白試也要扣名額」的代價。
+    // The unreachable citizens come first and the ordinary ones after. There have to be
+    // enough of them: the per-tick quota is 32, and with fewer the round-robin simply steps
+    // past them, hiding the cost of charging failed retries to the quota.
     for (let n = 0; n < 400; n++) {
       const c = state.citizens.createCitizen({ age: 100 })!;
       c.homeId = `${1 + (n % 8)},0`;
@@ -222,14 +232,14 @@ describe('warmup 之後的快取覆蓋率', () => {
 
     const loop = makeLoop(state);
     loop.setPathfindingWorker(createSyncFakeWorker());
-    await loop.warmup(0);   // 一台車都不生成，覆蓋率只能靠背景補完
-    // 4 個 tick：8 組起迄、16 條路線，健康的話兩個 tick 就排完了（實測每一顆種子
-    // 都是 2）。留一倍餘裕，而白試也扣名額的話速度會掉到每個 tick 兩條，16 條要
-    // 八個 tick —— 那個差距正是這條測試要抓的。
+    await loop.warmup(0);   // no vehicles spawned, so coverage can only come from the fill
+    // 4 ticks: 8 pairs and 16 routes, which a healthy fill queues in two (measured at 2 for
+    // every seed). That leaves one tick of slack, while charging failed retries to the quota
+    // drops the rate to two per tick and needs eight — the gap this test is looking for.
     //
-    // 原本量的是第 12 個 tick，那超過了。這座沒有服務的小城從第 5 個 tick 左右
-    // 開始解僱市民，被解僱的人快取條目就沒了 —— 量到的是解僱不是覆蓋率，而且
-    // 24 顆種子裡有 2 顆會剛好少一個人（23／24），長期都被當成偶發在忍。
+    // Measuring at tick 12 is too late: this service-less city starts laying citizens off
+    // around tick 5, and a laid-off citizen loses their cache entry, so the measurement
+    // becomes layoffs rather than coverage and 2 of 24 seeds come up one citizen short.
     for (let t = 0; t < 4; t++) loop.tick();
 
     const covered = normal.filter(id => loop.commuteCache.get(id)?.status === 'ready').length;
@@ -238,12 +248,13 @@ describe('warmup 之後的快取覆蓋率', () => {
   });
 
   it('should fill routes when the worker answers but never finds a path', async () => {
-    // worker 不是「有」或「沒有」兩種狀態。它可以活著、可以回應，而每一組起迄
-    // 都回傳空的。把它當依賴的話，補完永遠停在排隊。
+    // A worker is not simply present or absent. It can be alive and responding while
+    // returning nothing for every pair, and treating it as a dependency leaves the fill
+    // queued forever.
     const state = makeCity(120);
     const loop = makeLoop(state);
     loop.setPathfindingWorker(createEmptyAnswerWorker());
-    await loop.warmup(0);   // 一條路線都不預先算，補完是唯一的來源
+    await loop.warmup(0);   // no routes precomputed, so the fill is the only source
 
     const r = tickUntilCovered(state, loop, 40);
     expect(r.holders, '通勤人口跑光了，覆蓋率就沒有意義').toBeGreaterThan(50);
@@ -251,9 +262,9 @@ describe('warmup 之後的快取覆蓋率', () => {
   });
 
   it('should fill routes without a pathfinding worker', async () => {
-    // 生產環境沒有 COOP/COEP 就沒有 SharedArrayBuffer，也就沒有 worker
-    // （`Game.ts` 建不起來時是靜靜吞掉的）。這個 loop 從頭到尾沒裝過 worker，
-    // 補完必須照樣完成。
+    // Production without COOP/COEP has no SharedArrayBuffer and therefore no worker
+    // (`Game.ts` swallows the construction failure silently). This loop never has one
+    // installed, and the fill must still complete.
     const state = makeCity(120);
     const loop = makeLoop(state);
     await loop.warmup(0.2);
@@ -271,8 +282,8 @@ describe('下游怎麼看待「還沒算」的市民', () => {
     const state = createGameState(24, 24);
     const c = state.citizens.createCitizen({ age: 100 })!;
     c.homeId = '1,1';
-    c.workplaceId = '20,20';   // 曼哈頓距離 38，遠超過 15 的門檻
-    c.happiness = 80;          // 不快樂不是這裡要測的觸發原因
+    c.workplaceId = '20,20';   // Manhattan distance 38, well past the threshold of 15
+    c.happiness = 80;          // unhappiness is not the trigger under test here
 
     const cache = new CommuteCache();
     if (route) {
@@ -292,11 +303,13 @@ describe('下游怎麼看待「還沒算」的市民', () => {
   }
 
   it('should judge a citizen the same way whether or not the route is computed', () => {
-    // 換工作看的是通勤要花多久，與「系統算好那條路線了沒」無關。
+    // Job changes depend on how long the commute takes, not on whether the system has
+    // computed that route yet.
     //
-    // 這兩個以前會走到不同的規則：沒有快取條目走曼哈頓距離、有條目走路徑長度。
-    // 於是把載入時的快取覆蓋率補滿之後，所有人都換了一套規則 —— 而那一套的
-    // 門檻永遠不成立，整個機制就靜靜地停擺了（見 JobRelocationTrigger.test.ts）。
+    // Routing the two through different rules — Manhattan distance with no cache entry,
+    // path length with one — means that filling the cache at load time switches everyone to
+    // the other rule, whose threshold never holds, and the whole mechanism stops silently
+    // (see JobRelocationTrigger.test.ts).
     expect(relocationPool(null), '查無此人卻沒有進換工作名單').toBe(1);
     expect(relocationPool({ status: 'pending', morningPath: null }), '還沒算好就被放過')
       .toBe(1);

@@ -6,14 +6,15 @@ import type { PathCellCache } from '../../traffic/PathCellCache';
 import { makeCellEdge } from '../../../../tests/helpers/makeLaneEdge';
 
 /**
- * 壅塞流量圖每 60 tick 重算一次。「這條路徑經過哪些格子」在重算之間不會變 ——
- * 路不會自己動 —— 所以那份答案必須跨重算共用。
+ * The congestion flow field is recomputed every 60 ticks. Which cells a path passes through
+ * cannot change between recomputes — roads do not move on their own — so that answer is shared
+ * across them.
  *
- * 玩家存檔實測（人口 12 351）:一次重算走過 4 505 318 條邊，292ms 全部落在單一個
- * tick 上，玩家感覺到的就是每 15 秒卡半秒（BUG-327）。
+ * Measured on a 12,351-citizen save: one recompute walked 4,505,318 edges, 292ms in a single
+ * tick, felt by the player as half a second of stutter every 15 seconds (BUG-327).
  *
- * 這件事**看輸出看不出來** —— 每次重新建一份快取，算出來的流量圖一模一樣。
- * 所以這裡看的是「總共真的走過幾條路徑」。
+ * **The output cannot show this**: rebuilding the cache each time produces an identical flow
+ * field. What is measured here is how many paths were actually walked.
  */
 
 type Inner = {

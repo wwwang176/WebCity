@@ -5,17 +5,19 @@ import { WorkplaceDistanceCache } from '../../workplace/WorkplaceDistanceCache';
 import { WorkplaceDistanceTableBuilder } from '../../workplace/WorkplaceDistanceTable';
 
 /**
- * `markLaneGraphDirty` 收的不只是道路變更 —— 純拆建築、在已有建築的地上重劃分區、
- * 鐵軌施工順手清掉建築，都會走進來。
+ * `markLaneGraphDirty` receives more than road changes: demolishing a building, rezoning over
+ * existing buildings, and rail construction clearing buildings all arrive here.
  *
- * 工作距離表對這兩類的反應必須不同:
+ * The workplace distance table must react differently to the two classes:
  *
- * - **可能拿掉路** → 舊表會把已經到不了的工作地說成到得了。丟掉。
- * - **只加路，或根本沒動路** → 舊表最多只是少報（新路還沒進表），那是安全的方向。
- *   續用，不然玩家每鏟掉一棟工廠就換來一次全城同步 Dijkstra。
+ * - **Roads may have been removed** — a stale table calls unreachable workplaces reachable.
+ *   Discard it.
+ * - **Roads only added, or untouched** — a stale table can at worst understate (new roads are
+ *   not in it yet), which is the safe direction. Keep it, otherwise every demolished factory
+ *   costs the player a city-wide synchronous Dijkstra.
  *
- * 判準用的是既有的 `skipUnreachableCheck` —— 它講的正好是同一件事
- * （「新蓋的路只會增加連通性，不會弄斷」）。
+ * The criterion is the existing `skipUnreachableCheck`, which says exactly the same thing:
+ * new roads only add connectivity and never break it.
  */
 const W = 12, H = 12;
 
@@ -53,8 +55,8 @@ describe('路網變更與建築變更對距離表的影響不同', () => {
   });
 
   it('should default to dropping the table', () => {
-    // 省略參數的呼叫端拿到的是保守的那一種 —— 新的呼叫路徑若忘了想這件事，
-    // 代價是慢一點，不是錯。
+    // Callers that omit the argument get the conservative behaviour: a new call site that
+    // never considers this pays in speed rather than correctness.
     const { loop, cache } = loopWithTable();
 
     loop.markLaneGraphDirty(['3,3']);

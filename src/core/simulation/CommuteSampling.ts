@@ -1,61 +1,68 @@
 /**
- * 每個 tick 要真的問幾位市民「你今天怎麼上班」。
+ * How many citizens a tick actually asks "how are you getting to work today".
  *
- * 生成通勤車的迴圈原本問 `適齡有工作的人 ÷ 8` 位，也就是**跟人口成正比**。同一份
- * 存檔複製成 10 萬人實測:每 tick 問 13 149 位、花 191ms，而速度 1 的一個 tick 只有
- * 250ms —— 整個預算被吃光，遊戲跑不動（BUG-328）。
+ * Asking `working-age employed citizens / 8` makes the count **proportional to
+ * population**. Measured on the same save scaled to 100,000 citizens: 13,149 asked per tick
+ * at 191ms, against 250ms available per tick at speed 1 — the entire budget, and the game
+ * stops running (BUG-328).
  *
- * 更荒謬的是路上的車幾乎沒變（1 278 → 1 598）:車庫就那些，人再多也生不出更多車。
- * 12 501 人時每 320 次評估生出一台車，92 578 人時要 3 300 次。
+ * The vehicles on the road barely move with it (1,278 to 1,598): the garages are what they
+ * are, and more citizens do not produce more vehicles. At 12,501 citizens one vehicle
+ * spawns per 320 evaluations; at 92,578 it takes 3,300.
  *
- * 而這個迴圈**同時**在估「今天多少人搭捷運」。估計的準確度只跟**問了幾個人**有關，
- * 跟城市多大無關 —— 民調問一千人的誤差，兩千萬人的國家和三億人的國家是一樣的。
- * 所以問的人數沒有理由跟著人口線性成長。
+ * That loop is **also** estimating how many citizens ride transit today, and an estimate's
+ * accuracy depends on the sample size, not on the population it is drawn from: a
+ * thousand-person poll has the same margin in a country of 20 million as in one of 300
+ * million. So the number asked has no reason to grow linearly with population.
  *
- * 分三段:
+ * Three regimes:
  *
- * | 城市 | 問幾位 | 為什麼 |
+ * | city | asked | why |
  * |---|---|---|
- * | 想問的 ≤ `SPAN` | 全部 | 小城市**行為完全不變**，一個字都沒改 |
- * | 中型 | `sqrt(想問的 × SPAN)` | 放大倍率跟著平方根長，小路線的數字不會太粗 |
- * | 大型 | `CEILING` | 平方根還是會無限成長，成本要有個頂 |
+ * | intended <= `SPAN` | all of them | small cities behave **exactly as before** |
+ * | medium | `sqrt(intended * SPAN)` | the scale-up factor grows as a square root, keeping small routes' numbers fine-grained |
+ * | large | `CEILING` | a square root still grows without bound, and the cost needs a ceiling |
  *
- * 只用平方根的話 100 萬人要問 4 415 位（約 66ms/tick）—— 比線性好，但還是會爆。
- * 只用寫死的上限的話，10 萬人時放大倍率就到 33，小路線的每日搭乘只能是 33 的倍數。
- * 兩段接起來才兩邊都顧到。
+ * The square root alone would ask 4,415 citizens at a million (about 66ms/tick) — better
+ * than linear, but still unbounded. A hardcoded ceiling alone would put the scale-up factor
+ * at 33 by 100,000 citizens, making a small route's daily ridership a multiple of 33. The
+ * two together cover both ends.
  */
 
 /**
- * 幾何平均的另一端。
+ * The other end of the geometric mean.
  *
- * 想問的人數等於這個值時不打折，低於它也不打折 —— 所以它同時是「開始節流的門檻」
- * 與「節流的強度」。150 讓 12 501 人的參考城市從 1 077 位降到 402 位，實測面板上
- * 顯示的搭乘數波動 0.6%（跨日平滑之後）。
+ * An intended count equal to this value is not reduced, and neither is anything below it, so
+ * it is simultaneously the throttling threshold and the throttling strength. At 150 the
+ * 12,501-citizen reference city drops from 1,077 asked to 402, with the ridership figures on
+ * the panel measured to move by 0.6% after cross-day smoothing.
  */
 export const COMMUTE_SAMPLE_SPAN = 150;
 
 /**
- * 再大的城市也不會問超過這麼多位。
+ * The largest city asks no more than this.
  *
- * 平方根仍然是無限成長的:100 萬人要問 4 415 位，約 66ms/tick。封在這裡之後成本
- * 停在約 15ms，不管城市長到多大。
+ * The square root is still unbounded: a million citizens would ask 4,415, about 66ms/tick.
+ * Capped here, the cost settles at roughly 15ms however large the city grows.
  *
- * 代價是超大城市的放大倍率會繼續變大（小路線的數字變粗）。那是刻度問題，不是準確度
- * 問題 —— 面板顯示的是跨日平滑值，會把它磨平。
+ * The cost is that very large cities keep increasing the scale-up factor, coarsening small
+ * routes' numbers. That is a resolution question rather than an accuracy one — the panel
+ * shows the cross-day smoothed value, which grinds it away.
  */
 export const COMMUTE_SAMPLE_CEILING = 1000;
 
 /**
- * 想問 `attempts` 位時，實際問幾位。
+ * How many citizens to ask when the intended number is `attempts`.
  *
- * 回傳值永遠 ≤ `attempts` —— 呼叫端拿 `attempts / 回傳值` 當放大倍率，大於 1 的話
- * 會把每個人算成不到一個人。
+ * The result is always <= `attempts`: callers use `attempts / result` as the scale-up
+ * factor, and anything above 1 would count each citizen as less than one person.
  */
 export function commuteSampleSize(attempts: number): number {
   if (!(attempts > 0)) return 0;
-  // 小城市不打折這件事不需要另外一條分支:`attempts ≤ SPAN` 時
-  // `sqrt(attempts × SPAN) ≥ attempts` 恆成立，下面的 `Math.min` 就會回 attempts。
-  // 早期返回那一行寫過，改壞了沒有任何測試會紅 —— 因為它改不掉任何行為。
+  // Small cities need no separate branch: for `attempts <= SPAN`,
+  // `sqrt(attempts * SPAN) >= attempts` always holds and the `Math.min` below returns
+  // attempts. An early return here could be broken without any test turning red, because it
+  // cannot change any behaviour.
   const sqrtGrowth = Math.ceil(Math.sqrt(attempts * COMMUTE_SAMPLE_SPAN));
   return Math.min(attempts, sqrtGrowth, COMMUTE_SAMPLE_CEILING);
 }

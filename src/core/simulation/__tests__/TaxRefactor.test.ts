@@ -146,8 +146,9 @@ describe('TaxRates: income tax + business tax', () => {
 });
 
 describe('Income tax calculation (residential buildings)', () => {
-  // 隔壁幾個 describe 都上了種子，這一個漏掉。稅金是按住戶數算的 —— 住戶剛好在
-  // 這六個 tick 裡死掉一個，稅就少一半，而失敗訊息看起來會像稅率算錯。
+  // Seeded like the neighbouring describes. Tax is computed per resident, so one resident
+  // dying within these six ticks halves the tax, and the failure message would look like a
+  // wrong tax rate.
   useSeededRandom();
 
   it('should calculate income tax from residents in residential buildings', () => {

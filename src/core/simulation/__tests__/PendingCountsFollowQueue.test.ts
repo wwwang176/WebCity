@@ -5,16 +5,18 @@ import { GarbageService } from '../../service/GarbageService';
 import { DeathCareService } from '../../service/DeathCareService';
 
 /**
- * 快樂度要知道「我家門口有幾包垃圾、幾具屍體」，而那張逐格的表是從兩條待處理
- * 佇列數出來的。
+ * Happiness needs to know how many garbage bags and bodies are at a citizen's door, and that
+ * per-cell table is counted from two pending queues.
  *
- * 舊版每個 tick 從頭數一遍。4 萬人的存檔實測:**24 547 筆待收垃圾只落在 311 個
- * 格子上**，而佇列只在服務 tick（每 6 個）、跨日的死亡、以及玩家拆房子的時候會動
- * —— 六個 tick 裡有五個數出來的結果一模一樣。那一支佔了
- * `updateCitizenHappinessSlice` 的 63.5%、主執行緒的 4.9%。
+ * Counting from scratch every tick measured, on a 40k-citizen save, **24,547 pending bags
+ * spread over 311 cells**, while the queues only change on a service tick (every 6), on the
+ * daily deaths, and when the player demolishes a building — so five ticks in six produce an
+ * identical count. That pass took 63.5% of `updateCitizenHappinessSlice` and 4.9% of the main
+ * thread.
  *
- * 現在改成「佇列說它變過才重數」。**這裡釘的就是那個『說』**:三個入口各有一條，
- * 漏掉任何一個，門口的垃圾就會晚幾個 tick 才影響快樂度 —— 而那是安靜的。
+ * The count is now taken only when a queue reports a change. **What these pin is that
+ * report**: one test per entry point, because missing any one delays garbage at the door
+ * reaching happiness by several ticks, and does so silently.
  */
 
 type Inner = {
@@ -39,19 +41,19 @@ describe('門口的垃圾與屍體要跟著佇列走', () => {
   });
 
   it('should see garbage as soon as it is reported', () => {
-    // 先數過一次，快取才有東西可以沿用 —— 直接報再數的話第一次呼叫本來就會重數，
-    // 「有沒有記一筆」那個判斷就照不出來。
+    // Count once first so there is something to reuse. Reporting and then counting would hit
+    // the first-call recount anyway, hiding whether the change was recorded.
     const { state, inner } = makeLoop();
     inner.refreshPendingCounts();
 
-    state.garbage.reportGarbage(3, 4, 2);   // 2 包
+    state.garbage.reportGarbage(3, 4, 2);   // 2 bags
     inner.refreshPendingCounts();
 
     expect(inner.pendingGarbageCounts.get('3,4')).toBe(2);
   });
 
   it('should not count a part-filled bag', () => {
-    // 累積不到一包的量還沒進佇列 —— 那不是「門口有垃圾」。
+    // Less than a full bag has not entered the queue and is not garbage at the door.
     const { state, inner } = makeLoop();
     state.garbage.reportGarbage(3, 4, 0.4);
     inner.refreshPendingCounts();
@@ -61,7 +63,7 @@ describe('門口的垃圾與屍體要跟著佇列走', () => {
 
   it('should see a death as soon as it is reported', () => {
     const { state, inner } = makeLoop();
-    inner.refreshPendingCounts();   // 見上面那條:要先有快取
+    inner.refreshPendingCounts();   // as above: a cache has to exist first
 
     state.deathCare.reportDeath(5, 6);
     state.deathCare.reportDeath(5, 6);
@@ -71,8 +73,8 @@ describe('門口的垃圾與屍體要跟著佇列走', () => {
   });
 
   it('should forget garbage cleared by a demolish', () => {
-    // `clearPendingAt` 是玩家拆房子時走的路，**不在任何排程上** —— 拿排程當
-    // 「有沒有變」的訊號就會漏掉它。
+    // `clearPendingAt` is the path taken when the player demolishes a building and is **on no
+    // schedule at all**, so using the schedule as the change signal misses it.
     const { state, inner } = makeLoop();
     state.garbage.reportGarbage(3, 4, 2);
     inner.refreshPendingCounts();
@@ -97,13 +99,14 @@ describe('門口的垃圾與屍體要跟著佇列走', () => {
   });
 
   it('should follow the death queue through a service tick', () => {
-    // 屍體那一條的服務 tick 跟垃圾是各自獨立的入口。
+    // The body queue's service tick is a separate entry point from the garbage one.
     const { state, inner } = makeLoop();
     state.deathCare.reportDeath(5, 6);
     inner.refreshPendingCounts();
     expect(inner.pendingDeathCounts.get('5,6'), '前置條件:要先數到').toBe(1);
 
-    // 沒有墓園，所以收不走;等到腐化為止（屍體是 1800 個 tick，比垃圾久）。
+    // No cemetery, so nothing is collected; wait for decay (bodies take 1,800 ticks, longer
+    // than garbage).
     for (let i = 0; i < 1900; i++) state.deathCare.tick();
     inner.refreshPendingCounts();
 
@@ -111,9 +114,10 @@ describe('門口的垃圾與屍體要跟著佇列走', () => {
   });
 
   it('should count what a loaded save already had waiting', () => {
-    // 讀檔建出來的服務佇列裡本來就有東西，而版本號是全新的 0 —— 消費端那邊的
-    // 「上次數的是第幾版」要是也從 0 開始，第一次就會誤判成「沒變過」，整座城市
-    // 門口的垃圾要等到下一次服務 tick 才影響快樂度。
+    // A service queue restored from a save already has entries while its version is a fresh 0.
+    // If the consumer's "version at last count" also starts at 0, the first call concludes
+    // nothing changed and the whole city's doorstep garbage waits for the next service tick to
+    // affect happiness.
     const { state, inner } = makeLoop();
     state.garbage = GarbageService.fromJSON({
       pendingBags: [{ x: 3, y: 4, waitTicks: 0 }, { x: 3, y: 4, waitTicks: 0 }],
@@ -125,8 +129,8 @@ describe('門口的垃圾與屍體要跟著佇列走', () => {
   });
 
   it('should count bodies a loaded save already had waiting', () => {
-    // 兩條佇列各記各的版本號,所以兩邊都要有這一條 —— 只有一邊寫錯的話，另一邊
-    // 的版本號不合會順便觸發重數，把問題蓋掉。
+    // The two queues track versions separately, so both need this test: with only one side
+    // wrong, the other side's version mismatch triggers a recount and masks the problem.
     const { state, inner } = makeLoop();
     state.deathCare = DeathCareService.fromJSON({
       pendingDeathQueue: [{ x: 5, y: 6, waitTicks: 0 }],
@@ -138,13 +142,13 @@ describe('門口的垃圾與屍體要跟著佇列走', () => {
   });
 
   it('should follow the queue through a service tick', () => {
-    // 服務 tick 會讓等太久的東西腐化消失。那是佇列縮短的第三條路。
+    // A service tick decays anything that has waited too long, the third way a queue shrinks.
     const { state, inner } = makeLoop();
     state.garbage.reportGarbage(3, 4, 1);
     inner.refreshPendingCounts();
     expect(inner.pendingGarbageCounts.get('3,4'), '前置條件:要先數到').toBe(1);
 
-    // 沒有垃圾場，所以收不走;等到腐化為止。
+    // No landfill, so nothing is collected; wait for decay.
     for (let i = 0; i < 700; i++) state.garbage.tick();
     inner.refreshPendingCounts();
 
@@ -152,16 +156,16 @@ describe('門口的垃圾與屍體要跟著佇列走', () => {
   });
 
   it('should only recount when the queue says it changed', () => {
-    // 這是整件事的重點，而它只能反過來測:繞過服務的公開介面直接動佇列，那張表
-    // 就**不該**跟著變。會變就代表每次都在重數，24 547 筆的城市每個 tick 都要付
-    // 那筆錢。
+    // The point of the whole thing, testable only in the negative: mutating the queue behind
+    // the service's public interface must **not** change the table. If it does, the count is
+    // being retaken every call, and a city with 24,547 entries pays for it every tick.
     const { state, inner } = makeLoop();
     state.garbage.reportGarbage(3, 4, 2);
     inner.refreshPendingCounts();
     expect(inner.pendingGarbageCounts.get('3,4'), '前置條件:要先數到').toBe(2);
 
     const queue = state.garbage.getPendingGarbageQueue() as unknown as unknown[];
-    queue.length = 0;   // 偷偷清空，不經過服務
+    queue.length = 0;   // cleared behind the service's back
     inner.refreshPendingCounts();
 
     expect(inner.pendingGarbageCounts.get('3,4'), '每次都在重數整條佇列').toBe(2);

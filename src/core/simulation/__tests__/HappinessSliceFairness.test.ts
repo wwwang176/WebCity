@@ -7,14 +7,17 @@ import { RoadType, RoadDirection } from '../../road/types';
 import { ZoneType } from '../../grid/types';
 
 /**
- * 分片的**公平性**:一輪之內每個人剛好輪到一次，而且沒有人被無限期跳過。
+ * The **fairness** of slicing: each citizen comes up exactly once per cycle, and nobody is
+ * skipped indefinitely.
  *
- * `HappinessSliceWiring` 只數了「一輪總共更新幾位」，那個數字擋不住「每個 tick
- * 都重算同一批人、其餘的人永遠不動」—— 總數照樣對得上。這裡改用哨兵值追**身分**。
+ * `HappinessSliceWiring` only counts how many citizens a cycle updates, which cannot rule out
+ * recomputing the same batch every tick while the rest never move — the total still matches.
+ * These follow **identity** using a sentinel value.
  *
- * 片數以前是每個 tick 從當下人口重算的。人口跨過 `CITIZEN_SLICE_PER_TICK` 的倍數時
- * 所有人的片號會一起改變，「一輪剛好一次」的保證就沒了 —— 人口在門檻附近來回時
- * 可以構造出某人連續數百個 tick 沒被更新。
+ * Recomputing the slice count each tick from the current population changes everyone's slice
+ * index whenever the population crosses a multiple of `CITIZEN_SLICE_PER_TICK`, which
+ * destroys the "exactly once per cycle" guarantee: with the population oscillating around a
+ * threshold, a citizen can be constructed who goes hundreds of ticks without an update.
  */
 
 function city(citizens: number): GameState {
@@ -34,9 +37,9 @@ function city(citizens: number): GameState {
 }
 
 /**
- * 哨兵:先把所有人的快樂度設成 NaN，跑一個 tick 之後還是數字的人就是「這個 tick
- * 被更新到的人」。用實際的副作用認人，不必去重算實作自己的分片規則 —— 實作改成
- * 別種分法時這個測試照樣有效。
+ * A sentinel: set every citizen's happiness to NaN, tick once, and whoever is a number again
+ * was updated this tick. Identifying by the real side effect avoids reimplementing the
+ * slicing rule, so these tests survive a change of slicing scheme.
  */
 function updatedThisTick(state: GameState, loop: SimulationLoop): Set<number> {
   const citizens = state.citizens.getCitizens();
@@ -49,11 +52,11 @@ function updatedThisTick(state: GameState, loop: SimulationLoop): Set<number> {
 
 describe('分片的公平性', () => {
   it('should update each citizen exactly once per cycle, by identity', () => {
-    // 只數總數的話，「每個 tick 都重算同一批 100 人、其餘 500 人永遠不動」會通過:
-    // 六個 tick 加起來剛好 600。這裡逐一認人。
+    // Counting totals alone would pass "recompute the same 100 citizens every tick and never
+    // touch the other 500": six ticks still sum to 600. These identify citizens individually.
     const state = city(600);
     const loop = new SimulationLoop(state);
-    loop.tick(); // 先讓情境建起來，第一輪才是完整的一輪
+    loop.tick(); // build the context first, so the first cycle is a complete one
     const n = loop.lastHappinessSlice.slices;
     expect(n).toBeGreaterThan(0);
 
@@ -65,7 +68,8 @@ describe('分片的公平性', () => {
       }
     }
 
-    // 只看「整輪都在城裡」的人 —— 中途遷入遷出的本來就不該有保證。
+    // Only citizens present for the whole cycle: arrivals and departures mid-cycle carry no
+    // guarantee.
     const survivors = state.citizens.getCitizens().filter(c => before.has(c.id));
     expect(survivors.length).toBeGreaterThan(100);
     for (const c of survivors) {
@@ -75,8 +79,9 @@ describe('分片的公平性', () => {
   });
 
   it('should not re-slice mid-cycle when the population crosses a threshold', () => {
-    // 片數在一輪中途變掉 = 所有人重新分片。已經輪過的人可能又被排到後面的片，
-    // 還沒輪到的人可能被排到已經走過的片 —— 後者要再等一整輪。
+    // Changing the slice count mid-cycle reassigns everyone: citizens already processed can
+    // land in a later slice, and citizens not yet processed can land in one already passed,
+    // making them wait another whole cycle.
     const state = city(600);
     const loop = new SimulationLoop(state);
     loop.tick();
@@ -84,15 +89,15 @@ describe('分片的公平性', () => {
     const startSlices = loop.lastHappinessSlice.slices;
     expect(startSlices, '600 人應該是最小片數').toBe(SIMULATION.SLOW_TICK_INTERVAL);
 
-    // 一口氣衝過 CITIZEN_SLICE_PER_TICK × SLOW_TICK_INTERVAL —— 純函式算出來的片數
-    // 一定比 startSlices 大。
+    // Jump past CITIZEN_SLICE_PER_TICK * SLOW_TICK_INTERVAL in one go, so the pure function's
+    // slice count is certainly larger than startSlices.
     const target = CITIZEN_SLICE_PER_TICK * SIMULATION.SLOW_TICK_INTERVAL + 500;
     for (let i = state.citizens.getPopulation(); i < target; i++) {
       state.citizens.restoreCitizen({ age: 100, homeId: '2,2', workplaceId: '6,2' });
     }
     state.citizens.updateResidentialCapacity(target * 2);
 
-    // 這一輪剩下的 tick 必須沿用開輪時的片數。
+    // The remaining ticks of this cycle must keep the count it started with.
     const seen: number[] = [];
     for (let t = loop.lastHappinessSlice.index + 1; t < startSlices; t++) {
       loop.tick();
@@ -103,7 +108,7 @@ describe('分片的公平性', () => {
       expect(s, `一輪中途片數從 ${startSlices} 變成 ${s}`).toBe(startSlices);
     }
 
-    // 下一輪才換上新的片數。
+    // The new count takes effect at the next cycle.
     loop.tick();
     expect(loop.lastHappinessSlice.slices, '新的一輪還在用舊片數')
       .toBeGreaterThan(startSlices);
@@ -111,14 +116,15 @@ describe('分片的公平性', () => {
   });
 
   it('should only change the slice count at a cycle boundary', () => {
-    // 上一條釘的是「這一次」，這一條釘的是通則:片數只在 index === 0 時改變。
+    // The test above pins one occurrence; this pins the rule: the slice count changes only at
+    // index === 0.
     const state = city(600);
     const loop = new SimulationLoop(state);
     loop.tick();
 
     let prev = loop.lastHappinessSlice.slices;
     for (let t = 0; t < 40; t++) {
-      // 每個 tick 都動人口，讓純函式算出來的片數一直在變。
+      // Move the population every tick so the pure function's slice count keeps changing.
       const pop = state.citizens.getPopulation();
       const want = CITIZEN_SLICE_PER_TICK * SIMULATION.SLOW_TICK_INTERVAL + (t % 2 === 0 ? 400 : -400);
       for (let i = pop; i < want; i++) {
@@ -142,23 +148,27 @@ describe('分片的公平性', () => {
 
 describe('分片的成本', () => {
   it('should leave a citizen who arrived mid-cycle to the next cycle', () => {
-    // 這是**分桶**的反面測試。一輪開頭把人分好桶，之後每個 tick 只走自己那一桶
-    // —— 所以一輪中途才進城的人這一輪沒有桶可以待，下一輪才輪得到。
+    // The inverse test for **bucketing**. Buckets are built at the start of a cycle and each
+    // tick walks only its own, so a citizen arriving mid-cycle has no bucket and is picked up
+    // next cycle.
     //
-    // 每個 tick 重掃全城的實作會在他該落的那一片當場處理他，這一條就會紅。而那個
-    // 掃描正是要拿掉的東西:4 萬 2 千人分成 20 片，**每個 tick 掃 42 000 個人只為了
-    // 挑出 2 110 個**（`citizenSliceOf` 佔快樂度那一支 8.3%、健康那一支 40.6%）。
+    // An implementation that rescans the whole city every tick would process them in their
+    // slice immediately and turn this red — and that scan is exactly what bucketing removes:
+    // 42,000 citizens in 20 slices means **scanning 42,000 per tick to find 2,110**
+    // (`citizenSliceOf` measured at 8.3% of the happiness pass and 40.6% of the health pass).
     //
-    // 落後一輪與通勤那邊的分桶完全相同，而新市民本來就帶著預設的快樂度。
+    // The one-cycle lag matches the commute-side bucketing, and new citizens already carry
+    // default happiness.
     const state = city(600);
     const loop = new SimulationLoop(state);
-    loop.tick();   // 情境建起來，同時走完第 0 片
+    loop.tick();   // builds the context and completes slice 0
     const n = loop.lastHappinessSlice.slices;
     expect(n, '片數太少，構造不出「一輪中途」').toBeGreaterThan(2);
     expect(loop.lastHappinessSlice.index, '前置條件:剛走完第 0 片').toBe(0);
 
     const newcomer = state.citizens.restoreCitizen({ age: 100, homeId: '2,2', workplaceId: '6,2' });
-    // 快樂度與健康各有一份桶，各自在自己那一輪的開頭重建 —— 兩個都要看。
+    // Happiness and health have separate buckets, each rebuilt at its own cycle start, so both
+    // are checked.
     newcomer.happiness = NaN;
     newcomer.health = NaN;
 

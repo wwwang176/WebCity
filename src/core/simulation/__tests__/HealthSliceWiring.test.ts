@@ -7,11 +7,11 @@ import { RoadType, RoadDirection } from '../../road/types';
 import { ZoneType } from '../../grid/types';
 
 /**
- * 健康原本也是慢速槽 4 裡逐市民重算一次 —— 12 萬人實測 28ms。跟快樂度同一種病，
- * 同一招。
+ * Health also recomputes every citizen in slow slot 4, measured at 28ms for 120,000
+ * citizens. Same problem as happiness, same remedy.
  *
- * 兩者共用同一個分片雜湊，所以同一位市民的快樂度與健康落在同一個 tick 更新 ——
- * 那一個 tick 裡他的住址只查一次（`homeFactsFor`）。
+ * The two share one slicing hash, so a citizen's happiness and health update on the same
+ * tick and their address is looked up once (`homeFactsFor`).
  */
 
 const HOME = '2,2';
@@ -30,9 +30,10 @@ function city(citizens: number, homes: string[] = [HOME]): GameState {
   }
   state.grid.setCell(8, 2, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
   for (let i = 0; i < citizens; i++) {
-    // 住址**不能**照 i 的奇偶分:雜湊的乘數是奇數，所以片號的奇偶等於 id 的奇偶
-    // （見 CitizenSlicing）。照奇偶分的話每一片剛好只含一棟樓，兩棟樓永遠不會
-    // 在同一個 tick 被查到 —— 記憶串到別的住址的 bug 就照不出來。
+    // Addresses must **not** be split by the parity of i: the hash multiplier is odd, so a
+    // slice index has the same parity as the id (see CitizenSlicing). Splitting by parity puts
+    // exactly one building in each slice, the two buildings are never resolved on the same
+    // tick, and a memoization bug that crosses addresses cannot show up.
     state.citizens.restoreCitizen({
       age: 100, homeId: homes[i % 3 === 0 ? homes.length - 1 : 0]!, workplaceId: '8,2',
     });
@@ -41,7 +42,7 @@ function city(citizens: number, homes: string[] = [HOME]): GameState {
   return state;
 }
 
-/** 這個 tick 健康被重算的人。用 NaN 當哨兵認人。 */
+/** Citizens whose health was recomputed this tick, identified by a NaN sentinel. */
 function healthUpdated(state: GameState, loop: SimulationLoop): Set<number> {
   const citizens = state.citizens.getCitizens();
   for (const c of citizens) c.health = NaN;
@@ -53,7 +54,8 @@ function healthUpdated(state: GameState, loop: SimulationLoop): Set<number> {
 
 describe('健康的分片', () => {
   it('should update each citizen exactly once per cycle', () => {
-    // 只數總數的話「每個 tick 都重算同一批人」會通過。逐一認人。
+    // Counting totals alone would pass "recompute the same batch every tick". Identify
+    // citizens individually.
     const state = city(600);
     const loop = new SimulationLoop(state);
     loop.tick();
@@ -73,7 +75,8 @@ describe('健康的分片', () => {
   });
 
   it('should use the slice count the pure function decided', () => {
-    // 城市要大到純函式算出來不是下限，否則寫死 6 也會過。
+    // The city has to be large enough that the pure function returns more than the floor,
+    // otherwise hardcoding 6 would also pass.
     const pop = CITIZEN_SLICE_PER_TICK * SIMULATION.SLOW_TICK_INTERVAL + 1000;
     const state = city(pop);
     expect(citizenSliceCount(state.citizens.getPopulation()))
@@ -86,7 +89,8 @@ describe('健康的分片', () => {
   });
 
   it('should update happiness and health for the same citizen on the same tick', () => {
-    // 這是共用住址記憶的前提。分開的話同一位市民的住址一個 tick 要查兩次。
+    // The precondition for sharing the address memoization. Split apart, a citizen's address
+    // would be resolved twice in one tick.
     const state = city(600);
     const loop = new SimulationLoop(state);
     loop.tick();
@@ -105,8 +109,9 @@ describe('健康的分片', () => {
 
 describe('住址記憶', () => {
   it('should not carry stale environment across ticks', () => {
-    // 記憶是每個 tick 清空的。跨 tick 留著的話，斷電、缺水、污染這些玩家看得見而且
-    // 會突然改變的東西會慢半拍 —— 而一輪最長 72 個 tick。
+    // The memoization is cleared every tick. Kept across ticks, power cuts, water shortages
+    // and pollution — all visible to the player and able to change abruptly — would lag, and a
+    // cycle runs up to 72 ticks.
     const state = city(600);
     const loop = new SimulationLoop(state);
     loop.tick();
@@ -115,7 +120,7 @@ describe('住址記憶', () => {
     const byId = new Map(state.citizens.getCitizens().map(c => [c.id, c]));
     const cleanHealth = [...clean].map(id => byId.get(id)!.health);
 
-    // 下一個 tick 之前把住址弄髒。同一輪的下一片必須看得到。
+    // Dirty the address before the next tick; the next slice of the same cycle must see it.
     state.grid.setCell(2, 2, { pollution: 255 });
 
     const dirty = healthUpdated(state, loop);
@@ -129,11 +134,13 @@ describe('住址記憶', () => {
   });
 
   it('should keep different addresses apart', () => {
-    // 記憶的鍵錯了（例如全城共用一筆）的話，住在乾淨那一棟的人也會被算成髒的。
+    // With the wrong memoization key (one entry shared city-wide, say), residents of the clean
+    // building would be scored as if they lived in the dirty one.
     const state = city(600, [HOME, OTHER]);
     const loop = new SimulationLoop(state);
     for (let t = 0; t < SIMULATION.SLOW_TICK_INTERVAL * 2; t++) loop.tick();
-    // 污染要在中速塊（每 60 tick 重算全城污染）之後才弄髒，不然會被蓋回去。
+    // The pollution must be set after the medium-frequency block (which recomputes city-wide
+    // pollution every 60 ticks), otherwise it is overwritten.
     state.grid.setCell(4, 2, { pollution: 255 });
     for (let t = 0; t < SIMULATION.SLOW_TICK_INTERVAL; t++) loop.tick();
 
@@ -143,8 +150,9 @@ describe('住址記憶', () => {
     expect(atClean.length).toBeGreaterThan(50);
     expect(atDirty.length).toBeGreaterThan(50);
 
-    // 同一棟樓的住戶年齡相同、環境相同，健康值必須完全一致。記憶把兩棟樓混在一起
-    // 的話，乾淨那一棟裡會混進髒的值 —— 平均看不太出來，逐一看才擋得住。
+    // Residents of one building share an age and an environment, so their health values must
+    // be identical. If the memoization crosses the two buildings, dirty values appear among
+    // the clean ones — barely visible in an average, caught by comparing individually.
     expect(new Set(atClean).size, '同一棟樓的人健康值不一致 —— 記憶串到別的住址了').toBe(1);
     expect(new Set(atDirty).size, '同一棟樓的人健康值不一致 —— 記憶串到別的住址了').toBe(1);
     expect(Math.min(...atClean), '兩棟樓的污染差 255，健康卻一樣')

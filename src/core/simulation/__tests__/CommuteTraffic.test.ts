@@ -180,9 +180,10 @@ describe('Commute Traffic System', () => {
   });
 
   it('should scale vehicle count with working population', () => {
-    // 家與工作要散開。全部擠在同一棟的話，第二台車會被第一台擋在生成點外面
-    // （`isSpawnBlocked`），路上永遠只有一兩台 —— 而出發方向是隨機的，兩台會不會
-    // 撞在同一個門口全看運氣。這一條因此偶爾會紅，跟「人多車就多」無關。
+    // Homes and workplaces must be spread out. Packed into one building, the second vehicle
+    // is blocked at the spawn point by the first (`isSpawnBlocked`) and only one or two are
+    // ever on the road; departure direction is random, so whether two collide at the same
+    // doorway is luck, making this flaky for reasons unrelated to population scaling.
     const homes: string[] = [];
     for (let x = 2; x <= 11; x++) {
       state.grid.setCell(x, 0, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 });
@@ -254,19 +255,21 @@ describe('Commute Traffic System', () => {
   });
 
   it('should count every kind of vehicle against the spawn cap', () => {
-    // 上限管的是畫面上同時能跑幾台 —— 超過就開始卡。過境車流與貨運一樣佔路，
-    // 所以上限要看全部，不能只看通勤車:只數通勤車的話，另外兩種可以無視上限
-    // 一直往上疊。
+    // The cap limits how many vehicles can run on screen at once before the frame rate
+    // suffers. Through traffic and freight occupy road just as commuters do, so the cap
+    // counts everything: counting only commute vehicles lets the other two stack past it.
     //
-    // 面板上那張卡片問的是另一件事（有多少居民在開車），走 `getCommuteVehicleCount`。
-    // 兩支數字用途不同，不能互換。
+    // The panel card asks a different question (how many residents are driving) and uses
+    // `getCommuteVehicleCount`. The two numbers are not interchangeable.
     //
-    // 居民要夠多，多到就算已經有人在路上，還是有人排隊等著出門 —— 只放一個居民
-    // 的話他上路之後就沒人可生成了，上限有沒有被遵守根本看不出來。
+    // There have to be enough residents that somebody is still waiting to leave once others
+    // are on the road; with one resident, nobody remains to spawn after they depart and
+    // whether the cap is respected is unobservable.
     //
-    // 家與工作也要散開。全部擠在同一棟的話，第二台車會被第一台擋在生成點外面
-    // （`isSpawnBlocked`），路上永遠只有兩三台 —— 那是另一道機制，會讓這個案例
-    // 永遠碰不到上限。
+    // Homes and workplaces must be spread out too. Packed into one building, the second
+    // vehicle is blocked at the spawn point by the first (`isSpawnBlocked`) and only two or
+    // three are ever on the road — a different mechanism that would keep this case from ever
+    // reaching the cap.
     const homes: string[] = [];
     for (let x = 2; x <= 11; x++) {
       state.grid.setCell(x, 0, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 });
@@ -290,18 +293,19 @@ describe('Commute Traffic System', () => {
     const loop = new SimulationLoop(state);
     loop.setRoadLookup(UnifiedRoadLookup.fromGrid(state.grid));
     loop.setPathfindingWorker(createSyncFakeWorker());
-    loop.tick(); // 先讓 laneGraph 建起來
+    loop.tick(); // build the lane graph first
 
     const cap = SIMULATION.VEHICLE_CAP_BASE
       + Math.floor(POP * SIMULATION.VEHICLE_CAP_POP_RATIO);
     const edges = loop.laneGraph.getAllEdges();
     expect(edges.length, '沒有車道就填不滿上限，這個案例會失去意義')
       .toBeGreaterThan(0);
-    // 填到上限。過境車流沒有 citizenId。
+    // Fill to the cap with through traffic, which carries no citizenId.
     //
-    // 全部塞在路中間那條邊，而且推到邊的一半 —— 生成點被車擋住的話這一趟本來就
-    // 不會出門（`isSpawnBlocked`），那是另一道機制。把填充物放遠一點，「沒有再
-    // 長」才只可能是上限造成的。
+    // All of it goes onto the middle edge and is pushed halfway along it: a vehicle blocking
+    // the spawn point would stop the trip anyway (`isSpawnBlocked`), which is a different
+    // mechanism. Placing the filler far away leaves the cap as the only possible reason for
+    // no further growth.
     const mid = edges[Math.floor(edges.length / 2)]!;
     while (state.traffic.getVehicleCount() < cap) {
       const v = state.traffic.addVehicleOnEdges([mid]);
@@ -309,7 +313,7 @@ describe('Commute Traffic System', () => {
     }
     expect(state.traffic.getVehicleCount()).toBeGreaterThanOrEqual(cap);
 
-    // 還有人在等著出門，所以「沒有再長」只可能是上限擋下來的。
+    // Citizens are still waiting to leave, so no further growth can only be the cap.
     const before = state.traffic.getCommuteVehicleCount();
     expect(before, '所有居民都已經在路上了，這個案例會失去意義').toBeLessThan(POP);
     loop.tick();
@@ -322,8 +326,8 @@ describe('Commute Traffic System', () => {
   });
 
   it('should stop mid-tick instead of overshooting the cap', () => {
-    // 上限每個 tick 檢查一次還不夠 —— 一個 tick 最多可以放好幾台，從「還差一台」
-    // 開始跑的話會一路衝過頭。每放一台都要重新問一次。
+    // Checking the cap once per tick is not enough: a tick can spawn several vehicles, and
+    // starting one short of the cap would overshoot. The check runs before each spawn.
     const homes: string[] = [];
     for (let x = 2; x <= 11; x++) {
       state.grid.setCell(x, 0, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 });
@@ -353,7 +357,8 @@ describe('Commute Traffic System', () => {
       + Math.floor(POP * SIMULATION.VEHICLE_CAP_POP_RATIO);
     const edges = loop.laneGraph.getAllEdges();
     const mid = edges[Math.floor(edges.length / 2)]!;
-    // 只填到「還差一台」。每個 tick 開頭那道檢查會放行，擋下來的必須是逐台的那道。
+    // Filled to one below the cap. The check at the start of the tick lets it through, so
+    // whatever stops it must be the per-vehicle check.
     while (state.traffic.getVehicleCount() < cap - 1) {
       const v = state.traffic.addVehicleOnEdges([mid]);
       v.edgeProgress = mid.length * 0.5;
@@ -442,10 +447,11 @@ describe('Transport Mode Choice Integration', () => {
   it('should skip car spawn when metro station covers commute', () => {
     // Add metro stations near home and workplace.
     //
-    // 車站要真的放上 grid。「走得到哪些格子」是沿人行道量的，而車站在人行道圖裡
-    // 的身分就是一棟建築的門節點 —— 只呼叫 addStation 的話，那個座標在圖裡什麼
-    // 都沒有，服務不到任何人。遊戲裡蓋車站一定會同時寫 grid（placeTransportStop），
-    // 所以這是把 fixture 對齊實際行為，不是遷就實作。
+    // The stations must actually be written to the grid. Reachability is measured along the
+    // sidewalk graph, where a station exists as a building's door node; calling addStation
+    // alone leaves nothing at that coordinate in the graph and it serves nobody. Building a
+    // station in the game always writes the grid too (placeTransportStop), so this aligns the
+    // fixture with real behaviour rather than accommodating the implementation.
     state.grid.setCell(1, 2, { buildingId: getInfraBuildingId('metro_station') });
     state.grid.setCell(15, 2, { buildingId: getInfraBuildingId('metro_station') });
     const stationA = state.metro.addStation(1, 2); // near residential

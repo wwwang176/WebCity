@@ -96,8 +96,9 @@ import { computeTransferStats, findTransferRouteStops, TRANSIT_ICONS } from '../
 
 
 /**
- * 一個住址的環境。快樂度與健康都要這幾樣，而它們只跟樓有關 —— 同一棟樓的住戶
- * 查出來完全一樣。見 `SimulationLoop.homeFactsFor`。
+ * The environment of one address. Happiness and health both need these, and they depend
+ * only on the building, so every resident of the same building resolves to the same values.
+ * See `SimulationLoop.homeFactsFor`.
  */
 interface HomeFacts {
   x: number;
@@ -135,13 +136,13 @@ export class SimulationLoop {
   // Lane-level connection graph for edge-based vehicle movement
   laneGraph: LaneGraph = new LaneGraph();
   /**
-   * 整個路網的平均負載 0..1。跟著逐格流量圖一起更新（每 60 tick）。
-   * 問不到某一趟的路線時用它當退路。
+   * Average load across the whole network, 0..1. Updated with the per-cell flow field
+   * (every 60 ticks). Used as the fallback when a trip has no route-specific value.
    */
   private cityCongestionLevel = 0;
-  /** 逐路線的擁擠程度。流量圖一換就整個清掉。 */
+  /** Per-route congestion. Cleared entirely whenever the flow field is replaced. */
   private readonly routeCongestionCache = new Map<string, number>();
-  /** `collectEdgeCells` 的收件容器 —— 每次呼叫重用。 */
+  /** Collection buffer for `collectEdgeCells`, reused across calls. */
   private readonly congestionCellScratch = new Set<string>();
   private laneGraphDirty = true;
 
@@ -186,22 +187,28 @@ export class SimulationLoop {
   private walkingTripPool: WalkingTripPool = { trips: [], totalWeight: 0, prefixSums: [] };
   private tripPoolDirty = true;
   /**
-   * 這一輪重建問過幾位市民的通勤方式。
+   * How many citizens' commute modes this rebuild sweep has sampled.
    *
-   * 「收集到零條步行路線」跟「還沒收集」是兩件事，而 `pendingTrips.length` 分不出來。
-   * 全城的大眾運輸都被拆光時正確答案就是零條 —— 拿長度當條件的話，池子會永遠停在
-   * 拆除前的那一份，行人繼續從已經不存在的車站走出來。
+   * "Collected zero walking trips" and "has not collected yet" are different states, and
+   * `pendingTrips.length` cannot tell them apart. Zero is the correct answer once every
+   * transit line has been demolished; using the length as the condition would freeze the
+   * pool at its pre-demolition contents and keep pedestrians walking out of stations that
+   * no longer exist.
    */
   private tripSamplesTaken = 0;
   /**
-   * 這一輪要問過幾位才算數 —— 一輪就是全城的通勤人口。
+   * How many citizens a sweep must sample before it counts: one sweep is the city's whole
+   * commuting population.
    *
-   * 一個 tick 只問得到一小撮人（12 500 人的存檔:8 808 位通勤者裡問 375 位），而
-   * 步行路線在時間上是**成串**出現的:壅塞高峰時一批人翻去搭車，其餘時間一個都
-   * 沒有。實測連續 45 338 次詢問收集到 260 條，全部集中在五次爆發裡 —— 隨便挑一個
-   * tick 定案，九成的機率收集到零條，路上一個行人都不會有。
+   * A single tick only reaches a handful of citizens (375 of 8,808 commuters on a
+   * 12,500-citizen save), and walking trips arrive in **bursts**: a batch of citizens
+   * switches to transit at a congestion peak and none appear otherwise. Measured over
+   * 45,338 consecutive samples, 260 walking trips arrived in five bursts, so committing at
+   * an arbitrary tick collects zero of them nine times out of ten and leaves no pedestrians
+   * on the streets.
    *
-   * 起始值是 1 而不是 0:0 的話「一位都還沒問」也算達標，空城會每個 tick 定案一次。
+   * The initial value is 1 rather than 0, since 0 would treat "nothing sampled yet" as
+   * having met the target and make an empty city commit every tick.
    */
   private tripSweepTarget = 1;
   private tripAggMap = new Map<string, AggregatedTrip>();
@@ -211,21 +218,24 @@ export class SimulationLoop {
   private transferGraph: TransferGraph = { byStop: new Map(), stopRouteCache: new Map() };
   private transferGraphDirty = true;
   /**
-   * 站牌沿人行道走得到哪些格子。算過的留著 —— 重算的觸發條件對「玩家調整班次」
-   * 也成立，而那跟人行道一點關係都沒有。
+   * Which cells each stop can be walked to from. Results are retained: the rebuild trigger
+   * also fires when the player changes a route's vehicle count, which has nothing to do
+   * with sidewalks.
    */
   private stopReach!: SidewalkStopReach;
-  /** 每一格走得到哪些路線。與 transferGraph 同時重建。 */
+  /** Which routes each cell can reach. Rebuilt together with transferGraph. */
   private transitAccess!: TransitAccessField;
-  /** 每一格走得到哪些站。挑站牌那兩條路徑都靠它，跟著路線一起重建。 */
+  /** Which stops each cell can reach. Both stop-picking paths use it; rebuilt with the routes. */
   private stopIndex!: StopProximityIndex;
 
   /**
-   * 這一趟通勤要花多久（tick）—— 住房評分、就業評分與換工作判斷共用同一把尺。
+   * Length of a commute in ticks: the single scale shared by housing scoring, job scoring
+   * and job-change decisions.
    *
-   * 開車時間隨距離與壅塞上升，搭車時間由路網決定，兩者是同一個尺度。所以
-   * 「住得遠但住在站旁邊」與「住得近但天天塞車」比得出高下，而玩家蓋的運輸
-   * 建設會直接反映在市民的居住與就業選擇上。
+   * Driving time rises with distance and congestion, transit time is set by the network,
+   * and both are on the same scale. That makes "far out but next to a station" comparable
+   * with "close but stuck in traffic every day", so the transport the player builds shows up
+   * directly in where citizens live and work.
    */
   private commuteTimeBetween = (fromPos: string, toPos: string): number | null => {
     const a = parsePosKey(fromPos);
@@ -238,10 +248,12 @@ export class SimulationLoop {
   };
 
   /**
-   * 這位市民怎麼權衡各種走法。
+   * How this citizen weighs the available options.
    *
-   * 沒有指定市民時用預設的不情願權重 —— 住房評分是拿「一間房子對這一位市民好不好」
-   * 在問，那裡確實有市民；而通勤統計是整城的分布，用哪一位的脾氣都不對，用平均。
+   * With no citizen given, the default reluctance weight applies. Housing scoring asks how
+   * good a home is for a specific citizen and does have one; commute statistics describe
+   * the city-wide distribution, where any individual's temperament would be wrong, so the
+   * average is used.
    */
   private modeChoiceFor(
     education: EducationLevel | undefined,
@@ -259,20 +271,22 @@ export class SimulationLoop {
   }
 
   /**
-   * 這一趟要多付幾倍的開車不情願（壅塞費）。
+   * The driving-reluctance multiplier this trip pays (the congestion charge).
    *
-   * 起點或終點任一端在收費區內就算 —— 收費是過關卡收的，開進去跟開出來是同一趟。
-   * 兩端都在收費區時取比較高的那一個，不是相乘:一趟只會過一次關卡。
+   * Either end inside a charged cordon counts: the charge is levied at the gantry, and
+   * driving in and driving out are the same trip. With both ends inside, the higher of the
+   * two applies rather than their product, because a trip crosses one gantry.
    */
   private driveDeterrenceFor(from: { x: number; y: number }, to: { x: number; y: number }): number {
     return this.chargedCordonFor(from, to).deterrence;
   }
 
   /**
-   * 這一趟付幾倍的不情願，以及付給哪一個收費區。
+   * The reluctance multiplier this trip pays, and which cordon receives it.
    *
-   * 兩端都在收費區時付比較高的那一個 —— 錢也記給那一區。一趟車只過一次關卡，
-   * 兩區各記一次的話同一筆過路費會被收兩次。
+   * With both ends inside a cordon the higher one applies and the revenue is credited to
+   * that district. A trip crosses one gantry, so crediting both districts would collect the
+   * same toll twice.
    */
   private chargedCordonFor(
     from: { x: number; y: number }, to: { x: number; y: number },
@@ -301,10 +315,11 @@ export class SimulationLoop {
   private prevFacilityOps = new Map<string, boolean>();
   /** Reusable scratch array for working-age citizens. */
   private workingAgeScratch: Citizen[] = [];
-  /** Reusable Set for congestion flow cell collection. */
-  /** 「這條路徑經過哪些格子」跨次重算共用 —— 路徑不可變，答案就不會變（BUG-327）。 */
+  /** Which cells a path passes through, shared across recomputes: paths are immutable, so
+   *  the answer cannot change (BUG-327). */
   private readonly flowCellCache = new PathCellCache();
-  /** 流量重算攤在好幾個 tick 上 —— 一次算完會掉五六幀（BUG-327）。 */
+  /** Flow recomputation spread over several ticks; doing it in one drops five or six
+   *  frames (BUG-327). */
   private readonly flowSweep = new CongestionFlowSweep();
   /** Reusable Map for traffic density sync (avoids per-call Map allocation). */
   private trafficFlowMap = new Map<string, number>();
@@ -341,25 +356,26 @@ export class SimulationLoop {
   }
 
   /**
-   * 對稱於 `setRoadLookup`。BUG-109 的驗收測試要用同一份 lookup 自己建圖來
-   * 比對快取的答案 —— 沒有 getter 的話它只能另外組一份，兩份不一致時測試
-   * 會說謊。
+   * Counterpart to `setRoadLookup`. The BUG-109 acceptance test builds its own graph from
+   * the same lookup to check the cached answers; without a getter it would have to assemble
+   * a second lookup, and the test would lie whenever the two disagreed.
    */
   getRoadLookup(): import('../road/UnifiedRoadLookup').UnifiedRoadLookup | null {
     return this._roadLookup;
   }
 
   /**
-   * 路網圖，**每個道路世代重建一次**。
+   * The road-cell graph, **rebuilt once per road generation**.
    *
-   * 同步查詢每個市民呼叫一次 `roadDistanceToTargets`，而建圖是
-   * O(路格數 × 4) —— 每次重建會比它省下的還多。圖只在路網改變時才變，
-   * 所以在這裡持有：正向給同步查詢，轉置後序列化給 worker。
+   * Synchronous queries call `roadDistanceToTargets` once per citizen, and building the
+   * graph is O(road cells * 4), so rebuilding per query costs more than it saves. The graph
+   * only changes when the network does, so it is held here: forward for synchronous
+   * queries, transposed and serialized for the worker.
    *
-   * 世代來自 `commuteCache.roadGeneration`，而 `markLaneGraphDirty` 會 bump
-   * 它。**高架道路的建與拆也必須經過那條路**（`Game.ts` 會呼叫），否則圖會
-   * 陳舊 —— `ElevationManager` 自己沒有事件機制。見
-   * `__tests__/ElevatedRoadInvalidatesGraph.test.ts`。
+   * The generation comes from `commuteCache.roadGeneration`, which `markLaneGraphDirty`
+   * bumps. **Building and demolishing elevated roads must go through that path too**
+   * (`Game.ts` calls it), otherwise the graph goes stale — `ElevationManager` has no event
+   * mechanism of its own. See `__tests__/ElevatedRoadInvalidatesGraph.test.ts`.
    */
   private _cellGraph: import('../road/RoadCellGraph').RoadCellGraph | null = null;
   private _cellGraphGeneration = -1;
@@ -376,8 +392,9 @@ export class SimulationLoop {
   }
 
   /**
-   * 路網圖給外面讀。快取與通勤共用同一份 —— 重建一次是 O(路格數)，
-   * agent API 每問一次連通性就重建一次的話會很痛。
+   * The road-cell graph for external readers, sharing the instance used by the cache and
+   * commuting. A rebuild is O(road cells), so rebuilding on every connectivity question
+   * from the agent API would be expensive.
    */
   roadCellGraph(): import('../road/RoadCellGraph').RoadCellGraph | null {
     return this.getCellGraph();
@@ -388,10 +405,11 @@ export class SimulationLoop {
   }
 
   /**
-   * 這個 worker 交出過至少一條路。
+   * Whether this worker has ever returned a path.
    *
-   * 「它說沒有路」要不要算數，看的是這個 —— 一條都沒交出來過的 worker，空答案
-   * 代表的是它自己壞了。跨路網世代保留:worker 會不會找路跟路網長什麼樣無關。
+   * It decides whether "there is no path" counts: from a worker that has never produced
+   * one, an empty answer means the worker itself is broken. Retained across road
+   * generations, since whether a worker can find paths is unrelated to the network's shape.
    */
   private pathWorkerFoundAPath = false;
 
@@ -409,15 +427,18 @@ export class SimulationLoop {
     this.pathBatcher.onResult = (routeKey: string, variants: number[][]) => {
       if (!this.graphMapping) return;
       if (variants.length === 0) {
-        // worker 算完了，答案是「這一代路網裡沒有路」。這跟「還沒算完」是兩件
-        // 事，而舊版把空結果直接丟掉，兩者對 `advanceCommuteFill` 長得一模一樣
-        // —— 於是重試計數一路長到額度上限，之後每一輪都在主執行緒重算一次同一
-        // 個答案（BUG-369）。
+        // The worker finished and the answer is "no path exists in this road generation".
+        // That differs from "not finished yet", and dropping the empty result makes the two
+        // indistinguishable to `advanceCommuteFill`: the retry counter climbs to its quota
+        // and every subsequent sweep recomputes the same answer on the main thread
+        // (BUG-369).
         //
-        // **只信任證明過自己會找路的 worker。** worker 不是只有「在」跟「不在」
-        // 兩種狀態:它可以活著、可以回應，而每一組起迄都交白卷（沒有 SAB、圖
-        // 沒同步過…），那時候空答案的意思是「這個 worker 壞了」而不是「沒有
-        // 路」。照單全收的話補完會永遠停在那裡 —— `WarmupCoverage` 釘著這件事。
+        // **Only a worker that has proven it can find paths is trusted.** A worker is not
+        // simply present or absent: it can be alive and responding while returning nothing
+        // for every origin-destination pair (no SAB, graph never synced, and so on), and
+        // then an empty answer means the worker is broken rather than that no path exists.
+        // Taking such answers at face value stalls the fill permanently, which
+        // `WarmupCoverage` pins.
         if (this.pathWorkerFoundAPath) this.commuteCache.markUnroutable(routeKey);
         return;
       }
@@ -449,8 +470,8 @@ export class SimulationLoop {
 
   constructor(state: GameState) {
     this.state = state;
-    // 欄位初始設定跑在建構式主體之前，那時 this.state 還沒指定 —— 所以這兩個
-    // 要在這裡建，不能寫成欄位初始值。
+    // Field initialisers run before the constructor body, when `this.state` is not yet
+    // assigned, so these must be built here rather than as field initialisers.
     this.stopReach = new SidewalkStopReach(state.sidewalkGraph);
     this.transitAccess = TransitAccessField.build([], SIMULATION.WALK_SPEED, this.stopReach);
     this.stopIndex = StopProximityIndex.build([], this.stopReach);
@@ -548,8 +569,9 @@ export class SimulationLoop {
       this.updateHospitalLoads();
       this.updateSchoolLoads();
       this.updatePoliceFireLoads();
-      // 換房子:每個慢速槽跑一批，10 批輪完 = 每位市民每 60 個 tick 輪到一次。
-      // 排在這裡是因為位置索引剛剛建好，入住數直接拿得到（BUG-331）。
+      // Relocation: one batch per slow slot, 10 batches per cycle, so each citizen comes up
+      // once every 60 ticks. Placed here because the position index has just been rebuilt
+      // and occupancy counts are available directly (BUG-331).
       this.runRelocation();
     }
 
@@ -621,8 +643,9 @@ export class SimulationLoop {
       this.updateHospitalLoads();
       const hospitalMult = loadRatioToDeathMultiplier(this.state.health.getLoadRatio());
 
-      // 禁菸令對誰都有效，免費診所只保護醫院蓋得到的人 —— 醫院蓋不到的地方，
-      // 人根本沒去看病，補助也就沒發出去。兩個乘數在這裡各自進對應的分支。
+      // The smoking ban applies to everyone; free clinics only protect citizens within
+      // hospital coverage, because outside it nobody sees a doctor and the subsidy is never
+      // paid out. The two multipliers therefore enter different branches below.
       const banMult = this.state.ordinances.getDeathRateMultiplier();
       const clinicMult = this.state.ordinances.getCoveredDeathRateMultiplier();
 
@@ -663,16 +686,16 @@ export class SimulationLoop {
 
     // ── Per-tick operations ──
 
-    // 換工作：每 JOB_RELOCATION_INTERVAL 個 tick 一輪，**整輪在這一個 tick
-    // 之內跑完**。曾經切成每 tick 兩次（BUG-109 的止痛藥），治本做完之後整輪
-    // 只要 7.7 毫秒，切片器反而讓功能在大城市失效（BUG-333）。
+    // Job changes: one full pass every JOB_RELOCATION_INTERVAL ticks, **completed within
+    // that single tick**. A whole pass costs 7.7ms, and slicing it into a couple of citizens
+    // per tick made the feature stop working in large cities (BUG-333).
     if (tick >= 4 && (tick - 4) % SIMULATION.JOB_RELOCATION_INTERVAL === 0) {
       this.runJobRelocation();
     }
 
 
-    // 快樂度分片:每個 tick 算一片，`slices` 個 tick 輪完一圈（BUG-330）。
-    // 情境仍然每 6 個 tick 才換一次，所以新鮮度與改動前相同。
+    // Happiness is sliced: one slice per tick, a full cycle every `slices` ticks (BUG-330).
+    // The context still changes only every 6 ticks, so its freshness is unchanged.
     this.updateCitizenHappinessSlice();
     this.updateCitizenHealthSlice();
 
@@ -692,21 +715,24 @@ export class SimulationLoop {
     // capped city, which used to strand the rebuild (see the method's comment).
     this.rebuildTransferGraphIfDirty();
 
-    // 班距與載重率要是**當下**的數字。它們原本只在上面那個重建裡算一次，而重建只在
-    // 玩家動到路網拓樸時發生 —— 搭乘人數之後怎麼漲都回不到這裡，於是路線永遠不會
-    // 拒載、等車也永遠不會因為擠而變久（BUG-343）。路線數是個位數，每個 tick 重算
-    // 的成本是幾次乘除。
+    // Headway and load factor must be the **current** numbers. Computing them only in the
+    // rebuild above is not enough, since that runs solely when the player changes the
+    // network topology: ridership growth would never reach them, so routes would never fill
+    // up and waiting would never lengthen with crowding (BUG-343). Route counts are in the
+    // single digits, so recomputing per tick costs a few multiplications.
     refreshRouteService(this.flatRoutes);
 
-    // 補完還沒算的通勤路線。放在生成車輛之前，這一 tick 補到的路線立刻可用。
+    // Fill in commute routes that have not been computed yet. Before vehicle spawning, so a
+    // route filled this tick is usable immediately.
     this.advanceCommuteFill();
 
     // Traffic - spawn commute vehicles (every tick)
     this.spawnVehicles();
 
     // Transport systems (every tick) — pass utility checkers for operational status
-    // 公車跑在路上，路網愈滿它愈慢。用整個路網的平均負載 —— 逐條路線的版本要等
-    // 公車路線也接上逐格流量，記在 TODO。
+    // Buses run on the roads and slow down as the network fills. This uses the network-wide
+    // average load; a per-route version needs bus routes wired into the per-cell flow field
+    // and is recorded in TODO.
     this.state.bus.congestionLevel = this.cityCongestionLevel;
     {
       const isPow = (x: number, y: number) => this.state.power.isPowered(x, y);
@@ -716,8 +742,9 @@ export class SimulationLoop {
 
     // Congestion flow prediction (first tick + every 60 ticks, offset to slot 2)
     //
-    // 第一個 tick 一次算完 —— 讀檔之後運具選擇馬上就要有數字可讀。之後每 60 tick
-    // 開一輪，攤在接下來幾十個 tick 上慢慢掃（BUG-327）。
+    // Computed in one go on the first tick, so mode choice has numbers to read immediately
+    // after a load. After that a sweep starts every 60 ticks and is spread over the
+    // following few dozen ticks (BUG-327).
     if (tick === 1) {
       this.computeCongestionFlow();
     } else if (tick >= 2 && (tick - 2) % SIMULATION.MEDIUM_TICK_INTERVAL === 0) {
@@ -725,12 +752,14 @@ export class SimulationLoop {
     }
     this.advanceCongestionFlow();
 
-    // 通勤估算輪流做:每個 tick 一片，`commuteSliceCount()` 個 tick 輪完一圈。
-    // 每位市民被重算的頻率與改動前相同（12.6 萬人以下都是每 60 個 tick 一次）。
+    // Commute estimation takes turns: one slice per tick, a full cycle every
+    // `commuteSliceCount()` ticks. Each citizen is recomputed at the same rate as before
+    // slicing (once every 60 ticks up to 126,000 citizens).
     this.advanceCommuteSlice();
 
-    // 加總（圖層與總覽面板共用）仍然每 60 個 tick 一次，與車流預測錯開一格。
-    // 第一個 tick 要全量算 —— 只有 1/60 的人有記錄的話，壅塞費收入會被少算。
+    // Aggregation (shared by the overlay and the overview panel) still runs every 60 ticks,
+    // offset by one from the flow prediction. The first tick computes everything: with only
+    // 1/60 of citizens on record, congestion-charge revenue would be undercounted.
     if (tick === 1) {
       this.rebuildAllCommuteRecords();
       this.refreshCommuteStats();
@@ -743,31 +772,36 @@ export class SimulationLoop {
   private commuteStatsVersion = 0;
 
   /**
-   * 每位市民最近一次算出來的通勤。**這是快取，不是名冊** —— 加總永遠走還活著的
-   * 市民名單，這裡只回答「這個人的值是多少」。死掉、遷出的人留下的條目投不了票。
+   * Each citizen's most recently computed commute. **A cache, not a roster**: aggregation
+   * always walks the list of living citizens and this only answers what a given citizen's
+   * value is. Entries left behind by the dead or departed cannot vote.
    *
-   * 不進存檔:它完全可以從現有狀態重算。
+   * Not serialized: it can be recomputed entirely from current state.
    */
   private commuteRecords = new Map<number, CommuteRecord>();
   private readonly commuteCycle = new SliceCycle();
   /**
-   * 這一輪每一片要處理誰。**一輪開頭分好，之後每個 tick 只走自己那一桶。**
+   * Who each slice of this cycle handles. **Bucketed at the start of a cycle, after which
+   * each tick walks only its own bucket.**
    *
-   * 沒有這一層的話，每個 tick 都要掃過全部市民才挑得出自己那一片 —— 一輪就是
-   * 「人口 × 片數」次過濾。10 萬人實測:分桶前一輪 551 毫秒，其中估算只佔 115，
-   * 其餘全是過濾。分桶之後一輪多一次 O(人口) 的走訪，換掉 60 次。
+   * Without this layer, every tick scans all citizens to select its own slice, costing
+   * population * slices filter operations per cycle. Measured at 100,000 citizens: 551ms
+   * per cycle before bucketing, of which estimation was only 115 and the rest was
+   * filtering. Bucketing adds one O(population) walk per cycle in place of 60.
    *
-   * 桶裡放的是**參照**，一輪之內不重建，所以名單會在一輪之內過期:
+   * Buckets hold **references** and are not rebuilt mid-cycle, so the list goes stale
+   * within a cycle:
    *
-   * - 中途遷出、死亡的人還留在桶裡，會被多算一次。那筆記錄沒有人讀得到（加總走
-   *   的是活人名單），而開輪時會被清掉 —— **保證是「一輪之內」，不是「立刻」**。
-   * - 中途搬進來的人這一輪還沒有桶可以待，下一輪才輪得到。
+   * - Citizens who leave or die mid-cycle remain in their bucket and are processed once
+   *   more. Nobody can read that record (aggregation walks the living), and it is dropped
+   *   at the start of the next cycle — **guaranteed within a cycle, not immediately**.
+   * - Citizens who arrive mid-cycle have no bucket yet and are picked up next cycle.
    *
-   * 兩邊的落後都是一輪，與改動前「每 60 個 tick 把全城重算一次」完全相同。
+   * Both lags are one cycle, identical to recomputing the whole city every 60 ticks.
    */
   private commuteBuckets: Citizen[][] = [];
 
-  /** 這一趟通勤要花多久、怎麼去、付不付過路費。算不出來時回傳 null。 */
+  /** Length, mode and toll status of this commute. Returns null when it cannot be computed. */
   private commuteRecordFor(c: Citizen): CommuteRecord | null {
     if (!c.homeId || !c.workplaceId) return null;
     const home = parsePosKey(c.homeId);
@@ -779,7 +813,8 @@ export class SimulationLoop {
       this.modeChoiceFor(c.education, cordon.deterrence, this.congestionFor(home, work)),
       this.transitAccess, this.flatRoutes, SIMULATION.AVERAGE_WAIT_FACTOR,
     );
-    // 付了過路費 = 還在開車，而且這一趟碰得到收費區。錢記給那一區。
+    // A toll is paid only by someone still driving whose trip touches a cordon. The revenue
+    // is credited to that district.
     return {
       ...picked,
       chargedDistrictId: picked.mode === TransportMode.DRIVE ? cordon.districtId : null,
@@ -787,41 +822,51 @@ export class SimulationLoop {
   }
 
   /**
-   * 這一個 tick 該算的那一片。
+   * The slice due this tick.
    *
-   * 改動前是每 60 個 tick 把**全城**算一次 —— 10 萬人時 128 毫秒全擠在那一個 tick，
-   * 而速度 10 的一個 tick 只有 25 毫秒。片數的下限就是 60，所以每位市民被重算的
-   * 頻率一格都沒退，變的只是那筆工作攤開了。
+   * Recomputing the **whole city** every 60 ticks puts 128ms into a single tick at 100,000
+   * citizens, against 25ms available per tick at speed 10. The slice count has a floor of
+   * 60, so each citizen is recomputed exactly as often as before; only the work is spread.
    *
-   * 這是**輪流**不是抽樣。抽樣被否決的理由有二:`chargedDriversByDistrict` 直接
-   * 決定壅塞費收入，抽樣估收入會讓玩家的錢跟著抽到誰而抖;而固定抽 k 個人是
-   * **系統性偏差**，抽到的人不具代表性的話那棟樓永遠顯示錯的數字，不會自己修正。
+   * This is **round-robin, not sampling**. Sampling was rejected on two grounds:
+   * `chargedDriversByDistrict` directly determines congestion-charge revenue, so estimating
+   * it from a sample would make the player's income jitter with who was drawn; and drawing a
+   * fixed k citizens is a **systematic bias** — if the drawn citizens are unrepresentative,
+   * that building shows the wrong number permanently and never self-corrects.
    *
-   * ### 落後多久（改動前的兩倍，這是分片的代價）
+   * ### Lag (twice the unsliced version; the cost of slicing)
    *
-   * 任何改動 —— 搬家、換工作、開關條例 —— 要走兩段才會出現在統計上:
+   * Any change — a move, a job change, toggling an ordinance — takes two steps to reach the
+   * statistics:
    *
-   * 1. 記錄要等這個人那一片輪到（最多一輪）
-   * 2. 加總是另一個節奏（`(tick - 3) % 60`，最多再一輪）
+   * 1. The record waits for that citizen's slice (up to one cycle).
+   * 2. Aggregation runs on its own cadence (`(tick - 3) % 60`, up to another cycle).
    *
-   * 所以最壞約 **120 個 tick（5 個遊戲日）**，改動前是 60 個。這是「分片 + 定期發布」
-   * 本身的性質，要回到一輪只能改成邊寫邊維護總和 —— 那是 BUG-331 那一整類的溫床
-   * （總和悄悄跟真實脫節，而且不會當場壞掉），不值得為一個玩家看不見的落後去換。
+   * Worst case is about **120 ticks (5 game days)** against 60 unsliced. That is inherent to
+   * slicing plus periodic publication; getting back to one cycle would mean maintaining
+   * running totals incrementally, which is the BUG-331 family (totals drift from reality
+   * silently and without failing outright) and not worth trading for a lag the player cannot
+   * see.
    *
-   * 對錢的影響只有一個方向:**開啟**壅塞費之後收入要多花一輪才收滿。**關閉**是立刻
-   * 生效的 —— 計費迭代的是分區當下啟用的條例（`calculateDistrictPolicyCost`），
-   * 條例不在清單裡就不會計費，統計裡還留著多少付費駕駛都不影響。
+   * The effect on money runs one way only: **enabling** a congestion charge takes an extra
+   * cycle to reach full revenue. **Disabling** takes effect immediately, because billing
+   * iterates the ordinances currently enabled on a district
+   * (`calculateDistrictPolicyCost`); an ordinance not on the list is not billed regardless
+   * of how many charged drivers remain in the statistics.
    */
   private advanceCommuteSlice(): void {
-    // 空城不特別處理:片數的下限是 60，迴圈掃過零個人，然後 prune 會把上一座
-    // 城市留下的記錄清乾淨。提早 return 反而會讓那些記錄一直留著。
+    // An empty city needs no special case: the slice count floors at 60, the loop walks zero
+    // citizens, and the prune clears records left by the previous city. An early return would
+    // keep those records forever.
     const citizens = this.state.citizens.getCitizens();
 
     const { slices, index } = this.commuteCycle.next(() => commuteSliceCount(citizens.length));
-    // 開輪:重新分桶，順便把離開的人的記錄清掉。`index === 0` 就是一輪的開頭。
+    // Start of a cycle: rebuild the buckets and drop records for citizens who have left.
+    // `index === 0` marks the start.
     //
-    // 清理排在這裡而不是每個 tick，理由有二:桶剛重建，接下來一整輪都不會再把
-    // 離開的人加回去;而活人名單本來就要為了分桶走一遍，清理是順便，不多花錢。
+    // The prune sits here rather than in every tick for two reasons: the buckets have just
+    // been rebuilt, so no departed citizen is added back for the rest of the cycle; and the
+    // living list is already being walked for bucketing, making the prune free.
     if (index === 0) {
       this.commuteBuckets = Array.from({ length: slices }, () => []);
       const alive = new Set<number>();
@@ -842,8 +887,9 @@ export class SimulationLoop {
   }
 
   /**
-   * 全城一次算完。載入與第一個 tick 用 —— 那兩個時機不能只有 1/60 的人有記錄:
-   * `chargedDriversByDistrict` 是壅塞費的計費基礎，少算就是少收錢。
+   * Computes the whole city in one pass, for loading and the first tick. Neither moment can
+   * afford records for only 1/60 of citizens: `chargedDriversByDistrict` is the billing base
+   * for the congestion charge, and undercounting it undercollects revenue.
    */
   private rebuildAllCommuteRecords(): void {
     this.commuteRecords.clear();
@@ -854,10 +900,11 @@ export class SimulationLoop {
   }
 
   /**
-   * 把存下來的值加總成圖層與面板要的數字。
+   * Aggregates the stored records into the numbers the overlay and panel need.
    *
-   * 不進存檔 —— 它完全可以從現有狀態重算，存起來只會讓存檔格式多一塊要遷移的東西。
-   * 代價是讀檔後第一次慢速 tick 之前面板是空的。
+   * Not serialized: it can be recomputed entirely from current state, and storing it would
+   * add another piece of the save format to migrate. The cost is an empty panel until the
+   * first slow tick after loading.
    */
   private refreshCommuteStats(): void {
     this.commuteStats = computeCommuteStats(
@@ -870,17 +917,19 @@ export class SimulationLoop {
   }
 
   /**
-   * 統計換過幾次。渲染端拿它判斷該不該重建通勤圖層。
+   * How many times the statistics have changed. The renderer uses it to decide whether to
+   * rebuild the commute overlay.
    *
-   * 圖層是**快照**：`setOverlay` 只在切換圖層或某個子系統重建時跑。沒有這個版本號
-   * 的話，載入後開圖層拿到的是空快照，而蓋了捷運之後顏色也不會跟著變 —— 要等到
-   * 城裡剛好有別的東西變動才會刷新。
+   * The overlay is a **snapshot**: `setOverlay` runs only when the overlay is switched or a
+   * subsystem rebuilds. Without this version, opening the overlay after a load yields an
+   * empty snapshot, and building a metro does not change its colours until something else in
+   * the city happens to change.
    */
   getCommuteStatsVersion(): number {
     return this.commuteStatsVersion;
   }
 
-  /** 全城通勤統計。圖層與總覽面板讀的是同一份。 */
+  /** City-wide commute statistics, shared by the overlay and the overview panel. */
   getCommuteStats(): CommuteStats {
     return this.commuteStats;
   }
@@ -1011,17 +1060,17 @@ export class SimulationLoop {
   }
 
   /**
-   * 重算全城情境，給接下來每個 tick 的分片共用。
+   * Recomputes the city-wide context shared by the slices of the following ticks.
    *
-   * 呼叫節奏與改動前的 `updateCitizenHappiness` 相同（慢速槽 4，每 6 個 tick）——
-   * 所以每位市民看到的情境新鮮度沒有變。
+   * Called on the same cadence as the unsliced happiness update (slow slot 4, every 6
+   * ticks), so the context each citizen sees is exactly as fresh as before.
    */
   private refreshHappinessContext(): void {
     const taxRate = this.state.taxRates.residential ?? DEFAULT_TAX_RATE;
     const pop = this.state.citizens.getPopulation();
-    // 空城不必建情境。作廢舊情境的是 `updateCitizenHappinessSlice` —— 它每個 tick
-    // 都跑，人一走光就會把 `happinessContext` 設回 null，這裡再設一次沒有任何
-    // 情況守得到。
+    // An empty city needs no context. Invalidation is `updateCitizenHappinessSlice`'s job:
+    // it runs every tick and sets `happinessContext` back to null as soon as the city
+    // empties, so clearing it again here would guard nothing.
     if (pop === 0) return;
 
     // Calculate city-wide happiness context (SRP: pure calculation in CityHappinessContext)
@@ -1053,14 +1102,15 @@ export class SimulationLoop {
     this.happinessContext = { ctx, hasParkCoverage, taxRate, enableShopping };
   }
 
-  /** 重複使用的待處理佇列計數。每個 tick 清空重建，不留跨 tick 的殘值。 */
+  /** Reused pending-queue counts. Cleared and rebuilt each tick, never carried across ticks. */
   private readonly pendingDeathCounts = new Map<string, number>();
   private readonly pendingGarbageCounts = new Map<string, number>();
 
   /**
-   * 這個住址的環境。同一個 tick 之內只算一次。
+   * The environment of this address, computed once per tick.
    *
-   * 回傳 null 表示這個鍵解不出座標（不該發生，但 `parsePosKey` 允許失敗）。
+   * Returns null when the key does not resolve to coordinates — which should not happen,
+   * but `parsePosKey` is allowed to fail.
    */
   private homeFactsFor(homeId: string): HomeFacts | null {
     const tick = this.state.clock.tick;
@@ -1090,26 +1140,28 @@ export class SimulationLoop {
   }
 
   /**
-   * 把屍體與垃圾的待處理佇列數成「每一格幾筆」。
+   * Whether the counts have ever been taken.
    *
-   * 每個 tick 都重建 —— 佇列長度是「還沒收走的幾筆」，與人口無關。放進慢速槽的
-   * 快照裡的話，一輪之內只有頭幾片看得到當時的事件。
-   */
-  /**
-   * 還沒數過任何一次。
-   *
-   * 「第一次一定要數」不能靠版本號表達:版本號從 0 開始，而**讀檔建出來的服務
-   * 佇列裡本來就有東西**，版本也是 0 —— 拿 `-1` 當哨兵要兩個欄位同時是 -1 才成立，
-   * 那是同一件事用兩個地方講，壞掉的時候互相遮蔽。
+   * "The first pass must always count" cannot be expressed with the versions alone: they
+   * start at 0, and **a service queue restored from a save already has entries** at version
+   * 0. Using `-1` as a sentinel would require both fields to be -1 at once, stating one fact
+   * in two places where each masks the other's failure.
    */
   private pendingCountsEverCounted = false;
-  /** 上次數的時候那兩條佇列是第幾版。 */
+  /** The queue versions at the last count. */
   private pendingCountsDeathVersion = 0;
   private pendingCountsGarbageVersion = 0;
 
+  /**
+   * Counts the pending body and garbage queues into entries per cell.
+   *
+   * Rebuilt every tick: queue length is how many pickups are outstanding and is unrelated to
+   * population. Folding it into a slow-slot snapshot would let only the first few slices of
+   * a cycle see the events as they were.
+   */
   private refreshPendingCounts(): void {
-    // 兩條佇列都沒動就沿用上一張表。這一支每個 tick 都被呼叫，而佇列每 6 個 tick
-    // 才動一次 —— 見 `GlobalCoverageService.pendingVersion`。
+    // Reuse the previous table while neither queue has changed. This runs every tick, while
+    // the queues change only every 6 ticks — see `GlobalCoverageService.pendingVersion`.
     const deathVersion = this.state.deathCare.pendingVersion;
     const garbageVersion = this.state.garbage.pendingVersion;
     if (this.pendingCountsEverCounted
@@ -1132,44 +1184,53 @@ export class SimulationLoop {
   }
 
   /**
-   * 這個 tick 輪到的那一片市民，重算他們的快樂度。
+   * Who each slice of this cycle handles — one set for happiness, one for health.
    *
-   * 每位市民身上都存著自己的快樂度，沒輪到的人沿用上次的值 —— 全城平均照樣是
-   * 「所有人身上的值加總 ÷ 人數」，不受哪一片剛被重算影響。這是**輪流**不是抽樣:
-   * 沒有人被跳過，`slices` 個 tick 之內每個人一定輪到一次。
+   * Same shape and rationale as `commuteBuckets` (documented in full there): without this
+   * layer, every tick scans all citizens to select its own slice, costing
+   * population * slices filter operations per cycle. 42,000 citizens split into 20 slices of
+   * about 2,110 each means **scanning 42,000 citizens per tick to find 2,110**. Measured,
+   * `citizenSliceOf` accounted for 8.3% of the happiness pass and 40.6% of the health pass,
+   * on top of the loop's own traversal.
    *
-   * 70 891 人實測，改動前這一整包是 68.5ms 落在單一個 tick 上（BUG-330）。
-   */
-  /**
-   * 這一輪每一片要處理誰 —— 快樂度與健康各一份。
+   * Two separate sets rather than one shared: each cycle calls `next()` independently, and
+   * happiness returns early when no context is available yet (that tick does not advance).
+   * Once they diverge, a shared bucket set would be rebuilt in the middle of the other's
+   * cycle.
    *
-   * 形狀與理由跟 `commuteBuckets` 完全相同（那裡有完整說明）:沒有這一層的話，
-   * 每個 tick 都要掃過全部市民才挑得出自己那一片，一輪的過濾成本是「人口 × 片數」。
-   * 4 萬 2 千人會分成 20 片、每片約 2 110 人 —— **每個 tick 掃 42 000 個人只為了
-   * 挑出 2 110 個**。實測 `citizenSliceOf` 佔快樂度那一支的 8.3%、健康那一支的
-   * 40.6%，再加上迴圈本身的走訪。
-   *
-   * 兩份分開放而不是共用一份:兩個輪子各自呼叫 `next()`，而快樂度在還沒有情境可用
-   * 時會先 return（那個 tick 不推進）—— 一旦錯開，共用的桶會在別人的輪中途被重建。
-   *
-   * 一輪之內的落後與通勤那邊一樣:中途遷出、死亡的人還留在桶裡，會被多算一次
-   * （寫進一個沒有人讀得到的物件）;中途搬進來的人這一輪還沒有桶可以待，下一輪
-   * 才輪得到。新市民本來就帶著預設的快樂度與健康，全城平均走的是活人名單。
+   * Staleness within a cycle matches the commute side: citizens who leave or die mid-cycle
+   * remain in their bucket and are processed once more, writing into an object nobody reads;
+   * citizens who arrive mid-cycle have no bucket yet and are picked up next cycle. New
+   * citizens already carry default happiness and health, and city-wide averages walk the
+   * living list.
    */
   private happinessBuckets: Citizen[][] = [];
   private healthBuckets: Citizen[][] = [];
 
+  /**
+   * Recomputes happiness for the slice of citizens due this tick.
+   *
+   * Each citizen stores their own happiness and those not due keep their previous value, so
+   * the city-wide average remains the sum over all citizens divided by their count,
+   * unaffected by which slice was just recomputed. This is **round-robin, not sampling**:
+   * nobody is skipped, and every citizen comes up within `slices` ticks.
+   *
+   * Measured at 70,891 citizens, the unsliced version put 68.5ms into a single tick
+   * (BUG-330).
+   */
   private updateCitizenHappinessSlice(): void {
     const citizens = this.state.citizens.getCitizens();
     if (citizens.length === 0) {
-      // 空城:情境跟著作廢，重新遷入的人才不會拿到上一座城市的稅率與服務。
+      // Empty city: the context is invalidated too, so citizens who move in later do not
+      // inherit the previous city's tax rates and services.
       this.happinessContext = null;
       this.happinessCycle.reset();
       this.lastHappinessSlice = { slices: 0, index: -1, updated: 0 };
       return;
     }
-    // 情境是慢速槽 4 建立的，而分片每個 tick 都跑 —— 開局或讀檔後的頭幾個 tick 還沒有
-    // 情境可用。不補這一手的話那幾片會被白白跳過，第一輪只蓋得到一部分市民。
+    // The context is built in slow slot 4 while slices run every tick, so the first few ticks
+    // of a new game or after a load have none. Without this fallback those slices are skipped
+    // and the first cycle covers only part of the population.
     if (this.happinessContext === null) this.refreshHappinessContext();
     const cached = this.happinessContext;
     if (cached === null) return;
@@ -1182,8 +1243,9 @@ export class SimulationLoop {
     const currentTick = this.state.clock.tick;
     const { slices, index: mySlice } =
       this.happinessCycle.next(() => citizenSliceCount(citizens.length));
-    // 開輪:重新分桶。`index === 0` 就是一輪的開頭，而 `SliceCycle` 保證片數只在
-    // 那個時候才會換 —— 所以桶的長度與 `slices` 一輪之內不會對不上。
+    // Start of a cycle: rebuild the buckets. `index === 0` marks the start, and `SliceCycle`
+    // guarantees the slice count only changes there, so the bucket count and `slices` cannot
+    // disagree within a cycle.
     if (mySlice === 0) {
       this.happinessBuckets = Array.from({ length: slices }, () => []);
       for (const c of citizens) this.happinessBuckets[citizenSliceOf(c.id, slices)]!.push(c);
@@ -1250,26 +1312,28 @@ export class SimulationLoop {
   }
 
   /**
-   * 「哪一棟樓住了幾個人、哪一棟樓有幾個人上班」。慢速槽 4 建一次，醫院、學校、
-   * 警消共用。
+   * How many citizens live in and work at each building. Built once in slow slot 4 and
+   * shared by the hospital, school and police/fire services.
    *
-   * 這三個服務算的是每一格的需求，而同一棟樓的住戶算出來完全一樣 —— 原本各自逐
-   * 市民掃一遍，每位付兩次 `parsePosKey`、兩次 `getCoverage`、一次 `getCell`。
-   * 12 萬人實測 `updatePoliceFireLoads` 102ms、`updateHospitalLoads` 33ms、
-   * `updateSchoolLoads` 21ms。
+   * All three compute per-cell demand, and every resident of the same building yields the
+   * same answer. Scanning per citizen in each service costs two `parsePosKey` calls, two
+   * `getCoverage` calls and one `getCell` per citizen: measured at 120,000 citizens,
+   * `updatePoliceFireLoads` 102ms, `updateHospitalLoads` 33ms, `updateSchoolLoads` 21ms.
    */
   private citizenLocations: CitizenLocationIndex = buildCitizenLocationIndex([]);
   private citizenLocationsTick = -1;
 
   /**
-   * 確保這個 tick 的位置索引是新的。
+   * Ensures this tick's location index is current.
    *
-   * **誰用誰負責**，不是在慢速槽 4 建好給大家用:每日的死亡結算也會呼叫
-   * `updateHospitalLoads`，而那是在槽 5（移民、配房、換房子）之後 —— 拿槽 4 的
-   * 索引會漏掉剛遷入的人、算進剛遷出的人。讀檔更糟:在槽 4 之後、日界之前建立
-   * 的 SimulationLoop 索引還是空的，醫院需求會被算成 0，死亡率拿到錯的低倍率。
+   * **Every consumer is responsible for it**, rather than building it once in slow slot 4:
+   * the daily death settlement also calls `updateHospitalLoads`, and that runs after slot 5
+   * (migration, housing, relocation), so a slot-4 index would miss citizens who just moved
+   * in and count citizens who just moved out. Loading is worse: a SimulationLoop constructed
+   * after slot 4 but before the day boundary still has an empty index, hospital demand comes
+   * out as 0, and the death rate gets a wrongly low multiplier.
    *
-   * 同一個 tick 之內重複呼叫是免費的，所以槽 4 那三個服務仍然只建一次。
+   * Repeat calls within a tick are free, so the three services in slot 4 still build it once.
    */
   private ensureCitizenLocations(): void {
     const tick = this.state.clock.tick;
@@ -1291,8 +1355,9 @@ export class SimulationLoop {
   }
 
   private updateSchoolLoads(): void {
-    // 先數成「哪一棟樓、哪一種學制、幾個人」。分隔用 `|` 不是逗號 —— 高架格子的
-    // 鍵是三段的（`27,55,1`），用逗號切會把它切錯。
+    // Count by building, school stage and headcount first. The separator is `|` rather than a
+    // comma because elevated cells have three-part keys (`27,55,1`) that a comma would split
+    // incorrectly.
     const enrolledCounts = new Map<string, number>();
     const eligibleCounts = new Map<string, number>();
     for (const c of this.state.citizens.getCitizens()) {
@@ -1352,11 +1417,12 @@ export class SimulationLoop {
   };
 
   /**
-   * 這個 tick 輪到的那一片市民，重算他們的健康。
+   * Recomputes health for the slice of citizens due this tick.
    *
-   * 與快樂度同一套分片（`SliceCycle` + `citizenSliceOf`），所以同一位市民的兩件事
-   * 落在同一個 tick —— 他的住址只查一次。健康值存在每個人身上，沒輪到的人沿用
-   * 上次的值。12 萬人實測改動前這一發 28ms。
+   * Uses the same slicing as happiness (`SliceCycle` + `citizenSliceOf`), so both land on
+   * the same tick for a given citizen and their address is looked up once. Health is stored
+   * per citizen and those not due keep their previous value. Measured at 120,000 citizens,
+   * the unsliced version took 28ms.
    */
   private updateCitizenHealthSlice(): void {
     const citizens = this.state.citizens.getCitizens();
@@ -1448,28 +1514,31 @@ export class SimulationLoop {
   }
 
   /**
-   * 全城的有效犯罪率 —— 基礎值加上全城條例。
+   * The city's effective crime rate: the base value plus city-wide ordinances.
    *
-   * 幸福度、移民吸引力、棄置壓力看的都是這個數字。少了條例那一項的話，面板上
-   * 寫著 Crime −13，居民卻一點感覺也沒有。
+   * Happiness, migration attractiveness and abandonment stress all read this number.
+   * Without the ordinance term the panel reads Crime -13 while residents feel nothing.
    *
-   * 公開的:`SummaryStats` 從 `GameState` 算同一個數字（走 `effectiveCityCrime`），
-   * 而「兩邊算出來一樣」這件事需要有人能問得到這一邊。
+   * Public because `SummaryStats` computes the same number from `GameState` (via
+   * `effectiveCityCrime`), and checking that the two agree requires this side to be
+   * reachable.
    *
-   * 夾在 0 以上:負的犯罪率在下游會變成加分（地價那條線最明顯，`calculateLandValue`
-   * 是 `value -= crimeRate * CRIME_PENALTY`），疊越多層賺越多。
+   * Clamped at 0: a negative crime rate becomes a bonus downstream, most visibly in land
+   * value, where `calculateLandValue` does `value -= crimeRate * CRIME_PENALTY`, so stacking
+   * more suppressors would earn more.
    */
   getCityCrime(): number {
     return Math.max(0, this.getRawCityCrime());
   }
 
   /**
-   * 全城犯罪率，還沒夾值。
+   * The city-wide crime rate before clamping.
    *
-   * 逐格的消費端要用這個 —— 夾值只能做一次，而且要在全城與分區都加完之後。先夾
-   * 全城那一半的話，基礎 1 加上監視器網路的 −100 會先變成 0，賭場的 +120 再加
-   * 上去就是 120;全部加完再夾是 21。同一格在地價那條線看到 21、在棄置那條線
-   * 看到 120，兩套系統對同一件事有兩個答案。
+   * Per-cell consumers need this one: clamping may happen only once, and only after both the
+   * city-wide and district terms are added. Clamping the city-wide half first turns a base
+   * of 1 plus a camera network's -100 into 0, so a casino's +120 lands at 120, where
+   * clamping after summing everything gives 21. The same cell would then read 21 on the
+   * land-value path and 120 on the abandonment path.
    */
   private getRawCityCrime(): number {
     return rawCityCrime(
@@ -1493,8 +1562,8 @@ export class SimulationLoop {
     const citySpecBonus = this.state.citySpec.getBonus();
     totalIncome *= citySpecBonus.revenueMultiplier;
 
-    // 壅塞費的過路費。目前唯一一條會賺錢的條例 —— 加在專精加成**之後**，因為
-    // 那個加成是對產業稅收的，不是對規費的。
+    // Congestion-charge tolls, currently the only revenue-earning ordinance. Added **after**
+    // the specialization bonus, which applies to industry tax revenue rather than to fees.
     totalIncome += totalPolicyRevenue(
       this.billableDistricts(), this.state.ordinances, this.cityScales());
 
@@ -1660,15 +1729,16 @@ export class SimulationLoop {
         waterfront,
         pollution: (pollution.ground + pollution.water) * pollutionFactor,
         noise: pollution.noise * pollutionFactor,
-        // 條例可以往兩個方向動這一格:加地價（有機食品）也加犯罪（觀光）。
-        // 分區只查一次 —— 這是逐格跑的。
+        // Ordinances move this cell in both directions: land value up (organic food) and
+        // crime up (tourism). The district is looked up once, since this runs per cell.
         //
-        // 分區與全城的效果相加 —— 兩個範圍是獨立的決策，不是二選一。
+        // District and city-wide effects add: the two scopes are independent decisions, not
+        // alternatives.
         //
-        // 犯罪率夾在 0 以上:`calculateLandValue` 是 `value -= crimeRate *
-        // CRIME_PENALTY`，負的犯罪率會直接變成地價加成。宵禁疊上監視器網路就能
-        // 把犯罪壓成負數，那時候「治安好」會變成「憑空多出地價」，而且疊越多層
-        // 賺越多。
+        // Crime is clamped at 0: `calculateLandValue` does `value -= crimeRate *
+        // CRIME_PENALTY`, so a negative crime rate turns straight into a land-value bonus.
+        // A curfew stacked on a camera network can push crime negative, at which point
+        // "low crime" becomes "land value out of nowhere", and stacking more earns more.
         crimeRate: Math.max(0, this.getAvgCrime()
           + this.state.policies.getCrimeBonus(districtId)
           + this.state.ordinances.getCrimeBonus()),
@@ -1786,10 +1856,10 @@ export class SimulationLoop {
   }
 
   /**
-   * 本期計費要用的全城規模。
+   * The city-wide scales this billing period uses.
    *
-   * 補貼型條例按實際受益人頭收費，所以帳單要知道人口結構與醫院覆蓋，不只是人口
-   * 總數。
+   * Subsidy ordinances bill per actual beneficiary, so the bill needs the age structure and
+   * hospital coverage, not just the headcount.
    */
   cityScales(): CityScales {
     return computeCityScales(
@@ -1798,7 +1868,8 @@ export class SimulationLoop {
     );
   }
 
-  /** 分區的計費資料:道路格數與付費人數。帳本、面板與結帳共用同一份。 */
+  /** Per-district billing data: road cells and paying citizens. Shared by the ledger, the
+   *  panel and settlement. */
   billableDistricts() {
     return billableDistricts(
       this.state.grid, this.state.districts.getAllDistricts(), this.commuteStats);
@@ -1864,10 +1935,10 @@ export class SimulationLoop {
 
     // Trigger async cache update if stale.
     //
-    // 這裡以前有一道閘門：只要有任何一格高架道路就完全不用快取（BUG-109）。
-    // 那是因為 worker 拿到的是平面格子緩衝，看不到高架，答案會錯。現在它拿
-    // 到的是 RoadCellGraph —— 樓層與匝道在建圖時就消化掉了，兩條路共用同一
-    // 個 flood 核心，閘門沒有存在的理由了。
+    // The worker receives a RoadCellGraph, in which levels and ramps are resolved at build
+    // time, and both paths share one flood core. A gate that disabled the cache whenever any
+    // elevated road existed (BUG-109) was needed only while the worker got a flat cell
+    // buffer it could not see elevation in.
     if (this.wpDistCache && this.wpDistCache.isStale && workplaceCandidates.length > 0) {
       const wpPositions = workplaceCandidates.map(c => {
         const p = parsePosKeyUnsafe(c.pos);
@@ -1877,9 +1948,10 @@ export class SimulationLoop {
       const srcBuf = this.state.grid.getBuffer();
       const copy = new ArrayBuffer(srcBuf.byteLength);
       new Uint8Array(copy).set(new Uint8Array(srcBuf));
-      // 圖是 worker 的走訪規則來源 —— 樓層與匝道在建圖時就消化掉了。
-      // 傳的是**轉置**圖：成本加在目的地那一格，用正向圖跑反向 flood 會付成
-      // 來源那格的價格（BUG-237）。
+      // The graph is where the worker's traversal rules come from; levels and ramps are
+      // resolved at build time. The **transposed** graph is sent: cost is charged at the
+      // destination cell, so a reverse flood over the forward graph would pay the source
+      // cell's price (BUG-237).
       const graph = this.getCellGraph();
       if (graph) {
         const graphBuffer = serializeRoadCellGraph(transposeRoadCellGraph(graph));
@@ -1888,13 +1960,15 @@ export class SimulationLoop {
           copy, graphBuffer, wpPositions, DEFAULT_JOB_RELOCATION_CONFIG.dijkstraMaxBudget,
         );
       }
-      // 沒有 lookup 就建不出圖，這一輪不請求更新，照常走同步指派。
+      // Without a lookup there is no graph, so no update is requested this pass and
+      // assignment falls through to the synchronous path.
     }
 
     // Build reachability map: use cache if ready, otherwise sync Dijkstra fallback
-    // `hasTable` 而不是 `isReady` —— 一份差一輪的表遠好過同步 Dijkstra。
-    // 4 萬人存檔實測:走快取 161ms，掉回同步 2,684ms，而快取「當前」的窗只有
-    // 6~8 秒、重新配置每 13 秒跑一次，落在哪裡純粹是運氣。
+    // `hasTable` rather than `isReady`: a table one cycle behind beats a synchronous
+    // Dijkstra by far. Measured on a 40,000-citizen save, the cached path took 161ms against
+    // 2,684ms synchronous, while the cache is only "current" for 6-8 seconds and
+    // reassignment runs every 13, so which one you land on is luck.
     const reachable = this.wpDistCache?.hasTable
       ? this.buildWorkplaceReachabilityFromCache(workingAgeCitizens, workplaceCandidates)
       : this.buildWorkplaceReachability(workingAgeCitizens, workplaceCandidates);
@@ -1917,10 +1991,12 @@ export class SimulationLoop {
   }
 
   /**
-   * 上一次跑的是哪一個 tick、第幾批、配額多少、評估了幾位、搬了幾位。
+   * The last run: which tick, which batch, the quota, how many were considered and how many
+   * moved.
    *
-   * `tick` 讓讀的人分得出「這是這個 tick 剛跑的」還是「上一次留下來的」—— 它每
-   * 6 個 tick 才跑一次，不看 tick 的話會把同一次結果數六遍。
+   * `tick` lets readers tell "this ran on this tick" from "this is left over from last
+   * time". It runs only every 6 ticks, so without checking the tick the same result would be
+   * counted six times.
    */
   lastHousingRelocation =
     { tick: -1, slice: -1, quota: 0, considered: 0, relocated: 0, cityUnhappy: 0 };
@@ -1928,12 +2004,13 @@ export class SimulationLoop {
   /**
    * Run relocation tick: unhappy citizens may move to better housing.
    *
-   * 每個慢速槽跑**一批**，`HOUSING_RELOCATION_SLICES` 批輪完一圈 —— 每位市民每
-   * 60 個 tick 輪到一次，與改動前完全相同。
+   * **One batch** per slow slot, a full cycle every `HOUSING_RELOCATION_SLICES` batches, so
+   * each citizen comes up once every 60 ticks.
    *
-   * 整件事在**同一個 tick 內**做完:候選住宅、入住數、市民名單當場拍、當場用完、
-   * 當場丟掉。把一次的名單攤到幾十個 tick 上跑過，那會讓這三份快照全部過期
-   * （BUG-331）。
+   * The whole thing completes **within a single tick**: the housing candidates, the
+   * occupancy counts and the citizen list are taken, used and discarded on the spot.
+   * Spreading one batch's list over dozens of ticks makes all three snapshots stale
+   * (BUG-331).
    */
   private runRelocation(): void {
     this.rebuildBuildingIndex();
@@ -1952,11 +2029,14 @@ export class SimulationLoop {
     const citizens = this.state.citizens.getCitizens();
     const slices = SIMULATION.HOUSING_RELOCATION_SLICES;
     const mySlice = Math.floor(this.state.clock.tick / SIMULATION.SLOW_TICK_INTERVAL) % slices;
-    // 用 id 的雜湊分批，不是用名單位置:同時建成的市民往往住同一區，照位置切的話
-    // 每一批是一個街區，出事時反應會一區一區掃過去（同 CitizenSlicing）。
+    // Batched by a hash of the id rather than by position in the list: citizens created at
+    // the same time tend to live in the same area, so splitting by position makes each batch
+    // a city block and any reaction sweep the city one block at a time (as in
+    // CitizenSlicing).
     const inSlice = (c: Citizen) => citizenSliceOf(c.id, slices) === mySlice;
 
-    // 一趟掃完:這一批有幾位、以及**全城**有幾位不開心。
+    // One pass counts both this batch's size and the **city-wide** number of unhappy
+    // citizens.
     const cfg = DEFAULT_RELOCATION_CONFIG;
     let considered = 0;
     let cityUnhappy = 0;
@@ -1965,18 +2045,20 @@ export class SimulationLoop {
       if (c.homeId !== null && c.happiness < cfg.happinessThreshold) cityUnhappy++;
     }
 
-    // 配額照**全城**算，再用階梯法分給十批 —— 加起來剛好等於一次跑完的 5%。
-    // 讓每批各自取 5% 的話，`Math.max(1, Math.floor(...))` 會讓小批全部進位到 1，
-    // 一圈可以搬掉好幾倍的人。
+    // The quota is computed **city-wide** and then split across the ten batches by a
+    // staircase, summing to exactly the 5% an unsliced run would move. Taking 5% per batch
+    // instead would let `Math.max(1, Math.floor(...))` round every small batch up to 1 and
+    // move several times as many citizens per cycle.
     const cycleQuota = Math.max(1, Math.floor(cityUnhappy * cfg.maxRelocateRatio));
     const quota = Math.floor((mySlice + 1) * cycleQuota / slices)
       - Math.floor(mySlice * cycleQuota / slices);
 
-    // 入住數要數**全部人**，不是這一批 —— 房子有沒有空位跟誰輪到無關。
+    // Occupancy counts **every citizen**, not just this batch: whether a home has room is
+    // unrelated to whose turn it is.
     const homeOccupancy = countOccupancy(citizens, (c) => c.homeId);
     const { relocatedIds } = relocationTick(
       citizens, housingCandidates, homeOccupancy, undefined, inSlice, quota);
-    // 搬家的市民要清掉通勤快取，路線才會重算。
+    // A citizen who moved needs their commute cache cleared so the route is recomputed.
     for (const id of relocatedIds) this.commuteCache.remove(id);
     this.lastHousingRelocation = {
       tick: this.state.clock.tick, slice: mySlice, quota,
@@ -2008,8 +2090,9 @@ export class SimulationLoop {
     // All workplace positions as Dijkstra targets
     const targetSet = new Set<string>(workplaceCandidates.map(c => c.pos));
 
-    // 圖一定要傳。不傳的話 `roadDistanceToTargets` 會**每個家各建一張**，而建圖是
-    // O(路格數 × 4) —— 這個迴圈跑的是全城不重複的住址。
+    // The graph must be passed. Without it, `roadDistanceToTargets` builds **one per home**,
+    // and building it is O(road cells * 4), while this loop iterates every distinct address
+    // in the city.
     const cellGraph = this.getCellGraph() ?? undefined;
     for (const homeId of homeIds) {
       const homePos = parsePosKeyUnsafe(homeId);
@@ -2055,11 +2138,12 @@ export class SimulationLoop {
     // Use cache-based distance lookup when ready (O(1) per lookup, no Dijkstra).
     // Otherwise fall back to the synchronous graph walk.
     //
-    // 高架閘門已移除（BUG-109 治本）—— 快取現在也是樓層感知的，兩條路共用
-    // 同一個 flood 核心，不可能給出不同的答案。
+    // The cache is level-aware and both paths share one flood core, so they cannot give
+    // different answers; no elevated-road gate is needed (BUG-109).
     //
-    // fallback 一定要傳圖：這個 closure **每個市民呼叫一次**，而建圖是
-    // O(路格數 × 4)。圖以道路世代為鍵快取，整輪只建一次。
+    // The fallback must be passed the graph: this closure is **called once per citizen**,
+    // and building the graph is O(road cells * 4). The graph is cached by road generation, so
+    // a whole pass builds it once.
     const roadLookup = this._roadLookup;
     const cellGraph = this.getCellGraph() ?? undefined;
     const distanceLookup = this.wpDistCache?.hasTable
@@ -2079,13 +2163,14 @@ export class SimulationLoop {
       this.state.clock.tick,
       undefined,
       distanceLookup,
-      // 通勤要花多久 —— 開車、走路與大眾運輸都換算成同一個尺度的時間。
+      // Commute duration, with driving, walking and transit all converted to one time scale.
       (c: Citizen) => {
         if (!c.homeId || !c.workplaceId) return NaN;
         return this.commuteTimeBetween(c.homeId, c.workplaceId) ?? NaN;
       },
     );
-    // 換了工作的市民要清掉通勤快取，路線才會重算。
+    // A citizen who changed jobs needs their commute cache cleared so the route is
+    // recomputed.
     for (const id of relocatedIds) this.commuteCache.remove(id);
   }
 
@@ -2110,13 +2195,15 @@ export class SimulationLoop {
    *  @param spawnRatio fraction of commuters to place on roads (0-1)
    *  @param onProgress called with (0-1) for sub-progress updates
    *
-   * **只算現在真的要用的那幾條。** 這裡原本替每一位有工作的市民都算了雙向路徑，
-   * 而只有 `spawnRatio` 那一小部分會生成車輛 —— 2 146 人的存檔實測，1 805 位 ×
-   * 2 個方向 = 3 610 次 A*、每次約 8 ms，載入畫面卡 20 秒，其中八成是替現在
-   * 不上路的人算的。
+   * **Only the routes actually needed right now are computed.** Computing both directions
+   * for every employed citizen, when only the `spawnRatio` fraction produces a vehicle,
+   * measured on a 2,146-citizen save as 1,805 citizens x 2 directions = 3,610 A* runs at
+   * roughly 8ms each, holding the loading screen for 20 seconds, four fifths of it for
+   * citizens who never take to the road.
    *
-   * 沒算到的那些人不會出事：`spawnCommuteVehicles` 找不到路線時本來就會丟給
-   * pathfinding worker，下一 tick 再用 —— 那條路是非同步的，而且在別的執行緒上。
+   * The citizens skipped come to no harm: when `spawnCommuteVehicles` finds no route it
+   * hands the request to the pathfinding worker and uses the result next tick, which is
+   * asynchronous and on another thread.
    */
   async warmup(spawnRatio = 0.2, onProgress?: (ratio: number) => void): Promise<{ pathsComputed: number; vehiclesSpawned: number }> {
     this.ensureLaneGraph();
@@ -2129,8 +2216,9 @@ export class SimulationLoop {
     for (let i = 0; i < citizens.length; i++) {
       // Report sub-progress every 100 citizens.
       //
-      // 放在迴圈**開頭**：底下的 `continue` 已經是多數情形（只有 spawnRatio
-      // 那一小部分會往下走），擺在結尾的話進度條大部分時間不會動。
+      // At the **start** of the loop: the `continue` below is the common case (only the
+      // `spawnRatio` fraction proceeds), so reporting at the end would leave the progress bar
+      // motionless most of the time.
       if (i % 100 === 0 && onProgress) {
         onProgress(i / citizens.length);
         await new Promise(r => requestAnimationFrame(r));
@@ -2139,8 +2227,8 @@ export class SimulationLoop {
       const c = citizens[i]!;
       if (!c.homeId || !c.workplaceId) continue;
 
-      // 先決定這一位現在上不上路，再決定要不要算路徑。反過來的話，八成的
-      // 搜尋是替不上路的人做的。
+      // Decide whether this citizen takes to the road before deciding whether to compute a
+      // path. The other order spends four fifths of the searches on citizens who do not.
       if (Math.random() >= spawnRatio) {
         this.markCommutePending(c);
         continue;
@@ -2150,7 +2238,7 @@ export class SimulationLoop {
       const work = parsePosKey(c.workplaceId);
       if (!home || !work) { this.markCommutePending(c); continue; }
 
-      // 一台車只往一個方向開，所以只需要那一個方向的路徑。
+      // A vehicle drives one direction, so only that direction's path is needed.
       const toWork = Math.random() < 0.5;
       const fromPos = toWork ? home : work;
       const toPos = toWork ? work : home;
@@ -2170,8 +2258,8 @@ export class SimulationLoop {
       const path = variants[Math.floor(Math.random() * variants.length)]!;
       if (path.length === 0) { this.markCommutePending(c); continue; }
 
-      // 只填走到的那個方向。另一個方向留 null —— 平常那條路
-      // （`spawnCommuteVehicles`）寫進來的也是這個形狀。
+      // Only the direction taken is filled; the other stays null, which is the same shape
+      // the ordinary path (`spawnCommuteVehicles`) writes.
       this.commuteCache.set(c.id, {
         citizenId: c.id,
         homeId: c.homeId,
@@ -2187,16 +2275,18 @@ export class SimulationLoop {
       vehiclesSpawned++;
     }
 
-    // 統計在這裡先算一次。它不進存檔，所以載入完成的瞬間本來就是空的 —— 差別在
-    // 玩家什麼時候看得到：這裡還在載入畫面底下，而第一個 tick 已經是進了遊戲之後，
-    // 一進去就開通勤圖層會看到一張空白的地圖。
+    // The statistics are computed once here. They are not serialized, so they are empty the
+    // moment loading finishes; what differs is when the player sees that. This runs behind
+    // the loading screen, whereas the first tick is already in-game, and opening the commute
+    // overlay immediately would show a blank map.
     //
-    // 先建可及性圖，否則這一次算出來的通勤完全不含大眾運輸，第一個 tick 才會被
-    // 修正 —— 玩家會看到顏色在進遊戲後跳一次。
+    // The accessibility field is built first, otherwise the commutes computed here contain no
+    // transit at all and are corrected only on the first tick, making the colours jump once
+    // after entering the game.
     //
-    // 人行道圖又要更早：站牌的涵蓋範圍是沿著人行道量出來的，圖還是空的時候每個
-    // 站牌都服務不到任何人。載入時只有 ensureLaneGraph 被呼叫過，人行道圖要等到
-    // 第一個 tick 才建。
+    // The sidewalk graph must come earlier still: stop catchments are measured along it, and
+    // while it is empty every stop serves nobody. Loading only calls ensureLaneGraph, so
+    // without this the sidewalk graph waits for the first tick.
     this.ensureSidewalkGraph();
     this.rebuildTransferGraphIfDirty();
     this.rebuildAllCommuteRecords();
@@ -2207,13 +2297,15 @@ export class SimulationLoop {
   }
 
   /**
-   * 記下「這個人要通勤，但路徑還沒算」。
+   * Records that a citizen commutes but their path has not been computed yet.
    *
-   * 不留記號的話，下游分不出「還沒算」和「算過了，沒有通勤」。`JobRelocation`
-   * 查不到條目就改用曼哈頓直線距離猜通勤有多遠，於是載入之後的第一輪換工作是
-   * 拿猜的數字決定誰要換工作 —— 舊版 warmup 替所有人算好路徑時不會發生。
+   * Without the marker, consumers cannot tell "not computed yet" from "computed, and there
+   * is no commute". `JobRelocation` falls back to guessing the commute from straight-line
+   * Manhattan distance when it finds no entry, so the first job-change pass after loading
+   * would decide who switches jobs from guesses.
    *
-   * 有條目的人不動：這裡只補空白，不覆蓋算過的結果。
+   * Citizens who already have an entry are left alone: this only fills blanks and never
+   * overwrites a computed result.
    */
   private markCommutePending(c: { id: number; homeId: string | null; workplaceId: string | null }): void {
     if (!c.homeId || !c.workplaceId) return;
@@ -2230,28 +2322,32 @@ export class SimulationLoop {
   }
 
   /**
-   * 背景補完已經替每條路線丟給 worker 幾次。
+   * How many times the background fill has handed each route to the worker.
    *
-   * 這是「worker 交不出答案就自己算」的計數器。worker 可以活著、可以回應，而每一組
-   * 起迄都回傳空的；生產環境沒有 COOP/COEP 就連 SharedArrayBuffer 都沒有，而
-   * `Game.ts` 建不起 worker 時是靜靜吞掉的。沒有這個上限，補完會永遠停在排隊。
+   * This is the "compute it here once the worker fails to answer" counter. A worker can be
+   * alive and responding while returning nothing for every origin-destination pair; without
+   * COOP/COEP in production there is not even a SharedArrayBuffer, and `Game.ts` swallows a
+   * failure to construct the worker silently. Without this limit the fill queues forever.
    *
-   * 路網一改就整個清掉：新蓋的那條路可能正好把它們接起來。
+   * Cleared entirely whenever the road network changes: a newly built road may be exactly
+   * what connects them.
    */
   private commuteFillAttempts = new Map<string, number>();
   private commuteFillAttemptsGeneration = -1;
-  /** 上次補到名單的哪一位。見 advanceCommuteFill（BUG-329）。 */
-  /** 上一個 tick 想問幾位、實際問幾位、放大倍率。測試與面板靠它（BUG-328）。 */
+  /** Last tick's intended sample size, actual sample size and scale-up factor. Read by tests
+   *  and the panel (BUG-328). */
   lastCommuteSample: { attempts: number; samples: number; scale: number } =
     { attempts: 0, samples: 0, scale: 1 };
   /**
-   * 全城情境。每 SLOW_TICK_INTERVAL 個 tick 重算一次（跟改動前同一個節奏），分片
-   * 共用 —— 那一段有一個 O(人口) 的成年人計數，每個 tick 重跑會把分片省下的
-   * 吃掉（BUG-330）。
+   * City-wide context, recomputed every SLOW_TICK_INTERVAL ticks (the same cadence as the
+   * unsliced version) and shared by the slices. It contains an O(population) adult count,
+   * and rerunning that every tick would consume what slicing saves (BUG-330).
    *
-   * 屍體與垃圾的待處理佇列**不在**這裡:它們是短命事件，而快照要活滿一整輪。
-   * 大城市一輪 72 個 tick，只有 6 個 tick 的片看得到那份快照，其餘 66 片永遠不
-   * 知道門口有屍體。佇列只有「還沒收走的幾筆」那麼長，每個 tick 重建不花錢。
+   * The pending body and garbage queues are **not** here: they are short-lived events, while
+   * a snapshot must survive a whole cycle. A large city's cycle is 72 ticks, so only the 6
+   * ticks around the refresh would see the snapshot and the other 66 slices would never know
+   * a body was at the door. The queues are only as long as the outstanding pickups, so
+   * rebuilding them per tick is free.
    */
   private happinessContext: {
     ctx: ReturnType<typeof calculateCityHappinessContext>;
@@ -2259,53 +2355,64 @@ export class SimulationLoop {
     taxRate: number;
     enableShopping: boolean;
   } | null = null;
-  /** 快樂度這一輪的游標。片數在開輪時定死，理由見 `SliceCycle`。 */
+  /** Cursor for the happiness cycle. The slice count is fixed at the start of a cycle; see
+   *  `SliceCycle`. */
   private readonly happinessCycle = new SliceCycle();
-  /** 健康這一輪的游標。與快樂度共用同一個雜湊，所以同一位市民同一個 tick 更新。 */
+  /** Cursor for the health cycle. Shares the happiness hash, so a citizen's two values update
+   *  on the same tick. */
   private readonly healthCycle = new SliceCycle();
-  /** 上一個 tick 分成幾片、輪到第幾片。測試與量測靠它。 */
+  /** Last tick's slice count and index. Read by tests and measurement. */
   lastHappinessSlice = { slices: 0, index: -1, updated: 0 };
-  /** 健康的同一組數字。 */
+  /** The same figures for health. */
   lastHealthSlice = { slices: 0, index: -1, updated: 0 };
 
   /**
-   * 這一個 tick 已經查過的住址。快樂度與健康共用。
+   * Addresses already resolved this tick, shared by happiness and health.
    *
-   * 兩邊都要「這個住址通不通電、有沒有水、污染多少、醫療費率、公園覆蓋」——
-   * 而那些只跟樓有關。12 434 人住在 103 棟樓裡，逐市民查等於同一棟樓查 120 次。
-   * 實測那一整段逐市民做要 18.4ms（61 436 人），照住址記憶化之後 6.0ms。
+   * Both need whether the address has power and water, how polluted it is, its healthcare
+   * cost ratio and park coverage — all of which depend only on the building. With 12,434
+   * citizens in 103 buildings, resolving per citizen queries the same building 120 times.
+   * Measured, that section took 18.4ms per pass at 61,436 citizens and 6.0ms once memoized
+   * by address.
    *
-   * **每個 tick 清空**，不是每 6 個 tick。斷電、缺水、污染都是玩家看得見而且會突然
-   * 改變的東西，快取跨 tick 就會慢半拍。而重建只花「這一片碰到幾個住址」那麼多。
+   * **Cleared every tick**, not every 6. Power cuts, water shortages and pollution are all
+   * visible to the player and can change abruptly, so a cache spanning ticks lags. Rebuilding
+   * costs only as many addresses as this slice touches.
    */
   private readonly homeFacts = new Map<string, HomeFacts | null>();
   private homeFactsTick = -1;
+  /** How far through the citizen list the fill got last time. See advanceCommuteFill
+   *  (BUG-329). */
   private commuteFillCursor = 0;
-  /** 這一個 tick 看過幾位市民。省下來的時間就是這個數字，測試靠它。 */
+  /** How many citizens were examined this tick. The time saved is this number; read by tests. */
   private commuteFillScanned = 0;
 
-  /** 目前這一格的通勤路線在快取裡是不是已經齊了（兩個方向、且是這一代路網）。 */
+  /** Whether this citizen's commute routes are complete in the cache: both directions, and
+   *  from the current road generation. */
   private commuteRouteSettled(entry: CachedRoute | undefined, generation: number): boolean {
     if (!entry || entry.generation !== generation) return false;
-    // 算過而且確定走不通的，不要每個 tick 重算一次。
+    // Routes already computed and known to be impassable are not recomputed each tick.
     if (entry.status === 'failed') return true;
     return entry.morningPath !== null && entry.eveningPath !== null;
   }
 
   /**
-   * 逐 tick 把還沒算路徑的通勤市民補完。
+   * Fills in commuting citizens whose paths have not been computed, a few per tick.
    *
-   * `warmup` 只替真的要上路的那一小部分人算路徑，其餘的人留下 `pending` 記號
-   * 交給這裡。**靠生成車輛是補不完的**：車輛一到上限 `spawnCommuteVehicles`
-   * 立刻 break，不再寫任何快取條目 —— 2 146 人的存檔實測（pathfinding worker
-   * 正常運作）跑到 643／1 750 就停住不動，而預測車流少算了 5.4 倍，噪音汙染
-   * 跟著整片掉下來。補完接手之後 30 個 tick 回到 3 501，對上改前的 3 504。
+   * `warmup` computes paths only for the small fraction that actually take to the road and
+   * leaves the rest marked `pending` for this. **Vehicle spawning cannot finish the job**:
+   * once the vehicle cap is reached `spawnCommuteVehicles` breaks immediately and writes no
+   * further cache entries. Measured on a 2,146-citizen save with the pathfinding worker
+   * running normally, it stalled at 643 of 1,750, predicted traffic was 5.4x too low and
+   * noise pollution fell across the map. With the fill in place, 30 ticks brought it back to
+   * 3,501 against 3,504 before.
    *
-   * 兩個方向都要：預測車流算的是一整天的通勤量，早上一趟晚上一趟。只補一個
-   * 方向的話讀數會少一半。
+   * Both directions are needed: predicted traffic measures a whole day's commuting, one trip
+   * each morning and evening. Filling one direction halves the reading.
    *
-   * 大部分市民是**免費**補完的 —— 住同一棟、在同一處上班的人共用一條路線，
-   * 池子裡已經有就直接指過去。真的要算的那些才吃預算。
+   * Most citizens are filled **for free**: those living in the same building and working in
+   * the same place share a route, and an existing entry in the pool is simply pointed at.
+   * Only routes that must genuinely be computed consume the budget.
    */
   private advanceCommuteFill(): void {
     if (!this._roadLookup) return;
@@ -2318,21 +2425,24 @@ export class SimulationLoop {
       this.commuteFillAttemptsGeneration = generation;
     }
     const useWorker = this.pathBatcher !== null && this.graphMapping !== null;
-    // 兩份預算分開記。丟給 worker 只是排隊，主執行緒沒有在算，所以放得多；
-    // 自己算一次就是十幾毫秒，兩者共用一份預算的話，worker 交不出答案而退回
-    // 主執行緒的那些會一口氣在同一個 tick 裡算 32 次。
+    // Two separate budgets. Handing work to the worker is only queueing and costs the main
+    // thread nothing, so it can be generous; computing one here costs a dozen milliseconds.
+    // With a shared budget, the routes that fall back to the main thread after the worker
+    // fails to answer would run 32 computations in a single tick.
     let enqueueBudget = SIMULATION.COMMUTE_FILL_ENQUEUE_PER_TICK;
     let searchBudget = SIMULATION.COMMUTE_FILL_SEARCH_PER_TICK;
     let enqueued = false;
 
-    // 從上次停下的地方接著看，而不是每個 tick 重掃整份名單。
+    // Resume where the last pass stopped rather than rescanning the whole list each tick.
     //
-    // 預算用完之後的 `continue` 只跳過這一個人，迴圈照樣走完剩下的一萬多位 ——
-    // 每人兩次 parsePosKey、兩次字串串接、兩次 getRouteVariants，全部白做。玩家
-    // 存檔實測，進遊戲後前 11 秒這裡吃掉 update() 的 46–66%（BUG-329）。
+    // Once the budget runs out, `continue` skips only the current citizen and the loop still
+    // walks the remaining ten thousand or more — two `parsePosKey` calls, two string
+    // concatenations and two `getRouteVariants` calls each, all wasted. Measured on a player
+    // save, this consumed 46-66% of `update()` for the first 11 seconds after entering the
+    // game (BUG-329).
     //
-    // 游標還順便解決一件事:原本每個 tick 都從開頭掃，排在名單後面的市民要等前面
-    // 的人全部 settled 才輪得到。
+    // The cursor also fixes fairness: scanning from the start every tick means citizens later
+    // in the list wait for everyone before them to settle.
     const total = citizens.length;
     const scanLimit = Math.min(total, SIMULATION.COMMUTE_FILL_SCAN_PER_TICK);
     if (this.commuteFillCursor >= total) this.commuteFillCursor = 0;
@@ -2340,7 +2450,8 @@ export class SimulationLoop {
 
     for (let scanned = 0; scanned < scanLimit; scanned++) {
       const c = citizens[this.commuteFillCursor]!;
-      // 游標先走，再看這個人 —— 底下每一條 `continue` 才不會把他黏在原地。
+      // Advance the cursor before examining the citizen, so none of the `continue`s below
+      // leaves them stuck in place.
       this.commuteFillCursor = (this.commuteFillCursor + 1) % total;
       this.commuteFillScanned++;
 
@@ -2368,21 +2479,23 @@ export class SimulationLoop {
 
         const variants = this.commuteCache.getRouteVariants(key);
         if (variants && variants.length > 0) {
-          // 池子裡已經有了 —— 別人算過同一條路，指過去不用錢。
+          // Already in the pool: somebody computed this route, and pointing at it is free.
           const path = variants[Math.floor(Math.random() * variants.length)]!;
           if (isMorning) morning = path; else evening = path;
           continue;
         }
-        // 這一代路網已經算過，答案是沒有路。再問一次還是同一個答案 ——
-        // `findLanePathVariants` 對同一份 lane graph 是決定性的。
+        // Already computed for this road generation, and the answer was "no path". Asking
+        // again gives the same answer: `findLanePathVariants` is deterministic for a given
+        // lane graph.
         if (this.commuteCache.isUnroutable(key)) continue;
-        // worker 是加速，不是依賴。排過幾次還是拿不到路徑就自己算 —— 一直排下去
-        // 的話，遇到交白卷的 worker 補完永遠不會結束。
+        // The worker is an accelerator, not a dependency. After a few queued attempts without
+        // a path, compute it here; queueing forever never finishes against a worker that
+        // returns nothing.
         const tries = this.commuteFillAttempts.get(key) ?? 0;
         if (useWorker && tries < SIMULATION.COMMUTE_FILL_MAX_ATTEMPTS) {
           if (enqueueBudget <= 0) continue;
-          // 已經在 worker 手上的不算工作 —— 扣它的預算等於讓同一批人每個
-          // tick 重新排一次隊，把名額佔滿。
+          // Requests already with the worker are not work: charging them to the budget would
+          // let the same citizens re-queue every tick and fill the quota.
           if (this.pathBatcher!.isPending(key)) continue;
           const starts = this.collectPointIndices(from, 'exit');
           const ends = this.collectPointIndices(to, 'entry');
@@ -2408,12 +2521,13 @@ export class SimulationLoop {
       }
 
       if (morning === null && evening === null) {
-        // 兩個方向都**確定**沒有路，才標 failed —— 讓 JobRelocation 去處理，而不是
-        // 每一輪重問一次同一個答案。預算用完而還沒問到答案的不算數:那是「還不
-        // 知道」，不是「沒有路」。
+        // Marked failed only once both directions are **known** to have no path, so
+        // JobRelocation can take over instead of the same answer being recomputed every pass.
+        // Running out of budget does not count: that is "not known yet", not "no path".
         //
-        // 判斷改讀答案本身，不再讀「這一輪有沒有輪到我自己算」—— 後者讓 worker
-        // 交回來的「沒有路」永遠結不了案，那位市民每一輪都要被重看一次。
+        // The condition reads the answers themselves rather than "did I compute one this
+        // pass". The latter never lets a worker-returned "no path" close the case, so that
+        // citizen is re-examined on every pass.
         if (this.commuteCache.isUnroutable(morningKey) && this.commuteCache.isUnroutable(eveningKey)) {
           this.commuteCache.set(c.id, {
             citizenId: c.id, homeId: c.homeId, workplaceId: c.workplaceId,
@@ -2505,7 +2619,8 @@ export class SimulationLoop {
       this.flatRoutes, this.transferGraph,
       SIMULATION.WALK_SPEED, SIMULATION.AVERAGE_WAIT_FACTOR, SIMULATION.MAX_TRIP_LEGS,
     );
-    // 可及性圖跟著路線一起重建 —— 評分與換工作判斷靠它把通勤時間壓成 O(1)。
+    // The accessibility field is rebuilt with the routes: scoring and job-change decisions
+    // rely on it to make commute time O(1).
     this.transitAccess = TransitAccessField.build(this.flatRoutes, SIMULATION.WALK_SPEED, this.stopReach);
     this.stopIndex = StopProximityIndex.build(this.flatRoutes, this.stopReach);
     this.transferGraphDirty = false;
@@ -2519,33 +2634,40 @@ export class SimulationLoop {
     if (topology !== this.lastTransitTopologyVersion) {
       this.lastTransitTopologyVersion = topology;
       this.transferTracker.clearBuildings();
-      // 行人是照「走去哪一站」的路線池生出來的，池子存的是座標。站牌拆掉之後那些
-      // 座標還在池子裡 —— 玩家 12 500 人的存檔實測，把捷運全部拆掉再跑 12 秒，
-      // 40 條路線一條沒少，328 位行人繼續走向已經不存在的三個車站。
+      // Pedestrians are generated from the pool of "walk to which stop" trips, and the pool
+      // stores coordinates. After a stop is demolished those coordinates remain: measured on
+      // a 12,500-citizen save, demolishing every metro station and running 12 seconds left
+      // all 40 trips intact and 328 pedestrians still walking towards three stations that no
+      // longer existed.
       //
-      // 只掛在**拓樸**版本上:班次加減不會動到走去哪一站，而重建要重問一輪市民。
+      // Tied to the **topology** version only: changing a route's vehicle count does not
+      // change which stop anyone walks to, and a rebuild costs a full sweep of the citizens.
       //
-      // 舊的池子**當場丟掉**，不等重新收集完。收集要問過全城一輪（12 500 人的存檔
-      // 約 24 個 tick），這段期間繼續照舊池子生人的話，玩家拆掉的車站還會再吐幾秒
-      // 的行人 —— 那正是這個 bug 被回報的樣子。
+      // The old pool is **discarded immediately**, without waiting for the recollection.
+      // Collection takes a full sweep of the city (about 24 ticks on that save), and
+      // generating from the old pool meanwhile keeps emitting pedestrians from the stations
+      // the player just demolished.
       //
-      // 改**道路**不丟:那些座標還是有效的，變的只是走法，而玩家畫路的頻率高得多，
-      // 丟掉會讓行人每畫一次路就消失一輪。
+      // A **road** change does not discard it: those coordinates are still valid and only the
+      // walking route changes, while players edit roads far more often, so discarding would
+      // make pedestrians vanish for a sweep after every road drawn.
       this.walkingTripPool = buildTripPool([]);
       this.tripPoolDirty = true;
     }
   }
 
   /**
-   * 重算電、水、汙水的涵蓋範圍與需求。
+   * Recomputes power, water and sewage coverage and demand.
    *
-   * `isPowered` / `isSupplied` 只是查這裡填好的快取，自己不算任何東西。平常六個
-   * tick 輪到一次就夠了，但剛蓋好的那一格在上一次重算時還不存在 —— 面板會照實
-   * 回報缺水缺電，要等下一輪才消失，暫停時則永遠不會消失（BUG-284）。所以放置與
-   * 拆除的路徑要自己叫一次。
+   * `isPowered` / `isSupplied` only read the cache this fills and compute nothing
+   * themselves. The six-tick cadence is normally enough, but a cell built just now did not
+   * exist at the last recompute, so the panel truthfully reports missing power and water
+   * until the next pass — and forever while paused (BUG-284). Placement and demolition paths
+   * therefore call this themselves.
    *
-   * 三者共用同一份基礎設施座標，所以綁在一起 —— 分開叫的話呼叫端得記得三個都要
-   * 叫，而漏掉的那一個不會有任何徵兆。
+   * All three share the same infrastructure positions and are bound together: called
+   * separately, a caller would have to remember all three, and the one missed would give no
+   * sign.
    */
   recalculateUtilityCoverage(): void {
     this.infraPositions.clear();
@@ -2578,12 +2700,13 @@ export class SimulationLoop {
     // clearPending drops inflightBatches, so handleMessage ignores the reply;
     // it was simply being called one tick too late (BUG-107).
     this.pathBatcher?.clearPending();
-    // `skipUnreachableCheck` 講的正好是「有沒有路被拿掉」（見下面那段註解:
-    // 新蓋的路只會增加連通性）。而那也正是舊的距離表會**高報**可達性的唯一情況
-    // —— 只加路的話舊表只會少報，那是安全的方向。
+    // `skipUnreachableCheck` says exactly whether roads were removed (see the comment below:
+    // new roads only add connectivity). That is also the only case in which a stale distance
+    // table **overstates** reachability; adding roads only makes it understate, which is the
+    // safe direction.
     //
-    // 所以只有可能拿掉路的那一種要丟表;蓋路、劃分區、拆建築都可以續用
-    // （見 `WorkplaceDistanceCache` 的說明）。
+    // So only the removal case discards the table. Building roads, drawing districts and
+    // demolishing buildings can all keep it (see `WorkplaceDistanceCache`).
     if (skipUnreachableCheck) this.wpDistCache?.invalidate();
     else this.wpDistCache?.invalidateTopology();
     if (affectedCells) {
@@ -2628,7 +2751,7 @@ export class SimulationLoop {
     const grid = this.state.grid;
     const tick = this.state.clock.tick;
     const reachCache = new Map<string, boolean>();
-    // 同上:不傳圖的話每個受影響的通勤各建一張。
+    // As above: without the graph, one is built per affected commute.
     const cellGraph = this.getCellGraph() ?? undefined;
 
     for (const id of affectedIds) {
@@ -2804,15 +2927,16 @@ export class SimulationLoop {
       },
     };
 
-    // 只重算動過的那幾格 —— 這裡原本一律走 buildFromGrid，而它會丟掉全圖的節點
-    // 與邊再從頭生成一次：60×60 全鋪滿實測 80~130 ms，且觸發條件是每一次道路
-    // 編輯。SidewalkGraph.updateCells 早就寫好也有測試，只是從來沒有人呼叫它。
+    // Only the cells that changed are recomputed. `buildFromGrid` discards every node and
+    // edge of the graph and regenerates it: measured at 80-130ms on a fully paved 60x60 map,
+    // triggered by every single road edit.
     const dirty = this.dirtySidewalkCells;
     if (dirty && dirty.size > 0) {
       const cells = [...dirty];
       this.state.sidewalkGraph.updateCells(gridLookup, cells);
-      // 只有這些格子附近的站牌需要重新量步行範圍。呼叫它同時把世代對齊，
-      // 否則安全網會把整份快取一起丟掉，精準失效就白做了。
+      // Only stops near these cells need their walk range remeasured. The call also aligns
+      // the generation; otherwise the safety net discards the whole cache and the precise
+      // invalidation is wasted.
       this.stopReach.invalidateNear(cells, WALK_RANGE_BY_TYPE.WIDEST);
       this.state.pedestrianManager.invalidateCells(cells);
     } else {
@@ -2879,11 +3003,12 @@ export class SimulationLoop {
    * it: an agent walking to the door of a house the growth tick had just razed
    * carried on walking there for up to DESPAWN_TIMEOUT (BUG-161).
    *
-   * 蓋交通設施也走這裡。人行道圖的重建旗標只由 `markLaneGraphDirty` 設定，而蓋
-   * 站牌刻意不呼叫它 —— 設施不改變路網，拖著 lane graph 與通勤快取一起重算太貴。
-   * 於是站牌被關在門外：它在圖裡沒有門節點，行人走不進去，涵蓋範圍也量不出來，
-   * 要等玩家隨手動一次道路才補得上。名字從 Removal 改成 Change，是因為它一直
-   * 都是「照 grid 重算這幾格」，蓋跟拆走的是同一條路。
+   * Building transit facilities also goes through here. The sidewalk graph's dirty flag is
+   * set only by `markLaneGraphDirty`, which placing a stop deliberately does not call: a
+   * facility does not change the road network, and dragging the lane graph and commute cache
+   * into a rebuild with it is too expensive. Without this path a stop is locked out — it has
+   * no door node in the graph, pedestrians cannot enter it and its catchment measures as
+   * nothing until the player happens to edit a road.
    */
   applyBuildingChange(affectedCells: string[]): void {
     if (affectedCells.length === 0) return;
@@ -2895,7 +3020,8 @@ export class SimulationLoop {
         return { roadType: c.roadType, roadFlags: c.roadFlags, railType: c.railType, buildingId: c.buildingId };
       },
     }, affectedCells);
-    // 建築動了，附近站牌的步行範圍也就變了 —— 門節點是行人走進站牌的唯一入口。
+    // A changed building changes nearby stops' walk ranges: the door node is a pedestrian's
+    // only way into a stop.
     this.stopReach.invalidateNear(affectedCells, WALK_RANGE_BY_TYPE.WIDEST);
     this.state.pedestrianManager.clearPathCache();
     this.retireStrandedPedestrians();
@@ -2909,9 +3035,10 @@ export class SimulationLoop {
     // Exclude service vehicles from the cap (they are cosmetic and should not block commute traffic)
     const vehicleCap = Math.min(SIMULATION.VEHICLE_CAP_MAX, SIMULATION.VEHICLE_CAP_BASE + Math.floor(pop * SIMULATION.VEHICLE_CAP_POP_RATIO));
     const commuteVehicles = this.state.traffic.getVehicleCount() - this.state.traffic.getServiceVehicleCount();
-    // 車位滿了就不再生車 —— 但**行人的路線池還是要維護**。它是搭著底下那個取樣
-    // 迴圈收集的，而大城市會永遠停在上限，於是路線池永遠不再更新:玩家拆掉的車站
-    // 會一直有行人走過去。換乘圖以前也是掛在這條路徑上，已經搬出去了。
+    // At the cap no more vehicles spawn, but **the pedestrian trip pool still has to be
+    // maintained**. It is collected by the sampling loop below, and a large city sits at the
+    // cap permanently, so the pool would never update again and pedestrians would keep
+    // walking to stations the player demolished.
     const atCap = commuteVehicles >= vehicleCap;
     if (atCap && !this.tripPoolDirty) return;
 
@@ -2923,14 +3050,16 @@ export class SimulationLoop {
     // Random citizen sampling ensures route distribution matches real commute patterns.
     this.spawnCommuteVehicles(grid, vehicleCap);
 
-    // 滿載時只走上面那一段 —— 這一輪是為了重建路線池才跑的，不能順手變成一道
-    // 繞過車輛上限的側門。高速公路車流自己會擋（它比對的是總量的九成，滿載時
-    // 早就超過了），貨運**不會**:貨運車有自己的一份配額，總量滿載時那份配額還
-    // 可能沒填滿。
+    // At the cap only the section above runs: this pass exists to rebuild the trip pool and
+    // must not become a side door around the vehicle cap. Highway traffic guards itself (it
+    // compares against 90% of the total, already exceeded at the cap); freight does **not**,
+    // because freight trucks have their own quota that may still have room when the total is
+    // capped.
     //
-    // 沒有測試守得住這一段。要照出來得有一座「同時滿載、而且真的在出貨」的城市 ——
-    // 小 fixture 裡的工廠撐不到出貨就先被廢棄（汙染、沒有服務涵蓋）。
-    // 通勤車那一側守得住，見 spawnCommuteVehicles 裡的 `if (atCap) continue`。
+    // No test covers this branch. Reproducing it needs a city that is simultaneously at the
+    // cap and actually shipping goods, and factories in small fixtures are abandoned to
+    // pollution and missing service coverage before they ever ship. The commute side is
+    // covered; see `if (atCap) continue` in spawnCommuteVehicles.
     if (!atCap) {
       // Spawn external highway traffic
       this.spawnExternalHighwayTraffic(grid, vehicleCap);
@@ -2971,8 +3100,8 @@ export class SimulationLoop {
     }
     if (eligible.length === 0) return;
 
-    // 一輪的長度在開輪時定下來。中途人口變動不改這一輪的目標 —— 目標會跟著
-    // 進度一起漂走，那一輪就永遠不會結束。
+    // A sweep's length is fixed when it starts. A population change mid-sweep does not move
+    // its target, otherwise the target drifts with the progress and the sweep never ends.
     if (this.tripPoolDirty && this.tripSamplesTaken === 0) {
       this.tripSweepTarget = eligible.length;
     }
@@ -2981,15 +3110,17 @@ export class SimulationLoop {
     // live here, behind this and two earlier early returns — see
     // rebuildTransferGraphIfDirty(). Both now run from tick().
 
-    // 想問幾位，以及實際問幾位。
+    // How many citizens this tick intends to ask, and how many it actually asks.
     //
-    // 想問的量跟人口成正比，而這個迴圈同時在估「今天多少人搭捷運」—— 估計的準確度
-    // 只跟問了幾個人有關，跟城市多大無關（民調問一千人的誤差，兩千萬人的國家和三億
-    // 人的國家一樣）。同一份存檔複製成 10 萬人實測:每 tick 想問 13 149 位、191ms，
-    // 而速度 1 的一個 tick 只有 250ms（BUG-328）。
+    // The intended number scales with population, while this loop is also estimating how many
+    // citizens ride transit today — and an estimate's accuracy depends on the sample size,
+    // not on the population it is drawn from (a thousand-person poll has the same margin in a
+    // country of 20 million as in one of 300 million). Measured on the same save scaled to
+    // 100,000 citizens: 13,149 intended asks per tick at 191ms, against 250ms available per
+    // tick at speed 1 (BUG-328).
     //
-    // 問得少就要放大回去:每問到一位搭車的，記成 `sampleScale` 位。小城市
-    // `sampleScale` 就是 1，行為一個字都沒改。
+    // Asking fewer means scaling back up: each sampled rider counts as `sampleScale`
+    // citizens. In a small city `sampleScale` is 1 and behaviour is unchanged.
     const attempts = Math.max(SIMULATION.MIN_SPAWN_PER_TICK, Math.ceil(eligible.length / SIMULATION.SPAWN_SPREAD_TICKS));
     const samples = commuteSampleSize(attempts);
     const sampleScale = attempts / samples;
@@ -2997,7 +3128,8 @@ export class SimulationLoop {
     let spawned = 0;
 
     for (let i = 0; i < samples; i++) {
-      // 沒車位的時候還繼續問，是為了重建行人的路線池。不用重建就直接收工。
+      // Asking continues past the vehicle cap in order to rebuild the pedestrian trip pool.
+      // With no rebuild pending, stop here.
       const atCap = this.state.traffic.getVehicleCount() >= vehicleCap;
       if (atCap && !this.tripPoolDirty) break;
 
@@ -3029,8 +3161,9 @@ export class SimulationLoop {
         ),
       );
 
-      // 問過的人數才是「這一輪重建跑過了」的證據。開車的也算 —— 全城都開車時
-      // 收集到的步行路線就是零條，那是答案，不是「沒跑到」。
+      // The number of citizens asked is the evidence that a rebuild sweep ran. Drivers count
+      // too: in a city where everyone drives, zero walking trips is the answer, not a sign
+      // that the sweep did not happen.
       if (this.tripPoolDirty) this.tripSamplesTaken++;
 
       if (mode !== TransportMode.DRIVE) {
@@ -3058,7 +3191,8 @@ export class SimulationLoop {
               });
             }
           } else {
-            // 走去他真正要上車的那一站 —— 這兩站就是估計時間所依據的那兩站。
+            // Walk to the stop actually boarded: these are the two stops the time estimate
+            // was computed for.
             if (boardStop) {
               this.pendingTrips.push({
                 fromX: fromPos.x, fromY: fromPos.y,
@@ -3098,15 +3232,17 @@ export class SimulationLoop {
             this.transferTracker.recordBuilding(label, citizen.homeId!, citizen.workplaceId!);
           }
         } else if (boardStop) {
-          // 記在他上車的那一站。這裡曾經改用「整個系統裡最近的站」重挑一次，於是
-          // 同運具多條路線時，人被記到他沒搭的那條路線頭上（BUG-283）。
+          // Credited to the stop actually boarded. Re-picking "the nearest stop in the
+          // system" credits riders to a route they did not take once one transport type has
+          // several routes (BUG-283).
           boardStop.dailyRiders += sampleScale;
         }
         continue;
       }
 
-      // 這一輪是為了路線池才問的，沒有車位可以放車。開車的人到這裡就結束 ——
-      // 底下整段是找路與寫入通勤快取，那是生車的準備工作。
+      // This pass is only asking to rebuild the trip pool and has no room for a vehicle.
+      // Drivers stop here: everything below is pathfinding and writing the commute cache,
+      // which is preparation for spawning.
       if (atCap) continue;
 
       // --- Check commute cache first ---
@@ -3399,10 +3535,11 @@ export class SimulationLoop {
   }
 
   /**
-   * 推進這一輪的流量重算，掃完才換上去。
+   * Advances this sweep of the flow recomputation, publishing only once it completes.
    *
-   * 一次算完要 60ms 落在單一個 tick 上，而速度 1 的一個 tick 只有 250ms，算繪還跟
-   * 它搶同一個執行緒（BUG-327）。結果本來就每 60 tick 才換一次，攤開來算不會更舊。
+   * Computing it in one go costs 60ms in a single tick, against 250ms available per tick at
+   * speed 1, with rendering competing for the same thread (BUG-327). The result is only
+   * published every 60 ticks anyway, so spreading the work does not make it any staler.
    */
   private advanceCongestionFlow(keysPerTick?: number): void {
     const grid = this.state.grid;
@@ -3444,28 +3581,23 @@ export class SimulationLoop {
     }
 
     this.state.traffic.updatePredictedFlow(flowMap);
-    // 流量換了，逐路線的快取全部作廢，全城平均也要跟著重算。
+    // A new flow field invalidates every per-route cache entry, and the city-wide average is
+    // recomputed with it.
     this.routeCongestionCache.clear();
     this.cityCongestionLevel = cityCongestion(flowMap, this.countRoadTiles());
     this.refreshBusRouteCongestion(flowMap);
   }
 
   /**
-   * 這一趟沿途有多擠。
+   * How congested each bus route's corridor is.
    *
-   * 問的是**需求**算出來的逐格流量，不是畫面上有幾台車（BUG-326）。問不到這條路線
-   * 的快取時退回全城平均 —— 那是「還沒算過」，不是「暢通」。
+   * Buses follow arterials, and arterials are more congested than the city average: measured
+   * on a 12,600-citizen save, the city average was 0.211 against **0.380** along one route
+   * (1.8x), with the worst cell on the line at 1.0. The city average tells the player their
+   * bus is not stuck in traffic while it visibly is.
    *
-   * 逐路線快取:同一條路上班的人成千上萬，而流量圖每 60 tick 才換一次。
-   */
-  /**
-   * 每條公車路線沿線有多擠。
-   *
-   * 公車跟著幹道跑，而幹道本來就比全城平均塞:玩家 12 600 人的存檔實測，全城平均
-   * 0.211，那條路線沿線 **0.380**（1.8 倍），線上最塞的一格已經是 1.0。吃全城平均
-   * 等於告訴玩家「你的公車沒有塞在車陣裡」，而畫面上它明明卡在那裡。
-   *
-   * 只有公車要算 —— 捷運、鐵路、渡輪都不走地面道路（`affectedByCongestion`）。
+   * Only buses need this: metro, rail and ferry do not use surface roads
+   * (`affectedByCongestion`).
    */
   private refreshBusRouteCongestion(flowMap: ReadonlyMap<string, number>): void {
     const bus = this.state.bus;
@@ -3477,6 +3609,16 @@ export class SimulationLoop {
     }
   }
 
+  /**
+   * How congested this trip's route is.
+   *
+   * Reads the per-cell flow field computed from **demand**, not the number of vehicles
+   * currently on screen (BUG-326). With no cached value for this route it falls back to the
+   * city average, which means "not computed yet", not "clear".
+   *
+   * Cached per route: thousands of citizens commute along the same one, while the flow field
+   * is replaced only every 60 ticks.
+   */
   private congestionFor(from: { x: number; y: number }, to: { x: number; y: number }): number {
     const flow = this.state.traffic.getPredictedFlow();
     if (!flow) return this.cityCongestionLevel;

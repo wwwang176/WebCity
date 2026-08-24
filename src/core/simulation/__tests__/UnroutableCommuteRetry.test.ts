@@ -8,25 +8,28 @@ import { ZoneType } from '../../grid/types';
 import { createSyncFakeWorker } from '../../traffic/__tests__/SyncFakeWorker';
 
 /**
- * 「這條通勤沒有路」要被記住，而且只記一次。
+ * "This commute has no path" must be remembered, and recorded once.
  *
- * `advanceCommuteFill` 有兩條路:先請 worker 算，排過
- * `COMMUTE_FILL_MAX_ATTEMPTS` 次還拿不到就自己算。那個次數原本是為了防「worker
- * 交白卷」—— 但 worker 回傳空陣列（真的沒有路）走的是同一條計數，`onResult`
- * 又把空結果丟掉，所以「已經知道沒有路」跟「還不知道」對這段程式長得一模一樣。
+ * `advanceCommuteFill` has two routes: ask the worker first, and compute locally once
+ * `COMMUTE_FILL_MAX_ATTEMPTS` queued attempts have produced nothing. That counter guards
+ * against a worker returning nothing — but a worker returning an empty array because there
+ * genuinely is no path goes through the same counter, and dropping the empty result in
+ * `onResult` makes "already known to have no path" and "not known yet" indistinguishable
+ * here.
  *
- * 後果是游標每繞回來一圈，那條路線就在主執行緒重算一次同一個答案。41k 人的
- * 存檔實測:3 362 條這樣的路線、9 838 次同步 A*，用完額度之後**成功 0 次**，
- * 而 `advanceCommuteFill` 佔掉主執行緒的 9.9%（BUG-369）。
+ * The consequence is that every time the cursor comes round, that route is recomputed on the
+ * main thread for the same answer. Measured on a 41k-citizen save: 3,362 such routes, 9,838
+ * synchronous A* runs, **0 successes** after the quota was spent, and `advanceCommuteFill`
+ * taking 9.9% of the main thread (BUG-369).
  *
- * 測資是兩條**互不相連**的路廊 —— 兩端都有連接點（所以請求送得出去），中間
- * 沒有路（所以 A* 一定交白卷）。
+ * The fixture is two **disconnected** corridors: both ends have connection points (so the
+ * request can be sent) with no road between them (so A* is guaranteed to find nothing).
  */
 
 const CORRIDOR_A_Y = 2;
 const CORRIDOR_B_Y = 20;
 
-/** 走得通的那位的家、走不通的那位的家、與兩邊的工作地。 */
+/** The routable citizen's home, the stranded one's home, and both workplaces. */
 const HOME_OK = '4,4';
 const WORK_OK = '9,4';
 const HOME_STRANDED = '6,4';
@@ -58,8 +61,9 @@ function twoIslands(): GameState {
 }
 
 /**
- * `commuteFillAttempts` 只有兩個地方會加一:向 worker 排一次隊、主執行緒自己算
- * 一次。所以它就是「這條路線總共花了幾次力氣」，而重試的浪費看的正是這個數字。
+ * `commuteFillAttempts` is incremented in exactly two places: queueing once with the worker,
+ * and computing once on the main thread. It is therefore the total effort spent on a route,
+ * which is what the wasted retries show up in.
  */
 type Inner = {
   commuteFillAttempts: Map<string, number>;
@@ -73,16 +77,17 @@ interface Fixture {
 }
 
 /**
- * @param worker 掛不掛 worker。不掛的話 `advanceCommuteFill` 走同步那條路。
+ * @param worker whether to install a worker. Without one, `advanceCommuteFill` takes the
+ *   synchronous route.
  *
- * 先 `tick()` 一次把 lane graph 與 worker 的 mapping 建起來，之後**只呼叫
- * `advanceCommuteFill`** —— 跑整個 tick 的話遷入與 `runJobRelocation` 會動到
- * 市民的住處與工作，而那正是這裡要觀察的東西。
+ * One `tick()` first builds the lane graph and the worker's mapping, after which **only
+ * `advanceCommuteFill` is called**: full ticks would let migration and `runJobRelocation`
+ * move citizens' homes and jobs, which is exactly what is under observation.
  */
 function makeCity(opts: { worker: boolean }): Fixture {
   const state = twoIslands();
   const pair = (home: string, work: string): number => {
-    // 52 歲以下不是勞動年齡，`advanceCommuteFill` 會直接跳過。
+    // Below working age, `advanceCommuteFill` skips the citizen outright.
     const c = state.citizens.createCitizen({ age: 100 });
     if (!c) throw new Error('測資沒建出市民 —— 住宅容量不夠');
     c.homeId = home;
@@ -97,7 +102,8 @@ function makeCity(opts: { worker: boolean }): Fixture {
   if (opts.worker) loop.setPathfindingWorker(createSyncFakeWorker());
   loop.tick();
 
-  // 那一個 tick 可能把人搬了家或換了工作。重新釘回測資要問的那一對。
+  // That tick may have moved the citizen or changed their job. Pin them back to the pair the
+  // fixture is asking about.
   const c = state.citizens.getCitizens().find(x => x.id === stranded);
   if (!c) throw new Error('測資的市民在第一個 tick 就不見了');
   c.homeId = HOME_STRANDED;
@@ -107,7 +113,8 @@ function makeCity(opts: { worker: boolean }): Fixture {
 
 describe('走不通的通勤只算一次', () => {
   it('should route the commute that does have a road', () => {
-    // 前置條件。這一條走不通的話，底下每個測試都會因為錯的理由而通過。
+    // A precondition: if this route cannot be computed, every test below passes for the wrong
+    // reason.
     const { loop, inner } = makeCity({ worker: true });
     inner.advanceCommuteFill();
 
@@ -125,8 +132,9 @@ describe('走不通的通勤只算一次', () => {
   });
 
   it('should stop spending effort once it knows there is no path', () => {
-    // 整件事的重點。次數會繼續長，就代表游標每繞回來一圈都在重問同一個答案 ——
-    // 而超過 worker 的額度之後，那些力氣全部花在主執行緒的同步 A* 上。
+    // The point of the whole thing. A counter that keeps rising means the cursor re-asks the
+    // same question on every pass, and past the worker's quota that effort all goes into
+    // synchronous A* on the main thread.
     const { inner } = makeCity({ worker: true });
     for (let t = 0; t < 40; t++) inner.advanceCommuteFill();
 
@@ -135,8 +143,9 @@ describe('走不通的通勤只算一次', () => {
   });
 
   it('should mark the citizen failed so job relocation can pick them up', () => {
-    // 標成 failed 才算 settled，游標下一圈才不用再看他一次;而且那是
-    // `runJobRelocation` 用來找出「該換工作了」的訊號。
+    // Only a `failed` mark counts as settled, so the cursor need not examine them again next
+    // pass, and it is the signal `runJobRelocation` uses to find citizens who should change
+    // jobs.
     const { loop, inner, stranded } = makeCity({ worker: true });
     inner.advanceCommuteFill();
 
@@ -145,8 +154,8 @@ describe('走不通的通勤只算一次', () => {
   });
 
   it('should still work with no pathfinding worker at all', () => {
-    // worker 是加速，不是依賴。沒有它的時候自己算的那條路要照樣得出同樣的結論，
-    // 而且同樣只算一次。
+    // The worker is an accelerator, not a dependency. Without one, the local route must reach
+    // the same conclusion, and reach it once.
     const { loop, inner, stranded } = makeCity({ worker: false });
     for (let t = 0; t < 40; t++) inner.advanceCommuteFill();
 
@@ -159,12 +168,14 @@ describe('走不通的通勤只算一次', () => {
   });
 
   it('should not call it failed just because the search budget ran out', () => {
-    // 「還沒問到答案」不是「沒有路」。標成 failed 就等於結案 —— 這一代路網裡
-    // 那位市民再也不會被算一次，而他晚上那條路其實根本還沒有人去找過。
+    // "No answer yet" is not "no path". Marking failed closes the case: that citizen is never
+    // computed again in this road generation, while nobody has actually searched their
+    // evening route.
     //
-    // 造法:把路線池倒掉（等於剛剛動過路網），排在前面那位就會把這一輪兩個
-    // 同步搜尋的額度用光,於是走不通的那位兩個方向都是 null，但只有早上那條
-    // 是**確定**沒有路的。
+    // Constructed by dropping the route pool (equivalent to a road edit just now), which lets
+    // the citizen ahead consume both synchronous search slots for this pass. The stranded
+    // citizen then has null in both directions, but only the morning route is **known** to
+    // have no path.
     const { loop, inner, stranded } = makeCity({ worker: false });
     loop.commuteCache.bumpGeneration();
     loop.commuteCache.markUnroutable(MORNING);
@@ -177,7 +188,8 @@ describe('走不通的通勤只算一次', () => {
   });
 
   it('should ask again after the road network changes', () => {
-    // 蓋一條新路就可能接通。忘不掉的話，那位市民永遠不會再有通勤。
+    // A newly built road may connect them. Without forgetting, that citizen never commutes
+    // again.
     const { loop, inner } = makeCity({ worker: true });
     inner.advanceCommuteFill();
     expect(loop.commuteCache.isUnroutable(MORNING), '前置條件:要先記起來').toBe(true);

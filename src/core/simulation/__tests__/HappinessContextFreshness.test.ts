@@ -7,14 +7,16 @@ import { RoadType, RoadDirection } from '../../road/types';
 import { ZoneType } from '../../grid/types';
 
 /**
- * 全城情境每 `SLOW_TICK_INTERVAL` 個 tick 才重算一次，而分片每個 tick 都跑 ——
- * 所以一輪之內大部分的片看到的是**開輪時**拍下的那份情境。
+ * The city-wide context is recomputed only every `SLOW_TICK_INTERVAL` ticks while slices run
+ * every tick, so most slices in a cycle see the context as it was **when the cycle started**.
  *
- * 情境裡大部分的東西本來就是慢的（污染、地價、服務覆蓋），舊幾個 tick 沒差。
- * 但屍體與垃圾的待處理佇列不是:它們是短命事件，而且只要幾個 tick 就會被收走。
- * 拿舊快照的話，事件發生在兩次重算之間的那幾片市民永遠不會知道門口有屍體。
+ * Most of what the context holds is slow anyway (pollution, land value, service coverage) and
+ * a few ticks of age costs nothing. The pending body and garbage queues are not: they are
+ * short-lived events collected within a few ticks. From a stale snapshot, the slices covering
+ * the interval between two refreshes never learn that a body is at the door.
  *
- * 佇列本身只有「還沒收走的幾筆」那麼長 —— 跟人口無關，每個 tick 重建不花錢。
+ * The queues are only as long as the outstanding pickups — unrelated to population — so
+ * rebuilding them per tick is free.
  */
 
 const HOME = '2,2';
@@ -36,7 +38,7 @@ function city(citizens: number, taxRate = 0.05): GameState {
   return state;
 }
 
-/** 這個 tick 被更新到的人的平均快樂度。用 NaN 當哨兵認人。 */
+/** Mean happiness of the citizens updated this tick, identified by a NaN sentinel. */
 function meanOfUpdated(state: GameState, loop: SimulationLoop): number {
   const citizens = state.citizens.getCitizens();
   for (const c of citizens) c.happiness = NaN;
@@ -46,7 +48,8 @@ function meanOfUpdated(state: GameState, loop: SimulationLoop): number {
   return n > 0 ? sum / n : NaN;
 }
 
-/** 跑到「情境剛剛重算完」的那個 tick 為止。下一個 tick 就是拿快照的片。 */
+/** Ticks up to the tick on which the context was just recomputed; the next tick is a slice
+ *  reading the snapshot. */
 function tickToJustAfterRefresh(state: GameState, loop: SimulationLoop): void {
   for (let i = 0; i < SIMULATION.SLOW_TICK_INTERVAL * 3; i++) {
     loop.tick();
@@ -57,8 +60,9 @@ function tickToJustAfterRefresh(state: GameState, loop: SimulationLoop): void {
 
 describe('待處理佇列的新鮮度', () => {
   it('should let a slice see a body reported after the context was built', () => {
-    // 情境重算完之後才報的屍體，會被這一輪剩下五片完全忽略。片數愈多漏得愈兇 ——
-    // 72 片的城市只有 6/72 的人知道門口有屍體。
+    // A body reported after the context was rebuilt is invisible to the other five slices of
+    // the cycle, and more slices means more missed: in a 72-slice city only 6 of 72 citizens
+    // would know a body is at the door.
     const state = city(600);
     const loop = new SimulationLoop(state);
     tickToJustAfterRefresh(state, loop);
@@ -66,11 +70,12 @@ describe('待處理佇列的新鮮度', () => {
     const before = meanOfUpdated(state, loop);
     expect(Number.isNaN(before)).toBe(false);
 
-    // 上一個 tick 不是慢速槽 4，所以底下這一個 tick 也不會重算情境。
+    // The previous tick was not slow slot 4, so the tick below does not rebuild the context
+    // either.
     expect(state.clock.tick % SIMULATION.SLOW_TICK_INTERVAL)
       .not.toBe(SIMULATION.SLOW_TICK_INTERVAL - 2);
 
-    // 四具屍體吃滿上限。上限 -20 遠大於通勤抖動的 ±3。
+    // Four bodies saturate the cap. The -20 cap is far larger than the commute jitter of +-3.
     for (let i = 0; i < 4; i++) state.deathCare.reportDeath(2, 2);
 
     const after = meanOfUpdated(state, loop);
@@ -80,11 +85,12 @@ describe('待處理佇列的新鮮度', () => {
   });
 
   it('should stop penalising once the garbage is collected', () => {
-    // 只能測「收走」這個方向:住宅每個 tick 都在產垃圾，量 before 的時候門口本來
-    // 就有幾袋，再加袋子只會撞到同一個上限，看不出差別。
+    // Only the collection direction is testable: housing produces garbage every tick, so
+    // there are already bags at the door when `before` is measured, and adding more only hits
+    // the same cap.
     const state = city(600);
     const loop = new SimulationLoop(state);
-    // 遠多於吃滿上限所需的五袋，確定 before 是頂在上限上的。
+    // Far more than the five bags needed to saturate the cap, so `before` is certainly at it.
     for (let i = 0; i < 40; i++) state.garbage.reportGarbage(2, 2, 1);
     tickToJustAfterRefresh(state, loop);
 
@@ -98,7 +104,8 @@ describe('待處理佇列的新鮮度', () => {
   });
 
   it('should stop penalising once the bodies are collected', () => {
-    // 反方向:屍體收走了，快照卻還記著。這一片的人會繼續不爽到下一次重算。
+    // The other direction: the bodies are collected but the snapshot still holds them, and
+    // this slice's citizens stay unhappy until the next rebuild.
     const state = city(600);
     const loop = new SimulationLoop(state);
     for (let i = 0; i < 4; i++) state.deathCare.reportDeath(2, 2);
@@ -118,19 +125,23 @@ type Inner = { happinessContext: unknown };
 
 describe('城市清空之後的情境', () => {
   it('should drop the cached context when the city empties', () => {
-    // `pop === 0` 時重算會直接 return，舊情境留在原地。人口歸零期間玩家改了稅率、
-    // 拆了服務、污染跑掉了 —— 重新遷入的人會照著那份舊的算，直到下一次慢速槽 4。
+    // At `pop === 0` the rebuild returns early and the old context stays. While the population
+    // is zero the player may change taxes, demolish services or let pollution move, and
+    // citizens moving back in would be scored against the old context until the next slow
+    // slot 4.
     //
-    // 這裡直接看快取欄位而不是比較快樂度數值:空城再重建的城市，地價、犯罪、服務
-    // 覆蓋全都跟著重來，數值上的差異蓋不住稅率那一項，比不出東西。要釘的不變量
-    // 本來就是「沒有人的時候不要留著情境」。
+    // This inspects the cached field rather than comparing happiness values: in a city emptied
+    // and rebuilt, land value, crime and service coverage all restart, and the numeric
+    // difference swamps the tax term. The invariant to pin is simply that no context is kept
+    // while there is nobody.
     const state = city(400, 0.05);
     const loop = new SimulationLoop(state);
     tickToJustAfterRefresh(state, loop);
     expect((loop as unknown as Inner).happinessContext, '情境根本沒建起來').not.toBeNull();
 
-    // 清空。住宅也一起拆掉 —— 容量是每個 tick 從格子重算的，光把數字歸零，同一個
-    // tick 的移民又會把人塞回來，城市根本沒空過。
+    // Empty the city, demolishing the housing too: capacity is recomputed from the grid each
+    // tick, so zeroing the number alone lets the same tick's migration refill the city and it
+    // is never actually empty.
     for (const c of [...state.citizens.getCitizens()]) state.citizens.removeCitizen(c.id);
     state.grid.setCell(2, 2, { zoneType: ZoneType.NONE, buildingId: 0 });
     loop.tick();
@@ -141,7 +152,8 @@ describe('城市清空之後的情境', () => {
   });
 
   it('should rebuild the context for citizens who move back in', () => {
-    // 情境作廢之後，重新遷入的人在下一個 tick 就要有快樂度 —— 不能等到下一次慢速槽 4。
+    // After the context is invalidated, citizens who move back in must have happiness on the
+    // next tick rather than waiting for the next slow slot 4.
     const state = city(400, 0.05);
     const loop = new SimulationLoop(state);
     tickToJustAfterRefresh(state, loop);

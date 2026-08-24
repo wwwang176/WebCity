@@ -61,7 +61,8 @@ export interface GameState {
   deathCare: DeathCareService;
   districts: DistrictManager;
   policies: PolicyManager;
-  /** 全城條例。沒有分區，所以不掛在 DistrictManager 底下。 */
+  /** City-wide ordinances. They have no district scope, so they do not live under
+   *  DistrictManager. */
   ordinances: CityOrdinances;
   citySpec: CitySpecialization;
   globalMarket: GlobalMarket;
@@ -76,11 +77,12 @@ export interface GameState {
   pedestrianManager: PedestrianManager;
   highwayConnection: HighwayConnection;
   /**
-   * 這座城市的身分數字，開局時由地圖種子決定。
+   * This city's identity number, derived from the map seed at the start of a game.
    *
-   * 只用來當作程序生成的鹽 —— 市民與建築的名字都是從流水號算出來的，不加這個的話
-   * 每一座城市的第一個市民、第一棟房子都叫同一個名字。存進存檔，所以讀檔前後是
-   * 同一批人；舊存檔沒有這個欄位，讀回來是 0。
+   * Used only as a salt for procedural generation: citizen and building names are computed
+   * from sequential ids, and without it every city's first citizen and first house would
+   * share a name. Serialized, so the same citizens come back after a load; saves predating
+   * the field read back as 0.
    */
   citySeed: number;
 }

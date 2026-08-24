@@ -8,17 +8,19 @@ import { ZoneType } from '../../grid/types';
 import { buildSummaryStats } from '../../stats/SummaryStats';
 
 /**
- * 條例存起來不等於模擬會讀。這幾條走真的路徑。
+ * Storing an ordinance is not the same as the simulation reading it. These go through the
+ * real paths.
  *
- * 建築直接種進格子、人口直接造:
+ * Buildings are planted directly into the grid and citizens created directly:
  *
- * - `PowerGrid.calculateDemand` 只算 `buildingId > 0` 的格子，而建築成長要求該格
- *   有電有水 —— 沒有電廠水廠的測試城市長不出任何東西，需求會是 0，正向控制就先掛了。
- * - `getPopulation()` 是市民陣列的長度，新遊戲是 0，而節能法規按人口計費，人口 0
- *   時費用恆為 0。
+ * - `PowerGrid.calculateDemand` counts only cells with `buildingId > 0`, and building growth
+ *   requires power and water on the cell, so a test city with no plants grows nothing, demand
+ *   is 0, and the positive control fails first.
+ * - `getPopulation()` is the length of the citizen array and is 0 in a new game, while energy
+ *   regulation bills per capita and therefore costs 0 at population 0.
  */
 
-/** Small House（RESIDENTIAL_LOW）。 */
+/** Small House (RESIDENTIAL_LOW). */
 const HOUSE = 1;
 
 function city(): { state: GameState; loop: SimulationLoop } {
@@ -31,7 +33,7 @@ function city(): { state: GameState; loop: SimulationLoop } {
   return { state, loop: new SimulationLoop(state) };
 }
 
-/** `EconomyBreakdownContext.policyCost` 宣告成可選，面板自己也是當 0 處理。 */
+/** `EconomyBreakdownContext.policyCost` is optional, and the panel itself treats it as 0. */
 const policyExpense = (state: GameState, loop: SimulationLoop) =>
   buildEconomyBreakdownContext(state, null, loop.billableDistricts()).policyCost ?? 0;
 
@@ -62,7 +64,8 @@ describe('全城條例真的接進模擬', () => {
   });
 
   it('should cost commercial and industrial revenue', () => {
-    // 節能法規的代價落在業者身上:設備更新與製程改造。住宅不受影響。
+    // Energy regulation costs businesses: equipment upgrades and process changes. Housing is
+    // unaffected.
     const { state } = city();
     state.ordinances.setLevel(PolicyType.ENERGY_REGULATION, 3);
     expect(state.ordinances.getRevenueMultiplier(ZoneType.INDUSTRIAL), '工業沒有被扣')
@@ -71,14 +74,16 @@ describe('全城條例真的接進模擬', () => {
       .toBeLessThan(1);
     expect(state.ordinances.getRevenueMultiplier(ZoneType.RESIDENTIAL_LOW), '住宅也被扣了')
       .toBe(1);
-    // 工業扣得比商業重 —— 製程改造比換一批冷氣貴得多。只驗「兩個都 < 1」的話，
-    // 把工業誤套成商業的倍率也會過。
+    // Industry is charged more than commerce: reworking a process costs far more than
+    // replacing air conditioning. Checking only that both are below 1 would also pass if
+    // industry were given commerce's multiplier.
     expect(state.ordinances.getRevenueMultiplier(ZoneType.INDUSTRIAL), '工業與商業被扣得一樣多')
       .toBeLessThan(state.ordinances.getRevenueMultiplier(ZoneType.COMMERCIAL_LOW));
   });
 
   it('should apply outside any district too', () => {
-    // 全城條例對每一格都生效，包含不屬於任何分區的格子 —— 那正是它「全城」的意思。
+    // A city-wide ordinance applies to every cell, including cells in no district — that is
+    // what "city-wide" means.
     const { state, loop } = city();
     const deps = buildEconomyBreakdownContext(state, null, loop.billableDistricts());
     const outsideAnyDistrict = deps.getRevenueMultiplier!(7, 11, ZoneType.COMMERCIAL_LOW);
@@ -95,7 +100,8 @@ describe('全城條例真的接進模擬', () => {
 
 
 describe('全城犯罪率:模擬與面板算的是同一個數字', () => {
-  /** 人口開大是為了讓基礎犯罪率高過條例的 −13，否則測到的是 0 的下限。 */
+  /** The population is large so the base crime rate exceeds the ordinance's -13; otherwise
+   *  the test measures the clamp at 0. */
   function crimeCity(population: number, stations: number) {
     const state = createGameState(30, 30);
     for (let i = 0; i < population; i++) state.citizens.restoreCitizen({ age: 100 });
@@ -109,7 +115,8 @@ describe('全城犯罪率:模擬與面板算的是同一個數字', () => {
   });
 
   it('should subtract what a city ordinance takes off', () => {
-    // 監視器網路第 2 級是 crime −13。存進 CityOrdinances 不等於模擬會讀。
+    // Surveillance network level 2 is crime -13. Storing it in CityOrdinances is not the same
+    // as the simulation reading it.
     const plain = crimeCity(800, 1);
     const before = plain.loop.getCityCrime();
 
@@ -121,8 +128,9 @@ describe('全城犯罪率:模擬與面板算的是同一個數字', () => {
   });
 
   it('should agree with what the Summary panel reports', () => {
-    // 面板走 `buildSummaryStats`（從 GameState 算），模擬走 SimulationLoop。
-    // 兩邊分家的話，玩家看到的吸引力就不是讓人搬進來的那一個（BUG-358）。
+    // The panel goes through `buildSummaryStats` (computed from GameState) while the
+    // simulation goes through SimulationLoop. If the two diverge, the attractiveness the
+    // player sees is not the one that brings citizens in (BUG-358).
     const { state, loop } = crimeCity(800, 2);
     state.ordinances.setLevel(PolicyType.SURVEILLANCE_NETWORK, 1);
 

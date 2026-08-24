@@ -6,13 +6,15 @@ import { RoadType, RoadDirection } from '../../road/types';
 import { ZoneType } from '../../grid/types';
 
 /**
- * 換工作那一輪**在一個 tick 之內跑完**，每 `JOB_RELOCATION_INTERVAL` 個 tick 一次。
+ * A job-relocation pass **completes within one tick**, once every
+ * `JOB_RELOCATION_INTERVAL` ticks.
  *
- * 這一條擋的是「呼叫被刪掉」——換工作會完全靜默地停擺，而不會有任何東西壞掉。
+ * These guard against the call being deleted, which would stop job changes entirely and
+ * silently, with nothing else breaking.
  *
- * 它曾經是切片跑的（每個 tick 推 2 次），那是 BUG-109 的止痛藥。治本（工作距離
- * 快取）做完之後整輪只要 7.7 毫秒，而切片器要 503 個 tick 才跑得完一輪 ——
- * 10 萬人時 9 478 個 tick，換工作等於是關掉的。止痛藥已經拿掉。
+ * Slicing it (two citizens per tick) needed 503 ticks per pass — 9,478 at 100,000 citizens —
+ * which amounts to the feature being off. With the workplace distance cache in place a whole
+ * pass costs 7.7ms.
  */
 
 type Internals = { runJobRelocation(): void };
@@ -39,8 +41,9 @@ describe('the loop drives job relocation', () => {
   });
 
   it('should not leave any cross-tick state behind', () => {
-    // 切片器留著跨 tick 的名單，而那份名單會過期 —— 候選工作地被拆、市民死亡遷出
-    // （BUG-331 那一整類）。一個 tick 內做完就沒有那個視窗。
+    // A slicer holds a list across ticks, and that list goes stale: candidate workplaces get
+    // demolished, citizens die or leave (the BUG-331 family). Completing within one tick
+    // leaves no such window.
     const { loop } = spiedLoop();
     for (let i = 0; i < SIMULATION.JOB_RELOCATION_INTERVAL + 5; i++) loop.tick();
 
@@ -50,7 +53,7 @@ describe('the loop drives job relocation', () => {
   });
 
   it('should have no slice budget constant left', () => {
-    // 常數留著的話，下一個人會以為還要切片。
+    // A leftover constant would suggest slicing is still expected.
     expect((SIMULATION as Record<string, unknown>)['JOB_RELOCATION_SLICE'],
       'JOB_RELOCATION_SLICE 還在').toBeUndefined();
   });
@@ -58,8 +61,9 @@ describe('the loop drives job relocation', () => {
 
 describe('換工作之後的通勤快取', () => {
   it('should drop the cached route of anyone who changed job', () => {
-    // 不清的話那個人會一直照著**舊公司**的路線通勤 —— 圖層、統計、車輛生成全部
-    // 跟著錯，而且要等到快取自然失效才會修正。
+    // Without clearing it, that citizen keeps commuting along the route to their **old**
+    // workplace, so the overlay, the statistics and vehicle spawning are all wrong until the
+    // cache expires on its own.
     const state = createGameState(40, 40);
     for (let x = 0; x < 40; x++) {
       state.grid.setCell(x, 1, {
@@ -67,11 +71,12 @@ describe('換工作之後的通勤快取', () => {
       });
     }
     state.grid.setCell(2, 2, { zoneType: ZoneType.RESIDENTIAL_HIGH, buildingId: 6 });
-    // 遠得會觸發「通勤太久」的公司，以及家旁邊的一個空缺。
+    // A workplace far enough to trigger "commute too long", plus a vacancy next to home.
     state.grid.setCell(30, 2, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
     state.grid.setCell(4, 2, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
     for (let i = 0; i < 20; i++) {
-      // 快樂度壓在門檻（35）以下，觸發條件才明確 —— 不必依賴通勤時間估得出來。
+      // Happiness held below the threshold of 35 so the trigger is unambiguous and does not
+      // depend on the commute time being computable.
       state.citizens.restoreCitizen({
         age: 100, homeId: '2,2', workplaceId: '30,2', happiness: 10,
       });

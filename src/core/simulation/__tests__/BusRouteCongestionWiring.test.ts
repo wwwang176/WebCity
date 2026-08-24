@@ -8,11 +8,12 @@ import { routeCongestion } from '../../traffic/RouteCongestion';
 import { createSyncFakeWorker } from '../../traffic/__tests__/SyncFakeWorker';
 
 /**
- * 公車的壅塞由模擬迴圈**逐路線**餵進去。
+ * Bus congestion is fed in **per route** by the simulation loop.
  *
- * `BaseTransportSystem.congestionOn()` 本身只是一張表，餵不進去就永遠是全城平均 ——
- * 而公車跟著幹道跑，幹道本來就比平均塞。玩家 12 600 人的存檔實測:全城平均 0.211，
- * 那條公車路線沿線 0.380（1.8 倍）。
+ * `BaseTransportSystem.congestionOn()` is only a table; with nothing feeding it, the answer
+ * is always the city average — while buses follow arterials, which are more congested than
+ * average. Measured on a 12,600-citizen save: city average 0.211 against 0.380 along the bus
+ * route (1.8x).
  */
 
 function busCity() {
@@ -40,8 +41,9 @@ function busCity() {
 
 describe('公車的逐路線壅塞', () => {
   it('should give two routes on different corridors different numbers', () => {
-    // 只有一條路線的話，「每條都餵第一條的值」跟正確行為完全一樣 —— 照不出來。
-    // 兩條路線走**不同的走廊**，而通勤車流只壓在其中一條上。
+    // With one route, "feed every route the first one's value" is indistinguishable from
+    // correct behaviour. Two routes run along **different corridors** and the commute traffic
+    // loads only one of them.
     const state = createGameState(60, 60);
     for (const y of [1, 40]) {
       for (let x = 2; x <= 58; x++) {
@@ -51,7 +53,8 @@ describe('公車的逐路線壅塞', () => {
         state.grid.setCell(x, y, { roadType: RoadType.TWO_LANE, roadFlags: flags });
       }
     }
-    // 住商都在 y=1 那條走廊上，所以車流全壓在它身上;y=40 那條沒有人用。
+    // Housing and commerce both sit on the y=1 corridor, so all the traffic loads it; nobody
+    // uses y=40.
     state.grid.setCell(6, 2, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 });
     state.grid.setCell(16, 2, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
     const busy = state.bus.createRoute(
@@ -94,7 +97,8 @@ describe('公車的逐路線壅塞', () => {
   });
 
   it('should still leave the system-wide level as the fallback', () => {
-    // 逐路線是疊在全城平均上面的，不是取代它 —— 沒有段落的路線還是要有個數字可用。
+    // Per-route values sit on top of the city average rather than replacing it: a route with
+    // no segments still needs a number.
     const { state } = busCity();
 
     expect(state.bus.congestionOn(999), '沒見過的路線沒有退回全城平均')
@@ -102,10 +106,12 @@ describe('公車的逐路線壅塞', () => {
   });
 
   it('should forget a route once the player deletes it', () => {
-    // 路線編號只增不減。不清的話，一場改很多次路線的遊戲會一直長。
+    // Route ids only increase. Without clearing, a session with many route edits grows
+    // forever.
     const { state, route } = busCity();
-    // 設一個看得出來的值 —— 這個小 fixture 的車流太少，算出來的逐路線值跟全城平均
-    // 都趨近 0，拿它當前提的話刪掉之後也分不出差別。
+    // Set a visible value: this small fixture produces so little traffic that both the
+    // per-route value and the city average approach 0, and deleting the route would make no
+    // observable difference.
     state.bus.setRouteCongestion(route.id, 0.9);
     expect(state.bus.congestionOn(route.id)).toBe(0.9);
 

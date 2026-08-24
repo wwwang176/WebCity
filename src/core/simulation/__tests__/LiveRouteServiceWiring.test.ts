@@ -9,12 +9,14 @@ import { CROWDING } from '../../transport/RouteLoad';
 import type { FlatRoute } from '../../transport/MultiModalRouter';
 
 /**
- * 模擬迴圈要把每條路線的班距與載重率更新成當下的數字。
+ * The simulation loop must refresh each route's headway and load factor to their current
+ * values.
  *
- * 這兩個值算在 `flattenSystems()` 裡，而扁平路線只有玩家動到路網**拓樸**時才重建
- * —— 沒有人每個 tick 把它們刷新的話，搭乘人數怎麼漲都回不到這裡。玩家 12 500 人的
- * 存檔實測:記著的載重率 0.0000192，照當下人數重算是 **308**。於是等車永遠不會因為擠
- * 而變久，整套擁擠模型形同不存在（BUG-343）。
+ * Both are computed in `flattenSystems()`, and flat routes are only rebuilt when the player
+ * changes the network **topology**, so without a per-tick refresh ridership growth never
+ * reaches them. Measured on a 12,500-citizen save: stored load factor 0.0000192, recomputed
+ * against current ridership **308**. Waiting then never lengthens with crowding and the whole
+ * crowding model is inert (BUG-343).
  */
 
 function busCity() {
@@ -51,7 +53,8 @@ describe('迴圈餵給路線的班距與載重率', () => {
       .toHaveLength(1);
     expect(flatOf(loop)[0]!.loadFactor, '一開始就滿載了').toBeLessThan(1);
 
-    // 有人搭車了。站牌、路線、車輛數一個都沒動 —— 拓樸版本不會跳號。
+    // Riders boarded. No stop, route or vehicle count moved, so the topology version does not
+    // change.
     for (const s of route.stops) { s.dailyRiders = 50_000; s.smoothedDailyRiders = 50_000; }
     loop.tick();
 
@@ -61,15 +64,17 @@ describe('迴圈餵給路線的班距與載重率', () => {
   });
 
   it('should slow the estimated ride down once the corridor jams up', () => {
-    // 運具選擇是把「開車要多久」跟「搭車要多久」擺在一起比大小，而開車那一側滿滿地
-    // 計入壅塞。公車那一側如果讀設定車速，塞車的城市裡公車會看起來不合理地好 ——
-    // 路上的車全部慢下來，只有公車照跑。
+    // Mode choice compares driving time against transit time, and the driving side charges
+    // congestion in full. Reading the configured speed on the bus side makes buses look
+    // implausibly good in a congested city: every car slows down while the bus keeps its
+    // timetable.
     //
-    // 而車速跟載重率一樣會變:幹道是逐 tick 在塞的。只在重建時算一次的話，就是把
-    // BUG-343 換一個欄位再犯一次。
+    // Speed is as live as load factor, since arterials congest tick by tick. Computing it only
+    // at rebuild time repeats BUG-343 in a different field.
     const { state, loop, route } = busCity();
     const flat = () => flatOf(loop).find(r => r.routeId === route.id)!;
-    // 這座小 fixture 幾乎不塞，所以起點就是設定車速（差在小數第八位）。
+    // This small fixture barely congests, so the starting point is the configured speed to
+    // eight decimal places.
     expect(flat().speed, 'fixture 一開始就不是設定車速')
       .toBeCloseTo(state.bus.getSpeed(), 4);
 
@@ -81,7 +86,7 @@ describe('迴圈餵給路線的班距與載重率', () => {
   });
 
   it('should let the load fall again once the riders go away', () => {
-    // 只往上不往下的話，一條曾經爆滿的路線會永遠被判定為拒載。
+    // Rising without falling would leave a once-overloaded route permanently judged unusable.
     const { loop, route } = busCity();
     for (const s of route.stops) { s.dailyRiders = 50_000; s.smoothedDailyRiders = 50_000; }
     loop.tick();

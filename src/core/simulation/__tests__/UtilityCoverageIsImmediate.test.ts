@@ -6,18 +6,18 @@ import { RoadType, RoadDirection } from '../../road/types';
 import { UnifiedRoadLookup } from '../../road/UnifiedRoadLookup';
 
 /**
- * 剛蓋好的建築要馬上算得到水電。
+ * A building just placed must have power and water immediately.
  *
- * `isPowered` / `isSupplied` 不計算任何東西，只是查一個快取的 Set，而那個 Set 只在
- * slot 1 重建（六個 tick 輪一次）。剛蓋好的那一格在上一次重算時還不存在，於是面板
- * 照實回報缺水缺電，要等下一輪才消失 —— 暫停時則永遠不會消失，因為沒有 tick
- * （BUG-284）。
+ * `isPowered` / `isSupplied` compute nothing and only read a cached Set, which is rebuilt in
+ * slot 1, once every six ticks. A cell placed just now did not exist at the last rebuild, so
+ * the panel truthfully reports missing power and water until the next pass — and forever
+ * while paused, because no tick runs (BUG-284).
  *
- * 這不只是顯示問題：`isFacilityOperational` 拿的是同一個數字，那幾個 tick 裡設施是
- * 真的沒在運作。
+ * This is more than a display problem: `isFacilityOperational` reads the same value, so the
+ * facility really is out of service for those ticks.
  */
 
-/** 一條路，一座電廠，一座水廠，全都接在路上。 */
+/** One road, one power plant and one water plant, all connected to it. */
 function setupCity(state: GameState): void {
   for (let x = 1; x <= 12; x++) {
     let flags = RoadDirection.EAST | RoadDirection.WEST;
@@ -40,14 +40,15 @@ describe('剛蓋好的建築馬上算得到水電', () => {
     setupCity(state);
     loop = new SimulationLoop(state);
     loop.setRoadLookup(UnifiedRoadLookup.fromGrid(state.grid));
-    // 跑滿一輪，讓涵蓋範圍先算好一次 —— 這就是玩家按下建造鍵之前的狀態。
+    // Run a full cycle so coverage is computed once: the state the player is in before
+    // pressing build.
     for (let i = 0; i < 6; i++) loop.tick();
   });
 
   it('should power a building placed after the last recalculation', () => {
     state.grid.setCell(8, 6, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 });
 
-    // 快取是舊的 —— 這一格上次重算時還不存在。
+    // The cache is stale: this cell did not exist at the last recompute.
     expect(state.power.isPowered(8, 6), '這一格已經在快取裡了，測試沒有測到過期那一刻')
       .toBe(false);
 
@@ -58,8 +59,8 @@ describe('剛蓋好的建築馬上算得到水電', () => {
   });
 
   it('should not need a tick — the player may be paused', () => {
-    // 暫停時一個 tick 都不會跑（GameClock.shouldTick 直接回 false），所以重算
-    // 不能綁在 tick 上，否則那個警告會一直掛著。
+    // While paused no tick runs at all (GameClock.shouldTick returns false), so the recompute
+    // cannot be tied to ticks or the warning stays up forever.
     state.clock.pause();
     state.grid.setCell(9, 6, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
 

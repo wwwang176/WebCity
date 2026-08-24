@@ -6,26 +6,29 @@ import { RoadType, RoadDirection } from '../../road/types';
 import { UnifiedRoadLookup } from '../../road/UnifiedRoadLookup';
 
 /**
- * 搭車的人要記在他真正上車的那一站。
+ * A rider is credited to the stop they actually boarded at.
  *
- * 估計時間是照某一條路線的某兩站算的。選完運具之後再用「整個系統裡最近的站」重挑
- * 一次，同運具多條路線時就會挑到別條線上 —— 人被記到他沒搭的那條路線頭上，
- * `getRouteRiders` 把它加總成載重，兩條線的擁擠程度同時被扭曲（BUG-283）。
+ * The time estimate is computed for two specific stops on one route. Re-picking "the nearest
+ * stop in the system" after the mode is chosen lands on a different route once one transport
+ * type has several, crediting the rider to a route they did not take; `getRouteRiders` then
+ * aggregates that into load and distorts the crowding of both lines (BUG-283).
  *
- * 面板上的 Riders/Week 是同一個數字乘七，所以顯示跟模擬是一起錯的，對不出來。
+ * The panel's Riders/Week is the same number times seven, so display and simulation are wrong
+ * together and cannot be cross-checked.
  */
 
 const HOME = { x: 6, y: 2 };
 const WORK = { x: 56, y: 2 };
 
 /**
- * 一條長路，家與公司都蓋在**路旁**。
+ * One long road with the home and the workplace both **beside** it.
  *
- * 蓋在路的盡頭不行：人行道沿著路的兩側走，路的端點沒有人行道，那棟房子的門
- * 接不上任何東西，住戶哪一站都走不到。
+ * Placing them at the road's end does not work: sidewalks run along the road's two sides and
+ * a road endpoint has none, so that building's door connects to nothing and its residents
+ * cannot reach any stop.
  *
- * 通勤也要夠長，公車才贏得過開車 —— 走路是開車的三倍多慢，短程時光是走到站牌
- * 就把時間差吃光了。
+ * The commute must also be long enough for the bus to beat driving: walking is over three
+ * times slower, and on a short trip the walk to the stop consumes the entire difference.
  */
 function setupCity(state: GameState): void {
   for (let x = 2; x <= 58; x++) {
@@ -53,12 +56,14 @@ describe('搭乘記在上車的那一站', () => {
   });
 
   it('should credit the ridden route, not the nearest stop of another route', () => {
-    // 他真正搭的那條：兩端都碰得到，上車站離家 2.6 格。
+    // The route actually ridden: reachable from both ends, with the boarding stop 2.6 tiles
+    // from home.
     const ridden = [state.bus.addStop(9, 1), state.bus.addStop(56, 1)];
     state.bus.createRoute(ridden, 4);
 
-    // 幌子：站就在家門口（0.3 格，比上面近得多），但另一端在圖裡什麼都沒有，
-    // 到不了公司，所以這條路線根本不會被回報。「挑最近的站」會挑中它。
+    // A decoy: its stop is at the front door (0.3 tiles, far nearer), but its other end sits
+    // nowhere in the graph and cannot reach the workplace, so this route is never offered.
+    // "Pick the nearest stop" lands on it.
     const decoyNear = state.bus.addStop(HOME.x, 1);
     state.bus.createRoute([decoyNear, state.bus.addStop(2, 50)], 4);
 

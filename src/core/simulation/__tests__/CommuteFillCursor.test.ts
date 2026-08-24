@@ -8,15 +8,16 @@ import { ElevationManager } from '../../elevation/ElevationManager';
 import { ZoneType } from '../../grid/types';
 
 /**
- * 通勤路線不進存檔，讀檔後要重算。每個 tick 的預算是 32 個排隊、2 次自己算 ——
- * 但預算用完之後用的是 `continue` 而不是 `break`，**整份名單還是會掃完**。
+ * Commute routes are not serialized and must be recomputed after a load. The per-tick budget
+ * is 32 queued requests and 2 local computations, but exhausting a budget yields `continue`
+ * rather than `break`, so **the whole list is still walked**.
  *
- * 玩家存檔實測（人口 12 351）:進遊戲後前 11 秒，`advanceCommuteFill` 吃掉
- * `update()` 的 46–66%，第 12 秒掉到 2%（BUG-329）。真正花時間的不是那 2 條路，
- * 是那一萬多次「看過、沒事做」。
+ * Measured on a 12,351-citizen save: `advanceCommuteFill` took 46-66% of `update()` for the
+ * first 11 seconds after entering the game and dropped to 2% at second 12 (BUG-329). The
+ * time went into the ten thousand "examined, nothing to do" iterations, not the 2 routes.
  *
- * 而且迴圈每個 tick 都從名單開頭重跑，排在後面的市民要等前面的人全部 settled
- * 才輪得到 —— 游標式續掃兩件事一起解決。
+ * The loop also restarted from the head of the list each tick, so citizens further down
+ * waited for everyone before them to settle. A resuming cursor fixes both.
  */
 
 function makeCity(citizenCount: number): GameState {
@@ -70,8 +71,9 @@ const N = SIMULATION.COMMUTE_FILL_SCAN_PER_TICK;
 
 describe('補通勤路線的游標', () => {
   it('should look at no more citizens than its scan budget', () => {
-    // 這是整件事的重點。全部看過一遍的話，答案完全一樣 —— 只是每個 tick 多燒掉
-    // 一萬多次「看過、沒事做」，而那正是玩家進遊戲頭十秒感覺到的。
+    // The point of the whole thing. Walking everyone gives an identical answer while burning
+    // ten thousand extra "examined, nothing to do" iterations per tick, which is what the
+    // player feels in the first ten seconds after entering the game.
     const state = makeCity(N * 3);
     const { inner } = makeLoop(state);
     expect(state.citizens.getPopulation(), '前置條件:人數要多於掃描預算')
@@ -82,7 +84,8 @@ describe('補通勤路線的游標', () => {
   });
 
   it('should carry on from where it stopped', () => {
-    // 每個 tick 都從頭掃的話，排在後面的市民要等前面的人全部 settled 才輪得到。
+    // Scanning from the head each tick makes citizens further down wait for everyone before
+    // them to settle.
     const { inner } = makeLoop(makeCity(N * 3));
     inner.advanceCommuteFill();
     const after1 = inner.commuteFillCursor;
@@ -92,7 +95,8 @@ describe('補通勤路線的游標', () => {
   });
 
   it('should wrap around to the start', () => {
-    // 繞回去才叫輪流。掃到底就停住的話，後面新來的市民永遠補不到。
+    // Wrapping is what makes it round-robin. Stopping at the end never reaches citizens who
+    // arrive later.
     const { inner } = makeLoop(makeCity(N + 5));
     inner.advanceCommuteFill();
     inner.advanceCommuteFill();
@@ -100,7 +104,7 @@ describe('補通勤路線的游標', () => {
   });
 
   it('should still reach everyone, including the ones at the far end', () => {
-    // 省時間不能省掉正確性:轉夠多圈之後，每個人都要被看過。
+    // Saving time must not cost correctness: after enough laps, everyone has been examined.
     const count = N * 2 + 7;
     const { inner } = makeLoop(makeCity(count));
     const seen = new Set<number>();
@@ -115,8 +119,8 @@ describe('補通勤路線的游標', () => {
   });
 
   it('should step past a citizen it has nothing to do for', () => {
-    // 沒有工作的人也要往前走。游標卡在他身上的話，後面的人永遠輪不到 ——
-    // 而每個人都有家有工作的測資看不出這件事。
+    // The cursor advances past a citizen with no job too. Stuck on them, everyone behind never
+    // gets a turn — invisible in a fixture where every citizen has a home and a job.
     const state = makeCity(N + 20);
     const { inner } = makeLoop(state);
     const first = state.citizens.getCitizens()[0]!;
@@ -127,8 +131,8 @@ describe('補通勤路線的游標', () => {
   });
 
   it('should not read past the end when citizens died since last tick', () => {
-    // 游標記的是名單位置，而名單會縮短。上次停在第 1024 位、這次只剩 30 人的話，
-    // 讀到的是 undefined —— 崩在 `c.homeId` 上。
+    // The cursor records a list position and the list can shrink. Stopping at index 1024 and
+    // returning to a list of 30 reads undefined and throws on `c.homeId`.
     const state = makeCity(N * 2);
     const { inner } = makeLoop(state);
     inner.advanceCommuteFill();
@@ -146,7 +150,7 @@ describe('補通勤路線的游標', () => {
     const { inner } = makeLoop(makeCity(3));
     inner.advanceCommuteFill();
     expect(inner.commuteFillScanned, '看的人比名單還多').toBeLessThanOrEqual(3);
-    inner.advanceCommuteFill();   // 不該爆掉，也不該卡在名單外
+    inner.advanceCommuteFill();   // must not throw, and must not park past the end
     expect(inner.commuteFillCursor).toBeLessThan(3);
   });
 });

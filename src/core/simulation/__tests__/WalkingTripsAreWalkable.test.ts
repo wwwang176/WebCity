@@ -12,15 +12,16 @@ import type { WalkingTripPool } from '../../traffic/PedestrianManager';
 import { WALK_RANGE_BY_TYPE } from '../../transport/WalkRange';
 
 /**
- * 派出去的行人，一定走得到目的地。
+ * Every pedestrian dispatched can reach their destination.
  *
- * 這是玩家真正看到的那個東西：站牌在馬路對面，行人繞了一大圈走過去。繞路本身是
- * 對的（行人只在路口過馬路），錯的是模擬一開始就不該把他派去對面那個站牌 ——
- * 挑站的地方用直線距離量，對街只有兩格，於是被選中。
+ * This is what the player actually sees: a stop across the road and a pedestrian walking the
+ * long way round to it. The detour itself is correct (pedestrians only cross at junctions);
+ * what is wrong is that the simulation sent them to that stop at all, because stop selection
+ * measured a straight line and the far side is only two tiles away.
  *
- * 這裡不檢查「有沒有繞路」，而是檢查一條更強的性質：**每一段被派出去的步行，
- * 都要在步行上限之內真的走得到**。走不到的那些，正是會變成繞大圈或乾脆生不出來
- * 的行人。
+ * These do not check for detours but for a stronger property: **every dispatched walk must
+ * actually be walkable within the walk limit**. The unwalkable ones are exactly the
+ * pedestrians who either loop around or never appear.
  */
 
 const HOME_Y = 9;
@@ -28,8 +29,9 @@ const ROAD_Y = 10;
 const STOP_Y = 11;
 
 /**
- * 一條東西向主幹道，兩端才有路口。住家全在路北，公車站牌全在路南 —— 直線量的話
- * 家家戶戶都「兩格到站」，實際上要走到地圖邊緣的路口才過得去。
+ * One east-west arterial with junctions only at its ends. Homes are all north of it and bus
+ * stops all south, so every household is "two tiles from a stop" by straight line while
+ * actually having to reach a junction at the map edge to cross.
  */
 function cityWithStopsAcrossTheRoad(): GameState {
   const W = 24;
@@ -42,7 +44,7 @@ function cityWithStopsAcrossTheRoad(): GameState {
     if (x === 0 || x === W - 1) flags |= RoadDirection.NORTH | RoadDirection.SOUTH;
     state.grid.setCell(x, ROAD_Y, { roadType: RoadType.TWO_LANE, roadFlags: flags });
   }
-  // 兩端的南北向連通道，製造僅有的兩個路口
+  // North-south links at both ends, creating the only two junctions.
   for (const x of [0, W - 1]) {
     for (let y = HOME_Y - 2; y <= STOP_Y + 2; y++) {
       if (y === ROAD_Y) continue;
@@ -60,7 +62,7 @@ function cityWithStopsAcrossTheRoad(): GameState {
     works.push(`${x},${HOME_Y - 1}`);
   }
 
-  // 站牌全在路南
+  // All stops south of the road.
   const busId = getInfraBuildingId('bus_stop');
   const stops = [4, 12, 19].map(x => {
     state.grid.setCell(x, STOP_Y, { buildingId: busId });
@@ -89,11 +91,12 @@ function tripPoolOf(loop: SimulationLoop): WalkingTripPool {
 
 describe('派出去的步行都走得到', () => {
   it('should produce some walking trips at all', () => {
-    // 對照組：站牌改蓋在路北，也就是住家那一側 —— 這時候應該真的有行人被派出去。
+    // Control: with the stops moved north of the road, onto the homes' side, pedestrians
+    // really should be dispatched.
     const state = cityWithStopsAcrossTheRoad();
     for (const s of state.bus.getStops()) {
       state.grid.setCell(s.x, s.y, { buildingId: 0 });
-      s.y = HOME_Y + 0; // 搬到住家那一側
+      s.y = HOME_Y + 0; // move to the homes' side
       state.grid.setCell(s.x, s.y, { buildingId: getInfraBuildingId('bus_stop') });
     }
     const loop = makeLoop(state);

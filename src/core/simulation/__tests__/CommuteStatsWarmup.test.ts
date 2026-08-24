@@ -7,11 +7,12 @@ import { ElevationManager } from '../../elevation/ElevationManager';
 import { ZoneType } from '../../grid/types';
 
 /**
- * 通勤統計要在載入結束時就算好，不是等第一個 tick。
+ * The commute statistics must be computed by the end of loading, not on the first tick.
  *
- * 統計不進存檔（可以從現有狀態重算），所以載入完成的瞬間本來就是空的。差別在於
- * 玩家什麼時候看得到：`warmup` 還在載入畫面底下，而第一個 tick 已經是進了遊戲
- * 之後 —— 一進去就開圖層會看到一張空白的地圖。
+ * They are not serialized (they can be recomputed from current state), so they are empty the
+ * moment loading finishes. What differs is when the player sees that: `warmup` runs behind the
+ * loading screen, while the first tick is already in-game, and opening the overlay immediately
+ * would show a blank map.
  */
 
 function makeCity(citizenCount: number): GameState {
@@ -75,15 +76,17 @@ describe('載入結束時的通勤統計', () => {
   });
 
   it('should already account for transit at warmup, not one tick later', async () => {
-    // 可及性圖如果沒有先建起來，載入時算出來的通勤完全不含大眾運輸 —— 第一個
-    // tick 才會被修正，玩家會看到顏色在進遊戲後跳一次。
+    // Without the accessibility field built first, the commutes computed at load contain no
+    // transit at all and are corrected only on the first tick, making the colours jump once
+    // after entering the game.
     const state = makeCity(60);
     const stations = [
       state.metro.addStation(4, 4), state.metro.addStation(4, 13),
       state.metro.addStation(13, 13),
     ];
     state.metro.createLine(stations, 2);
-    // 保證真的有人兩端都在站上 —— 隨機配對出來的通勤不一定用得到這條線。
+    // Guarantee somebody has a station at both ends: randomly paired commutes may not use this
+    // line at all.
     const rider = state.citizens.getCitizens()[0]!;
     rider.homeId = '4,4';
     rider.workplaceId = '13,13';

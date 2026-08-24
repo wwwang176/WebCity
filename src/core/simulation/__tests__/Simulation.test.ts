@@ -653,8 +653,9 @@ describe('District integration', () => {
   it('district policy costs should be added to budget expenses', () => {
     const state = createGameState(20, 20);
     const d = state.districts.createDistrict('TestDistrict');
-    // 費用跟著分區格數走，而限制型條例不收費 —— 沒有格子、或只開限制型的話，
-    // 政策支出恆為 0，這條斷言就沒有內容。
+    // Cost scales with the district's cell count, and restriction policies are free, so with
+    // no cells or only restrictions the policy expense is always 0 and the assertion below
+    // would be empty.
     for (let x = 5; x < 15; x++) state.districts.addCellToDistrict(d.id, x, 5);
     state.policies.setPolicyLevel(d.id, PolicyType.ENCOURAGE_RECYCLING, 2);
 
@@ -947,8 +948,9 @@ describe('Unemployment happiness penalty', () => {
   /**
    * Grid with far more job slots than adults, so employmentRate === 1.
    *
-   * 時鐘停在快樂度那一槽的前一格 —— 底下的 `runHappinessCycle` 不推時鐘，這只是
-   * 讓 `factors.currentTick` 遠大於 `unemployedSince`，失業時間才吃得到最深的那一階。
+   * The clock is parked one tick before the happiness slot. `runHappinessCycle` below does
+   * not advance it; this only puts `factors.currentTick` far above `unemployedSince` so the
+   * unemployment duration reaches the deepest tier.
    */
   function jobRichCity() {
     const state = createGameState(30, 30);
@@ -972,15 +974,16 @@ describe('Unemployment happiness penalty', () => {
   };
 
   /**
-   * 跑完一整輪快樂度，**只跑快樂度**。
+   * Runs one full happiness cycle, and **only** happiness.
    *
-   * 分片之後一個 tick 只重算其中一片，要一整輪才輪得到每一位市民（BUG-330）。
-   * 但這裡不能改成連跑 `SLOW_TICK_INTERVAL` 個完整 tick:底下的測試靠
-   * `workplaceId === null` 分辨失業者，而完整的 tick 會經過工作指派 —— 這座城市
-   * 職缺遠多於成年人，那個「失業者」在輪到他的那一片之前就被塞了一份工作。
+   * Sliced, a tick recomputes one slice and a whole cycle is needed to reach every citizen
+   * (BUG-330). Running `SLOW_TICK_INTERVAL` complete ticks instead does not work: the tests
+   * below identify the unemployed by `workplaceId === null`, and a complete tick runs job
+   * assignment — this city has far more vacancies than adults, so the "unemployed" citizen is
+   * given a job before their slice comes up.
    *
-   * 直接驅動這兩個函式，隔離度與分片之前的單一個 tick 相同。接線本身釘在
-   * HappinessSliceWiring 與 HappinessSliceFairness。
+   * Driving these two functions directly gives the same isolation as a single unsliced tick.
+   * The wiring itself is pinned by HappinessSliceWiring and HappinessSliceFairness.
    */
   function runHappinessCycle(state: GameState): void {
     const loop = new SimulationLoop(state) as unknown as HappinessInner;

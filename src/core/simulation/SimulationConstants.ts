@@ -13,27 +13,31 @@ export const SIMULATION = {
   MEDIUM_TICK_INTERVAL: 60,
 
   /**
-   * 壅塞流量重算攤成幾個 tick。
+   * How many ticks the congestion-flow recomputation is spread over.
    *
-   * 比 MEDIUM_TICK_INTERVAL 小 —— 下一輪開始前這一輪要掃得完，不然永遠交不出件。
+   * Smaller than MEDIUM_TICK_INTERVAL: a sweep must finish before the next one starts,
+   * otherwise it never publishes a result.
    */
   CONGESTION_FLOW_SPREAD_TICKS: 40,
   /** Ticks between job relocation checks */
   JOB_RELOCATION_INTERVAL: 60,
   /**
-   * 換房子分成幾批。每個慢速槽跑一批。
+   * How many batches housing relocation is split into. One batch per slow slot.
    *
-   * 昂貴的是評估不是搬遷:每一位不開心的市民都要把全城的候選住宅打一次分，而
-   * 搬遷的 5% 上限只擋得住真的搬成的人。12 萬人實測一次 195ms，而速度 1 的一個
-   * tick 只有 250ms。
+   * The expensive part is evaluation, not the move: every unhappy citizen scores every
+   * housing candidate in the city, while the 5% relocation cap only limits citizens who
+   * actually move. Measured at 120,000 citizens, one pass took 195ms against 250ms available
+   * per tick at speed 1.
    *
-   * `10 × SLOW_TICK_INTERVAL = 60` —— 每位市民**每 60 個 tick 輪到一次**，與改動
-   * 前的 `MEDIUM_TICK_INTERVAL` 完全相同，搬家的節奏沒有變。變的只是把一次 195ms
-   * 換成十次 20ms。
+   * `10 * SLOW_TICK_INTERVAL = 60`, so each citizen comes up **once every 60 ticks**,
+   * identical to the unsliced `MEDIUM_TICK_INTERVAL` cadence. What changes is one 195ms pass
+   * becoming ten 20ms ones.
    *
-   * 不要改成「一次的名單分幾十個 tick 慢慢跑」——試過，那會讓候選住宅、入住數、
-   * 誰還活著這三份快照活上幾十個 tick，補了三輪還在冒新的 bug（BUG-331）。每一批
-   * 都在**同一個 tick 內**拍完用完丟掉，那一整類問題才不存在。
+   * Do not turn this into "one batch's list walked slowly over dozens of ticks": that keeps
+   * the housing candidates, the occupancy counts and the list of who is still alive valid for
+   * dozens of ticks, and produced new bugs through three rounds of fixes (BUG-331). Each
+   * batch takes, uses and discards its snapshots **within a single tick**, which is what
+   * makes that whole class of problem impossible.
    */
   HOUSING_RELOCATION_SLICES: 10,
   /** Number of random cells sampled per growth tick */
@@ -81,30 +85,37 @@ export const SIMULATION = {
   /** Minimum commute spawns per tick */
   MIN_SPAWN_PER_TICK: 5,
   /**
-   * 背景補完通勤路線時，每個 tick 允許的**同步**路徑搜尋次數。
+   * How many citizens the background commute fill examines per tick.
    *
-   * 一次 `findLanePathVariants` 在 2 146 人的城市量到約 16 毫秒（內部最多跑
-   * 4 次 A*），而一個 tick 在 1 倍速是 250 毫秒 —— 2 次就吃掉一成多。沒有
-   * pathfinding worker 時（生產環境缺 COOP/COEP 就沒有 SharedArrayBuffer）
-   * 只剩這條路，所以慢是刻意的：補得完比補得快重要。
-   */
-  /**
-   * 補通勤路線時，一個 tick 最多看幾位市民。
+   * Queueing and computing each have their own budget, but once a budget is exhausted the
+   * loop still walks the whole list: measured on a 12,351-citizen save, 46-66% of main-thread
+   * time in the first 11 seconds after entering the game went to "examined, nothing to do"
+   * (BUG-329).
    *
-   * 排隊與自己算各有自己的預算，但預算用完之後迴圈仍然會走完整份名單 —— 12 351 人
-   * 的存檔，進遊戲後前 11 秒有 46–66% 的主執行緒時間花在「看過、沒事做」（BUG-329）。
-   *
-   * 要大到暖機時找得滿 32 個排隊名額（暖機時幾乎每個人都還沒算），又要小到一個 tick
-   * 掃得完。1024 對 12 000 人的城市是六個 tick 轉一圈。
+   * Large enough to fill all 32 queue slots during warmup (when almost nobody has a computed
+   * route), small enough to scan within a tick. 1024 is a six-tick cycle for a
+   * 12,000-citizen city.
    */
   COMMUTE_FILL_SCAN_PER_TICK: 1024,
 
+  /**
+   * How many **synchronous** path searches the background commute fill may run per tick.
+   *
+   * One `findLanePathVariants` measured at about 16ms in a 2,146-citizen city (up to 4 A*
+   * runs internally), against 250ms per tick at speed 1, so 2 already consume more than a
+   * tenth. This is the only path available without a pathfinding worker (production without
+   * COOP/COEP has no SharedArrayBuffer), so the slowness is deliberate: finishing matters
+   * more than finishing fast.
+   */
   COMMUTE_FILL_SEARCH_PER_TICK: 2,
-  /** 有 worker 時每個 tick 排進去的路線數。排隊本身很便宜，算的人在別的執行緒。 */
+  /** Routes queued per tick when a worker is available. Queueing is cheap and the work
+   *  happens on another thread. */
   COMMUTE_FILL_ENQUEUE_PER_TICK: 32,
-  /** 同一條路線最多試幾次就放棄，等下次路網改變。見 `commuteFillAttempts`。 */
+  /** How many attempts a single route gets before it is left until the road network changes.
+   *  See `commuteFillAttempts`. */
   COMMUTE_FILL_MAX_ATTEMPTS: 3,
-  /** 總覽面板要列出通勤最久的幾個住宅區。夠指出問題，不會變成一頁座標。 */
+  /** How many worst-commute residential areas the overview panel lists. Enough to point at
+   *  the problem without becoming a page of coordinates. */
   COMMUTE_WORST_HOMES: 5,
   /** Commute sampling: minimum sample count */
   SAMPLE_COUNT_MIN: 50,
@@ -112,29 +123,31 @@ export const SIMULATION = {
   SAMPLE_COUNT_MAX: 300,
   /** Commute sampling: eligible commuters per sample */
   SAMPLE_DIVISOR: 5,
-  // 步行到站的上限已經依運具分開，見 core/transport/WalkRange —— 一個全域數字
-  // 意味著公車站與捷運站的服務範圍一模一樣，而現實剛好相反。
+  // Walk limits to stops are per transport type; see core/transport/WalkRange. A single
+  // global number would give bus stops and metro stations identical catchments.
   /** Max Manhattan distance for transfer walks between stops of different routes */
   TRANSFER_WALK_RANGE: 3,
   /**
-   * 開車的參考速度（km/h）。模型裡「一格一 tick」就是這個速度。
+   * Reference driving speed in km/h. One tile per tick in the model is this speed.
    *
-   * 這**不是速限**，是門到門的實際平均：路口、轉彎、找車位都算在內。速限是 50
-   * （高速公路 100），但沒有人以速限完成一趟通勤。壅塞那一項
-   * （`driveTime = 距離 × (1 + 壅塞)`）疊在這個平均之上，代表的是比平常更塞。
+   * **Not the speed limit** but the real door-to-door average, including junctions, turns
+   * and parking. The limit is 50 (100 on motorways), but nobody completes a commute at the
+   * limit. The congestion term (`driveTime = distance * (1 + congestion)`) sits on top of
+   * this average and represents being more congested than usual.
    *
-   * 這個數字是整個時間尺度的分母。實測（見下）：拿速限當參考的話，走路貴到只有
-   * 住在站牌隔壁的人肯搭大眾運輸，運輸系統形同虛設。
+   * This number is the denominator of the entire time scale. Using the speed limit as the
+   * reference makes walking so expensive that only citizens next door to a stop use transit,
+   * leaving the transport network inert.
    */
   DRIVE_REFERENCE_KMH: 30,
-  /** 走路速度（km/h）。 */
+  /** Walking speed in km/h. */
   WALK_KMH: 9,
   /**
-   * 走路速度（格/tick）。
+   * Walking speed in tiles per tick.
    *
-   * 由上面兩個推導，不要各寫一個數字。這個值曾經是 1 —— 也就是走路跟開車一樣快，
-   * 走一格到站牌跟開車走那一格成本相同。走遠路去搭車因此完全免費，唯一擋住它的
-   * 是步行上限那個硬門檻。
+   * Derived from the two constants above rather than written separately. At 1, walking would
+   * be as fast as driving and a tile walked to a stop would cost the same as a tile driven,
+   * making a long walk to transit free with only the hard walk limit standing in the way.
    */
   WALK_SPEED: 9 / 30,
   /** Maximum legs per multi-modal trip (walk counts as a leg) */

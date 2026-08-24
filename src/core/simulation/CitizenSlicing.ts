@@ -1,64 +1,74 @@
 import { SIMULATION } from './SimulationConstants';
 
 /**
- * 逐市民的重算要分成幾片。快樂度與健康共用同一套。
+ * How many slices the per-citizen recomputations are split into. Shared by happiness and
+ * health.
  *
- * 兩者原本都在慢速槽 4 裡把**每一位**市民重算一次，也就是每 6 個 tick 一次、每次
- * O(人口)。同一份存檔複製成 70 891 人實測:快樂度那一發 **68.5ms**、健康 11.5ms，
- * 而速度 1 的一個 tick 只有 250ms —— 玩家感覺到的是每 1.5 秒卡一下（BUG-330）。
+ * Recomputing **every** citizen in slow slot 4 means one O(population) pass every 6 ticks.
+ * Measured on the same save scaled to 70,891 citizens: **68.5ms** for happiness and 11.5ms
+ * for health, against 250ms available per tick at speed 1 — which the player experiences as
+ * a stutter every 1.5 seconds (BUG-330).
  *
- * 改成每個 tick 只重算其中一片，`N` 個 tick 輪完一圈。每位市民身上都存著自己的快樂度
- * 與健康，沒被輪到的人沿用上次的值 —— 全城平均照樣是「所有人身上的值加總 ÷ 人數」，
- * 不受哪一片剛被重算影響。這是**輪流**不是抽樣:沒有人被跳過，只是輪得比較慢。
+ * Recomputing one slice per tick instead completes a cycle in `N` ticks. Each citizen stores
+ * their own happiness and health, and those not due keep their previous value, so the
+ * city-wide average remains the sum over all citizens divided by their count, unaffected by
+ * which slice was just recomputed. This is **round-robin, not sampling**: nobody is skipped,
+ * they just come up less often.
  *
- * 快樂度與健康共用同一個雜湊，所以同一位市民的兩件事在同一個 tick 更新 —— 那一個
- * tick 裡他的住址查詢（`homeFactsFor`）算一次就好。
+ * Happiness and health share one hash, so a citizen's two values update on the same tick and
+ * their address lookup (`homeFactsFor`) runs once for both.
  *
- * ### 為什麼 N 跟著人口長
+ * ### Why N grows with population
  *
- * 固定 N（例如永遠 6 片）只是把尖峰攤平，總工作量不變 —— 30 萬人時每個 tick 還是要
- * 12.5ms。讓 N 跟著人口長，每個 tick 的工作量就變成常數。
+ * A fixed N (6 slices, say) only flattens the peak without changing the total work: at
+ * 300,000 citizens each tick still costs 12.5ms. Letting N grow with population makes the
+ * per-tick work constant.
  *
- * 代價是資料變舊。而舊得起:實測每位市民的快樂度趨勢是 **0.38 / 100 秒**，而既有的
- * 隨機抖動就有 **2.36** 的標準差 —— 放到一整個遊戲日，真正的漂移還在雜訊底下。
+ * The cost is staleness, and it is affordable: a citizen's happiness trends at **0.38 per
+ * 100 seconds** measured, while the existing random jitter has a standard deviation of
+ * **2.36** — over a whole game day the real drift stays below the noise.
  *
- * ### 上限存在的理由不是新鮮度，是「不要壞得太離譜」
+ * ### The cap is not about freshness, it is about not degrading absurdly
  *
- * 沒有上限的話 100 萬人要 476 個 tick（20 個遊戲日）才輪完一圈。上限鎖在 3 個遊戲日，
- * 超過 15 萬人之後成本才重新開始成長 —— 而那個成長很慢（100 萬人 13.9ms/tick），
- * 遠好過「固定落後一天」那種寫法（同樣人口 41.7ms/tick，速度 10 時直接吃光預算）。
+ * Uncapped, a million citizens would take 476 ticks (20 game days) per cycle. The cap holds
+ * a cycle to 3 game days, so cost only starts growing again beyond 150,000 citizens — and it
+ * grows slowly (13.9ms/tick at a million), far better than a fixed one-day lag, which at the
+ * same population costs 41.7ms/tick and consumes the entire budget at speed 10.
  */
 
-/** 每個 tick 重算幾位市民。決定成本 —— 這個數字乘上約 1µs 就是每 tick 的花費。 */
+/** Citizens recomputed per tick. This sets the cost: this number times about 1µs is the
+ *  per-tick spend. */
 export const CITIZEN_SLICE_PER_TICK = 2100;
 
 /**
- * 輪一圈最多幾個 tick。
+ * The longest a cycle may take, in ticks.
  *
- * 3 個遊戲日（`ticksPerDay` 是 24）。要到 15 萬人以上才碰得到 —— 在那之下這個上限
- * 等於不存在。
+ * Three game days (`ticksPerDay` is 24). Only reachable above 150,000 citizens; below that
+ * the cap has no effect.
  */
 export const CITIZEN_SLICE_MAX = 72;
 
 /**
- * 這座城市要分成幾片。
+ * How many slices this city is split into.
  *
- * 下限是 `SLOW_TICK_INTERVAL`:那是這兩件事原本的節奏。小城市算出來比它小的話一律
- * 取它 —— **行為與改動前完全相同**，每位市民仍然每 6 個 tick 更新一次。
+ * The floor is `SLOW_TICK_INTERVAL`, the cadence these two things ran at unsliced. A small
+ * city computing fewer than that takes the floor instead, so **behaviour is identical to the
+ * unsliced version** and each citizen still updates every 6 ticks.
  */
 export function citizenSliceCount(population: number): number {
   return sliceCount(population, SIMULATION.SLOW_TICK_INTERVAL);
 }
 
 /**
- * 通勤統計要分成幾片。
+ * How many slices the commute statistics are split into.
  *
- * 跟快樂度同一個形狀，下限換成 `MEDIUM_TICK_INTERVAL` —— 那是通勤統計原本的節奏
- * （每 60 個 tick 整城重算一次）。`2100 × 60 = 126 000`，所以 12.6 萬人以下算出來
- * 一律是 60:**每位市民的更新頻率與改動前完全相同**，分片一格新鮮度都沒退。
+ * The same shape as happiness with the floor changed to `MEDIUM_TICK_INTERVAL`, the cadence
+ * the commute statistics ran at unsliced (a full-city recompute every 60 ticks). Since
+ * `2100 * 60 = 126,000`, anything below 126,000 citizens comes out as 60: **each citizen
+ * updates exactly as often as before**, with no loss of freshness.
  *
- * 用下限而不是寫死 60 的理由是上面那個懸崖:固定 60 的話每個 tick 的工作量是
- * 人口 ÷ 60，**還是線性成長**，只是被推遲了。
+ * The floor is used instead of a hardcoded 60 because of the cliff above: at a fixed 60 the
+ * per-tick work is population / 60, **still linear**, only deferred.
  */
 export function commuteSliceCount(population: number): number {
   return sliceCount(population, SIMULATION.MEDIUM_TICK_INTERVAL);
@@ -67,55 +77,66 @@ export function commuteSliceCount(population: number): number {
 function sliceCount(population: number, min: number): number {
   if (!(population > 0)) return min;
   const wanted = Math.ceil(population / CITIZEN_SLICE_PER_TICK);
-  // 人口是 Infinity 時 wanted 也是 Infinity，`Math.min` 會擋掉;NaN 進不來，
-  // 上面那個 `population > 0` 對 NaN 是 false。
+  // An infinite population makes `wanted` infinite, which `Math.min` absorbs. NaN cannot
+  // reach here: `population > 0` is false for NaN.
   return Math.min(CITIZEN_SLICE_MAX, Math.max(min, wanted));
 }
 
 /**
- * 這位市民屬於哪一片。
+ * Which slice this citizen belongs to.
  *
- * 用 id 的雜湊，不是用他在名單裡的位置:名單順序跟建城順序有關，而同時建成的市民
- * 往往住在同一區。照位置切的話每一片會是一個街區，出事時的反應會一區一區掃過去，
- * 而不是全城均勻地開始變化。雜湊之後每一片都是全城的橫切面。
+ * Keyed on a hash of the id rather than their position in the list: list order follows the
+ * order the city was built, and citizens created at the same time tend to live in the same
+ * area. Splitting by position would make each slice a city block, so any reaction would
+ * sweep the city block by block instead of starting evenly everywhere. Hashed, every slice
+ * is a cross-section of the city.
  *
- * ### 一個已知的相關性
+ * ### A known correlation
  *
- * 乘數是奇數，所以 `imul(id, M) mod 2 === id mod 2` —— **片號的奇偶等於 id 的奇偶**。
- * 片數是偶數時（下限 6 就是），跟 id 奇偶相關的屬性會整批落在同一半的片裡。實際的
- * 城市裡 id 只是流水號，跟住哪、幾歲都無關，所以看不出影響;但寫測試時如果照 `i % 2`
- * 分配住址，兩組人會永遠不在同一個 tick 被處理。
+ * The multiplier is odd, so `imul(id, M) mod 2 === id mod 2` — **the slice index has the
+ * same parity as the id**. With an even slice count (the floor of 6 is even), properties
+ * correlated with id parity all land in the same half of the slices. In a real city ids are
+ * only sequence numbers and correlate with neither address nor age, so the effect is
+ * invisible; but a test that assigns addresses by `i % 2` will never have its two groups
+ * processed on the same tick.
  */
 export function citizenSliceOf(citizenId: number, slices: number): number {
-  // Knuth 乘法雜湊。`>>> 0` 把 imul 的有號結果轉回無號，否則負數取模會是負的。
+  // Knuth multiplicative hash. `>>> 0` converts imul's signed result back to unsigned;
+  // otherwise the modulo of a negative number is negative.
   return ((Math.imul(citizenId, 2654435761) >>> 0) % slices);
 }
 
 
 /**
- * 一輪的游標。
+ * The cursor for one cycle.
  *
- * 片數在**開輪時**定死。每個 tick 從當下人口重算的話，人口跨過
- * `CITIZEN_SLICE_PER_TICK` 的倍數時 `citizenSliceOf` 會把所有人重新分片 —— 已經輪過
- * 的人可能又被排到後面，還沒輪到的人可能被排到已經走過的片。人口在門檻附近來回時
- * 沒有任何落後上界，可以構造出某人連續數百個 tick 不被更新。
+ * The slice count is fixed **at the start of a cycle**. Recomputing it each tick from the
+ * current population would let `citizenSliceOf` reassign everyone whenever the population
+ * crosses a multiple of `CITIZEN_SLICE_PER_TICK`: citizens already processed could be moved
+ * behind the cursor, and citizens not yet processed could be moved into a slice already
+ * passed. With the population oscillating around a threshold there is no bound on the lag at
+ * all, and a citizen can be constructed who goes hundreds of ticks without an update.
  *
- * 有了游標，「一輪之內每個人剛好一次」才是真的不變量（對整輪都在城裡的人而言）。
+ * With the cursor, "exactly once per citizen per cycle" is a real invariant for anyone
+ * present for the whole cycle.
  */
 export class SliceCycle {
   private slices = 0;
   private cursor = 0;
 
   /**
-   * 開始下一片。回傳這一個 tick 要處理哪一片、以及這一輪一共分成幾片。
+   * Starts the next slice. Returns which slice this tick handles and how many slices this
+   * cycle has.
    *
-   * `countFor` 只在一輪跑完之後才被呼叫 —— 中途換片數就是上面說的那個 bug。
+   * `countFor` is called only once a cycle completes; changing the count mid-cycle is the
+   * bug described above.
    */
   next(countFor: () => number): { slices: number; index: number } {
     if (this.cursor >= this.slices) {
-      // 0 會讓 `citizenSliceOf` 取模得到 NaN（所有人被跳過，而且一輪永遠不結束）；
-      // 負數會讓每次呼叫都重新開輪，部分人反覆落在第 0 片、其餘人永遠輪不到；
-      // Infinity 則讓 `cursor >= slices` 永遠不成立 —— 一輪也永遠不會結束。
+      // 0 would make `citizenSliceOf`'s modulo return NaN, skipping everyone and never
+      // ending a cycle; a negative value would restart the cycle on every call, repeatedly
+      // landing some citizens in slice 0 and never reaching the rest; Infinity would make
+      // `cursor >= slices` never true, so a cycle would also never end.
       const want = Math.floor(countFor());
       this.slices = Number.isFinite(want) && want >= 1 ? want : 1;
       this.cursor = 0;
@@ -123,7 +144,8 @@ export class SliceCycle {
     return { slices: this.slices, index: this.cursor++ };
   }
 
-  /** 丟掉這一輪。城市清空時用 —— 下次會照新的人口重新開輪。 */
+  /** Discards the current cycle, for when the city empties. The next cycle starts from the
+   *  new population. */
   reset(): void {
     this.slices = 0;
     this.cursor = 0;

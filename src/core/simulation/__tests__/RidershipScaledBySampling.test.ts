@@ -6,17 +6,20 @@ import { RoadType, RoadDirection } from '../../road/types';
 import { UnifiedRoadLookup } from '../../road/UnifiedRoadLookup';
 
 /**
- * 生成通勤車的迴圈現在只問一部分市民（見 `CommuteSampling`），所以每問到一位搭車的
- * 就要記成 `scale` 位。漏掉放大的話，**搭乘數會憑空縮水好幾倍** —— 而載客率是照它算的，
- * 於是永遠擠不滿，加開班次也不會有回饋。
+ * The commute-spawn loop asks only a fraction of citizens (see `CommuteSampling`), so each
+ * sampled rider counts as `scale` people. Without the scaling, **ridership shrinks several
+ * fold out of nowhere**, and since load factor is computed from it, routes never fill up and
+ * adding vehicles produces no feedback.
  *
- * 這件事只在大城市看得到:小城市倍率正好是 1，`+= scale` 與 `++` 完全等價。
+ * Only a large city shows this: in a small one the factor is exactly 1 and `+= scale` is
+ * identical to `++`.
  */
 
 const HOME = { x: 6, y: 2 };
 const WORK = { x: 56, y: 2 };
 
-/** 一條長路，家與公司都蓋在路旁。通勤要夠長，公車才贏得過開車。 */
+/** One long road with home and workplace beside it. The commute must be long enough for the
+ *  bus to beat driving. */
 function longRoadCity(citizens: number): GameState {
   const state = createGameState(60, 60);
   for (let x = 2; x <= 58; x++) {
@@ -50,7 +53,7 @@ describe('搭乘數跟著抽樣一起放大', () => {
 
     const loop = new SimulationLoop(state);
     loop.setRoadLookup(UnifiedRoadLookup.fromGrid(state.grid));
-    loop.tick();   // 建人行道圖、轉乘圖，並跑一次生成迴圈
+    loop.tick();   // builds the sidewalk and transfer graphs and runs the spawn loop once
 
     const s = loop.lastCommuteSample;
     expect(s.samples, '前置條件:這座城市要大到會被節流').toBeLessThan(s.attempts);
@@ -58,16 +61,18 @@ describe('搭乘數跟著抽樣一起放大', () => {
 
     const riders = ridership(state);
     expect(riders, '前置條件:要真的有人搭到公車').toBeGreaterThan(0);
-    // 沒有放大的話，記到的人數最多就是問到的人數。
+    // Without scaling, the recorded count can be at most the number asked.
     expect(riders, '搭乘數沒有放大 —— 只記了問到的那幾位')
       .toBeGreaterThan(s.samples);
   });
 
   it('should count the people it never asked on a trip that changes buses', () => {
-    // 轉乘走的是另一條分支（`multiLeg`），而且轉乘次數也是顯示用的數字。
-    // 只有一條路線的測資走不到那裡，兩行放大改壞了都不會紅。
-    // 四萬人:倍率約 5.8。一趟轉乘最多三段，所以「沒放大」時記到的人次最多是
-    // 三倍的 samples —— 要比 attempts 還小，界才咬得住。
+    // Transfers take a different branch (`multiLeg`), and the transfer count is itself a
+    // displayed number. A single-route fixture never reaches it, so both scaling lines could
+    // be broken without turning red.
+    // At 40,000 citizens the factor is about 5.8. A transfer trip has at most three legs, so
+    // an unscaled count is at most 3 x samples, which has to stay below attempts for the bound
+    // to bite.
     const state = longRoadCity(40_000);
     const west = [state.bus.addStop(9, 1), state.bus.addStop(30, 1)];
     const east = [state.bus.addStop(31, 1), state.bus.addStop(56, 1)];
@@ -87,8 +92,8 @@ describe('搭乘數跟著抽樣一起放大', () => {
     expect(transferCount, '前置條件:要真的有人換車').toBeGreaterThan(0);
     expect(transferCount, '轉乘次數沒有放大').toBeGreaterThan(s.samples);
 
-    // 有放大:每一段都記 scale 人，所以總人次 ≥ attempts。
-    // 沒放大:每一段記一個人，總人次 ≤ 3 × samples < attempts。
+    // Scaled: each leg records `scale` people, so the total is at least attempts.
+    // Unscaled: each leg records one person, so the total is at most 3 x samples < attempts.
     expect(ridership(state), '轉乘路段的搭乘數沒有放大')
       .toBeGreaterThan(s.attempts);
   });

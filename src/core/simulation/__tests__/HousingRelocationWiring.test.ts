@@ -8,16 +8,19 @@ import { citizenSliceOf } from '../CitizenSlicing';
 import { DEFAULT_RELOCATION_CONFIG } from '../../citizen/Relocation';
 
 /**
- * 換房子從「每 60 個 tick 把全部人跑一次」改成「每個慢速槽跑一批，10 批輪完」。
+ * Housing relocation runs one batch per slow slot, 10 batches per cycle, instead of every
+ * citizen once every 60 ticks.
  *
- * `10 × SLOW_TICK_INTERVAL = 60` —— 每位市民輪到一次的間隔與改動前完全相同，
- * 變的只是把一次 195ms 換成十次 20ms（BUG-331）。
+ * `10 * SLOW_TICK_INTERVAL = 60`, so the interval between a citizen's turns is unchanged;
+ * what changes is one 195ms pass becoming ten 20ms ones (BUG-331).
  *
- * 這裡釘的是**接線**:批次真的有在輪、每次只處理一部分人、而且整件事在同一個
- * tick 內做完（沒有跨 tick 的快照要維護）。
+ * These pin the **wiring**: the batches really do rotate, each handles only part of the
+ * population, and the whole thing completes within a single tick with no cross-tick snapshot
+ * to maintain.
  */
 
-/** 住宅等級交錯，讓學歷 NONE 的市民有明顯更好的選擇可搬。 */
+/** Alternating housing levels so a citizen with education NONE has a clearly better option to
+ *  move to. */
 function unhappyCity(citizens: number): GameState {
   const state = createGameState(40, 40);
   for (let x = 0; x < 40; x++) {
@@ -25,9 +28,10 @@ function unhappyCity(citizens: number): GameState {
       roadType: RoadType.TWO_LANE, roadFlags: RoadDirection.EAST | RoadDirection.WEST,
     });
   }
-  // 高密度住宅，等級交錯:4 = Small Apartment（level 1、80 人）、
-  // 6 = High Rise（level 3、320 人）。容量要夠 —— 全部爆滿的話每個候選都會被
-  // `occ >= capacity` 刷掉，一個人也搬不動，測試就變成什麼都沒測到。
+  // High-density housing with alternating levels: 4 = Small Apartment (level 1, 80
+  // residents), 6 = High Rise (level 3, 320). Capacity has to be sufficient — if everything
+  // is full, every candidate is rejected by `occ >= capacity`, nobody moves, and the test
+  // checks nothing.
   for (let x = 2; x < 20; x++) {
     state.grid.setCell(x, 2, {
       zoneType: ZoneType.RESIDENTIAL_HIGH, buildingId: x % 2 === 0 ? 4 : 6,
@@ -46,20 +50,22 @@ function unhappyCity(citizens: number): GameState {
 const CYCLE = SIMULATION.SLOW_TICK_INTERVAL * SIMULATION.HOUSING_RELOCATION_SLICES;
 
 /**
- * 這一個 tick 真的跑過換房子嗎。
+ * Whether relocation actually ran on this tick.
  *
- * `lastHousingRelocation` 會**留到下一次**才被覆寫，而它每 6 個 tick 才跑一次 ——
- * 每個 tick 都讀的話，同一次的結果會被數六遍。
+ * `lastHousingRelocation` **survives until the next run**, and relocation runs only every 6
+ * ticks, so reading it every tick counts the same result six times.
  */
 function ranThisTick(state: GameState, loop: SimulationLoop): boolean {
   return loop.lastHousingRelocation.tick === state.clock.tick;
 }
 
 /**
- * 這座城市的住宅與工作地。每個 tick 補一次，把無關的衰退（廢棄、火災）隔離掉。
+ * The city's homes and workplaces, topped up each tick to isolate unrelated decay
+ * (abandonment, fire).
  *
- * **只補缺的那些。** 無條件重寫格子會被當成「這裡的建築換掉了」，住戶會被驅離
- * —— 全城 homeId 一起變成 null，那個 tick 一個不開心的人都沒有。
+ * **Only the missing ones are replaced.** Rewriting a cell unconditionally reads as "the
+ * building here was replaced" and evicts its residents, turning every homeId in the city to
+ * null and leaving that tick with no unhappy citizens at all.
  */
 function placeBuildings(state: GameState): void {
   const want = (x: number) => x === 25
@@ -74,18 +80,21 @@ function placeBuildings(state: GameState): void {
 }
 
 /**
- * 推一個 tick，並在推之前把城市維持在「有人不開心、有房子可搬」的狀態。
+ * Advances one tick, first restoring the city to a state with unhappy citizens and housing
+ * to move into.
  *
- * 兩件事都要:靠高稅率製造不開心會同時觸發建築廢棄，而長期不開心本身也會 ——
- * 實測跑到第 58 個 tick 時候選住宅已經歸零，最後一批根本沒執行。那是**別的**
- * 子系統的行為，不是這個測試要釘的東西。
+ * Both are needed: producing unhappiness through high taxes also triggers building
+ * abandonment, and prolonged unhappiness does the same. Measured, housing candidates reached
+ * zero by tick 58 and the last batch never ran. That is **another** subsystem's behaviour,
+ * not what these tests pin.
  */
 function tickUnhappy(state: GameState, loop: SimulationLoop): void {
   placeBuildings(state);
   for (const c of state.citizens.getCitizens()) {
     c.happiness = 10;
-    // 移出的門檻也是看快樂度。不關掉的話一圈之內城市會少一半 —— 而配額是每次用
-    // 當下的人數重算的，總和就對不上任何一個固定的數字，測試會時紅時綠。
+    // Emigration also keys off happiness. Left on, the city loses half its population within a
+    // cycle, and since the quota is recomputed from the current headcount each time, the sum
+    // matches no fixed number and the test becomes flaky.
     c.emigrationTolerance = 0;
   }
   loop.tick();
@@ -93,7 +102,8 @@ function tickUnhappy(state: GameState, loop: SimulationLoop): void {
 
 describe('換房子的接線', () => {
   it('should run one slice per slow cycle and walk through all of them', () => {
-    // 沒接上批號的話（例如永遠跑第 0 批），其餘九成的市民永遠不會被考慮。
+    // Without the batch index wired up (always running batch 0, say), the other nine tenths
+    // of citizens are never considered.
     const state = unhappyCity(900);
     const loop = new SimulationLoop(state);
     const seen = new Set<number>();
@@ -112,7 +122,8 @@ describe('換房子的接線', () => {
   });
 
   it('should consider only about one slice worth of citizens each time', () => {
-    // 這是省下來的東西本身。一次跑全部人的話這個數字會是全城人口。
+    // This is the saving itself. Running everyone at once would make this number the whole
+    // population.
     const state = unhappyCity(900);
     const loop = new SimulationLoop(state);
 
@@ -132,7 +143,8 @@ describe('換房子的接線', () => {
   });
 
   it('should come round to the same citizen every MEDIUM_TICK_INTERVAL ticks', () => {
-    // 只比較兩個常數相乘是恆真的 —— 要看排程真的每 60 個 tick 讓同一位市民輪到。
+    // Comparing the product of two constants is a tautology; what matters is that the
+    // schedule really brings the same citizen round every 60 ticks.
     expect(SIMULATION.HOUSING_RELOCATION_SLICES * SIMULATION.SLOW_TICK_INTERVAL)
       .toBe(SIMULATION.MEDIUM_TICK_INTERVAL);
 
@@ -157,7 +169,8 @@ describe('換房子的接線', () => {
   });
 
   it('should still move somebody', () => {
-    // 分批之後一個人都搬不動的話，這一整套等於把功能關掉了。
+    // If batching leaves nobody able to move, the whole change has simply turned the feature
+    // off.
     const state = unhappyCity(900);
     const loop = new SimulationLoop(state);
     const homesBefore = new Map(state.citizens.getCitizens().map(c => [c.id, c.homeId]));
@@ -171,7 +184,8 @@ describe('換房子的接線', () => {
       quotaSum += loop.lastHousingRelocation.quota;
     }
     expect(moved, '輪完一圈一個人都沒搬').toBeGreaterThan(0);
-    // 十批的配額加起來就是一次跑完的 5%。每批各自取 5% 的話這個數字會爆掉。
+    // The ten batches' quotas sum to the 5% an unsliced run would move. Taking 5% per batch
+    // blows this number up.
     expect(moved, `搬了 ${moved} 位，一圈的配額總共才 ${quotaSum} 位`)
       .toBeLessThanOrEqual(quotaSum);
 
@@ -181,8 +195,9 @@ describe('換房子的接線', () => {
   });
 
   it('should not hold any relocation state between ticks', () => {
-    // 整件事在同一個 tick 內做完 —— 沒有跨 tick 的快照要維護，那一整類過期問題
-    // 因此不存在（BUG-331）。留著任何一個殘件就代表設計又倒回去了。
+    // The whole thing completes within a single tick, so there is no cross-tick snapshot to
+    // maintain and that entire class of staleness cannot occur (BUG-331). Any leftover field
+    // means the design has regressed.
     const state = unhappyCity(900);
     const loop = new SimulationLoop(state);
     for (let t = 0; t < SIMULATION.SLOW_TICK_INTERVAL * 3; t++) tickUnhappy(state, loop);
@@ -196,23 +211,26 @@ describe('換房子的接線', () => {
 
 describe('一圈的配額', () => {
   it('should keep a whole cycle inside the city-wide 5% cap', () => {
-    // **這是分批最容易搞砸的地方。** 每批各自取自己的 5% 的話，
-    // `Math.max(1, Math.floor(n × 0.05))` 會讓小批全部進位到 1 —— 100 位不開心的人
-    // 分十批，一圈會搬 10 位，而一次跑完只搬 5 位。
+    // **This is the easiest part of batching to get wrong.** Taking 5% per batch makes
+    // `Math.max(1, Math.floor(n * 0.05))` round every small batch up to 1: 100 unhappy
+    // citizens split into ten batches move 10 per cycle, against 5 for an unsliced run.
     //
-    // 小城市才照得出來:900 人時錯的算法是 40 vs 45（差 11%），100 人時是 10 vs 5
-    // （差一倍）。
+    // Only a small city exposes it: at 900 citizens the wrong formula gives 40 against 45
+    // (11% off), at 100 it gives 10 against 5 (double).
     //
-    // 這裡**直接驅動 `runRelocation`**，不跑完整的 tick。跑完整 tick 的話這座城市
-    // 會在一圈之內自己崩掉:快樂度 10 讓建築廢棄，補建築又會驅離住戶，跑到第 58 個
-    // tick 全城無家可歸 —— 配額每次用當下人數重算，總和就對不上任何固定的數字。
-    // 排程本身（每 6 tick 一次、每 60 tick 輪回同一位）由上面幾條測試守著。
-    // 全部人先住進 level 3 的樓（學歷 NONE 不喜歡），旁邊整排 level 1 空著 ——
-    // 這樣每一位都真的想搬，配額才是唯一的限制。散住的話多數人本來就不會動，
-    // 「搬的人數 ≤ 配額」就咬不到任何東西。
+    // This drives **`runRelocation` directly** rather than running full ticks. Full ticks
+    // collapse this city within a cycle: happiness 10 abandons buildings, replacing them
+    // evicts residents, and by tick 58 the whole city is homeless — with the quota recomputed
+    // from the current headcount each time, the sum matches no fixed number. The schedule
+    // itself (every 6 ticks, same citizen every 60) is pinned by the tests above.
+    //
+    // Everyone starts in a level 3 building (which education NONE dislikes) with a row of
+    // empty level 1 buildings beside them, so every citizen genuinely wants to move and the
+    // quota is the only limit. Spread out, most would not move anyway and "moved <= quota"
+    // would bite on nothing.
     const state = unhappyCity(100);
     for (const [i, c] of state.citizens.getCitizens().entries()) {
-      c.homeId = `${3 + 2 * (i % 9)},2`;   // 奇數格 = buildingId 6 = level 3
+      c.homeId = `${3 + 2 * (i % 9)},2`;   // odd cells are buildingId 6, i.e. level 3
     }
     const loop = new SimulationLoop(state);
     const inner = loop as unknown as { runRelocation(): void };
@@ -221,7 +239,7 @@ describe('一圈的配額', () => {
     let quotaSum = 0, moved = 0;
     const cityCounts: number[] = [];
     for (let s = 0; s < slices; s++) {
-      state.clock.tick = 4 + s * SIMULATION.SLOW_TICK_INTERVAL;   // 直接擺到第 s 批
+      state.clock.tick = 4 + s * SIMULATION.SLOW_TICK_INTERVAL;   // jump straight to batch s
       for (const c of state.citizens.getCitizens()) c.happiness = 10;
       inner.runRelocation();
       expect(loop.lastHousingRelocation.slice, `第 ${s} 批算出來的批號不對`).toBe(s);
@@ -230,7 +248,7 @@ describe('一圈的配額', () => {
       cityCounts.push(loop.lastHousingRelocation.cityUnhappy);
     }
 
-    // 城市沒有跑 tick，人數應該完全不動。
+    // The city never ticks, so the headcount must not move at all.
     expect(new Set(cityCounts).size, `不開心的人數在一圈裡變了:${cityCounts.join(',')}`).toBe(1);
 
     const expected = Math.max(1,

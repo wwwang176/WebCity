@@ -7,14 +7,16 @@ import { ElevationManager } from '../../elevation/ElevationManager';
 import { getInfraBuildingId } from '../../building/InfraConfig';
 
 /**
- * 新蓋的站牌要立刻進得了人行道圖。
+ * A newly placed stop must enter the sidewalk graph immediately.
  *
- * 站牌在圖裡的身分就是一棟 1×1 建築的四個門節點 —— 行人靠那幾個門走進站牌，
- * 站牌的涵蓋範圍也是從那幾個門往外量的。沒有門節點，這個站牌服務不到任何人。
+ * In the graph a stop is the four door nodes of a 1x1 building: pedestrians enter through
+ * them, and the stop's catchment is measured outwards from them. With no door nodes, the stop
+ * serves nobody.
  *
- * 人行道圖的重建旗標只由 `markLaneGraphDirty` 設定，而蓋交通設施刻意不呼叫它
- * （設施不改變路網，拖著 lane graph 與通勤快取一起重算太貴）。於是站牌被關在
- * 門外，要等玩家隨手動一次道路才補得上。
+ * The sidewalk graph's dirty flag is set only by `markLaneGraphDirty`, which placing a transit
+ * facility deliberately does not call (a facility does not change the road network, and
+ * dragging the lane graph and commute cache into a rebuild with it is too expensive). Without
+ * this path the stop is locked out until the player happens to edit a road.
  */
 
 function cityWithRoad(): GameState {
@@ -63,7 +65,8 @@ describe('新蓋的站牌與人行道圖', () => {
   });
 
   it('should connect the new stop to the pavement beside it', () => {
-    // 有門還不夠，門要接得上旁邊那條路的人行道，否則一樣沒有人走得到。
+    // Doors alone are not enough: they must connect to the pavement of the road beside them,
+    // or nobody can reach the stop either.
     const state = cityWithRoad();
     const loop = makeLoop(state);
     loop.ensureSidewalkGraph();

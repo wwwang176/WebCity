@@ -3,13 +3,14 @@ import { commuteSliceCount, CITIZEN_SLICE_PER_TICK, CITIZEN_SLICE_MAX } from '..
 import { SIMULATION } from '../SimulationConstants';
 
 /**
- * 通勤統計的片數。
+ * The slice count for the commute statistics.
  *
- * 跟快樂度共用同一個形狀，差別只有**下限**:快樂度原本的節奏是 6 個 tick，通勤是
- * 60。下限取各自原本的節奏，分片才不會讓資料比改動前更舊。
+ * The same shape as happiness, differing only in the **floor**: happiness ran on a 6-tick
+ * cadence and commuting on 60. Taking each one's original cadence as the floor keeps slicing
+ * from making the data any staler than before.
  *
- * `2100 × 60 = 126 000` —— 12.6 萬人以下算出來一律是 60，**每位市民的更新頻率與
- * 改動前完全相同**。動態的部分要到那之上才開始起作用。
+ * `2100 * 60 = 126,000`, so anything below 126,000 citizens comes out as 60 and **each
+ * citizen updates exactly as often as before**. The dynamic part only takes effect above that.
  */
 describe('commuteSliceCount', () => {
   it('should keep the pre-change refresh rate for any realistic city', () => {
@@ -19,14 +20,15 @@ describe('commuteSliceCount', () => {
   });
 
   it('should grow past that only when a tick would otherwise blow the budget', () => {
-    // 超過 126 000 之後才長 —— 長的理由是每個 tick 的工作量要保持常數。
+    // Growth starts above 126,000, in order to keep the per-tick work constant.
     const justOver = CITIZEN_SLICE_PER_TICK * 61;
     expect(commuteSliceCount(justOver)).toBe(61);
     expect(commuteSliceCount(CITIZEN_SLICE_PER_TICK * 70)).toBe(70);
   });
 
   it('should stop growing at the shared ceiling', () => {
-    // 沒有上限的話 100 萬人要 476 個 tick 才輪完一圈，通勤圖層會舊到沒有意義。
+    // Uncapped, a million citizens would need 476 ticks per cycle and the commute overlay
+    // would be too stale to mean anything.
     expect(commuteSliceCount(1_000_000)).toBe(CITIZEN_SLICE_MAX);
     expect(commuteSliceCount(Number.MAX_SAFE_INTEGER)).toBe(CITIZEN_SLICE_MAX);
   });

@@ -8,17 +8,21 @@ import { PolicyType } from '../../district/types';
 import type { CommuteStats } from '../../citizen/CommuteStats';
 
 /**
- * 通勤統計改成**輪流**算:每個 tick 算一片，`N` 個 tick 輪完一圈，每個人的值存著。
- * 統計從存下來的**全體**值加總 —— 不是抽樣。
+ * Commute statistics are computed **round-robin**: one slice per tick, a full cycle every
+ * `N` ticks, with each citizen's value stored. The statistics aggregate the stored values of
+ * **everyone**, not a sample.
  *
- * ### 為什麼不能抽樣
+ * ### Why not sampling
  *
- * 1. `chargedDriversByDistrict` 直接決定壅塞費**收入**。抽樣等於用抽樣估市府收入，
- *    玩家的錢會因為抽到誰而抖。
- * 2. 固定抽 k 個人是**系統性偏差**，不是隨機誤差 —— 抽到的人剛好都在附近上班的話，
- *    那棟樓永遠顯示錯的數字，而且不會自己修正。
+ * 1. `chargedDriversByDistrict` directly determines congestion-charge **revenue**. Sampling
+ *    would estimate the city's income from a sample, making the player's money jitter with
+ *    who was drawn.
+ * 2. Drawing a fixed k citizens is a **systematic bias**, not random error: if the drawn
+ *    citizens all happen to work nearby, that building shows the wrong number permanently and
+ *    never self-corrects.
  *
- * 輪流兩個問題都沒有:每個人遲早都會被算到，統計蓋的是全體。
+ * Round-robin has neither problem: everyone is computed eventually, and the statistics cover
+ * the whole population.
  */
 
 interface Internals {
@@ -33,10 +37,12 @@ interface Internals {
 const N = SIMULATION.MEDIUM_TICK_INTERVAL;
 
 /**
- * 住商分散在路線兩端，通勤時間才會有分布，不會全部一樣。
+ * Homes and workplaces are spread along the road so commute times form a distribution rather
+ * than all being identical.
  *
- * **一定要有一個收費區。** 沒有的話 `chargedDriversByDistrict` 兩邊都是空 Map，
- * 「全量與分片相同」那條比的就是空比空 —— 而那一項正是決定壅塞費收入的數字。
+ * **A charged cordon is required.** Without one, `chargedDriversByDistrict` is an empty Map
+ * on both sides and the "sliced equals full" assertion compares nothing — and that entry is
+ * exactly what determines congestion-charge revenue.
  */
 function city(citizens: number): GameState {
   const state = createGameState(40, 40);
@@ -57,8 +63,8 @@ function city(citizens: number): GameState {
   }
   state.citizens.updateResidentialCapacity(citizens * 2);
 
-  // 收費區蓋住右半邊的公司，所以只有一部分通勤者會付過路費 —— 全付或全不付
-  // 的話，把 districtId 寫死成常數也能讓測試通過。
+  // The cordon covers the workplaces in the right half, so only some commuters pay. If all or
+  // none paid, hardcoding districtId to a constant would also pass.
   const d = state.districts.createDistrict('Downtown');
   for (let x = 22; x < 40; x++) {
     for (let y = 0; y <= 4; y++) state.districts.addCellToDistrict(d.id, x, y);
@@ -67,7 +73,8 @@ function city(citizens: number): GameState {
   return state;
 }
 
-/** 先跑幾個 tick 讓路網圖、可及性圖建起來，再直接驅動要測的部分。 */
+/** Runs a few ticks so the road and accessibility graphs are built, then drives the part
+ *  under test directly. */
 function primed(citizens: number) {
   const state = city(citizens);
   const loop = new SimulationLoop(state);
@@ -75,7 +82,8 @@ function primed(citizens: number) {
   return { state, loop, inner: loop as unknown as Internals };
 }
 
-/** 只比得出來的欄位 —— `worst` 是物件陣列，逐欄比較訊息才看得懂。 */
+/** Only the comparable fields: `worst` is an array of objects, and field-by-field comparison
+ *  gives a readable message. */
 function comparable(s: CommuteStats) {
   return {
     sampled: s.sampled, average: s.average, median: s.median,
@@ -86,8 +94,9 @@ function comparable(s: CommuteStats) {
 
 describe('通勤統計的輪流計算', () => {
   it('should produce the same stats as computing everyone at once', () => {
-    // 這是整個設計的判準。輪完一圈之後，統計必須與「一次算完全城」逐欄相同 ——
-    // 不是接近，是相同。抽樣做不到這件事，輪流做得到。
+    // The criterion for the whole design. After one cycle the statistics must match a
+    // full-city computation field by field — identical, not close. Sampling cannot do that;
+    // round-robin can.
     const { loop, inner } = primed(400);
 
     inner.rebuildAllCommuteRecords();
@@ -101,7 +110,8 @@ describe('通勤統計的輪流計算', () => {
 
     expect(atOnce.sampled, '這座城市沒有人算得出通勤 —— 測試什麼都沒比')
       .toBeGreaterThan(0);
-    // 空 Map 等於空 Map 是空比空。收入那一項要真的有數字才算比到。
+    // An empty Map equalling an empty Map compares nothing. The revenue entry has to carry
+    // real numbers for the comparison to mean anything.
     const chargedTotal = atOnce.charged.reduce((a, [, n]) => a + n, 0);
     expect(chargedTotal, 'fixture 沒有人付過路費 —— 收入那一項等於沒測')
       .toBeGreaterThan(0);
@@ -111,11 +121,12 @@ describe('通勤統計的輪流計算', () => {
   });
 
   it('should recompute every citizen exactly once per cycle', () => {
-    // 哨兵:每個 tick 之前把所有記錄換成同一個標記物件，跑完之後**不再是標記**的
-    // 就是這個 tick 被重算的人。
+    // A sentinel: before each tick every record is replaced with the same marker object, and
+    // whatever is **no longer the marker** afterwards was recomputed this tick.
     //
-    // 第一版是數「新增的鍵」，那擋不住片數錯 —— 一輪 6 個 tick 的話每個人在 60 個
-    // tick 裡被重算 10 次，但鍵只新增一次，測試照樣綠。突變驗證照出來的。
+    // Counting newly added keys instead cannot catch a wrong slice count: with a 6-tick cycle
+    // each citizen is recomputed 10 times over 60 ticks while their key is only added once,
+    // and the test stays green.
     const { state, inner } = primed(400);
     inner.rebuildAllCommuteRecords();
 
@@ -140,7 +151,7 @@ describe('通勤統計的輪流計算', () => {
   });
 
   it('should advance a slice every tick, not once per cycle', () => {
-    // 每 60 個 tick 才推一片的話，輪完一圈要 3600 個 tick（150 個遊戲日）。
+    // Advancing one slice every 60 ticks would make a cycle 3,600 ticks, or 150 game days.
     const { loop, inner } = primed(400);
     inner.commuteRecords.clear();
 
@@ -154,7 +165,8 @@ describe('通勤統計的輪流計算', () => {
   });
 
   it('should have a record for everyone right after a full rebuild', () => {
-    // 冷啟動:載入之後如果只有 1/60 的人有記錄，壅塞費收入會被少算五十幾倍。
+    // Cold start: with records for only 1/60 of citizens after a load, congestion-charge
+    // revenue would be understated by more than fiftyfold.
     const { state, inner } = primed(400);
     inner.commuteRecords.clear();
     inner.rebuildAllCommuteRecords();
@@ -168,8 +180,9 @@ describe('通勤統計的輪流計算', () => {
   });
 
   it('should give everyone a record on the very first tick', () => {
-    // 冷啟動走的是真的 tick 路徑，不是測試直接呼叫全量重建。這一條擋的是
-    // 「第一個 tick 只算了 1/60」—— 壅塞費收入會被少算五十幾倍。
+    // The cold start goes through the real tick path rather than the test calling the full
+    // rebuild directly. This pins against the first tick computing only 1/60 of citizens,
+    // which understates congestion-charge revenue by more than fiftyfold.
     const state = city(400);
     const loop = new SimulationLoop(state);
     const inner = loop as unknown as Internals;
@@ -183,8 +196,9 @@ describe('通勤統計的輪流計算', () => {
   });
 
   it('should drop the record of anyone who stopped commuting', () => {
-    // 丟了工作的人如果留著舊記錄，他會一直被算成還在通勤 —— 圖層、面板、
-    // 壅塞費收入全部跟著錯，而且沒有東西會把它修回來。
+    // A citizen who lost their job and keeps an old record counts as still commuting, which
+    // makes the overlay, the panel and congestion-charge revenue all wrong with nothing to
+    // correct them.
     const { state, inner } = primed(400);
     inner.rebuildAllCommuteRecords();
 
@@ -207,7 +221,8 @@ describe('通勤統計的輪流計算', () => {
     const staying = all.slice(350).map(c => c.id);
     state.citizens.removeCitizens(gone);
 
-    // 整理排在開輪那一刻，所以保證是「一輪之內」不是「立刻」。
+    // The prune runs at the start of a cycle, so the guarantee is "within a cycle", not
+    // "immediately".
     for (let i = 0; i < N; i++) inner.advanceCommuteSlice();
 
     for (const id of gone) {
@@ -219,12 +234,14 @@ describe('通勤統計的輪流計算', () => {
   });
 
   it('should get the charged drivers all the way into the published stats', () => {
-    // **記錄有了不等於統計看得見** —— 加總跑的是另一個節奏。其他測試都直接呼叫
-    // `refreshCommuteStats()`，跳過了排程;這一條走真的 tick，一路驗到發布出去
-    // 的那份:估算 → 記錄 → 加總 → `getCommuteStats()`。
+    // **Having a record is not the same as the statistics showing it**: aggregation runs on
+    // its own cadence. The other tests call `refreshCommuteStats()` directly and bypass the
+    // schedule; this one goes through real ticks and checks the published result end to end:
+    // estimate, record, aggregate, `getCommuteStats()`.
     //
-    // 盯著付過路費的人數而不是通勤人數:那是決定壅塞費**收入**的數字，斷在哪一段
-    // 都是收不到錢。
+    // It watches the charged-driver count rather than the commuter count, because that is
+    // what determines congestion-charge **revenue**, and a break anywhere in the chain means
+    // no money collected.
     const state = city(400);
     const loop = new SimulationLoop(state);
 
@@ -239,17 +256,19 @@ describe('通勤統計的輪流計算', () => {
   });
 
   it('should publish on its own schedule, not every tick', () => {
-    // 加總每 60 個 tick 才發布一次。每個 tick 都發布的話 10 萬人要多付 24 毫秒 ×60;
-    // 而如果**永遠不再**發布，市民的值一直在更新、玩家看到的卻是開局那一份。
+    // Aggregation publishes every 60 ticks. Publishing every tick would cost 24ms x 60 at
+    // 100,000 citizens; **never** publishing again would leave citizens' values updating
+    // while the player still sees the opening snapshot.
     //
-    // 用版本號而不是統計內容 —— 這個 fixture 沒有電、水、服務，建築撐不過 60 個
-    // tick 就被廢棄了，內容會歸零而版本號不受影響。
+    // Keyed on the version rather than the statistics' contents: this fixture has no power,
+    // water or services, so buildings are abandoned within 60 ticks and the contents fall to
+    // zero while the version is unaffected.
     const state = city(400);
     const loop = new SimulationLoop(state);
     const inner = loop as unknown as Internals;
 
-    // 排程是第 1 個 tick（開局全量）與之後的 `(tick - 3) % 60 === 0`，
-    // 也就是第 3、63、123…… 從第 3 個之後開始數。
+    // The schedule is tick 1 (the opening full pass) and then `(tick - 3) % 60 === 0`, i.e.
+    // ticks 3, 63, 123 and so on; counting starts after tick 3.
     while (state.clock.tick < 3) loop.tick();
     const afterFirst = inner.getCommuteStatsVersion();
 
@@ -265,15 +284,17 @@ describe('通勤統計的輪流計算', () => {
   });
 
   it('should pick up citizens who moved in, within two cycles', () => {
-    // 每一輪開頭要重新分桶。只分一次的話新搬進來的人**永遠**不會被算到 ——
-    // 圖層上那棟樓的顏色會停在舊住戶的數字，而且不會有東西把它修回來。
+    // The buckets are rebuilt at the start of every cycle. Bucketing once would mean citizens
+    // who move in are **never** computed, freezing that building's overlay colour at the old
+    // residents' numbers with nothing to correct it.
     //
-    // 為什麼是兩輪不是一輪:中途搬進來的人要等下一輪開頭才進得了桶，進去之後還要
-    // 等自己那一片輪到。改動前是一輪（每 60 個 tick 整城重算）。
+    // Two cycles rather than one: a citizen arriving mid-cycle only enters a bucket at the
+    // next cycle's start, and then still waits for their slice. The unsliced version took one
+    // cycle (a full-city recompute every 60 ticks).
     //
-    // **同樣的兩輪落後適用於所有改動**，不只新住戶 —— 搬家、換工作、開關條例都一樣:
-    // 記錄要等自己那片輪到（最多一輪），加總又是另一個節奏（最多再一輪）。見
-    // `advanceCommuteSlice()` 的說明。
+    // **The same two-cycle lag applies to every change**, not just new arrivals — moves, job
+    // changes and toggling ordinances alike: the record waits for its slice (up to one cycle)
+    // and aggregation runs on its own cadence (up to another). See `advanceCommuteSlice()`.
     const { state, inner } = primed(400);
     for (let i = 0; i < N; i++) inner.advanceCommuteSlice();
 
@@ -293,10 +314,12 @@ describe('通勤統計的輪流計算', () => {
   });
 
   it('should clear every record within one cycle of the city emptying', () => {
-    // 城市被清空（砍光、讀另一份存檔）之後，上一座城市的記錄不該一直佔著記憶體。
+    // After the city empties (everything demolished, or another save loaded), the previous
+    // city's records must not keep occupying memory.
     //
-    // 保證是「**一輪之內**」不是「立刻」:桶在開輪時才重建，一輪之內它還握著已經
-    // 離開的人。讀存檔那條路不受影響 —— `rebuildAllCommuteRecords()` 當場清空。
+    // The guarantee is "**within a cycle**", not "immediately": the buckets are only rebuilt
+    // at the start of a cycle and still hold departed citizens until then. The save-loading
+    // path is unaffected — `rebuildAllCommuteRecords()` clears on the spot.
     const { state, inner } = primed(400);
     inner.rebuildAllCommuteRecords();
     expect(inner.commuteRecords.size).toBeGreaterThan(0);
@@ -308,7 +331,8 @@ describe('通勤統計的輪流計算', () => {
   });
 
   it('should not let citizens who left the city keep counting', () => {
-    // 記錄是快取，加總走的是**還活著的名單** —— 死掉、遷出的人拿不到票。
+    // The records are a cache; aggregation walks **the list of the living**, so the dead and
+    // departed get no vote.
     const { state, loop, inner } = primed(400);
     inner.rebuildAllCommuteRecords();
     inner.refreshCommuteStats();

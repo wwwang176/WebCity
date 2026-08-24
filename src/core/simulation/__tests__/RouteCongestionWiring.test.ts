@@ -5,14 +5,15 @@ import { RoadType, RoadDirection } from '../../road/types';
 import type { LaneEdge } from '../../traffic/LaneGraph';
 
 /**
- * `RouteCongestion` 是純函式，測得很細;但「模擬有沒有真的去問它」是另一回事。
- * 接線斷掉（例如又退回全城平均、或傳一個常數）的話，那些純函式測試一個都不會紅。
+ * `RouteCongestion` is a pure function with thorough tests of its own; whether the simulation
+ * actually asks it is a separate question. With the wiring broken (falling back to the city
+ * average, or passing a constant), none of those pure-function tests turns red.
  *
- * 這裡直接餵一份逐格流量圖與兩條路線:一條穿過爆量的走廊，一條走沒人的巷子。
- * 兩個人問出來的擁擠程度必須不一樣。
+ * These feed in a per-cell flow field and two routes directly: one through a saturated
+ * corridor, one down an empty lane. The two must report different congestion.
  */
 
-/** 一條沿 +x 的路徑，經過 `cells` 這些格子。 */
+/** A path along +x passing through `cells`. */
 function pathThrough(cells: string[]): LaneEdge[] {
   return cells.slice(0, -1).map((from, i) => {
     const to = cells[i + 1]!;
@@ -52,7 +53,8 @@ describe('模擬真的去問逐路線的壅塞', () => {
   it('should give a busy corridor a higher number than a quiet lane', () => {
     const { state, loop, inner } = setup();
 
-    // 爆量的走廊 vs 沒人的巷子。單位是「多少人的通勤路線經過這一格」。
+    // A saturated corridor against an empty lane. The unit is how many citizens' commute
+    // routes pass through the cell.
     state.traffic.updatePredictedFlow(new Map([
       ['1,0', 12000], ['2,0', 12000], ['3,0', 12000],
       ['7,0', 0], ['8,0', 0], ['9,0', 0],
@@ -68,7 +70,8 @@ describe('模擬真的去問逐路線的壅塞', () => {
   });
 
   it('should fall back to the network average when the route is unknown', () => {
-    // 沒算過的路線回「暢通」的話，新市民會以為開車很快 —— 那是猜，不是資料。
+    // Answering "clear" for a route never computed would tell new citizens driving is fast,
+    // which is a guess rather than data.
     const { state, loop, inner } = setup();
     state.traffic.updatePredictedFlow(new Map([['1,0', 12000]]));
     inner.cityCongestionLevel = 0.4;
@@ -80,7 +83,8 @@ describe('模擬真的去問逐路線的壅塞', () => {
   });
 
   it('should forget the cached numbers when the flow map changes', () => {
-    // 逐路線的答案是快取的。蓋了路、車流散掉之後還回舊答案的話，玩家做的事就沒有回饋。
+    // Per-route answers are cached. Returning the old answer after a road is built and the
+    // traffic disperses gives the player no feedback on what they did.
     const { state, loop, inner } = setup();
     const route = pathThrough(['1,0', '2,0', '3,0']);
     loop.commuteCache.setRouteVariants('1,0->3,0', [route]);
@@ -88,8 +92,8 @@ describe('模擬真的去問逐路線的壅塞', () => {
     state.traffic.updatePredictedFlow(new Map([['1,0', 12000], ['2,0', 12000], ['3,0', 12000]]));
     expect(inner.congestionFor({ x: 1, y: 0 }, { x: 3, y: 0 })).toBe(1);
 
-    // 直接換掉流量圖不會清快取 —— 清快取的是 computeCongestionFlow。這裡驗的是
-    // 「快取真的存在」，下一條驗它會被清掉。
+    // Replacing the flow field directly does not clear the cache; computeCongestionFlow does.
+    // This checks the cache exists at all, and the assertion below checks it is cleared.
     state.traffic.updatePredictedFlow(new Map());
     expect(inner.congestionFor({ x: 1, y: 0 }, { x: 3, y: 0 }), '沒有快取，每次都重算')
       .toBe(1);
