@@ -1,12 +1,14 @@
 import * as THREE from 'three';
 
 /**
- * 一組以 (幾何 × 材質) 分桶的 `InstancedMesh`，外加「一格一個實例」的索引。
+ * A set of `InstancedMesh` buckets keyed by (geometry x material), plus a one-instance-per-cell
+ * index.
  *
- * 建築量體與地面物件是兩個獨立的圖層，但兩者的實例管理一模一樣：建桶、
- * 容量倍增、swap-with-last 移除、四個逐實例屬性。複製一份就是兩份會各自
- * 漂移的程式碼，而這一段的錯誤特別難發現 —— 索引搬錯只在城市長到超過初始
- * 容量、或玩家拆除建築之後才現形，而且畫面上看起來只是「某棟樓怪怪的」。
+ * Building masses and ground props are two separate layers, but their instance management is
+ * identical: creating buckets, doubling capacity, swap-with-last removal, and four per-instance
+ * attributes. A second copy is two pieces of code free to drift, and mistakes here are especially
+ * hard to spot — a mis-moved index only surfaces once the city outgrows the initial capacity or
+ * the player demolishes something, and on screen it reads only as "that building looks odd".
  */
 
 export interface LayerEntry {
@@ -15,8 +17,9 @@ export interface LayerEntry {
 }
 
 /**
- * 每個實例都要帶的自訂屬性。名稱與長度只寫這一份 —— 建桶、倍增、
- * swap-with-last 三個地方都吃它。漏掉任何一處，建築就會戴上別人的資料。
+ * The custom attributes every instance carries. Their names and lengths are written once, and
+ * bucket creation, doubling and swap-with-last all read them. Missing any one of the three leaves
+ * a building wearing somebody else's data.
  */
 const INSTANCE_ATTRIBUTES: ReadonlyArray<readonly [string, number]> = [
   ['aHighlight', 1],
@@ -30,19 +33,21 @@ export class InstancedLayer {
   private readonly counts = new Map<string, number>();
   private readonly capacities = new Map<string, number>();
   private readonly entries = new Map<string, LayerEntry>();
-  /** 桶 → (實例索引 → 格子 key)。swap-with-last 之後要修正被搬動的那一個。 */
+  /** Bucket to (instance index to cell key). After a swap-with-last, the moved one has to be corrected. */
   private readonly reverse = new Map<string, Map<number, string>>();
 
   private readonly _matrix = new THREE.Matrix4();
   private readonly _color = new THREE.Color();
 
   /**
-   * 整層的顯示閘門。關著時每個桶都不畫，開著時**只有非空的桶**回來 ——
-   * 空桶的 `visible = false` 是既有的優化（three.js 對 count === 0 的
-   * InstancedMesh 仍會走完整條 render list），閘門不能把它覆蓋掉。
+   * The whole layer's visibility gate. Closed, no bucket draws; open, **only non-empty buckets**
+   * come back — an empty bucket's `visible = false` is an existing optimisation, since three.js
+   * still walks the full render list for an InstancedMesh with count === 0, and the gate must not
+   * override it.
    *
-   * 存成狀態而不是讓呼叫端逐桶設：`acquire` 與 `release` 也會動 `visible`，
-   * 少了這個閘門，關著的時候蓋一棟新房子就會讓那一桶單獨冒出來。
+   * Held as state rather than left to callers to set per bucket: `acquire` and `release` also
+   * touch `visible`, and without the gate, building a new house while the layer is closed makes
+   * that one bucket appear on its own.
    */
   private gate = true;
 
@@ -51,7 +56,7 @@ export class InstancedLayer {
     private readonly initialCapacity = 256,
   ) {}
 
-  /** 既有測試與 BuildingRenderer 的相容視窗。 */
+  /** A compatibility view for existing tests and BuildingRenderer. */
   get bucketMap(): ReadonlyMap<string, THREE.InstancedMesh> { return this.buckets; }
   get entryMap(): ReadonlyMap<string, LayerEntry> { return this.entries; }
   get meshes(): IterableIterator<THREE.InstancedMesh> { return this.buckets.values(); }
@@ -60,7 +65,7 @@ export class InstancedLayer {
   meshFor(key: string): THREE.InstancedMesh | undefined { return this.buckets.get(key); }
   get visible(): boolean { return this.gate; }
 
-  /** 開關整層。非空的桶跟著閘門走，空桶維持關閉。 */
+  /** Opens or closes the whole layer. Non-empty buckets follow the gate; empty ones stay closed. */
   setVisible(visible: boolean): void {
     if (this.gate === visible) return;
     this.gate = visible;
@@ -71,16 +76,16 @@ export class InstancedLayer {
 
   entryFor(posKey: string): LayerEntry | undefined { return this.entries.get(posKey); }
   countOf(key: string): number { return this.counts.get(key) ?? 0; }
-  /** 這個桶的第 idx 個實例屬於哪一格。 */
+  /** Which cell this bucket's instance idx belongs to. */
   posKeyAt(key: string, idx: number): string | undefined {
     return this.reverse.get(key)?.get(idx);
   }
 
   /**
-   * 建一個空桶。`geometry` 的所有權轉移給這個圖層。
+   * Creates an empty bucket. Ownership of `geometry` passes to this layer.
    *
-   * `castShadow` 預設開，但地面貼片必須關掉：一片沒有厚度的四邊形投出來的
-   * 影子是一條線，而且陰影貼圖每一棟都要算一次。
+   * `castShadow` defaults to on, but ground decals have to turn it off: a quad with no thickness
+   * casts a shadow that is a line, and the shadow map computes one per building.
    */
   createBucket(
     scene: THREE.Scene, key: string, geometry: THREE.BufferGeometry,
@@ -90,9 +95,9 @@ export class InstancedLayer {
 
     const mesh = new THREE.InstancedMesh(geometry, this.material, this.initialCapacity);
     mesh.count = 0;
-    // three.js 對 count === 0 的 InstancedMesh 仍會走完整條 render list。桶數
-    // 從 60 漲到 168（階段 2C-1）之後，空桶的成本從「無所謂」變「有感」——
-    // 開局與稀疏城市大部分的桶都是空的。
+    // three.js still walks the full render list for an InstancedMesh with count === 0. With the
+    // bucket count grown from 60 to 168, an empty bucket's cost goes from negligible to
+    // noticeable: at startup and in a sparse city, most buckets are empty.
     mesh.visible = false;
     mesh.castShadow = opts.castShadow ?? true;
     mesh.receiveShadow = true;
@@ -112,10 +117,11 @@ export class InstancedLayer {
   }
 
   /**
-   * 取一個空位給 `posKey`，容量不足時自動倍增。桶不存在時回傳 null。
+   * Takes a free slot for `posKey`, doubling capacity when it runs out. Returns null when the
+   * bucket does not exist.
    *
-   * 回傳的 `mesh` 可能與 `meshFor(key)` 先前回傳的不是同一個物件 ——
-   * 倍增會換一份新的。呼叫端必須用回傳的這一個寫資料。
+   * The `mesh` returned may not be the same object `meshFor(key)` returned earlier, since doubling
+   * replaces it. The caller has to write its data into the one returned here.
    */
   acquire(
     scene: THREE.Scene, key: string, posKey: string,
@@ -136,16 +142,17 @@ export class InstancedLayer {
   }
 
   /**
-   * 把一個桶的容量加倍。
+   * Doubles one bucket's capacity.
    *
-   * `InstancedMesh` 的容量在建構時固定，所以只能換一個新的並把資料整批搬過去。
-   * 矩陣、顏色與所有自訂屬性都要搬。
+   * An `InstancedMesh`'s capacity is fixed at construction, so the only option is a new one with
+   * the data copied across: matrices, colours and every custom attribute.
    */
   private grow(scene: THREE.Scene, key: string): THREE.InstancedMesh {
     const old = this.buckets.get(key)!;
     const capacity = (this.capacities.get(key) ?? this.initialCapacity) * 2;
 
-    // 幾何要自己一份：屬性緩衝長度跟著容量走，共用會讓舊的那份長度不夠。
+    // The geometry needs a copy of its own: attribute buffer lengths follow the capacity, and
+    // sharing leaves the old one too short.
     const geometry = old.geometry.clone();
     const grown = new THREE.InstancedMesh(geometry, old.material, capacity);
     grown.count = old.count;
@@ -183,10 +190,10 @@ export class InstancedLayer {
   }
 
   /**
-   * 移除一格的實例：把最後一個搬進空出來的位置。
+   * Removes one cell's instance by moving the last one into the vacated slot.
    *
-   * 矩陣、顏色與每個自訂屬性都要一起搬 —— 漏搬任何一個，被搬動的那一棟
-   * 就會戴上被移除那一棟的資料，而且只在玩家拆除建築之後才發生。
+   * Matrices, colours and every custom attribute move together: missing any one leaves the moved
+   * building wearing the removed building's data, and only after the player demolishes something.
    */
   release(posKey: string): void {
     const entry = this.entries.get(posKey);
@@ -228,7 +235,7 @@ export class InstancedLayer {
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
   }
 
-  /** 清空所有實例但保留 GPU 緩衝（整張地圖重建時用）。 */
+  /** Clears every instance while keeping the GPU buffers, for a full map rebuild. */
   reset(): void {
     for (const [key, mesh] of this.buckets) {
       mesh.count = 0;
@@ -239,7 +246,7 @@ export class InstancedLayer {
     this.entries.clear();
   }
 
-  /** 把所有桶的矩陣與顏色標記為需要上傳。整批加入之後呼叫一次即可。 */
+  /** Marks every bucket's matrices and colours for upload. One call after a batch of additions is enough. */
   flush(): void {
     for (const mesh of this.buckets.values()) {
       mesh.instanceMatrix.needsUpdate = true;
