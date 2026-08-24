@@ -1,27 +1,29 @@
 import { dragToPan } from '../renderer/cameraPan';
 
 /**
- * 展示區的滑鼠操作。
+ * The showcase's mouse handling.
  *
- * 遊戲的相機輸入綁在 src/input/ 的整套操作模式裡（工具、選取、拖曳建路），
- * 展示區不需要那些，也不該把它們拉進來。這裡只做三件事：轉、平移、縮放。
+ * The game's camera input is bound into the whole interaction model in src/input/ — tools, selection,
+ * dragging out roads — which the showcase neither needs nor should pull in. This does three things:
+ * orbit, pan and zoom.
  *
- * 換算的數學抽成純函式，因為那是唯一會算錯又看不出來的部分 —— DOM 接線
- * 錯了會完全沒反應，靈敏度算錯只會「怪怪的」。
+ * The conversion arithmetic is extracted as pure functions, because it is the one part that can be
+ * wrong without showing: wiring the DOM up wrongly gives no response at all, while a wrong
+ * sensitivity only feels off.
  */
 
-/** 滑鼠拖曳像素 → 相機轉動弧度。 */
+/** Pixels of mouse drag to radians of camera rotation. */
 export const ORBIT_SENSITIVITY = {
-  /** 每像素的水平轉動（弧度）。100 px 約 46 度。 */
+  /** Horizontal rotation per pixel, in radians. 100 px is about 46 degrees. */
   ANGLE_PER_PIXEL: 0.008,
-  /** 每像素的仰角變化（弧度）。方向相反：往下拖 = 視角往上抬。 */
+  /** Elevation change per pixel, in radians. Opposed in direction: dragging down raises the view. */
   ELEVATION_PER_PIXEL: -0.005,
 } as const;
 
-/** 滾輪一格（deltaY 約 100）對應的正交視野變化量。 */
+/** The change in orthographic view size for one wheel notch, a deltaY of about 100. */
 export const ZOOM_PER_WHEEL_UNIT = 0.03;
 
-/** 拖曳位移換成 orbitCamera 的兩個參數。 */
+/** Converts a drag into orbitCamera's two parameters. */
 export function dragToOrbit(dx: number, dy: number): { angle: number; elevation: number } {
   return {
     angle: dx * ORBIT_SENSITIVITY.ANGLE_PER_PIXEL,
@@ -29,17 +31,17 @@ export function dragToOrbit(dx: number, dy: number): { angle: number; elevation:
   };
 }
 
-// 平移的換算搬到 renderer/cameraPan —— 遊戲的右鍵拖曳與這裡是同一個手勢，
-// 而這一版的分母寫死 600，等於假設畫布永遠 600 px 高。轉出去給既有的
-// 呼叫端與測試用。
+// The pan conversion lives in renderer/cameraPan: the game's right-button drag is the same gesture,
+// and the copy here hardcoded 600 as the denominator, assuming a canvas always 600 px tall. It is
+// re-exported for the existing callers and tests.
 export { dragToPan };
 
-/** 滾輪 deltaY 換成 zoomCamera 的參數。 */
+/** Converts a wheel deltaY into zoomCamera's parameter. */
 export function wheelToZoom(deltaY: number): number {
   return deltaY * ZOOM_PER_WHEEL_UNIT;
 }
 
-/** SceneManager 中這個模組會用到的部分。 */
+/** The part of SceneManager this module uses. */
 export interface CameraTarget {
   orbitCamera(deltaAngle: number, deltaElevation: number): void;
   panCamera(dx: number, dz: number): void;
@@ -48,7 +50,8 @@ export interface CameraTarget {
 }
 
 /**
- * 接上滑鼠：左鍵拖曳轉動、右鍵（或按住 Shift 的左鍵）拖曳平移、滾輪縮放。
+ * Wires up the mouse: left drag orbits, right drag (or shift with the left button) pans, the wheel
+ * zooms.
  */
 export function attachCameraInput(dom: HTMLElement, scene: CameraTarget): void {
   let dragging: 'orbit' | 'pan' | null = null;
@@ -91,6 +94,6 @@ export function attachCameraInput(dom: HTMLElement, scene: CameraTarget): void {
     scene.zoomCamera(wheelToZoom(e.deltaY));
   }, { passive: false });
 
-  // 右鍵是平移，不要跳出瀏覽器選單
+  // The right button pans, so the browser menu stays closed.
   dom.addEventListener('contextmenu', (e) => e.preventDefault());
 }

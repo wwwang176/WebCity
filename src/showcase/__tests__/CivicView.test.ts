@@ -136,7 +136,7 @@ describe('placeCivic 的四層', () => {
   it('should carry the building colour into every layer', () => {
     // Without it the shader reads aBldgColor = 0 and the whole building is black.
     const placed = placeCivic(fullPlan(), new THREE.Scene(), 0.8)!;
-    const massing = placed.building[1]!;   // 順序：貼片、量體、自訂矮物件、共用矮物件、懸挑
+    const massing = placed.building[1]!;   // order: decals, massing, custom ground props, shared ground props, overhangs
     const a = massing.geometry.getAttribute('aBldgColor');
     expect(a, '量體層沒有 aBldgColor').toBeTruthy();
     // Float32 cannot hold 0.2 exactly, and a bitwise comparison fails for a reason unrelated to

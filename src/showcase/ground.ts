@@ -3,16 +3,17 @@ import { TERRAIN_COLORS } from '../renderer/terrainColors';
 import { TerrainType } from '../core/grid/types';
 
 /**
- * 展示區的地板。
+ * The showcase's floor.
  *
- * 顏色與受光模型都必須與遊戲的地形一致，因為**地面貼片是靠對比讀出來的**：
- * 工業區的柏油是 shade 0（近黑 0.20），壓在遊戲的亮綠地形上亮度比是 2.75，
- * 一眼就看得見；壓在展示區原本自己挑的暗綠 `0x3a4a3a` 上只有 1.35，
- * 幾乎融進背景 —— 於是「工業好像沒有鋪面」是展示區獨有的假象。
+ * Its colour and lighting model have to match the game's terrain, because **ground decals are read by
+ * contrast**: industrial asphalt is shade 0, a near-black 0.20, giving a lightness ratio of 2.75
+ * against the game's bright green terrain and standing out at a glance, but only 1.35 against a dark
+ * green `0x3a4a3a` chosen for the showcase, where it nearly merges into the background — making
+ * "industrial seems to have no paving" an illusion peculiar to the showcase.
  *
- * 遊戲的地形是 `MeshLambertMaterial` 配一張逐格的 `DataTexture`。那張貼圖
- * 沒有設 `colorSpace`（也就是線性），而寫進去的值是 `THREE.Color.set(hex)`
- * 轉換過的線性值 —— 所以這裡直接用 `color: hex` 拿到的是同一個線性顏色。
+ * The game's terrain is a `MeshLambertMaterial` with a per-cell `DataTexture`. That texture sets no
+ * `colorSpace`, so it is linear, and the values written into it are the linear values
+ * `THREE.Color.set(hex)` produces — so `color: hex` here gives the same linear colour.
  */
 export function createShowcaseGround(size: number): THREE.Mesh {
   const geometry = new THREE.PlaneGeometry(size, size);

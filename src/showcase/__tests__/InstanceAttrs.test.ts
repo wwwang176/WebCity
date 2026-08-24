@@ -8,9 +8,10 @@ import { TARGET_HEIGHTS_M, LEVELS, type Density }
   from '../../renderer/geometry/buildings/registry';
 
 /**
- * 展示區畫的是普通 `Mesh`，而 shader 讀的是逐實例屬性。沒有繫結的 attribute
- * 一律是 0 —— 立面用最小樓高、窗戶相位全對齊、`aOccupancy = 0` 讓一扇燈都不亮。
- * 三者都不報錯，只是讓展示區看到的東西與遊戲不同。
+ * The showcase draws plain `Mesh` nodes while the shader reads per-instance attributes. An unbound
+ * attribute is 0 throughout: facades take the minimum floor height, every window's phase aligns, and
+ * `aOccupancy = 0` leaves not one light on. None of the three reports anything; they only make the
+ * showcase differ from the game.
  */
 function box(): THREE.BufferGeometry {
   return new THREE.BoxGeometry(1, 1, 1);
@@ -18,7 +19,7 @@ function box(): THREE.BufferGeometry {
 
 describe('showcase instance attributes', () => {
   it('should provide every attribute the vertex shader declares', () => {
-    // shader 加了新屬性而展示區沒跟上的話，那個屬性在展示區永遠是 0。
+    // An attribute added to the shader without the showcase following stays 0 there forever.
     const declared = [...BUILDING_VERT.matchAll(/attribute\s+\w+\s+(a\w+);/g)]
       .map(m => m[1]!);
     expect(declared.length, '沒有從 shader 抓到任何 attribute').toBeGreaterThan(0);
@@ -31,8 +32,8 @@ describe('showcase instance attributes', () => {
   });
 
   it('should give every vertex the same value', () => {
-    // 非實例化的 attribute 是逐頂點的。一份幾何一個值 = 整棟建築共用，
-    // 與遊戲的逐實例語意一致。
+    // A non-instanced attribute is per vertex. One value per geometry means one value per building,
+    // matching the game's per-instance semantics.
     const geo = box();
     stampInstanceValues(geo, { occupancy: 0.75, seed: [0.1, 0.2, 0.3] });
     const occ = geo.getAttribute('aOccupancy');
@@ -46,15 +47,16 @@ describe('showcase instance attributes', () => {
   });
 
   it('should let an empty building be truly empty', () => {
-    // 0 是有意義的值（空屋、燒毀），不是「沒設定」。
+    // 0 is a meaningful value — empty, burned — rather than unset.
     const geo = box();
     stampInstanceValues(geo, { occupancy: 0, seed: [0, 0, 0] });
     expect(geo.getAttribute('aOccupancy').getX(0)).toBe(0);
   });
 
   it('should encode the floor rhythm the shader decodes', () => {
-    // shader 端是 mix(MIN, MAX, aSeed.x)。兩邊各寫一份的話，展示區的窗戶
-    // 橫列會與量體的樓板線錯開 —— 而那正是這個值存在的理由。
+    // The shader side is mix(MIN, MAX, aSeed.x). Written separately on each side, the showcase's
+    // window courses fall out of line with the massing's floor lines, which is exactly what this
+    // value exists to prevent.
     for (const key of Object.keys(TARGET_HEIGHTS_M)) {
       const [zs, ds] = key.split(':');
       for (const lv of LEVELS) {

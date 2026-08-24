@@ -2,8 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { dragToOrbit, dragToPan, wheelToZoom, ORBIT_SENSITIVITY } from '../cameraInput';
 
 /**
- * DOM 接線錯了會完全沒反應，一眼就看得出來；換算算錯只會「怪怪的」——
- * 轉太快、拉遠之後平移慢到像卡住、滾輪方向相反。所以測的是換算。
+ * Wiring the DOM up wrongly gives no response at all and is obvious. A wrong conversion only feels
+ * off: orbiting too fast, panning that drags once zoomed out, a reversed wheel. So these cases test
+ * the conversions.
  */
 describe('dragToOrbit', () => {
   it('should turn a rightward drag into a positive angle', () => {
@@ -11,7 +12,8 @@ describe('dragToOrbit', () => {
   });
 
   it('should raise the view when dragging downward', () => {
-    // 拖曳方向與仰角相反：往下拖等於把相機抬高，這是等角視角的慣例。
+    // The drag direction and the elevation are opposed: dragging down raises the camera, the
+    // convention for isometric views.
     expect(dragToOrbit(0, 100).elevation).toBeLessThan(0);
     expect(dragToOrbit(0, -100).elevation).toBeGreaterThan(0);
   });
@@ -21,15 +23,15 @@ describe('dragToOrbit', () => {
   });
 
   it('should need a reasonable drag for a quarter turn', () => {
-    // 90 度需要多少像素？太靈敏會轉過頭，太鈍會拖到手酸。
+    // How many pixels a quarter turn takes. Too sensitive overshoots; too dull is tiring to drag.
     const pixels = (Math.PI / 2) / ORBIT_SENSITIVITY.ANGLE_PER_PIXEL;
     expect(pixels).toBeGreaterThan(120);
     expect(pixels).toBeLessThan(400);
   });
 
   it('should do nothing when the pointer does not move', () => {
-    // toEqual 與 toBe 都會分辨 +0 與 -0（Object.is），而 0 * -0.005 就是 -0。
-    // 正負零在這裡毫無意義，所以用近似比較。
+    // toEqual and toBe both distinguish +0 from -0 through Object.is, and 0 * -0.005 is -0. The sign
+    // of zero means nothing here, so the comparison is approximate.
     const o = dragToOrbit(0, 0);
     expect(o.angle).toBeCloseTo(0, 10);
     expect(o.elevation).toBeCloseTo(0, 10);
@@ -43,7 +45,7 @@ describe('dragToPan', () => {
   });
 
   it('should move further per pixel when zoomed out', () => {
-    // 沒有這個比例，拉遠之後平移會慢到像卡住。
+    // Without this proportion, panning while zoomed out is slow enough to feel stuck.
     const near = Math.abs(dragToPan(100, 0, 20, 600).x);
     const far = Math.abs(dragToPan(100, 0, 120, 600).x);
     expect(far).toBeGreaterThan(near * 5);
@@ -57,7 +59,8 @@ describe('wheelToZoom', () => {
   });
 
   it('should move a sensible amount per notch', () => {
-    // 正交視野預設約 60 單位，一格滾輪動 3 單位 = 5%，大約是 20 格走完全程。
+    // The orthographic view is about 60 units by default and one wheel notch moves 3, so 5% per
+    // notch and roughly 20 notches across the whole range.
     expect(Math.abs(wheelToZoom(100))).toBeGreaterThan(1);
     expect(Math.abs(wheelToZoom(100))).toBeLessThan(10);
   });

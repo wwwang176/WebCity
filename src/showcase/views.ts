@@ -1,6 +1,6 @@
 /**
- * 展示區的三種檢視。重點是「街廓」：重複感只有在一群建築同時出現時才浮現，
- * 單看一棟房子，三個變體也覺得夠用。
+ * The showcase's view modes. The block is the important one: repetitiveness surfaces only with a group
+ * of buildings on screen at once, and against a single house even three variants feel like enough.
  */
 import { appearanceOf } from '../renderer/BuildingAppearance';
 import {
@@ -10,17 +10,16 @@ import { getMassingVariants, VARIANT_COUNT } from '../renderer/geometry/building
 import { ZoneType } from '../core/grid/types';
 
 /**
- * `civic` 與其他三種不一樣：它畫的不是分區建築，所以分區／密度／等級／變體
- * 四個控制項在那個模式下都沒有意義（見 `controls.ts` 的隱藏邏輯）。
+ * `civic` differs from the other three: it draws no zoned buildings, so the zone, density, level and
+ * variant controls all mean nothing in that mode (see the hiding logic in `controls.ts`).
  */
 export type ViewMode = 'single' | 'block' | 'matrix' | 'civic';
 
 /**
- * 這個分區該用哪一個密度。
+ * Which density a zone uses.
  *
- * 只有辦公區兩種密度都有建築。其餘分區配錯密度會拿到**零個變體** —— 畫面上
- * 什麼都沒有，而且不會有任何東西報錯（BUG-227）。階段 2C-1 之前 `getVariants`
- * 根本不看密度，所以配錯只是高度不對，看得出來但不會整片消失。
+ * Only offices have buildings at both densities. A mismatched density on any other zone gives **zero
+ * variants**: nothing on screen, and nothing reporting it (BUG-227).
  */
 export function densityFor(zoneType: number, preferred: Density): Density {
   if (TARGET_HEIGHTS_M[heightKey(zoneType, preferred)]) return preferred;
@@ -48,7 +47,7 @@ function cellAt(
   return { x, z, zoneType, density, level, variantIndex: app.variantIndex, facadeSeed: app.facadeSeed };
 }
 
-/** size x size 的同分區同等級街廓，原點置中。 */
+/** A size by size block of one zone at one level, centred on the origin. */
 export function blockCells(
   zoneType: number, density: Density, level: number, size: number, seedByte = 0,
 ): PlacedCell[] {
@@ -62,11 +61,11 @@ export function blockCells(
   return out;
 }
 
-/** 每個 (分區, 等級) 的所有變體排成一列，方便一眼掃過所有組合。 */
+/** Every variant of each (zone, level) laid out in a row, so all the combinations can be scanned at a glance. */
 export function matrixCells(): PlacedCell[] {
   const out: PlacedCell[] = [];
   let row = 0;
-  // 走訪高度表的每個 (分區, 密度)，辦公區的兩種密度才都會出現。
+  // Walks every (zone, density) in the height table, so that both of the office densities appear.
   for (const key of Object.keys(TARGET_HEIGHTS_M)) {
     const [zoneStr, densityStr] = key.split(':');
     const zoneType = Number(zoneStr);
@@ -87,11 +86,11 @@ export function matrixCells(): PlacedCell[] {
 }
 
 /**
- * 四方向相鄰、且變體相同的配對，佔所有相鄰配對的比例。
+ * The share of four-way adjacent pairs that share a variant.
  *
- * 刻意只看 variantIndex 而不看 facadeSeed：剪影相同才是「看起來重複」的
- * 主因，立面差異蓋不掉它。階段 1 只改立面，所以這個數字在階段 1 不會下降
- * —— 那是正確的，不是指標壞了。
+ * It deliberately looks at variantIndex alone and not facadeSeed: identical silhouettes are the main
+ * cause of looking repetitive, and facade differences do not cover them. Facade work therefore leaves
+ * this number unchanged, which is correct rather than a broken metric.
  */
 export function neighbourSameRatio(cells: PlacedCell[]): number {
   if (cells.length < 2) return 0;

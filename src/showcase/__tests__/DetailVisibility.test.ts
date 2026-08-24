@@ -5,15 +5,15 @@ import { DetailVisibility } from '../detailVisibility';
 import { DETAIL_LOD } from '../../renderer/detailLOD';
 
 /**
- * 展示區的遠景細節剔除。
+ * The showcase's distance culling of detail.
  *
- * 遊戲把矮物件與懸挑放在 `InstancedLayer` 裡，靠整層的閘門開關；展示區畫的是
- * 普通 `Mesh`，那個閘門碰不到它。兩邊的**門檻與遲滯**必須是同一份 ——
- * 展示區唯一的價值是「這裡看到的就是出貨的東西」，而地板顏色（BUG-231）
- * 已經示範過同一件事各寫一份的下場。
+ * The game holds ground props and overhangs in `InstancedLayer`s and gates whole layers; the showcase
+ * draws plain `Mesh` nodes that gate cannot reach. The **thresholds and hysteresis** have to be one
+ * shared copy — the showcase's only value is that what it shows is what ships, and the floor colour
+ * (BUG-231) already demonstrated what two copies of one thing lead to.
  *
- * 所以判斷本身抽在 `renderer/detailLOD`（純函式、不碰 Three.js），這個類別
- * 只負責記住哪些 Mesh 屬於可剔除的兩層。
+ * So the decision itself lives in `renderer/detailLOD`, a pure function that does not touch
+ * Three.js, and this class only remembers which meshes belong to the two cullable layers.
  */
 describe('showcase detail visibility', () => {
   const cube = () => new THREE.Mesh(new THREE.BoxGeometry());
@@ -43,9 +43,9 @@ describe('showcase detail visibility', () => {
   });
 
   it('should start new meshes hidden while zoomed out', () => {
-    // 與遊戲那一側的 `acquire` 完全同一個坑：切換控制項會整批重畫，
-    // 而重畫出來的東西若一律 visible = true，縮在遠景時動一下滑桿
-    // 矮物件就會全部冒回來。
+    // Exactly the trap `acquire` holds on the game's side: touching a control redraws everything,
+    // and if everything redrawn is visible = true, moving a slider while zoomed out brings all the
+    // ground props back.
     const lod = new DetailVisibility();
     lod.update(200);
 
@@ -56,8 +56,8 @@ describe('showcase detail visibility', () => {
   });
 
   it('should share the game thresholds exactly', () => {
-    // 展示區自己抄一份門檻的話，兩邊會在不同的縮放掉細節 —— 那就等於
-    // 展示區又開始說謊。這一條在數值漂移時轉紅。
+    // With a copy of the thresholds in the showcase, the two drop detail at different zooms and the
+    // showcase starts lying again. This case turns red when the numbers drift.
     const lod = new DetailVisibility();
     const a = cube();
     lod.add(a);
@@ -76,9 +76,9 @@ describe('showcase detail visibility', () => {
   });
 
   it('should be driven by showcase/main.ts, not just exist', () => {
-    // 同 Game.ts 那一側：這層接線沒有單元測試擋得住（main.ts 一載入就要
-    // DOM 與 WebGL），所以照 `EveryFieldIsAccountedFor` 的前例讀原始碼。
-    // 它擋的是「整個功能在展示區是死碼」。
+    // As on Game.ts' side: no unit test can cover this wiring, since loading main.ts requires DOM and
+    // WebGL, so it reads the source as `EveryFieldIsAccountedFor` does. What it guards against is the
+    // whole feature being dead code in the showcase.
     const src = readFileSync(new URL('../main.ts', import.meta.url), 'utf8');
     const lines = src.split('\n');
 
@@ -92,8 +92,8 @@ describe('showcase detail visibility', () => {
   });
 
   it('should forget meshes that were cleared away', () => {
-    // 展示區每次重畫都會 dispose 舊的 Mesh。留著參照就是洩漏，而且
-    // 下一次 update 會去動已經不在場景裡的東西。
+    // The showcase disposes the old meshes on every redraw. A retained reference leaks, and the next
+    // update touches something no longer in the scene.
     const lod = new DetailVisibility();
     const gone = cube();
     lod.add(gone);

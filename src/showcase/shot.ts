@@ -1,9 +1,10 @@
 /**
- * 單棟公共建築的截圖頁。
+ * The screenshot page for a single civic building.
  *
- * 展示區（`main.ts`）一次排十九棟，鏡頭要拉到看不清細節的高度；要看某一棟
- * 得手動拖曳，而那個位置沒有辦法重現。這一頁把一棟擺在原點、鏡頭與時間全部
- * 由 query 決定，所以同一個網址永遠得到同一張圖 —— 可以拿來比對前後。
+ * The showcase (`main.ts`) lays all nineteen out at once and the camera has to pull back beyond any
+ * clear detail; reaching one means dragging by hand, and that position cannot be reproduced. This
+ * page puts one building at the origin with the camera and the time decided entirely by the query, so
+ * one URL always yields the same image and before-and-after comparisons are possible.
  *
  * `?type=water&rot=0.6&el=0.1&pad=1.4&t=0.42`
  */
@@ -34,8 +35,8 @@ getBuildingMaterial().uniforms.uTime!.value = num('u', 37);
 const plan = getCivicPlan(type);
 if (plan) placeCivic(plan, sceneManager.scene, 1);
 
-// 火車站蓋在軌道**上**，所以真的鋼軌會從站中間穿過去 —— 那條軌道是
-// `TrackRenderer` 畫的，而這一頁本來沒有它（見 `track.ts`）。
+// A train station is built **on** track, so the real rails run through the middle of it. That track
+// is drawn by `TrackRenderer`, which this page does not otherwise have (see `track.ts`).
 if (type === 'train_station') sceneManager.scene.add(createShowcaseTrack());
 
 const cfg = getInfraConfig(type);
