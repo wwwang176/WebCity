@@ -3,23 +3,24 @@ import type { CivicPlan } from './types';
 import { CIVIC_MODELS } from './models';
 
 /**
- * `InfraType` → `CivicPlan` 的查表。
+ * The `InfraType` to `CivicPlan` lookup.
  *
- * 這裡刻意沒有可變狀態 —— 實體是 `models/index.ts` 的靜態表。以前這裡是
- * 一張可變的 Map 加上 `registerCivicPlan`，靠每個 model 檔在載入時自己註冊；
- * 那個設計的失敗模式是靜默的：沒有人 import 到那個檔案，那種建築就不存在。
+ * Deliberately holds no mutable state: the values live in the static table in
+ * `models/index.ts`. A mutable Map plus `registerCivicPlan`, with each model file registering
+ * itself at load, fails silently — nothing imports that file, and that building type simply does
+ * not exist.
  */
 
-/** 這種公共建築的 plan。還沒改造的回傳 `undefined`（仍走舊的手寫路徑）。 */
+/** This civic building type's plan. Types not yet converted return `undefined` and stay on the hand-written path. */
 export function getCivicPlan(type: InfraType): CivicPlan | undefined {
   return CIVIC_MODELS[type];
 }
 
 /**
- * 已經改造完成的種類。
+ * The types that have been converted.
  *
- * showcase 的下拉選單與資料表測試都吃它 —— 手寫第二份清單的話，做完一種
- * 卻忘了加進選單，結果是「做好了但看不到」。
+ * The showcase's dropdown and the table-driven tests both read it: with a second hand-written
+ * list, finishing a type and forgetting to add it to the menu means it is done and invisible.
  */
 export function civicTypesDone(): InfraType[] {
   return Object.keys(CIVIC_MODELS) as InfraType[];

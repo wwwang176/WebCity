@@ -11,29 +11,30 @@ const GREY = [0.7, 0.7, 0.7] as const;
 const box = (o: Partial<CivicVolume> = {}): CivicVolume =>
   ({ x: 0, z: 0, w: 0.5, d: 0.5, y0: 0, y1: 0.5, ...o });
 
-/** 讀第 i 個頂點的 aBldgColor。 */
+/** Reads vertex i's aBldgColor. */
 function colorAt(geo: ReturnType<typeof assembleCivic>, i: number): [number, number, number] {
   const a = geo.getAttribute('aBldgColor');
   return [a.getX(i), a.getY(i), a.getZ(i)];
 }
 
 /**
- * 公共建築的代表色。
+ * Civic buildings' representative colours.
  *
- * 舊版的手寫模型每一種都有自己的顏色（警局靛藍 0x3f51b5、消防局紅
- * 0xd32f2f……），而那是玩家辨認它們的主要訊號 —— 等角視角下，剪影要縮到
- * 很小才分得出 L 形與雙翼，顏色卻一眼就看得出來。
+ * Each type carries its own colour — indigo 0x3f51b5 for police, red 0xd32f2f for fire, and so on
+ * — and that is the primary signal a player identifies them by. In an isometric view, telling an
+ * L from two wings takes zooming a long way in, while the colour is clear at a glance.
  */
 describe('每一種公共建築都有代表色', () => {
   it('should define a colour for every infra type', () => {
-    // 少一種的話它會拿到預設灰，而「灰色的消防局」看起來像沒做完。
+    // A missing type falls back to the default grey, and a grey fire station looks unfinished.
     for (const cfg of INFRA_CONFIGS) {
       expect(CIVIC_COLORS[cfg.type], `${cfg.type} 沒有代表色`).toBeDefined();
     }
   });
 
   it('should keep every channel in [0, 1]', () => {
-    // shader 直接拿去乘光照，超出範圍會過曝或變成負值（黑）。
+    // The shader multiplies it straight into the lighting; out of range it overexposes or goes
+    // negative and turns black.
     for (const [type, c] of Object.entries(CIVIC_COLORS)) {
       for (const [i, v] of c.entries()) {
         expect(v, `${type} 的第 ${i} 個通道是 ${v}`).toBeGreaterThanOrEqual(0);
@@ -42,7 +43,7 @@ describe('每一種公共建築都有代表色', () => {
     }
   });
 
-  /** 警局藍、消防局紅 —— 這兩個是整組色票的錨點。 */
+  /** Police blue and fire red: the two anchors of the whole palette. */
   it('should make the police station blue and the fire station red', () => {
     const [pr, pg, pb] = CIVIC_COLORS.police!;
     expect(pb, '警局不是藍的').toBeGreaterThan(pr);
@@ -54,7 +55,7 @@ describe('每一種公共建築都有代表色', () => {
   });
 
   it('should keep the other signature colours the old models established', () => {
-    // 玩家已經認得這些顏色，換掉等於把辨識度歸零。
+    // Players recognise these colours already, and replacing them resets recognition to zero.
     const hue = (t: InfraType) => CIVIC_COLORS[t]!;
     const [, hg, hb] = hue('hospital');
     expect(Math.min(hg, hb), '醫院不是白的').toBeGreaterThan(0.8);
@@ -67,8 +68,9 @@ describe('每一種公共建築都有代表色', () => {
   });
 
   it('should not give two civic services the same colour', () => {
-    // 同色的話玩家分不出警局與消防局 —— 那正是代表色存在的理由。
-    // 只比較民生服務那一組：公用設施本來就該是一片工業灰。
+    // At the same colour a player cannot tell a police station from a fire station, which is the
+    // whole reason representative colours exist. Only the everyday-services group is compared:
+    // utilities are meant to be a field of industrial grey.
     const group: InfraType[] = ['police', 'fire', 'hospital', 'school', 'park', 'cemetery'];
     for (let i = 0; i < group.length; i++) {
       for (let j = i + 1; j < group.length; j++) {
@@ -98,10 +100,11 @@ describe('顏色要真的寫進幾何', () => {
   });
 
   /**
-   * 逐量體的顏色覆寫 —— 醫院的紅十字、大學的金頂。
+   * Per-mass colour overrides: a hospital's red cross, a university's gold dome.
    *
-   * 一棟建築只有一個顏色的話，這些重點只能跟牆同色，而它們正是「一眼認出
-   * 這是醫院」的東西。覆寫寫在量體上而不是另外一層：它就是量體的一部分。
+   * With one colour per building these accents could only match the walls, and they are exactly
+   * what makes a hospital recognisable at a glance. The override lives on the mass rather than in
+   * a separate layer, because it is part of the mass.
    */
   it('should let a single volume override the colour', () => {
     const geo = assembleCivic(

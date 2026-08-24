@@ -53,7 +53,7 @@ describe('警局', () => {
     // The CIVIC facade's lobby height is floorHeight * 1.35 and window panes start above it.
     // With the wing too short, the whole building is lobby and shows no window at all.
     const wing = plan.massing.find(v => v.tag === 'wing')!;
-    const floorH = 0.22 + plan.seed[0] * 0.08;   // shader 的 mix(MIN, MAX, aSeed.x)
+    const floorH = 0.22 + plan.seed[0] * 0.08;   // the shader mix(MIN, MAX, aSeed.x)
     const windowed = wing.y1 - floorH * 1.35;
     expect(windowed / floorH, '門廳之上不到兩層 —— 窗格幾乎看不到')
       .toBeGreaterThan(2);

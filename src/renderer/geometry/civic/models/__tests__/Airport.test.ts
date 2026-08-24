@@ -161,7 +161,7 @@ describe.each(PLANS)('%s', (_label, plan, type, size, w, h) => {
    */
   it('should pave every point the aeroplane drives over', () => {
     for (const { name, p } of groundWaypoints(size)) {
-      if (Math.abs(p.x) > w / 2 || Math.abs(p.z) > h / 2) continue;   // 佔地之外
+      if (Math.abs(p.x) > w / 2 || Math.abs(p.z) > h / 2) continue;   // outside the plot
       const on = bands(plan).find(d => covers(d, p));
       expect(on, `${name} (${p.x}, ${p.z}) 底下沒有鋪面`).toBeTruthy();
       expect(on!.lawn, `${name} 底下是草地`).toBeFalsy();

@@ -227,7 +227,7 @@ describe('火車站', () => {
     expect(trainStationPlan.props.filter(v => v.tag === 'rail').length,
       '火車站自己畫了鋼軌 —— TrackRenderer 已經在同一格畫過了').toBe(0);
 
-    const half = TRACK_WIDTH;   // 碴床半寬的兩倍：車體比軌距寬
+    const half = TRACK_WIDTH;   // twice the ballast half-width: a carriage is wider than the gauge
     const all = [
       ...trainStationPlan.massing, ...trainStationPlan.props,
       ...trainStationPlan.overhead,
@@ -508,7 +508,7 @@ describe('火車站', () => {
 
 describe('渡輪碼頭', () => {
   const quay = tagged(ferryDockPlan, 'quay')[0]!;
-  const EDGE = 0.5;   // 佔地前緣（格）＝ 岸線
+  const EDGE = 0.5;   // the plot front edge in cells, which is the shoreline
 
   /**
    * The berth stays **empty**.

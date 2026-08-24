@@ -20,41 +20,43 @@ import {
 } from './airport';
 
 /**
- * 已經改造完成的公共建築。
+ * The civic buildings that have been converted.
  *
- * **靜態表，不是靠副作用註冊的。** 副作用註冊（每個 model 檔在載入時呼叫
- * `registerCivicPlan`）的失敗模式是靜默的：沒有人 import 到那個檔案，那種
- * 建築就不存在，而畫面上只表現為「我改的那棟沒有出現」。靜態表把「有沒有
- * 接上」變成型別問題 —— 漏了一列，選單裡就是少一個，看得見。
+ * **A static table, not side-effect registration.** Side-effect registration, where each model
+ * file calls `registerCivicPlan` at load, fails silently: nothing imports that file, that
+ * building type does not exist, and on screen it reads only as "the one I changed did not show
+ * up". A static table turns "is it wired in" into a type-level question — a missing row is one
+ * fewer entry in the menu, and that is visible.
  *
- * 一個檔案一棟建築（spec §4.5）：每棟的量體描述會長到 80–150 行含註解，
- * 放在一起就是第二個 2929 行的 `BuildingRenderer.ts`。
+ * One building per file (spec section 4.5): each mass description runs 80 to 150 lines with its
+ * comments, and together they would be a second 2929-line `BuildingRenderer.ts`.
  *
- * 這張表是逐批填滿的。沒列在這裡的種類仍然走 `BuildingRenderer` 舊的手寫
- * `MeshLambertMaterial` 路徑，所以半途的狀態是可用的，不必等 19 種全做完。
+ * The table is filled in batches. Types absent from it stay on `BuildingRenderer`'s older
+ * hand-written `MeshLambertMaterial` path, so a partial state is usable and all 19 need not be
+ * finished first.
  */
 export const CIVIC_MODELS: Partial<Record<InfraType, CivicPlan>> = {
-  // 批 1：民生服務（警局／消防局／醫院／小學／高中／大學）
+  // Batch 1: everyday services (police, fire, hospital, primary, high school, university)
   police: policePlan,
   fire: firePlan,
   hospital: hospitalPlan,
   school: schoolPlan,
   school_high: highSchoolPlan,
   school_univ: universityPlan,
-  // 批 2：綠地（公園／墓園）
+  // Batch 2: green space (park, cemetery)
   park: parkPlan,
   cemetery: cemeteryPlan,
-  // 批 3：公用設施（電廠／水廠／垃圾場／汙水廠）
+  // Batch 3: utilities (power plant, water plant, landfill, sewage plant)
   power: powerPlan,
   water: waterPlan,
   garbage: garbagePlan,
   sewage: sewagePlan,
-  // 批 4：交通站點（公車站／捷運站／火車站／渡輪碼頭）
+  // Batch 4: transit stops (bus stop, metro station, train station, ferry terminal)
   bus_stop: busStopPlan,
   metro_station: metroStationPlan,
   train_station: trainStationPlan,
   ferry_dock: ferryDockPlan,
-  // 批 5：機場（小／中／大）
+  // Batch 5: airports (small, medium, large)
   airport_s: airportSmallPlan,
   airport_m: airportMediumPlan,
   airport_l: airportLargePlan,

@@ -7,12 +7,14 @@ import type { PropSpec } from '../../props';
 import type { CivicPlan, CivicVolume, CivicDecal, CivicVehicle } from '../types';
 
 /**
- * 汙水廠 —— 2×2 格 = 24 × 24 m。
+ * Sewage plant — 2x2 cells = 24 x 24 m.
  *
- * 辨識特徵：**四座並排的方形曝氣池**、一座圓形沉澱池、控制樓。方池是最強的
- * 那一個 —— 水廠是一排圓的，這裡是一排方的，兩者在等角視角下立刻分得開。
+ * Recognition features: **four rectangular aeration basins in a row**, a circular clarifier, and
+ * the control building. The rectangular basins are the strongest — the water plant is a row of
+ * round vessels and this is a row of rectangular ones, and the two separate immediately in an
+ * isometric view.
  *
- * 池子走 `PART_WATER` + `shade`：它們是**水面**，不是牆，也不是鋪面。
+ * The basins take `PART_WATER` plus `shade`: they are **water**, neither wall nor paving.
  */
 
 const BASIN_TOP = M(2.4);
@@ -20,24 +22,25 @@ const CTRL_TOP = M(6.6);
 const CTRL_ROOF = M(7.0);
 
 /**
- * 汙水的明度（`PART_WATER` 的 B 通道：0 = 最深、1 = 最淺）。
+ * The sewage's brightness (`PART_WATER`'s B channel: 0 is deepest, 1 is palest).
  *
- * 走水的分支而不是地面的：地面的色譜是柏油到磚鋪，全是灰的，所以一池水在
- * 那條路上只能是一個黑洞。
+ * On the water branch rather than the ground branch: the ground ramp runs from asphalt to brick
+ * and is entirely grey, so a basin on that path can only be a black hole.
  *
- * 壓在 `WATER_MURK_MAX` 之下：那一段是泥漿，再上去才是水。兩廠並排時，
- * 池水的顏色是它們唯一不共用的東西 —— 這裡是土色的，抽水廠是藍的。
+ * Kept below `WATER_MURK_MAX`, the sludge segment; above it is water. Side by side, the basins'
+ * colour is the one thing the two plants do not share — earth here, blue at the water plant.
  */
 const WATER_SHADE = 0.05;
 /**
- * 水面的寬度佔池的幾成。
+ * The water surface's width as a fraction of the basin's.
  *
- * 比池的內壁（`TUB.INNER`）再寬一點點，側面才埋進池壁裡 —— 窄了就是沿著
- * 水面一圈看得穿到地面的縫，而那條縫只有在正上方看得到。
+ * Slightly wider than the basin's inner wall (`TUB.INNER`) so its sides bury into it; narrower,
+ * there is a ring of gap around the surface showing the ground through, visible only from
+ * directly above.
  */
 const WATER_SPAN = 0.86;
 
-/** 四座曝氣池的中心。並排，等距 —— 那個節奏就是它的辨識訊號。 */
+/** The four aeration basins' centres: in a row and evenly spaced. That rhythm is the recognition signal. */
 const BASINS = [-8.4, -3.0, 2.4, 7.8];
 const BASIN_W = 4.8;
 const BASIN_D = 10.0;
@@ -46,8 +49,9 @@ const BASIN_Z = -5.6;
 const massing: CivicVolume[] = [
   ...BASINS.flatMap((x): CivicVolume[] => [
     {
-      // 開口的方池：四片牆圍成一圈。實心的盒子做不到「水面低於池緣」——
-      // 頂面是一片實心的面，水面壓到它下面就整個埋進量體裡了。
+      // An open rectangular basin: four walls enclosing a rectangle. A solid box cannot put the
+      // water surface below the rim — its top is a solid face, and the surface pushed beneath it
+      // disappears inside the mass.
       tag: 'basinWall', part: PART_DETAIL, shape: 'basin',
       x: M(x), z: M(BASIN_Z), w: M(BASIN_W), d: M(BASIN_D), y0: 0, y1: BASIN_TOP,
     },
@@ -59,7 +63,8 @@ const massing: CivicVolume[] = [
     },
   ]),
 
-  // ── 圓形沉澱池。一排方的裡面放一個圓的，讀得出「這裡是另一段製程」。 ──
+  // ── The circular clarifier. One round vessel among a row of rectangular ones reads as a
+  // different stage of the process. ──
   {
     tag: 'clarifierWall', part: PART_DETAIL, shape: 'tub',
     x: M(-6.0), z: M(5.4), w: M(9.0), d: M(9.0), y0: 0, y1: M(2.8),
@@ -70,7 +75,7 @@ const massing: CivicVolume[] = [
     y0: M(2.15), y1: M(2.27),
   },
 
-  // ── 控制樓。x [2, 11]、z [1.5, 9.5] ────────────────────────
+  // ── Control building: x [2, 11], z [1.5, 9.5] ─────────────
   {
     tag: 'control',
     x: M(6.5), z: M(5.5), w: M(9.0), d: M(8.0), y0: 0, y1: CTRL_TOP,
@@ -86,13 +91,13 @@ const massing: CivicVolume[] = [
 ];
 
 const decals: CivicDecal[] = [
-  // 池區的混凝土。
+  // Concrete around the basins.
   { x: 0, z: M(-6.0), w: M(24.0), d: M(12.0), shade: 0.55 },
-  // 前場柏油。
+  // Asphalt across the front yard.
   { x: 0, z: M(6.0), w: M(24.0), d: M(12.0), shade: 0.0 },
 ];
 
-// 池與池之間的走道標線。
+// Walkway markings between the basins.
 for (const x of [-5.7, -0.3, 5.1]) {
   decals.push({
     x: M(x), z: M(BASIN_Z), w: M(0.4), d: M(BASIN_D),
@@ -101,11 +106,11 @@ for (const x of [-5.7, -0.3, 5.1]) {
 }
 
 /**
- * 池上的走道橋。汙水廠的剪影少了它就只是幾個水坑。
+ * The walkway over the basins. Without it a sewage plant's silhouette is a few puddles.
  *
- * 柱子站在**池與池之間**那三條縫加東端的空地上，不是站在池心。池子挖空
- * 之後這件事才看得出來：前一版的柱子在 `BASINS` 的每一個中心，實心的時候
- * 整根埋在池壁裡看不到，現在它們會站在水裡。
+ * Its posts stand in the three gaps **between** basins plus the open ground at the east end,
+ * never at a basin's centre. With solid basins a post at `BASINS`'s centres is buried inside the
+ * wall and invisible; hollowed out, it stands in the water.
  */
 const POSTS = [-5.7, -0.3, 5.1, 10.45];
 
@@ -154,13 +159,13 @@ const fixtures: PropSpec[] = [
 ];
 
 /**
- * 一台清運車，停在圓池與控制樓之間那條 3.5 m 寬的通道上。
+ * One collection truck, on the 3.5 m passage between the clarifier and the control building.
  *
- * 原本兩台都停在 x = −3，而圓形沉澱池的半徑是 4.5 m、圓心在 (−6, 5.4)
- * —— 廂型車整台在池子**裡面**，卡車壓在池緣上。
+ * At x = -3 a vehicle lands inside the clarifier, whose radius is 4.5 m about a centre at
+ * (-6, 5.4): a van sits entirely **inside** the basin and a truck presses on its rim.
  *
- * 只留一台是因為場裡真的只剩一個位置容得下 6.7 m 的車身：縱著停在那條通道
- * 上。硬塞第二台就會回到「停在池子上」。
+ * There is one vehicle because the site has exactly one place a 6.7 m body fits: lengthwise
+ * along that passage. Forcing a second returns to parking on a basin.
  */
 const vehicles: CivicVehicle[] = [
   { kind: 'truck', x: 0, z: M(6.0), rotationY: Math.PI / 2 },

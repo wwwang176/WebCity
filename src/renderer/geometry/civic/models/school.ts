@@ -5,33 +5,35 @@ import type { PropSpec } from '../../props';
 import type { CivicPlan, CivicVolume, CivicDecal, CivicVehicle } from '../types';
 
 /**
- * 小學 —— 2×2 格 = 24 × 24 m。
+ * Primary school — 2x2 cells = 24 x 24 m.
  *
- * 辨識特徵：**低矮**、兩排平行的教室翼、操場、遊具。低矮是最重要的一項 ——
- * 它是小學與高中、大學之間唯一在遠景就分得出來的差別，所以整棟壓在 9 m。
+ * Recognition features: **low height**, two parallel classroom wings, a playground, and play
+ * equipment. The height matters most — it is the only difference between a primary school and a
+ * high school or university that separates them at range — so the whole building is kept under
+ * 9 m.
  *
  * ```
  *   z-  ┌────────────────────────┐
- *       │      教室翼（北）        │
- *       └──────┐  採光縫  ┌───────┘
- *              │  門廳   │
- *       ┌──────┘        └────────┐
- *       │      教室翼（南）        │
+ *       │   classroom wing (north) │
+ *       └──────┐ light gap ┌──────┘
+ *              │  lobby   │
+ *       ┌──────┘         └────────┐
+ *       │   classroom wing (south) │
  *       └──────────▔▔────────────┘
- *          接送區（校車沿路邊停）
+ *        drop-off (buses park along the kerb)
  *       ┌──────────────────┬─────┐
- *   z+  │      操場（草地）   │ 遊具 │
+ *   z+  │  playground (grass) │ play │
  * ```
  */
 
 const WING_TOP = M(8.0);
 const WING_ROOF = M(8.4);
 
-/** 遊具區的鋪面中心與半徑（沙／橡膠墊）。遊具全部要站在它上面。 */
+/** The play area's surface centre and extent, sand or rubber matting. Every piece of play equipment stands on it. */
 const PLAY = { x: M(9.0), z: M(9.25), w: M(6.0), d: M(5.5) };
 
 const massing: CivicVolume[] = [
-  // ── 兩排教室翼。x [−11, 11]，z 分別是 [−11.5, −6] 與 [−3, 2.5] ──────
+  // ── The two classroom wings: x [-11, 11], z [-11.5, -6] and [-3, 2.5] ──
   ...([-8.75, -0.25] as const).map((z): CivicVolume => ({
     tag: 'wing',
     x: 0, z: M(z), w: M(22.0), d: M(5.5), y0: 0, y1: WING_TOP,
@@ -41,8 +43,9 @@ const massing: CivicVolume[] = [
     x: 0, z: M(z), w: M(22.6), d: M(5.9), y0: WING_TOP, y1: WING_ROOF,
   })),
 
-  // ── 門廳。連兩排，但**不填滿**那道縫 ────────────────────────
-  // 填滿了就是一棟深樓，而兩排平行的教室翼正是校舍讀得出來的原因。
+  // ── The lobby: it joins the two wings but **does not fill** the gap ──
+  // Filled, it is one deep building, and two parallel classroom wings are exactly why this reads
+  // as a school.
   {
     tag: 'link',
     x: 0, z: M(-4.5), w: M(8.0), d: M(3.0), y0: 0, y1: M(5.0),
@@ -52,7 +55,7 @@ const massing: CivicVolume[] = [
     x: 0, z: M(-4.5), w: M(8.4), d: M(3.0), y0: M(5.0), y1: M(5.3),
   },
 
-  // ── 屋頂設備 ──────────────────────────────────────────────
+  // ── Rooftop equipment ─────────────────────────────────────
   ...([-7, 7] as const).map((x): CivicVolume => ({
     tag: 'ac', part: PART_DETAIL,
     x: M(x), z: M(-8.75), w: M(1.8), d: M(1.2), y0: WING_ROOF, y1: M(9.0),
@@ -60,22 +63,23 @@ const massing: CivicVolume[] = [
 ];
 
 /**
- * 地面。基地上**最大的一塊必須是操場** —— 小學的地被停車場佔掉是一眼就
- * 看得出來的錯。
+ * The ground. **The largest area on the plot has to be the playground**: a primary school's land
+ * taken over by parking is a mistake visible at a glance.
  */
 const decals: CivicDecal[] = [
-  // 接送區：z [2.5, 6.5]。校車沿著它停，所以要 4 m 深。
+  // Drop-off: z [2.5, 6.5]. Buses park along it, so it is 4 m deep.
   { x: 0, z: M(4.5), w: M(24.0), d: M(4.0), shade: 0.6 },
-  // 操場：x [−12, 6]、z [6.5, 12]
+  // Playground: x [-12, 6], z [6.5, 12]
   { x: M(-3.0), z: M(9.25), w: M(18.0), d: M(5.5), shade: 0.0, lawn: true },
-  // 遊具區：沙／橡膠墊
+  // Play area: sand or rubber matting.
   { x: PLAY.x, z: PLAY.z, w: PLAY.w, d: PLAY.d, shade: 0.78 },
 ];
 
 /**
- * 場地線。一片純綠的草地讀不出是操場 —— 線才是。
+ * Court markings. A plain green field does not read as a playground; the lines do.
  *
- * 一個外框加一條中線：小學的球場就是這樣，不必畫到分毫不差。
+ * An outline plus a centre line: that is what a primary school's court is, and it does not have
+ * to be drawn to the millimetre.
  */
 const COURT = { x0: -10.0, x1: 2.0, z0: 7.2, z1: 11.5 };
 const courtMid = (COURT.z0 + COURT.z1) / 2;
@@ -93,13 +97,14 @@ for (const x of [COURT.x0, COURT.x1]) {
 }
 
 /**
- * 遊具 —— 這一棟唯一真正需要自訂量體的東西。
+ * Play equipment: the one thing here that genuinely needs custom masses.
  *
- * `geometry/props` 沒有溜滑梯、攀爬架、鞦韆，而它們正是「這是小學」的訊號。
- * 全部壓在 2.6 m 以下：三公尺高的鞦韆不是遊具，是塔。
+ * `geometry/props` has no slide, climbing frame or swings, and they are exactly what says "this
+ * is a primary school". All of it is kept under 2.6 m: a three-metre swing set is not play
+ * equipment but a tower.
  */
 const props: CivicVolume[] = [
-  // 溜滑梯：一座平台加一道斜板。
+  // The slide: a platform and a sloped panel.
   {
     tag: 'slide', part: PART_DETAIL,
     x: M(8.0), z: M(8.0), w: M(1.4), d: M(1.4), y0: 0, y1: M(1.8),
@@ -109,7 +114,8 @@ const props: CivicVolume[] = [
     x: M(8.0), z: M(9.4), w: M(1.2), d: M(1.6), y0: 0, y1: M(1.7),
   },
 
-  // 攀爬架：四根柱加兩條頂桿。實心的方塊讀起來是一個箱子，不是可以爬的架子。
+  // The climbing frame: four posts and two top bars. A solid block reads as a box rather than
+  // something to climb.
   ...([[9.4, 7.6], [11.0, 7.6], [9.4, 9.4], [11.0, 9.4]] as const)
     .map(([x, z]): CivicVolume => ({
       tag: 'climber', part: PART_DETAIL,
@@ -120,7 +126,7 @@ const props: CivicVolume[] = [
     x: M(10.2), z: M(z), w: M(1.76), d: M(0.14), y0: M(1.9), y1: M(2.04),
   })),
 
-  // 鞦韆：兩根柱、一條橫樑、兩個座板。
+  // The swings: two posts, a beam, and two seats.
   ...([7.4, 10.4] as const).map((x): CivicVolume => ({
     tag: 'swing', part: PART_DETAIL,
     x: M(x), z: M(11.2), w: M(0.18), d: M(0.18), y0: 0, y1: M(2.3),
@@ -136,7 +142,8 @@ const props: CivicVolume[] = [
 ];
 
 const overhead: CivicVolume[] = [
-  // 大門雨棚。往教室翼裡插 0.1 m，看起來才是「接上去的」而不是浮著的。
+  // The entrance canopy. It enters the wing by 0.1 m so it reads as attached rather than
+  // floating.
   {
     tag: 'canopy',
     x: 0, z: M(3.4), w: M(7.0), d: M(2.0), y0: M(3.0), y1: M(3.4),
@@ -144,7 +151,8 @@ const overhead: CivicVolume[] = [
 ];
 
 const fixtures: PropSpec[] = [
-  // ── 綠化。操場邊的行道樹 —— 種在場地線裡面的話球就打到樹了。 ──
+  // ── Planting: street trees along the playground's edge. Inside the court markings, the ball
+  // hits them. ──
   { kind: 'tree', x: M(-10.6), z: M(7.4), heightM: 5.5, crownRadius: M(1.0) },
   { kind: 'tree', x: M(-10.6), z: M(10.4), heightM: 6.0, crownRadius: M(1.1) },
   { kind: 'tree', x: M(-6.0), z: M(3.6), heightM: 5.0, crownRadius: M(0.9) },
@@ -155,11 +163,12 @@ const fixtures: PropSpec[] = [
   { kind: 'shrub', x: M(5.4), z: M(7.2), radius: M(0.6) },
   { kind: 'topiary', x: M(-4.0), z: M(3.4), radius: M(0.6) },
 
-  // 大門兩側的花圃。小學的門口有人在照顧，那是這一棟的個性。
+  // Flower beds flanking the entrance. Someone tends a primary school's gate, and that is this
+  // building's character.
   { kind: 'flowerBed', x: M(-4.4), z: M(2.9), radius: M(0.6) },
   { kind: 'flowerBed', x: M(4.4), z: M(2.9), radius: M(0.6) },
 
-  // ── 街道家具 ──
+  // ── Street furniture ──
   { kind: 'lamp', x: M(-11.0), z: M(5.0), heightM: 4.0 },
   { kind: 'lamp', x: M(11.0), z: M(5.0), heightM: 4.0 },
   { kind: 'lamp', x: M(-11.2), z: M(11.0), heightM: 4.0 },
@@ -167,35 +176,36 @@ const fixtures: PropSpec[] = [
   { kind: 'flagpole', x: M(-8.6), z: M(3.4), axis: 'z' },
   { kind: 'signPost', x: M(8.6), z: M(3.4), axis: 'z' },
 
-  // 小學的單車架不能只有一組。
+  // One bike rack is not enough for a primary school.
   { kind: 'bikeRack', x: M(-9.0), z: M(5.6), axis: 'z' },
   { kind: 'bikeRack', x: M(-9.0), z: M(6.2), axis: 'z' },
   { kind: 'bin', x: M(2.6), z: M(3.0), radius: M(0.26) },
-  // 接送區與操場之間的擋車柱 —— 車不准開進操場。
+  // Bollards between the drop-off and the playground: vehicles may not drive onto it.
   ...([-8.0, -4.0, 0, 4.0] as const).map((x) => ({
     kind: 'bollard' as const, x: M(x), z: M(6.4), radius: M(0.11),
   })),
 ];
 
 /**
- * 校車沿著路邊停 —— **不轉向**。
+ * School buses park along the kerb, **unrotated**.
  *
- * 校車 7.2 m 長。橫著停在 4 m 深的接送區的話，它有一半插在校舍裡（而
- * `assembleVehicles` 只擋佔地邊界，擋不了這個）。
+ * A school bus is 7.2 m long. Parked across a 4 m deep drop-off, half of it is inside the
+ * building, and `assembleVehicles` only guards the plot boundary and cannot catch that.
  */
 const vehicles: CivicVehicle[] = [
-  // z = 5.2：接送區的中間。原本停在 4.8，車身前緣壓進門口那排灌木
-  // （z ∈ [2.7, 4.1]）——「車停在樹叢裡」。往後挪到擋車柱（z = 6.4）之前
-  // 那條 2.2 m 的縫的正中間。
+  // z = 5.2, the middle of the drop-off. At 4.8 the bus's front edge presses into the shrubs by
+  // the entrance (z in [2.7, 4.1]) and reads as parked in the bushes. This is the centre of the
+  // 2.2 m gap in front of the bollards at z = 6.4.
   { kind: 'bus', x: M(-3.0), z: M(5.2) },
   { kind: 'van', x: M(5.4), z: M(5.2) },
 ];
 
 /**
- * `aSeed`。
+ * `aSeed`.
  *
- * `.x` = 0.18 給出 0.2344 格 = 2.81 m 的樓高 —— 小學的層高比醫院小。
- * 8 m 的教室翼在 3.79 m 的門廳之上還有 1.5 層的窗格：兩層樓的校舍。
+ * `.x` = 0.18 gives 0.2344 cells = 2.81 m per storey; a primary school's floors are lower than a
+ * hospital's. An 8 m classroom wing carries 1.5 storeys of window panes above a 3.79 m lobby: a
+ * two-storey school building.
  */
 const SEED = [0.18, 0.83, 0.44] as const;
 
