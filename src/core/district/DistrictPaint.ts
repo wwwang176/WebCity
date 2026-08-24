@@ -2,66 +2,56 @@ import type { DistrictManager } from './DistrictManager';
 import { parsePosKeyUnsafe } from '../grid/GridHelpers';
 
 /**
- * 分區筆刷的三種模式。
+ * The district brush's three modes.
  *
- * 有「取代」是因為分區邊界常常要重畫 —— 少了它，玩家得先把整區擦乾淨才能重畫，
- * 而擦除本身也要一格一格拖。
+ * Replace exists because district boundaries are often redrawn: without it the player has to
+ * erase the whole district first, and erasing itself is a cell-by-cell drag.
  */
 export type DistrictPaintMode = 'replace' | 'add' | 'subtract';
 
 /**
- * 一次筆刷動作實際改了什麼。
+ * What one brush stroke actually changed.
  *
- * 呼叫端要拿它說話。搶格子是對的（一格只屬於一個分區），錯的是不出聲 —— 玩家拖一塊
- * 蓋到別區上，二十幾格轉手了，畫面上只有顏色悄悄變了。扣除掃到別區則是什麼都不會
- * 發生，那個靜默失敗是這支筆刷最難懂的一件事。
+ * The caller reports it. Taking cells is correct — a cell belongs to one district — but doing it
+ * silently is not: a stroke over another district transfers two dozen cells with nothing but a
+ * quiet colour change on screen. Subtracting over another district does nothing at all, and that
+ * silent no-op is the hardest thing about this brush to understand.
  */
 export interface DistrictPaintResult {
-  /** 這一區多出來的格數。本來就是它的不算。 */
+  /** How many cells this district gained. Cells it already had do not count. */
   added: number;
-  /** 這一區被拿掉的格數。 */
+  /** How many cells this district lost. */
   removed: number;
   /**
-   * 矩形裡屬於別區的格數，分區 id → 格數。
+   * Cells in the rectangle belonging to other districts, as district id to count.
    *
-   * 併入與取代下是「搶過來的」，扣除下是「掃到但沒動的」—— 同一份資料，呼叫端
-   * 照模式決定怎麼講。
+   * Under add and replace these were taken; under subtract they were touched but left alone. The
+   * same data, with the caller phrasing it by mode.
    */
   fromOthers: Map<string, number>;
 }
 
-/**
- * 把一個矩形套用到某個分區上。
- *
- * 兩個角哪個先畫都可以，這裡自己正規化 —— 呼叫端記得排序是遲早會漏的一件事。
- *
- * 「取代」與「扣除」都只動這一個分區:取代不會清掉別區在矩形外的格子，扣除也不會
- * 挖掉別區在矩形內的格子。你正在編輯的是這一區，掃到別區的話玩家會在完全沒有
- * 意識的情況下拆掉另一區的邊界。
- *
- * 矩形內原本屬於別區的格子則會被搶過來 —— 那不是這裡決定的，`addCellToDistrict`
- * 本來就維持「一格只屬於一個分區」，而那正是重疊處該有的行為:一格屬於兩個分區的
- * 話，收入乘數與費用都會算兩次。
- */
-/** 一次滑鼠操作要做的事:撿起一個分區、放掉手上的，或是畫。 */
+/** What one mouse action does: pick a district up, put it down, or paint. */
 export type DistrictGesture =
   | { kind: 'select'; districtId: string }
   | { kind: 'deselect' }
   | { kind: 'paint' };
 
 /**
- * 同一支筆刷上，點一下跟拖一塊是兩件事。
+ * On one brush, a click and a drag are different actions.
  *
- * 少了「點一下＝選取」，玩家要換成編輯另一區只剩一條路:打開條例面板從側邊選 ——
- * 而地圖上明明就看得到那一區。分區的顏色與名稱畫在圖層上，點它是最直覺的動作。
+ * Without click-to-select, changing which district is being edited has only one route: opening
+ * the policy panel and picking from the sidebar — while the district is right there on the map.
+ * District colours and names are drawn on the overlay, and clicking one is the obvious action.
  *
- * 點自己這一區是放掉選取（點起來、改一改、再點一次放掉）—— 但**扣除模式除外**:
- * 拿著橡皮擦點自己的格子，意思沒有歧義就是擦掉那一格，而單格擦除沒有別的手勢做得到。
- * 併入模式下點自己的格子本來就不會有任何改變，取代模式下則是會把整區縮成一格 ——
- * 兩者都不是玩家點下去想要的東西。
+ * Clicking your own district releases the selection (pick it up, adjust it, click again to put it
+ * down) — **except in subtract mode**, where clicking your own cell with an eraser unambiguously
+ * means erasing that cell, and no other gesture erases a single cell. In add mode clicking your
+ * own cell changes nothing anyway, and in replace mode it would shrink the district to one cell;
+ * neither is what the click was for.
  *
- * 拖出範圍永遠是畫，即使起點落在別區或自己身上 —— 拖一大塊卻只換到一次選取切換，
- * 玩家會以為筆刷壞了。
+ * A drag is always paint, even starting on another district or on your own: a large drag that
+ * only toggled a selection reads as a broken brush.
  */
 export function resolveDistrictGesture(
   districts: Pick<DistrictManager, 'getDistrictAt'>,
@@ -76,6 +66,22 @@ export function resolveDistrictGesture(
   return mode === 'subtract' ? { kind: 'paint' } : { kind: 'deselect' };
 }
 
+/**
+ * Applies a rectangle to one district.
+ *
+ * Either corner may come first; this normalises them, because remembering to sort at the call
+ * site is something that eventually gets missed.
+ *
+ * Replace and subtract touch only this district: replace does not clear another district's cells
+ * outside the rectangle, and subtract does not carve out another district's cells inside it. The
+ * district being edited is this one, and reaching into another would dismantle its boundary with
+ * the player entirely unaware.
+ *
+ * Cells inside the rectangle belonging to another district are taken. That is not decided here:
+ * `addCellToDistrict` already maintains one district per cell, and that is the right behaviour
+ * for an overlap, because a cell in two districts has its revenue multiplier and its fees counted
+ * twice.
+ */
 export function paintDistrictRect(
   districts: DistrictManager,
   districtId: string,
@@ -89,7 +95,7 @@ export function paintDistrictRect(
   const minX = Math.min(x1, x2), maxX = Math.max(x1, x2);
   const minY = Math.min(y1, y2), maxY = Math.max(y1, y2);
 
-  // 誰的格子被動到，要在畫下去之前數 —— 畫完就查不出來了。
+  // Whose cells were touched is counted before painting; afterwards it cannot be recovered.
   for (let y = minY; y <= maxY; y++) {
     for (let x = minX; x <= maxX; x++) {
       const owner = districts.getDistrictAt(x, y);
@@ -102,15 +108,15 @@ export function paintDistrictRect(
       }
     }
   }
-  // 併入與取代會把別區的格子搶過來，那些也是這一區新增的。扣除不會。
+  // Add and replace take other districts' cells, which count as gained here. Subtract does not.
   if (mode !== 'subtract') {
     for (const n of result.fromOthers.values()) result.added += n;
   }
 
   if (mode === 'replace') {
-    // 先清空這一區。逐格走 `removeCellFromDistrict` 而不是直接清 Set —— 反向索引
-    // （格子 → 分區）也要一起維護，少了它 `getDistrictAt` 會指向一個已經不含這格
-    // 的分區。
+    // Empty this district first, cell by cell through `removeCellFromDistrict` rather than
+    // clearing the Set: the reverse index from cell to district has to be maintained too, and
+    // without it `getDistrictAt` points at a district that no longer contains the cell.
     for (const key of [...district.cells]) {
       const { x, y } = parsePosKeyUnsafe(key);
       districts.removeCellFromDistrict(districtId, x, y);

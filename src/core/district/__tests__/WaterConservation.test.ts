@@ -5,19 +5,22 @@ import { PolicyType } from '../types';
 import { ZoneType } from '../../grid/types';
 
 /**
- * 節水法規要真的省下水。
+ * Water conservation has to save real water.
  *
- * 帳面上的 `getDemand()` 變小很容易 —— 但決定哪些建築有水的是 `calculateCoverage`
- * 的預算式 BFS，它問的是 `getCellDemandAt`。只降前者的話，`getSupplyRatio()` 看起來
- * 改善了，缺水的建築卻一棟也不會恢復供水，而玩家買的正是那個。
+ * Lowering the headline `getDemand()` is easy, but which buildings have water is decided by
+ * `calculateCoverage`'s budgeted BFS, which asks `getCellDemandAt`. Lowering only the former
+ * improves `getSupplyRatio()` while not a single dry building regains supply, and supply is what
+ * the player is buying.
  */
 
-/** Small House（RESIDENTIAL_LOW）。 */
+/** Small House (RESIDENTIAL_LOW). */
 const HOUSE = 1;
-/** 只夠供到 36 棟裡的 19 棟 —— BFS 會在半路耗盡預算，那正是要量的地方。 */
+/** Enough for 19 of the 36 houses: the BFS runs out of budget partway, which is what is being
+ *  measured. */
 const PLANT_OUTPUT = 10;
 
-/** 一座水不夠用的城市:水廠的產量遠低於總需求，所以 BFS 會在半路耗盡預算。 */
+/** A city short of water: the plant's output is far below total demand, so the BFS runs out of
+ *  budget partway. */
 function thirstyCity(): { state: GameState; loop: SimulationLoop } {
   const state = createGameState(40, 40);
   for (let x = 2; x < 38; x++) state.grid.setCell(x, 20, { roadType: 1, roadFlags: 0b1111 });
@@ -51,7 +54,7 @@ describe('節水法規', () => {
       .toBeLessThan(36);
     expect(saving.supplied, '節水法規沒有讓更多建築喝到水')
       .toBeGreaterThan(plain.supplied);
-    // 帳面數字只是輔助 —— 它自己變小不代表 BFS 也看得到。
+    // The headline figure is only supporting evidence: it falling does not mean the BFS sees it.
     expect(saving.demand, '總需求沒有下降').toBeLessThan(plain.demand);
   });
 
@@ -74,7 +77,8 @@ describe('節水法規', () => {
       .toBeLessThan(1);
     expect(state.ordinances.getRevenueMultiplier(ZoneType.RESIDENTIAL_LOW), '住宅也被扣了')
       .toBe(1);
-    // 工業扣得比商業重 —— 製程用水改造比換一批省水龍頭貴得多。
+    // Industry is charged more heavily than commerce: re-engineering process water costs far more
+    // than fitting low-flow taps.
     expect(state.ordinances.getRevenueMultiplier(ZoneType.INDUSTRIAL), '工業與商業扣得一樣多')
       .toBeLessThan(state.ordinances.getRevenueMultiplier(ZoneType.COMMERCIAL_LOW));
   });

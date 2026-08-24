@@ -7,27 +7,30 @@ import { ZoneType } from '../../grid/types';
 import { useSeededRandom, reseedRandom } from '../../__tests__/helpers/seededRandom';
 
 /**
- * 工業排放管制。
+ * Industrial emission control.
  *
- * 範圍是分區而不是全城:汙染源是逐格的工業格，好處與代價也都落在工業格上，
- * 「管哪一片工廠」是有意義的決策。套到全城會在沒有汙染問題的工業區白扣收入 ——
- * 照判準（全城套用永遠不會更糟才該是全城）它就不該是全城的。
+ * District-scoped rather than city-wide: the source is per industrial cell and both benefit and
+ * cost land on industrial cells, so which stretch of factories is regulated is a real decision.
+ * City-wide it would only dock revenue from industrial districts with no pollution problem, and
+ * by the test — city-wide only when applying it everywhere is never worse — it does not qualify.
  *
- * 乘數只作用在地面汙染。工廠的噪音來自機具，不是排放 —— 把噪音也一起降的話，
- * 這條條例就變成一顆萬用的「工業變乾淨」按鈕。
+ * The multiplier acts on ground pollution alone. A factory's noise comes from its machinery
+ * rather than its discharges, and lowering noise too would make this a universal "industry gets
+ * clean" button.
  */
 
-/** Factory（INDUSTRIAL）。 */
+/** Factory (INDUSTRIAL). */
 const FACTORY = 13;
 
 function industrialCity(): { state: GameState; loop: SimulationLoop; districtId: string } {
-  // A/B 的兩座城市要從同一個亂數狀態出發。不重設的話第二次接續第一次留下的
-  // 序列，兩座城市會自己走岔，量到的是那個岔而不是條例。
+  // The A and B cities have to start from the same random state. Without a reset the second
+  // continues the sequence the first left behind, the two cities diverge on their own, and what
+  // is measured is that divergence rather than the ordinance.
   reseedRandom();
   const state = createGameState(40, 40);
   for (let x = 2; x < 38; x++) state.grid.setCell(x, 10, { roadType: 1, roadFlags: 0b1111 });
-  // 兩座工廠，離得夠遠。擠成一排的話擴散會疊到上限（實測 195 封頂），開不開條例
-  // 量到的都是同一個數字。
+  // Two factories, far enough apart. Packed together, diffusion stacks to its ceiling — 195 in
+  // practice — and the ordinance on or off measures the same number.
   state.grid.setCell(8, 11, { zoneType: ZoneType.INDUSTRIAL, buildingId: FACTORY });
   state.grid.setCell(30, 11, { zoneType: ZoneType.INDUSTRIAL, buildingId: FACTORY });
   const d = state.districts.createDistrict('Works');
@@ -41,9 +44,9 @@ function pollutionAt(level: number) {
     state.policies.setPolicyLevel(districtId, PolicyType.INDUSTRIAL_EMISSION_CONTROL, level);
   }
   for (let i = 0; i < 6; i++) loop.tick();
-  // `getPollutionAt` 回傳的是共用的暫存物件（它自己的註解就寫著 callers must not
-  // store the reference）—— 直接留住兩次呼叫的結果，兩個變數會指向同一個東西，
-  // 量到的都是最後一次讀的那一格。
+  // `getPollutionAt` returns a shared scratch object, as its own comment says (callers must not
+  // store the reference). Holding both calls' results leaves two variables pointing at one
+  // object, and both read the last cell queried.
   const { ground: ig, noise: inoise } = state.pollution.getPollutionAt(8, 11);
   const { ground: og, noise: onoise } = state.pollution.getPollutionAt(30, 11);
   return {
@@ -52,8 +55,9 @@ function pollutionAt(level: number) {
   };
 }
 
-// 整個檔案都上種子:每一條測試都在比較兩座城市，而 tick 裡的建築成長、解僱、
-// 車輛抖動都在擲骰子。建城時另外重設序列，讓 A/B 從同一點出發。
+// The whole file is seeded: every test compares two cities, and building growth, layoffs and
+// vehicle jitter all roll dice inside a tick. The sequence is reset again when each city is
+// built, so A and B start from the same point.
 useSeededRandom();
 
 describe('工業排放管制', () => {
@@ -66,7 +70,7 @@ describe('工業排放管制', () => {
   });
 
   it('should leave the rest of the map alone', () => {
-    // 分區外的工廠照樣排放 —— 這是分區條例，不是全城的。
+    // Factories outside the district still emit: this is a district policy, not a city one.
     const plain = pollutionAt(0);
     const managed = pollutionAt(3);
     expect(managed.outside.ground, '分區外的地面汙染也跟著降了')
@@ -74,7 +78,7 @@ describe('工業排放管制', () => {
   });
 
   it('should not touch noise', () => {
-    // 機具的聲音不會因為裝了洗滌塔就變小。
+    // Machinery does not get quieter for having a scrubber fitted.
     const plain = pollutionAt(0);
     const managed = pollutionAt(3);
     expect(plain.inside.noise, '本來就沒有噪音，量不出「沒有被動到」').toBeGreaterThan(0);

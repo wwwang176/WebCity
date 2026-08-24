@@ -10,34 +10,36 @@ import { SimulationLoop } from '../../simulation/SimulationLoop';
 import { useSeededRandom, reseedRandom } from '../../__tests__/helpers/seededRandom';
 
 /**
- * 育兒補貼:市府出錢，孩子多生一點。
+ * The childcare subsidy: the treasury pays, and more children are born.
  *
- * 量的是 `birthTick` 回傳的新生兒數 —— 它是出生那條線唯一的出口。生育率本身是
- * 每個市民逐一擲骰子，所以樣本要夠大:2000 個成人在 0.05 與 0.0775 兩個機率下的
- * 差距約 5.7 個標準差，換一個種子也不會翻過來。
+ * What is measured is the newborn count `birthTick` returns, the only exit from the birth path.
+ * Fertility itself is one roll per citizen, so the sample has to be large: 2,000 adults at
+ * probabilities of 0.05 and 0.0775 differ by about 5.7 standard deviations, which no change of
+ * seed will overturn.
  */
 
-/** Small House（RESIDENTIAL_LOW）。 */
+/** Small House (RESIDENTIAL_LOW). */
 const HOUSE = 1;
 
 const ADULTS = 2000;
 
-/** 每個成人一戶，戶內既沒有小孩也沒有別人 —— 讓每一次擲骰都真的擲得出來。 */
+/** One adult per household with no children and nobody else, so every roll actually happens. */
 function birthsWithMultiplier(fertilityMultiplier: number): number {
   reseedRandom();
   const mgr = new CitizenManager();
   for (let i = 0; i < ADULTS; i++) {
-    // happiness 壓在所有教育程度的門檻之下，免得幸福加成把補貼的效果蓋掉。
+    // Happiness is held below every education threshold so its bonus cannot mask the subsidy.
     mgr.createCitizen({ age: 100, homeId: `${i},0`, happiness: 40 });
   }
   return birthTick(mgr, { getResidents: () => 8, fertilityMultiplier });
 }
 
 /**
- * 一座剛好要跨月的城市。
+ * A city one tick short of a month boundary.
  *
- * 出生一個月才跑一次（720 tick）。整整跑一個月太慢，所以把時鐘直接撥到月底前一
- * tick —— `lastBirthMonth` 在建構子裡就記下來了，所以 loop 必須先建好再撥。
+ * Births run once a month, every 720 ticks. Running a whole month is too slow, so the clock is
+ * wound to one tick before the end. `lastBirthMonth` is recorded in the constructor, so the loop
+ * has to be built before the clock is wound.
  */
 function cityAtMonthEnd(level: number): GameState {
   reseedRandom();
@@ -50,7 +52,7 @@ function cityAtMonthEnd(level: number): GameState {
   const loop = new SimulationLoop(state);
   state.ordinances.setLevel(PolicyType.CHILDCARE_SUBSIDY, level);
   for (let x = 1; x < 39; x++) {
-    // restoreCitizen 繞過全城容量閘門 —— 這是 fixture，不是模擬中的遷入。
+    // restoreCitizen bypasses the city-wide capacity gate: this is a fixture, not immigration.
     state.citizens.restoreCitizen({ age: 100, homeId: `${x},11`, happiness: 40 });
     state.citizens.restoreCitizen({ age: 100, homeId: `${x},9`, happiness: 40 });
   }
@@ -79,16 +81,17 @@ describe('育兒補貼', () => {
       o.setLevel(PolicyType.CHILDCARE_SUBSIDY, lv);
       return o.getFertilityMultiplier();
     };
-    // 補得越久，家戶越敢生 —— 決定要不要生的是整段扶養期的預期支持，不是這個月
-    // 領多少。
+    // Longer support makes households more willing: what decides whether to have a child is the
+    // support expected across the whole dependent period, not this month's payment.
     expect(at(1), '補到嬰兒沒有提高生育率').toBeGreaterThan(1);
     expect(at(2), '補到兒童沒有比補到嬰兒更強').toBeGreaterThan(at(1));
     expect(at(3), '補到青少年沒有比補到兒童更強').toBeGreaterThan(at(2));
   });
 
   describe('費用跟著真正領到補貼的孩子走', () => {
-    // 這是分級的全部意義。按總人口收的話，「補到嬰兒」與「補到青少年」花一樣多，
-    // 玩家沒有理由不直接開最高級。
+    // The whole point of the levels. Billed by total population, supporting infants and
+    // supporting adolescents cost the same and the player has no reason not to take the top
+    // level immediately.
     const scale = {
       population: 1000, districtCells: 0, districtRoadCells: 0,
       babies: 40, children: 60, teens: 50, clinicPatients: 900, chargedDrivers: 0,
@@ -105,23 +108,24 @@ describe('育兒補貼', () => {
     });
 
     it('should charge nothing in a city with no children at all', () => {
-      // 一座還沒有小孩的城市開這條條例，錢沒有任何人領得到，也就不該收。
+      // In a city with no children yet, nobody receives the money and nothing should be
+      // charged.
       const childless = { ...scale, babies: 0, children: 0, teens: 0 };
       expect(policyCost(PolicyType.CHILDCARE_SUBSIDY, 3, childless),
         '沒有小孩卻還在收育兒補貼的錢').toBe(0);
     });
 
     it('should not follow the total population', () => {
-      // 人口翻十倍但小孩沒變多，帳單不該動 —— 那是「按人頭發補貼」與「按人口編
-      // 預算」的差別。
+      // Ten times the population with no more children must not move the bill: that is the
+      // difference between paying per head and budgeting against population.
       expect(policyCost(PolicyType.CHILDCARE_SUBSIDY, 2, { ...scale, population: 10_000 }),
         '育兒補貼跟著總人口變動').toBe(costAt(2));
     });
   });
 
   it('should reach births through the simulation loop', () => {
-    // 接線:條例的乘數要真的走到 birthTick。少了這條，`getFertilityMultiplier`
-    // 可以完全沒有人呼叫，而上面三條照樣全綠。
+    // The wiring: the ordinance's multiplier has to reach birthTick. Without this,
+    // `getFertilityMultiplier` could have no caller at all and the three tests above stay green.
     const plain = cityAtMonthEnd(0).citizens.getPopulation();
     expect(plain, '跨月那一 tick 一個都沒生，這條測試等於空轉')
       .toBeGreaterThan(76);
@@ -130,7 +134,8 @@ describe('育兒補貼', () => {
   });
 
   it('should be paid for by employers', () => {
-    // 財源是雇主的育兒基金，所以代價落在商業與工業，住宅不動 —— 受益的是家戶。
+    // Funded by a levy on employers, so the cost falls on commerce and industry and leaves
+    // housing alone: the beneficiaries are the households.
     const o = new CityOrdinances();
     o.setLevel(PolicyType.CHILDCARE_SUBSIDY, 2);
     expect(o.getRevenueMultiplier(ZoneType.COMMERCIAL_LOW), '商業沒有付代價').toBeLessThan(1);

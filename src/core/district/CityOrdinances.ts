@@ -4,25 +4,25 @@ import { POLICY_EFFECTS, clampLevel, maxLevel, type PolicyEffect } from './Polic
 import { isCityScoped } from './PolicyScope';
 import { policyCost, type CityScales } from './PolicyBilling';
 
-/** 存檔裡的全城條例。 */
+/** City ordinances as stored in a save. */
 export interface SerializedCityOrdinances {
   levels: [PolicyType, number][];
 }
 
 /**
- * 全城條例的強度。
+ * City ordinance levels.
  *
- * 沒有分區，所以只有一份等級表 —— 這正是它跟 `PolicyManager` 的差別:那邊每個
- * 分區各有一份。
+ * There are no districts, so there is a single level table. That is exactly what distinguishes
+ * this from `PolicyManager`, which keeps one per district.
  */
 export class CityOrdinances {
   private levels = new Map<PolicyType, number>();
 
   /**
-   * 設定強度。0 = 關閉。
+   * Sets a level. 0 turns it off.
    *
-   * 非全城範圍的條例會被拒絕:一個條例同時在分區與全城生效的話，效果會無聲地
-   * 加倍，而費用只收一次。
+   * Policies that are not city-scoped are refused: one applying at both district and city level
+   * doubles its effect silently while its fee is charged once.
    */
   setLevel(type: PolicyType, level: number): void {
     if (!isCityScoped(type)) return;
@@ -35,14 +35,14 @@ export class CityOrdinances {
     return this.levels.get(type) ?? 0;
   }
 
-  /** 目前生效的全城條例，依 `PolicyType` 的宣告順序。 */
+  /** The active city ordinances, in `PolicyType` declaration order. */
   activeOrdinances(): { type: PolicyType; level: number }[] {
     return (Object.values(PolicyType) as PolicyType[])
       .filter(t => this.getLevel(t) > 0)
       .map(t => ({ type: t, level: this.getLevel(t) }));
   }
 
-  /** 合成所有生效的全城條例對某一個量的影響。 */
+  /** Combines every active city ordinance's effect on one quantity. */
   private effect(
     pick: (e: PolicyEffect) => number | undefined,
     identity: number,
@@ -57,61 +57,63 @@ export class CityOrdinances {
     return out;
   }
 
-  /** 全城電力總需求的乘數。 */
+  /** The multiplier on total city power demand. */
   getPowerDemandMultiplier(): number {
     return this.effect(e => e.powerDemand, 1, (a, b) => a * b);
   }
 
-  /** 全城條例對每一格用水需求的乘數。 */
+  /** The city ordinances' multiplier on per-cell water demand. */
   getWaterDemandMultiplier(): number {
     return this.effect(e => e.waterDemand, 1, (a, b) => a * b);
   }
 
-  /** 全城條例對每一格汙水排放量的乘數。 */
+  /** The city ordinances' multiplier on per-cell sewage discharge. */
   getSewageLoadMultiplier(): number {
     return this.effect(e => e.sewageLoad, 1, (a, b) => a * b);
   }
 
-  /** 全城條例加到犯罪率上的量。正值是代價。 */
+  /** What the city ordinances add to the crime rate. Positive is a cost. */
   getCrimeBonus(): number {
     return this.effect(e => e.crime, 0, (a, b) => a + b);
   }
 
-  /** 全城條例加到地價上的量。 */
+  /** What the city ordinances add to land value. */
   getLandValueBonus(): number {
     return this.effect(e => e.landValue, 0, (a, b) => a + b);
   }
 
-  /** 全城條例對每一格垃圾產生量的乘數。 */
+  /** The city ordinances' multiplier on per-cell refuse production. */
   getGarbageMultiplier(): number {
     return this.effect(e => e.garbage, 1, (a, b) => a * b);
   }
 
-  /** 全城條例對生育機率的乘數。 */
+  /** The city ordinances' multiplier on birth probability. */
   getFertilityMultiplier(): number {
     return this.effect(e => e.fertility, 1, (a, b) => a * b);
   }
 
   /**
-   * 國民教育辦到學制的第幾階。0 = 沒有義務教育。
+   * How far compulsory schooling reaches, as a school stage. 0 means none.
    *
-   * 疊起來取最高的那一階，不是相加 —— 兩條各辦到國小的條例合起來還是辦到國小。
+   * Stacking takes the highest stage rather than summing: two ordinances each reaching primary
+   * school still reach primary school.
    */
   getCompulsorySchoolingStages(): number {
     return this.effect(e => e.compulsorySchooling, 0, (a, b) => Math.max(a, b));
   }
 
-  /** 全城條例對死亡機率的乘數。對誰都有效（禁菸令）。 */
+  /** The city ordinances' multiplier on death probability, applying to everyone (the smoking
+   *  ban). */
   getDeathRateMultiplier(): number {
     return this.effect(e => e.deathRate, 1, (a, b) => a * b);
   }
 
-  /** 只作用在醫院覆蓋範圍內的死亡機率乘數（免費診所）。 */
+  /** The death probability multiplier applying only inside hospital coverage (free clinics). */
   getCoveredDeathRateMultiplier(): number {
     return this.effect(e => e.coveredDeathRate, 1, (a, b) => a * b);
   }
 
-  /** 全城條例對這個分區類型的收入乘數。 */
+  /** The city ordinances' revenue multiplier for this zone type. */
   getRevenueMultiplier(zoneType: ZoneType): number {
     return this.effect((e) => {
       const flat = e.revenue;
@@ -121,11 +123,12 @@ export class CityOrdinances {
     }, 1, (a, b) => a * b);
   }
 
-  /** 全城條例本期的總支出。全城的沒有分區格數可言，所以 `districtCells` 是 0。 */
+  /** The city ordinances' total cost this period. City-wide ordinances have no district cell
+   *  count, so `districtCells` is 0. */
   totalCost(city: CityScales): number {
     let total = 0;
     for (const [type, level] of this.levels) {
-      // 全城條例沒有分區可言 —— 三個分區的量都是 0。
+      // A city ordinance has no district, so all three district quantities are 0.
       total += policyCost(type, level,
         { ...city, districtCells: 0, districtRoadCells: 0, chargedDrivers: 0 });
     }
@@ -137,10 +140,10 @@ export class CityOrdinances {
   }
 
   /**
-   * 從存檔還原。
+   * Restores from a save.
    *
-   * 走 `setLevel` 而不是直接塞 Map —— 存檔是使用者能編輯的檔案，範圍檢查與夾值
-   * 必須在讀進來時也成立。
+   * Goes through `setLevel` rather than writing the Map directly: a save is a file the user can
+   * edit, so range checks and clamping have to hold on the way in too.
    */
   restore(data: Partial<SerializedCityOrdinances> | undefined): void {
     this.levels = new Map();

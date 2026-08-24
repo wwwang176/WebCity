@@ -7,17 +7,20 @@ import { IMPLEMENTED_POLICY_TYPES } from '../PolicyManager';
 import { PolicyType } from '../types';
 
 /**
- * 16 條擺成一排玩家找不到東西。分類是「這條條例在管什麼」。
+ * Sixteen policies in one row leave the player unable to find anything. The categories say what
+ * a policy governs.
  *
- * 這裡守的是分組本身。面板只剩標記 —— 專案沒有 DOM 測試環境，所以「modal 有沒有
- * 呼叫這個函式」守不到，那一行的正確性靠 review。分組邏輯全部搬進來就是為了把
- * 守不到的範圍縮到那一行。
+ * What is guarded here is the grouping itself. The panel is left with markup alone: the project
+ * has no DOM test environment, so whether the modal calls this function cannot be guarded and
+ * that line's correctness rests on review. Moving all the grouping logic here narrows the
+ * unguarded surface to that line.
  */
 
 describe('分類表', () => {
   it('should place every policy in one of the listed categories', () => {
-    // Record 是完整型別，漏一條編不過;但分類名稱打錯不會 —— 那條就會憑空消失，
-    // 因為 policiesByCategory 只走 CATEGORY_ORDER。
+    // The Record is a complete type, so a missing entry fails to compile; a misspelt category
+    // name does not, and that policy simply disappears, because policiesByCategory walks
+    // CATEGORY_ORDER alone.
     for (const type of Object.values(PolicyType)) {
       expect(CATEGORY_ORDER as readonly string[], `${type} 的分類不在面板的順序裡`)
         .toContain(POLICY_CATEGORY[type]);
@@ -56,8 +59,8 @@ describe('依分類分組', () => {
   it('should keep the categories in a fixed order and drop the empty ones', () => {
     const names = policiesByCategory('district').map(g => g.category);
     expect(names.length, '一個分類都沒有').toBeGreaterThan(1);
-    // 順序是 CATEGORY_ORDER 的子序列。面板的分類每次開都跳來跳去的話，玩家會
-    // 找不到上次按的那顆按鈕。
+    // The order is a subsequence of CATEGORY_ORDER. Categories that move around each time the
+    // panel opens leave the player unable to find the button they pressed last time.
     const positions = names.map(n => (CATEGORY_ORDER as readonly string[]).indexOf(n));
     expect(positions, '分類的順序不是固定的').toEqual([...positions].sort((a, b) => a - b));
     for (const g of policiesByCategory('district')) {
@@ -66,8 +69,9 @@ describe('依分類分組', () => {
   });
 
   it('should have no land-use or economy group in the city panel', () => {
-    // 「在哪裡蓋什麼」跟「哪一區補貼」本來就都是分區的問題。這條釘的是這個設計
-    // 決定 —— 哪天有一條全城的土地使用條例，這裡會紅，那時候該一起想清楚。
+    // What gets built where and which district is subsidised are district questions. This pins
+    // that design decision: a city-wide land use ordinance turns it red, and that is the moment
+    // to think it through.
     const names = policiesByCategory('city').map(g => g.category);
     expect(names, '全城面板出現了土地使用分類').not.toContain('Land use');
     expect(names, '全城面板出現了經濟分類').not.toContain('Economy');
@@ -76,8 +80,8 @@ describe('依分類分組', () => {
 
 describe('舊存檔帶著的條例', () => {
   it('should still list a policy this district carries but nobody offers any more', () => {
-    // 不列出來的話玩家就再也關不掉它 —— 而它還在存檔裡。
-    const retiredish = PolicyType.ENERGY_REGULATION;   // 全城條例，分區面板不提供
+    // Unlisted, the player can never switch it off, and it is still in the save.
+    const retiredish = PolicyType.ENERGY_REGULATION;   // a city ordinance, which the district panel does not offer
     const groups = policiesByCategory('district', [retiredish]);
     const retired = groups.find(g => g.category === RETIRED_CATEGORY);
     expect(retired?.policies, '已下架的條例沒有被列出來').toContain(retiredish);

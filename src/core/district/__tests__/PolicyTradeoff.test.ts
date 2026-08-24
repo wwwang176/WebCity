@@ -5,13 +5,13 @@ import { PolicyType } from '../types';
 import { ZoneType } from '../../grid/types';
 
 /**
- * 條例要是取捨，不是價目表。
+ * A policy is a trade-off, not a price list.
  *
- * 原本五條政策幾乎全是純好處 —— 回收減垃圾、觀光加稅收、有機食品加地價 —— 只要
- * 付得起就一定開。那不是決策。
+ * Five policies were almost all pure benefit — recycling cuts refuse, tourism raises tax revenue,
+ * organic food raises land value — and affordable meant always on. That is not a decision.
  *
- * 做不出「+收入 +犯罪」這類取捨的原因是整個模擬沒有任何東西能讓犯罪**上升**:
- * `PoliceService` 只提供 `getCrimeReduction`。
+ * A trade of more revenue for more crime could not be expressed because nothing in the simulation
+ * could make crime **rise**: `PoliceService` offers only `getCrimeReduction`.
  */
 
 describe('條例的取捨', () => {
@@ -39,8 +39,9 @@ describe('條例的取捨', () => {
   });
 
   it('should have at least one downside on every tier of every policy', () => {
-    // 純好處的條例不該存在。限制型（沒有 POLICY_EFFECTS 條目）不在此列 —— 它們的
-    // 代價是機會成本:該區長不出高稅收的建築。
+    // No policy should be a pure benefit. Restrictive ones, with no POLICY_EFFECTS entry, are
+    // excluded: their cost is the opportunity cost of the high-tax buildings the district cannot
+    // grow.
     const isDownside = (t: PolicyEffect) =>
       (t.revenue !== undefined && t.revenue < 1)
       || Object.values(t.revenueByZone ?? {}).some(m => m < 1)

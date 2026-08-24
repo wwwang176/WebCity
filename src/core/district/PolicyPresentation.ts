@@ -4,17 +4,18 @@ import { isDistrictScoped, POLICY_SCOPE, type PolicyScopeKind } from './PolicySc
 import { policyCost, type PolicyScale } from './PolicyBilling';
 
 /**
- * 條例 UI 的純邏輯。
+ * The pure logic behind the policy UI.
  *
- * Solid 那一層綁著 `getGame()`，專案既有慣例是不測 UI —— 但「按一次進幾級」
- * 「按鈕上寫什麼」是真的會錯的規則，不該只靠肉眼。放在 core 裡就測得到。
+ * The Solid layer is bound to `getGame()` and the project's convention is not to test UI, but how
+ * far one press advances the level and what the button says are rules that really can be wrong
+ * and should not rest on inspection alone. In core, they can be tested.
  */
 
 /**
- * 按一次進一級，到頂再按回到 0。
+ * One press advances one level, and pressing past the top returns to 0.
  *
- * 一顆按鈕就走得完全部等級，不必為三級各放一顆。`current` 可能來自存檔而超過
- * 現在的表格長度 —— 那時候也要能回到 0，否則按鈕會卡住。
+ * One button walks every level, with no need for three. `current` can come from a save and exceed
+ * the current table's length, and must still be able to return to 0 or the button jams.
  */
 export function nextPolicyLevel(current: number, type: PolicyType): number {
   const max = maxLevel(type);
@@ -23,13 +24,14 @@ export function nextPolicyLevel(current: number, type: PolicyType): number {
 }
 
 /**
- * 按鈕上的字:圓點是等級，金額是**本期**費用。
+ * The button's text: dots for the level, an amount for **this period's** cost.
  *
- * 費用寫在按鈕上而不是說明頁，是因為它會隨規模變動 —— 把分區畫大一倍數字就跳
- * 一倍，那是「依規模計費」最直接的回饋。
+ * The cost is on the button rather than in a help page because it moves with scale: drawing the
+ * district twice as large doubles the number, the most direct feedback that billing follows
+ * scale.
  *
- * 限制型條例不顯示金額:它們的代價是機會成本，標一個 $0 會讓玩家以為那是免費的
- * 好處。
+ * Restrictive policies show no amount: their cost is an opportunity cost, and a $0 would read as
+ * a free benefit.
  */
 export function policyButtonText(type: PolicyType, level: number, scale: PolicyScale): string {
   const name = POLICY_CONFIG[type]?.name ?? type;
@@ -42,10 +44,10 @@ export function policyButtonText(type: PolicyType, level: number, scale: PolicyS
 }
 
 /**
- * 每個條例每一級「給你什麼、要你付什麼」的一句話。
+ * One line per level saying what it gives and what it costs.
  *
- * 好處與代價寫在同一行，不是 tooltip —— 取捨是玩法，藏起來就沒有取捨。玩家要在
- * 按下去之前看得到代價。
+ * Benefit and cost on the same line rather than in a tooltip: the trade-off is the gameplay, and
+ * hidden there is no trade-off. The player has to see the cost before pressing.
  */
 const EFFECT_SUMMARY: Partial<Record<PolicyType, readonly string[]>> = {
   [PolicyType.ENCOURAGE_RECYCLING]: [
@@ -123,36 +125,39 @@ const EFFECT_SUMMARY: Partial<Record<PolicyType, readonly string[]>> = {
   ],
 };
 
-/** 這個條例這一級做什麼。等級 0 回空字串。 */
+/** What this policy does at this level. Level 0 returns an empty string. */
 export function policyEffectSummary(type: PolicyType, level: number): string {
   if (level <= 0) return '';
   return EFFECT_SUMMARY[type]?.[level - 1] ?? '';
 }
 
 /**
- * 強度按鈕上的字。
+ * The text on a strength button.
  *
- * 寫完整的字而不是 L／M／H:縮寫要把游標停上去才知道是什麼，而且單級條例用兩個
- * 符號、三級用三個字母的話，同一個面板裡會有兩套語言要學。
+ * Whole words rather than L/M/H: an abbreviation needs a hover to read, and two symbols for
+ * single-level policies alongside three letters for three-level ones would put two languages in
+ * one panel.
  *
- * 單級的條例說「On」不說「Light」—— 沒有更重的可以開，寫 Light 會讓玩家一直在找
- * 那個不存在的下一格。
+ * A single-level policy says "On" rather than "Light": there is nothing heavier to switch to, and
+ * "Light" leaves the player looking for a next step that does not exist.
  */
 const TIER_NAMES = ['Light', 'Medium', 'Heavy'] as const;
 
 /**
- * 這一級叫什麼。強度按鈕與帳本的逐條支出共用 —— 兩邊各寫各的話，同一條政策在面板上
- * 是「Medium」、在帳本上是「●●○」，玩家得自己猜那兩個圓點對應到哪一格。
+ * What this level is called. Shared by the strength button and the ledger's line items: written
+ * separately, one policy would read "Medium" in the panel and "●●○" in the ledger, leaving the
+ * player to guess which step those two dots meant.
  */
 export function policyLevelLabel(type: PolicyType, level: number): string {
-  if (!(level >= 1)) return 'Off';          // NaN 也走這裡
+  if (!(level >= 1)) return 'Off';          // NaN takes this branch too
   if (maxLevel(type) <= 1) return 'On';
-  // 存檔是可以編輯的。夾住而不是回 undefined —— 那會讓帳本印出「undefined」。
+  // Saves are editable. Clamped rather than returning undefined, which would print
+  // "undefined" in the ledger.
   const i = Math.min(Math.floor(level), TIER_NAMES.length) - 1;
   return TIER_NAMES[i]!;
 }
 
-/** 一個分區所有條例本期的費用合計。 */
+/** The total cost of one district's policies this period. */
 export function districtPolicyTotal(
   policies: readonly { type: PolicyType; level: number }[],
   scale: PolicyScale,
@@ -163,25 +168,25 @@ export function districtPolicyTotal(
 }
 
 /**
- * 分區面板該提供哪些條例。
+ * Which policies the district panel offers.
  *
- * 全城條例濾掉 —— 列出來玩家會按，按了沒反應（`setPolicyLevel` 會擋），那比看不到
- * 更糟。這份清單本來寫在 `DistrictModal` 裡，搬過來是為了測得到:寫在那邊的話，
- * filter 拿掉不會有任何測試轉紅。
+ * City ordinances are filtered out: listed, the player presses them and nothing happens because
+ * `setPolicyLevel` refuses, which is worse than not seeing them. This list lived in
+ * `DistrictModal` and moved here to be testable: there, removing the filter turned no test red.
  */
 export function districtOfferedPolicies(): PolicyType[] {
   return [...IMPLEMENTED_POLICY_TYPES].filter(isDistrictScoped);
 }
 
 /**
- * 條例的分類。
+ * The policy categories.
  *
- * 16 條擺成一排的話玩家找不到東西，而且看不出哪幾條在回答同一個問題。分類是
- * 「這條條例在管什麼」——「在哪裡蓋什麼」「錢從哪來」「晚上安不安全」「排出去
- * 的東西」。
+ * Sixteen policies in one row leave the player unable to find anything, and unable to see which
+ * ones answer the same question. The categories say what a policy governs: what gets built where,
+ * where the money comes from, how safe the night is, what gets discharged.
  *
- * `Retired` 不在這張表裡:它不是一種主題，而是「這條條例已經沒有效果了」的狀態，
- * 只有舊存檔帶得出來。
+ * `Retired` is not in this table: it is not a subject but the state of a policy that no longer
+ * has an effect, reachable only from an older save.
  */
 export const POLICY_CATEGORY: Record<PolicyType, string> = {
   [PolicyType.NO_HEAVY_INDUSTRY]: 'Land use',
@@ -212,11 +217,11 @@ export const POLICY_CATEGORY: Record<PolicyType, string> = {
   [PolicyType.CONGESTION_CHARGE]: 'Transport',
 };
 
-/** 面板上分類出現的順序。 */
+/** The order categories appear in the panel. */
 export const CATEGORY_ORDER =
   ['Land use', 'Economy', 'Transport', 'Safety', 'Welfare', 'Environment'] as const;
 
-/** 已下架的條例集中在這一組。 */
+/** Retired policies are collected in this group. */
 export const RETIRED_CATEGORY = 'Retired';
 
 export interface PolicyGroup {
@@ -225,14 +230,14 @@ export interface PolicyGroup {
 }
 
 /**
- * 某個範圍的面板該顯示的條例，依分類分組。
+ * The policies one scope's panel shows, grouped by category.
  *
- * `alsoCarried` 是這個分區存檔裡已經有的條例 —— 沒有它的話，舊存檔裡已下架的條例
- * 會從畫面上消失，玩家就再也關不掉它。已下架的集中放在 `Retired` 那一組，跟還在
- * 生效的分開。
+ * `alsoCarried` is what this district's save already holds: without it, a retired policy in an
+ * older save disappears from the screen and the player can never switch it off. Retired ones are
+ * collected in the `Retired` group, apart from those still in effect.
  *
- * 空的分類不會出現。全城面板沒有 Land use 也沒有 Economy —— 「在哪裡蓋什麼」跟
- * 「哪一區補貼」本來就都是分區的問題。
+ * Empty categories do not appear. The city panel has no Land use and no Economy, because what
+ * gets built where and which district is subsidised are district questions.
  */
 export function policiesByCategory(
   scope: PolicyScopeKind,

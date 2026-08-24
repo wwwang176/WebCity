@@ -10,9 +10,10 @@ import { createGameState } from '../../simulation/GameState';
 import { serializeGameState, deserializeGameState } from '../../save/Serializer';
 
 /**
- * 有些條例的效果作用在城市級的池子上（電網總需求、教育晉級、貿易價格），沒有位置
- * 可言。判斷法:**如果「整張地圖都套用」永遠不會比「只套一部分」差，那它就該是全城
- * 的** —— 那時候「在哪裡」不是決策，逼玩家先畫分區只是多按幾下。
+ * Some ordinances act on a city-level pool — total grid demand, education progression, trade
+ * prices — and have no location. The test: **if applying it to the whole map is never worse than
+ * applying it to part, it is city-wide**. Where is then not a decision, and requiring a district
+ * first is only extra clicks.
  */
 
 describe('全城條例', () => {
@@ -29,14 +30,16 @@ describe('全城條例', () => {
   });
 
   it('should refuse a district policy', () => {
-    // 一個條例同時是分區又是全城的話，兩邊會各自生效，效果無聲地加倍。
+    // A policy that is both district and city scoped applies on both sides and doubles its
+    // effect silently.
     const o = new CityOrdinances();
     o.setLevel(PolicyType.ENCOURAGE_RECYCLING, 3);
     expect(o.getLevel(PolicyType.ENCOURAGE_RECYCLING), '分區條例被設進了全城').toBe(0);
   });
 
   it('should refuse a city ordinance on a district', () => {
-    // 反向也要擋。只擋一邊的話，另一邊仍然設得進去，效果加倍而費用只收一次。
+    // The reverse is refused too: refusing on one side leaves the other settable, doubling the
+    // effect while charging the fee once.
     const dm = new DistrictManager();
     const d = dm.createDistrict('D');
     const pm = new PolicyManager(dm);
@@ -45,9 +48,9 @@ describe('全城條例', () => {
   });
 
   it('should refuse a city ordinance smuggled in through a save', () => {
-    // 存檔是使用者能編輯的檔案。setPolicyLevel 擋得住正常路徑，但 fromJSON 是
-    // 另一條進得來的門 —— 從那裡塞一條全城條例進分區，收入效果會被套兩次
-    // （全城一次、分區一次），費用也會被收兩次。
+    // A save is a file the user can edit. setPolicyLevel stops the normal path, but fromJSON is
+    // another way in: a city ordinance inserted into a district there applies its revenue effect
+    // twice, once city-wide and once per district, and charges its fee twice.
     const dm = DistrictManager.fromJSON({
       nextId: 2,
       districts: [{
@@ -66,7 +69,8 @@ describe('全城條例', () => {
   });
 
   it('should keep district policies when dropping a smuggled ordinance', () => {
-    // 反面控制:整批丟掉的話上面那條也會過，但玩家的分區政策就沒了。
+    // The control: discarding everything would also satisfy the test above, at the cost of the
+    // player's district policies.
     const dm = DistrictManager.fromJSON({
       nextId: 2,
       districts: [{
@@ -91,8 +95,8 @@ describe('全城條例', () => {
   });
 
   it('should cost real money at the city scale', () => {
-    // 全城條例的 districtCells 恆為 0。如果每一條都用 districtCells 計費，這條路徑
-    // 的費用永遠是 0，所有相關測試都會變成空測試。
+    // A city ordinance's districtCells is always 0. If every ordinance were billed on
+    // districtCells, this path would always cost 0 and every related test would be vacuous.
     const o = new CityOrdinances();
     o.setLevel(PolicyType.ENERGY_REGULATION, 2);
     expect(o.totalCost(scaleOf({ population: 10_000 })), '全城條例不收錢').toBeGreaterThan(0);
@@ -117,7 +121,8 @@ describe('全城條例', () => {
   });
 
   it('should round-trip through a real save', () => {
-    // 直接呼叫 toJSON/restore 的話，GameState 與 Serializer 漏接不會被抓到。
+    // Calling toJSON/restore directly would not catch GameState or Serializer failing to wire
+    // them up.
     const state = createGameState(20, 20);
     state.ordinances.setLevel(PolicyType.ENERGY_REGULATION, 3);
     const restored = deserializeGameState(serializeGameState(state));
@@ -131,8 +136,8 @@ describe('全城條例', () => {
   });
 
   it('should re-check scope when restoring', () => {
-    // 存檔是使用者能編輯的檔案。restore 直接塞進 Map 的話，手改的存檔就能讓一條
-    // 分區條例在全城生效。
+    // A save is a file the user can edit. With restore writing the Map directly, a hand-edited
+    // save could put a district policy into effect city-wide.
     const o = new CityOrdinances();
     o.restore({ levels: [[PolicyType.ENCOURAGE_RECYCLING, 3], [PolicyType.ENERGY_REGULATION, 99]] });
     expect(o.getLevel(PolicyType.ENCOURAGE_RECYCLING), '手改的存檔讓分區條例在全城生效').toBe(0);

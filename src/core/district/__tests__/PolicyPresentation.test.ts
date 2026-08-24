@@ -9,15 +9,16 @@ import { scaleOf } from '../../__tests__/helpers/policyScale';
 import { PolicyType } from '../types';
 
 /**
- * UI 的純邏輯抽在這裡，因為 Solid 那一層綁著 `getGame()`，專案既有慣例是不測 UI
- * —— 但「按一次進幾級」「按鈕上寫什麼」是真的會錯的規則，不該只靠肉眼。
+ * The UI's pure logic is extracted here because the Solid layer is bound to `getGame()` and the
+ * project's convention is not to test UI, while how far one press advances the level and what the
+ * button says are rules that really can be wrong and should not rest on inspection alone.
  */
 
 const SCALE = scaleOf({ population: 1000, districtCells: 50 });
 
 describe('等級循環', () => {
   it('should walk every level then return to off', () => {
-    // 一顆按鈕就走得完，不必為三級各放一顆。
+    // One button walks every level, with no need for three.
     const type = PolicyType.ENCOURAGE_RECYCLING;
     const seen: number[] = [];
     let level = 0;
@@ -31,13 +32,15 @@ describe('等級循環', () => {
   });
 
   it('should be a two-state toggle for a restriction policy', () => {
-    // 限制型沒有效果表條目，maxLevel 是 1 —— 循環不能因此壞掉。
+    // A restrictive policy has no effect table entry and a maxLevel of 1, which must not break
+    // the cycle.
     expect(nextPolicyLevel(0, PolicyType.NO_HEAVY_INDUSTRY)).toBe(1);
     expect(nextPolicyLevel(1, PolicyType.NO_HEAVY_INDUSTRY)).toBe(0);
   });
 
   it('should recover from a level the table no longer offers', () => {
-    // 存檔可能帶著一個比現在表格更高的等級。回不到 0 的話按鈕會卡住。
+    // A save can carry a level above the current table's length. Unable to return to 0, the
+    // button jams.
     expect(nextPolicyLevel(9, PolicyType.TOURISM)).toBe(0);
   });
 });
@@ -49,15 +52,16 @@ describe('按鈕上的字', () => {
   });
 
   it('should show the current cost, not a fixed price', () => {
-    // 費用寫在按鈕上而不是說明頁，是因為它會隨規模變動 —— 把分區畫大一倍數字就
-    // 跳一倍，那是「依規模計費」最直接的回饋。
+    // The cost is on the button rather than in a help page because it moves with scale: drawing
+    // the district twice as large doubles the number, the most direct feedback that billing
+    // follows scale.
     const small = policyButtonText(PolicyType.ENCOURAGE_RECYCLING, 2, scaleOf({ population: 1000, districtCells: 10 }));
     const big = policyButtonText(PolicyType.ENCOURAGE_RECYCLING, 2, scaleOf({ population: 1000, districtCells: 400 }));
     expect(small, '兩個規模顯示同一個價錢').not.toBe(big);
   });
 
   it('should show no price for a restriction policy', () => {
-    // 限制型不收費 —— 標一個 $0 會讓玩家以為那是「免費的好處」。
+    // Restrictive policies charge nothing, and a $0 would read as a free benefit.
     expect(policyButtonText(PolicyType.NO_HEAVY_INDUSTRY, 1, SCALE)).not.toContain('$');
   });
 
@@ -68,8 +72,8 @@ describe('按鈕上的字', () => {
   });
 
   it('should always carry the policy name', () => {
-    // 只驗長度 > 0 的話，把所有名字改成 'X' 也會過。要驗的是那個字串真的是這條
-    // 條例的名字。
+    // Checking only for a non-empty string is satisfied by renaming everything to 'X'. What has
+    // to be checked is that the string really is this policy's name.
     for (const type of Object.values(PolicyType)) {
       const name = POLICY_CONFIG[type].name;
       for (const level of [0, 1, 2, 3]) {
@@ -82,7 +86,8 @@ describe('按鈕上的字', () => {
 
 describe('效果摘要', () => {
   it('should state both the benefit and the price on the same line', () => {
-    // 取捨是玩法，藏在 tooltip 裡就沒有取捨。玩家要在按下去之前看得到代價。
+    // The trade-off is the gameplay, and hidden in a tooltip there is no trade-off. The player
+    // has to see the cost before pressing.
     const summary = policyEffectSummary(PolicyType.ENCOURAGE_RECYCLING, 3);
     expect(summary, '沒有講好處').toMatch(/Garbage/);
     expect(summary, '沒有講代價').toMatch(/revenue/i);
@@ -93,7 +98,7 @@ describe('效果摘要', () => {
   });
 
   it('should describe every tier of every policy in the effect table', () => {
-    // 加了一條條例卻沒有描述的話，玩家看到的是一顆沒有說明的按鈕。
+    // A policy added without a description leaves the player with an unexplained button.
     for (const [type, tiers] of Object.entries(POLICY_EFFECTS)) {
       for (let i = 1; i <= tiers!.length; i++) {
         expect(policyEffectSummary(type as PolicyType, i).length,
@@ -103,8 +108,8 @@ describe('效果摘要', () => {
   });
 
   it('should give a distinct sentence to every policy and every tier', () => {
-    // 只驗「有字」的話，一個回傳固定字串的實作也會過 —— 而那正是玩家最容易被騙
-    // 的形狀:每顆按鈕的說明都一樣，看起來像有說明。
+    // Checking only for text is satisfied by returning a fixed string, which is the shape most
+    // likely to fool a player: every button explained identically, and it looks explained.
     const seen = new Map<string, string>();
     for (const type of Object.values(PolicyType)) {
       for (let lv = 1; lv <= maxLevel(type); lv++) {
@@ -119,7 +124,8 @@ describe('效果摘要', () => {
   });
 
   it('should describe the quantity each policy actually moves', () => {
-    // 說明必須對得上效果表 —— 不然改了數字忘了改說明，玩家看到的是舊的承諾。
+    // The description has to match the effect table, or a changed number with an unchanged
+    // description leaves the player reading an old promise.
     for (const type of Object.values(PolicyType)) {
       for (let lv = 1; lv <= maxLevel(type); lv++) {
         const tier = POLICY_EFFECTS[type]?.[lv - 1];
@@ -129,7 +135,8 @@ describe('效果摘要', () => {
         if (tier?.crime !== undefined) expect(text, `${type} 動了犯罪卻沒說`).toContain('Crime');
         if (tier?.powerDemand !== undefined) expect(text, `${type} 動了電力卻沒說`).toContain('Power demand');
         if (tier?.revenue !== undefined || tier?.revenueByZone) {
-          // 句首會是 Revenue，句中是 revenue —— 比對詞不是比對大小寫。
+          // Revenue at the start of a sentence and revenue within one: the word is matched, not
+          // its case.
           expect(text, `${type} 動了收入卻沒說`).toMatch(/revenue/i);
         }
       }
@@ -160,10 +167,12 @@ describe('分區合計', () => {
 
 describe('分區面板只列分區條例', () => {
   it('should not offer a city ordinance on a district', () => {
-    // 列出來玩家會按，按了沒反應（setPolicyLevel 會擋）—— 那比看不到更糟。
+    // Listed, the player presses them and nothing happens because setPolicyLevel refuses, which
+    // is worse than not seeing them.
     //
-    // 第一版這條只驗「範圍表裡有全城條例」，完全沒碰到那份清單 —— 把 modal 的
-    // filter 拿掉照樣綠。清單本身是純資料，所以搬進 core 讓它測得到。
+    // Checking only that the scope table contains city ordinances never touches that list and
+    // stays green with the modal's filter removed. The list itself is pure data, so it moved into
+    // core to be testable.
     const offered = districtOfferedPolicies();
     const cityScoped = (Object.values(PolicyType) as PolicyType[])
       .filter(t => POLICY_SCOPE[t] === 'city');
@@ -174,7 +183,8 @@ describe('分區面板只列分區條例', () => {
   });
 
   it('should offer every implemented district policy', () => {
-    // 反面控制:回傳空陣列的話上面那條也會過，但玩家一條政策都看不到。
+    // The control: returning an empty array would also satisfy the test above, with the player
+    // seeing no policies at all.
     const offered = districtOfferedPolicies();
     expect(offered.length, '分區面板一條政策都沒有').toBeGreaterThan(0);
     for (const t of offered) {
@@ -187,17 +197,17 @@ describe('分區面板只列分區條例', () => {
 
 describe('等級的名字', () => {
   /**
-   * 強度按鈕、帳本的逐條支出，講的必須是同一套話。
+   * The strength button and the ledger's line items have to speak one language.
    *
-   * 帳本原本畫的是 `●●○`，而面板上寫的是 Light／Medium／Heavy —— 同一條政策在
-   * 兩個地方長得不一樣，玩家得自己猜那兩個圓點對應到哪一格。
+   * The ledger drew `●●○` while the panel said Light / Medium / Heavy, so one policy looked
+   * different in two places and the player had to guess which step those two dots meant.
    */
   it('should call level 0 off', () => {
     expect(policyLevelLabel(PolicyType.ENCOURAGE_RECYCLING, 0)).toBe('Off');
   });
 
   it('should name the tiers of a multi-level policy', () => {
-    // 三級的用三個字，不是 L/M/H —— 縮寫要把游標停上去才知道是什麼。
+    // Three words for three levels rather than L/M/H: an abbreviation needs a hover to read.
     expect(maxLevel(PolicyType.ENCOURAGE_RECYCLING)).toBe(3);
     expect(policyLevelLabel(PolicyType.ENCOURAGE_RECYCLING, 1)).toBe('Light');
     expect(policyLevelLabel(PolicyType.ENCOURAGE_RECYCLING, 2)).toBe('Medium');
@@ -205,13 +215,14 @@ describe('等級的名字', () => {
   });
 
   it('should just say on for a policy that only has one level', () => {
-    // 單級的沒有強度可言。硬套 Light 會讓玩家以為還有更重的可以開。
+    // A single-level policy has no strength. Forcing "Light" leaves the player expecting
+    // something heavier to exist.
     expect(maxLevel(PolicyType.TOURISM)).toBe(1);
     expect(policyLevelLabel(PolicyType.TOURISM, 1)).toBe('On');
   });
 
   it('should not fall off the end for a level a save could carry', () => {
-    // 存檔是可以編輯的。回 undefined 的話帳本那一列會印出「undefined」。
+    // Saves are editable. Returning undefined prints "undefined" on that ledger line.
     for (const level of [99, -1, 1.5, NaN]) {
       const label = policyLevelLabel(PolicyType.ENCOURAGE_RECYCLING, level);
       expect(typeof label, `${level} 的標籤不是字串`).toBe('string');

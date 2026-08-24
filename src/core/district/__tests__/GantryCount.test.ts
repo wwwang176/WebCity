@@ -8,17 +8,17 @@ import { createGameState } from '../../simulation/GameState';
 import { scaleOf } from '../../__tests__/helpers/policyScale';
 
 /**
- * 門架是架在路上的，不是架在地上。
+ * Gantries stand on roads, not on land.
  *
- * 用分區的總格數計價的話，圈一片公園綠地跟圈一片密集路網要付一樣多的維運費 ——
- * 而前者根本沒有地方可以架門架。
+ * Priced by total district cells, enclosing a park costs the same upkeep as enclosing a dense
+ * road network, and the park has nowhere to put a gantry.
  */
 
 function city() {
   const state = createGameState(30, 30);
-  // 一條東西向的路穿過中間。
+  // One east-west road across the middle.
   for (let x = 0; x < 30; x++) state.grid.setCell(x, 10, { roadType: RoadType.TWO_LANE });
-  // 其餘是綠地（沒有道路）。
+  // The rest is green field with no roads.
   for (let x = 0; x < 30; x++) {
     state.grid.setCell(x, 11, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 });
   }
@@ -29,7 +29,7 @@ describe('門架數', () => {
   it('should count the road cells, not the land', () => {
     const state = city();
     const d = state.districts.createDistrict('D');
-    // 圈一塊 6 格寬、3 列高的地:18 格，其中只有 6 格是路。
+    // A plot 6 cells wide and 3 rows tall: 18 cells, of which only 6 are road.
     for (let x = 2; x < 8; x++) {
       for (let y = 10; y <= 12; y++) state.districts.addCellToDistrict(d.id, x, y);
     }
@@ -46,7 +46,7 @@ describe('門架數', () => {
   });
 
   it('should ignore cells outside the map', () => {
-    // 存檔是可以編輯的。越界的格子查不到 cell，不能當成有路。
+    // Saves are editable. An out-of-bounds cell has no record and cannot count as road.
     const state = city();
     const d = state.districts.createDistrict('D');
     d.cells.add('999,999');
@@ -66,7 +66,7 @@ describe('壅塞費的門架維運費', () => {
   });
 
   it('should cost nothing to run a cordon with no roads in it', () => {
-    // 圈一片荒地不該產生任何門架維運費 —— 那裡一台車都開不進來。
+    // Enclosing open country should produce no gantry upkeep: not one car can drive in.
     expect(policyCost(PolicyType.CONGESTION_CHARGE, 2, scaleOf({ districtCells: 900 })),
       '荒地上的收費區還在收門架維運費').toBe(0);
   });

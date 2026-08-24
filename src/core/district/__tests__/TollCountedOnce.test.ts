@@ -11,13 +11,14 @@ import { createSyncFakeWorker } from '../../traffic/__tests__/SyncFakeWorker';
 import { useSeededRandom, reseedRandom } from '../../__tests__/helpers/seededRandom';
 
 /**
- * 一趟車只付一次過路費。
+ * One trip pays one toll.
  *
- * 付費人數本來是一個全城的總數，而計費是逐分區跑的 —— 於是每一個收費區都拿整個
- * 城市的付費人數去乘。畫兩個收費區，同一筆過路費就收兩次;畫十個收十次。
+ * The paying-driver count was a city-wide total while billing runs per district, so every
+ * charging zone multiplied by the whole city's paying drivers. Two zones charged the same toll
+ * twice; ten charged it ten times.
  */
 
-/** 家在西端、公司在東端，中間是一條長路。 */
+/** Home at the west end, work at the east end, one long road between them. */
 function twoCordonCity(cordons: number): { state: GameState; loop: SimulationLoop } {
   reseedRandom();
   const state = createGameState(60, 60);
@@ -35,7 +36,7 @@ function twoCordonCity(cordons: number): { state: GameState; loop: SimulationLoo
     state.citizens.createCitizen({ age: 100, homeId: '6,2', workplaceId: '16,2' });
   }
 
-  // 第一個收費區蓋住公司那一端。
+  // The first charging zone covers the workplace end.
   const a = state.districts.createDistrict('Downtown');
   for (let x = 12; x <= 20; x++) {
     for (let y = 0; y <= 4; y++) state.districts.addCellToDistrict(a.id, x, y);
@@ -43,7 +44,8 @@ function twoCordonCity(cordons: number): { state: GameState; loop: SimulationLoo
   state.policies.setPolicyLevel(a.id, PolicyType.CONGESTION_CHARGE, 1);
 
   if (cordons > 1) {
-    // 第二個收費區在地圖另一頭，通勤路線根本碰不到它 —— 它一毛都不該收到。
+    // The second charging zone is across the map and the commute never touches it, so it should
+    // collect nothing at all.
     const b = state.districts.createDistrict('Far side');
     for (let x = 40; x <= 50; x++) {
       for (let y = 0; y <= 4; y++) state.districts.addCellToDistrict(b.id, x, y);
@@ -51,14 +53,15 @@ function twoCordonCity(cordons: number): { state: GameState; loop: SimulationLoo
     state.policies.setPolicyLevel(b.id, PolicyType.CONGESTION_CHARGE, 1);
   }
 
-  // 家那一端也畫了一個分區，但**沒有開壅塞費** —— 它不該累積任何付費人頭。
-  // 累積的話，玩家哪天真的開了條例，第一期就會照著一批陳年數字收錢。
+  // The home end also has a district, but **with no congestion charge**, so it should accumulate
+  // no paying drivers. Accumulating them means that the day the player enables the ordinance, its
+  // first period charges against a batch of stale figures.
   const plain = state.districts.createDistrict('No charge here');
   for (let x = 3; x <= 9; x++) {
     for (let y = 0; y <= 4; y++) state.districts.addCellToDistrict(plain.id, x, y);
   }
-  // 一批兩端都收不到費的通勤者:家在那個沒開條例的分區裡，公司在任何分區之外。
-  // 沒有他們的話，「不收費就不記帳」那條分支根本走不到。
+  // A batch of commuters charged at neither end: home in the district with no ordinance and work
+  // outside every district. Without them the "no charge, no record" branch is never taken.
   state.grid.setCell(30, 2, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
   for (let k = 0; k < 10; k++) {
     state.citizens.createCitizen({ age: 100, homeId: '4,2', workplaceId: '30,2' });
@@ -103,7 +106,7 @@ describe('過路費只收一次', () => {
 });
 
 describe('起訖各在一個收費區', () => {
-  /** 家在收費區 A、公司在收費區 B —— 同一趟車碰得到兩個收費區。 */
+  /** Home in charging zone A and work in charging zone B, so one trip meets two zones. */
   function twoEndCordons(): { state: GameState; loop: SimulationLoop } {
     reseedRandom();
     const state = createGameState(60, 60);
@@ -140,15 +143,16 @@ describe('起訖各在一個收費區', () => {
   }
 
   it('should count each trip once even when both ends are inside a cordon', () => {
-    // 一趟車只過一次關卡。兩端各記一次的話，同一批人會被收兩次錢 —— 而他們正是
-    // 最沒有替代方案的那一群:家跟公司都在收費區裡。
+    // A trip crosses one cordon. Recording it at both ends charges the same people twice, and
+    // they have the fewest alternatives of anyone, with home and work both inside a zone.
     const { loop } = twoEndCordons();
     const stats = loop.getCommuteStats();
     let charged = 0;
     for (const v of stats.chargedDriversByDistrict.values()) charged += v;
     expect(charged, '沒有人被算成付費，這條測試等於空轉').toBeGreaterThan(0);
-    // 分母用統計自己的樣本數，不是當下的人口 —— 統計是在第一個 tick 算的，
-    // 人口之後還會因為遷出而變動，拿現在的人口去比會比到另一件事。
+    // The denominator is the statistics' own sample size rather than the current population: the
+    // statistics are computed on the first tick and the population then moves with emigration, so
+    // comparing against the current figure compares something else.
     expect(charged, '起訖各在一個收費區，同一趟被收了兩次')
       .toBeLessThanOrEqual(stats.sampled);
     expect(stats.chargedDriversByDistrict.size, '同一趟被記進兩個收費區').toBe(1);

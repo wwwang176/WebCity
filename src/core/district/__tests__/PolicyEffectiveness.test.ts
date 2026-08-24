@@ -6,7 +6,8 @@ import { ZoneType } from '../../grid/types';
 import { calculateDistrictPolicyCost } from '../../economy/ExpenseCalculator';
 import { policyCost } from '../PolicyBilling';
 
-/** 計費夾具共用的規模。分區格數要跟 fixture 的 `cells.size` 一致。 */
+/** The scale shared by the billing fixtures. The district cell count has to match the fixture's
+ *  `cells.size`. */
 const POP = 1000;
 const SCALE = scaleOf({ population: POP, districtCells: 50 });
 
@@ -64,9 +65,10 @@ describe('policies are charged only when they do something', () => {
   });
 
   it('should not bill restriction policies at all', () => {
-    // 限制型條例（禁重工業、禁高密度）以前一起收 150 + 120。它們的代價是機會成本
-    // —— 該區長不出高稅收的建築 —— 而不是市府掏錢。再收一次是雙重懲罰，而且那個
-    // 數字沒有來由。
+    // The restrictive ordinances, banning heavy industry and high density, once charged 150 and
+    // 120 between them. Their cost is the opportunity cost of the high-tax buildings the district
+    // cannot grow, not money out of the treasury. Charging as well is a double penalty, and that
+    // number has no basis.
     const districts = [{
       cells: { size: 50 }, roadCells: 50, chargedDrivers: 0,
       policies: [
@@ -79,7 +81,8 @@ describe('policies are charged only when they do something', () => {
   });
 
   it('should still bill a policy that costs money', () => {
-    // 反面控制:上一條「不收費」單獨看的話，一個永遠回 0 的計算器也會通過。
+    // The control: taken alone, the "charges nothing" test above is satisfied by a calculator
+    // that always returns 0.
     const districts = [{
       cells: { size: 50 }, roadCells: 50, chargedDrivers: 0,
       policies: [{ level: 2, type: PolicyType.ENCOURAGE_RECYCLING }],
@@ -116,7 +119,7 @@ describe('policies are charged only when they do something', () => {
 
   it('should name every policy type, implemented or not', () => {
     // Unimplemented policies still load from old saves and still need a name to
-    // be displayed and removed. 價錢已經不在這張表上 —— 它跟著規模走。
+    // be displayed and removed. Prices are no longer in this table; they follow scale.
     for (const t of Object.values(PolicyType)) {
       expect(POLICY_CONFIG[t]).toBeDefined();
       expect(POLICY_CONFIG[t].name).toBeTruthy();

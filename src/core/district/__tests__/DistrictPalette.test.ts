@@ -7,10 +7,11 @@ import { DistrictManager } from '../DistrictManager';
 import { districtOverlayValue, districtLabelAnchors } from '../../overlay/OverlayBuilders';
 
 /**
- * 色票、圖層數值、面板色塊三者必須是同一個顏色。
+ * The swatch, the overlay value and the panel's colour block have to be one colour.
  *
- * 它們走的是不同的程式碼路徑（圖層是 HSL 算出來的頂點色，面板是 CSS 字串），對不
- * 起來的話玩家在面板上點了藍色，地圖上卻是綠色 —— 而且沒有任何東西會報錯。
+ * They take different code paths — the overlay computes a vertex colour from HSL, the panel is a
+ * CSS string — and disagreeing means the player clicks blue in the panel and gets green on the
+ * map, with nothing reporting an error.
  */
 
 describe('色票', () => {
@@ -21,8 +22,8 @@ describe('色票', () => {
   });
 
   it('should never use 0, which the overlay throws away', () => {
-    // `buildOverlayData` 把 0 當成「這一格沒東西」丟掉。色票落在 0 的話，選了那個
-    // 顏色的分區會整區從圖層上消失。
+    // `buildOverlayData` drops 0 as "nothing on this cell". A swatch at 0 makes any district
+    // that chose it disappear from the overlay entirely.
     for (const s of DISTRICT_SWATCHES) {
       expect(s.value, '色票的數值是 0，那一區會從圖層上消失').toBeGreaterThan(0);
       expect(s.value).toBeLessThanOrEqual(100);
@@ -30,7 +31,7 @@ describe('色票', () => {
   });
 
   it('should describe each swatch with the hue the overlay will actually draw', () => {
-    // 面板的 CSS 色相必須等於圖層的 value/100 × 360。
+    // The panel's CSS hue has to equal the overlay's value/100 x 360.
     for (const s of DISTRICT_SWATCHES) {
       const hue = Number(/hsl\(([\d.]+)/.exec(s.css)![1]);
       expect(hue, `色塊的色相跟圖層算出來的不一樣（value=${s.value}）`)
@@ -62,7 +63,8 @@ describe('圖層拿到的數值', () => {
   });
 
   it('should still spread the colours when nobody has picked one', () => {
-    // 沒選過的分區照舊用黃金比例雜湊 —— 開局畫兩區就該是兩個顏色。
+    // A district that never chose still uses the golden-ratio hash: two districts drawn at the
+    // start should be two colours.
     const a = districtOverlayValue({ id: 'district_1' });
     const b = districtOverlayValue({ id: 'district_2' });
     expect(a).toBeGreaterThan(0);
@@ -85,7 +87,7 @@ describe('圖層上的名稱', () => {
   });
 
   it('should skip a district with no cells', () => {
-    // 沒有格子就沒有中心點。硬算會得到 NaN，標籤會飛到畫面外。
+    // No cells means no centre. Computing one anyway gives NaN and sends the label off screen.
     expect(districtLabelAnchors([d('district_1', 'Empty', [])])).toEqual([]);
   });
 
@@ -100,8 +102,9 @@ describe('圖層上的名稱', () => {
 
 describe('三個地方共用同一組飽和度與亮度', () => {
   it('should build the swatch css from the shared constants', () => {
-    // 圖層（setHSL）、面板色塊（CSS）、標籤底色（canvas）走三條不同的路。任何一
-    // 個自己寫死數字的話，調色時漏掉它不會有任何徵兆 —— 只會看起來怪怪的。
+    // The overlay's setHSL, the panel's CSS and the label canvas take three different paths. Any
+    // one of them writing its own literals means an adjustment that misses it has no symptom
+    // beyond looking slightly wrong.
     for (const s of DISTRICT_SWATCHES) {
       const m = /hsl\([\d.]+ ([\d.]+)% ([\d.]+)%\)/.exec(s.css)!;
       expect(Number(m[1]), '色塊的飽和度不是共用的那個').toBeCloseTo(DISTRICT_COLOR.saturation * 100, 6);
@@ -115,15 +118,17 @@ describe('三個地方共用同一組飽和度與亮度', () => {
   });
 
   it('should stay a background colour, not a warning colour', () => {
-    // 分區的顏色是要能長時間看著的底色。飽和度爬回去的話整張地圖會很吵。
+    // A district colour is a background to look at for a long time. Saturation creeping back up
+    // makes the whole map loud.
     expect(DISTRICT_COLOR.saturation).toBeLessThanOrEqual(0.5);
   });
 });
 
 describe('色相避開草地', () => {
   it('should keep every swatch out of the grass band', () => {
-    // 80–150 度是草地的顏色。飽和度壓低之後，落在那裡的色票鋪在地圖上幾乎看不見
-    // —— 均勻切色相環的版本裡有兩個色票就是這樣化掉的。
+    // 80-150 degrees is the colour of grass. At this saturation a swatch there is nearly
+    // invisible on the map, which is how two swatches vanished from an evenly divided hue
+    // circle.
     for (const s of DISTRICT_SWATCHES) {
       const hue = (s.value / 100) * 360;
       const inGrass = hue >= 80 && hue <= 150;
@@ -133,7 +138,7 @@ describe('色相避開草地', () => {
   });
 
   it('should still spread them around the wheel', () => {
-    // 反面控制:八個色票全擠在同一個色相也會通過上面那條。
+    // The control: all eight swatches crowded onto one hue would also satisfy the test above.
     const hues = DISTRICT_SWATCHES.map(s => (s.value / 100) * 360).sort((a, b) => a - b);
     expect(hues[hues.length - 1]! - hues[0]!, '所有色票擠在同一段色相裡')
       .toBeGreaterThan(180);
@@ -142,9 +147,9 @@ describe('色相避開草地', () => {
 
 describe('新分區馬上配一個顏色', () => {
   /**
-   * 沒配的話它會落在黃金比例雜湊出來的色相上 —— 那個色相不在八個色票裡，也可能
-   * 落進草地那一段（80–150 度）看不見。而且玩家沒得「改回原本那個」，因為原本
-   * 那個不是色票。
+   * Without one it falls back to a hue from the golden-ratio hash, which is not among the eight
+   * swatches and may land in the invisible grass band of 80-150 degrees. And the player cannot
+   * choose it again, because it is not a swatch.
    */
   it('should hand out a colour nobody is using', () => {
     const first = nextSwatchIndex([]);
@@ -153,8 +158,9 @@ describe('新分區馬上配一個顏色', () => {
   });
 
   it('should keep consecutive districts far apart on the wheel', () => {
-    // 玩家連續畫出來的分區拿到的是連續發配的色票。照索引順序發的話，前兩區會拿到
-    // 相鄰的色相（352 度與 20 度）—— 那是這八個裡最像的一對。
+    // Districts drawn one after another take consecutively handed-out swatches. Handed out by
+    // index, the first two get adjacent hues (352 and 20 degrees), the most similar pair of the
+    // eight.
     const hueOf = (i: number) => (DISTRICT_SWATCHES[i]!.value / 100) * 360;
     const gap = (a: number, b: number) => {
       const d = Math.abs(hueOf(a) - hueOf(b));
@@ -173,7 +179,7 @@ describe('新分區馬上配一個顏色', () => {
   it('should fill a gap left by a deleted district', () => {
     const first = nextSwatchIndex([]);
     const second = nextSwatchIndex([first]);
-    // 第一區被刪掉，它的顏色要能被拿回來用。
+    // With the first district deleted, its colour has to return to the pool.
     expect(nextSwatchIndex([second])).toBe(first);
   });
 
@@ -183,7 +189,8 @@ describe('新分區馬上配一個顏色', () => {
   });
 
   it('should pick the least crowded colour when it has to repeat', () => {
-    // 全部用過一輪之後，重複用最少的那個。單純取模的話會一直疊在同一個上。
+    // Once every swatch has been used, the least repeated one. A plain modulo keeps stacking
+    // onto the same one.
     const all = DISTRICT_SWATCHES.map((_, i) => i);
     const twice = [0, 1, 2, 3, 4, 5];
     const picked = nextSwatchIndex([...all, ...twice]);
@@ -191,9 +198,9 @@ describe('新分區馬上配一個顏色', () => {
   });
 
   it('should ignore what a hand-edited save could carry', () => {
-    // 存檔是可以編輯的。這條只驗「不會炸、也不會回一個壞索引」——
-    // 它**守不到**過濾壞索引那一行:挑的是用最少的，而雜散的鍵永遠 ≥ 那些
-    // 沒被碰過的 0，算不算進去結果都一樣。
+    // Saves are editable. This only checks that nothing throws and no broken index comes back;
+    // it does **not** guard the line filtering broken indices, because the least-used one is
+    // taken and a stray key's count is always at least the untouched zeros.
     expect(nextSwatchIndex([undefined, -1, 999, 1.5, NaN])).toBe(0);
   });
 });
@@ -222,7 +229,7 @@ describe('分區一建立就有顏色', () => {
   });
 
   it('should give a split-off district its own colour', () => {
-    // 切出來的也是一個新分區，玩家一樣要在地圖上分得出它。
+    // A split produces a new district too, and the player has to tell it apart on the map.
     const dm = new DistrictManager();
     const a = dm.createDistrict('A');
     dm.addCellToDistrict(a.id, 0, 0);

@@ -4,11 +4,13 @@ import { PolicyManager } from '../PolicyManager';
 import { PolicyType } from '../types';
 
 /**
- * 賭場、夜間經濟、宵禁是同一個決定的三個答案:這一區的夜晚要放開、放一半、還是
- * 關起來。三個同時成立沒有意義，而且疊起來是純賺 —— 賭場疊夜間經濟是商業收入
- * +68.75%，犯罪的代價卻可以再用宵禁抵掉一部分。
+ * Gambling, the night economy and a curfew are three answers to one decision: whether this
+ * district's nights are open, half open, or closed. All three at once is meaningless and purely
+ * profitable when stacked — gambling on top of the night economy is +68.75% commercial revenue,
+ * and part of the crime cost can then be bought back with a curfew.
  *
- * 互斥必須做在 setter 與存檔兩個地方。只擋 UI 的話，手改一次存檔就繞過去了。
+ * Exclusivity has to be enforced in the setter and on the save path. Guarding the UI alone is
+ * bypassed by one hand edit to a save.
  */
 
 function setup() {
@@ -20,7 +22,7 @@ function setup() {
 const levelOf = (policies: PolicyManager, id: string, type: PolicyType) =>
   policies.getPolicyLevel(id, type);
 
-/** 只有一個分區的存檔。`specialization` 省略掉，`fromJSON` 會補預設值。 */
+/** A save with one district. `specialization` is omitted and `fromJSON` supplies the default. */
 function saveWith(policies: { type: PolicyType; level: number }[]) {
   return DistrictManager.fromJSON({
     nextId: 2,
@@ -43,7 +45,8 @@ describe('夜生活的三條條例互斥', () => {
   });
 
   it('should switch off curfew when gambling comes in', () => {
-    // 反方向也要成立 —— 只擋一邊的話，先開宵禁再開賭場就兩條都在。
+    // The reverse has to hold too: guarding one direction leaves a curfew followed by gambling
+    // with both in effect.
     const { policies, id } = setup();
     policies.setPolicyLevel(id, PolicyType.CURFEW, 2);
     policies.setPolicyLevel(id, PolicyType.LEGALIZE_GAMBLING, 1);
@@ -59,7 +62,8 @@ describe('夜生活的三條條例互斥', () => {
   });
 
   it('should leave the group alone when a policy is switched off', () => {
-    // 關掉一條不該把同組的別條也關掉 —— 那會讓「關閉」變成一顆會誤傷的按鈕。
+    // Switching one off must not switch the rest of its group off, which would make "off" a
+    // button with collateral damage.
     const { policies, id } = setup();
     policies.setPolicyLevel(id, PolicyType.CURFEW, 2);
     policies.setPolicyLevel(id, PolicyType.LEGALIZE_GAMBLING, 0);
@@ -67,7 +71,8 @@ describe('夜生活的三條條例互斥', () => {
   });
 
   it('should not touch policies outside the group', () => {
-    // 反面控制:把所有政策都關掉的實作也會讓上面那幾條過。
+    // The control: an implementation that switches every policy off would satisfy the tests
+    // above.
     const { policies, id } = setup();
     policies.setPolicyLevel(id, PolicyType.ENCOURAGE_RECYCLING, 3);
     policies.setPolicyLevel(id, PolicyType.CURFEW, 2);
@@ -87,7 +92,8 @@ describe('存檔也要重跑互斥', () => {
   });
 
   it('should not drop policies from different groups', () => {
-    // 反面控制:整批丟掉的話上面那條也會過，但玩家的分區政策就沒了。
+    // The control: discarding everything would also satisfy the test above, at the cost of the
+    // player's district policies.
     const districts = saveWith([
       { type: PolicyType.CURFEW, level: 2 },
       { type: PolicyType.ENCOURAGE_RECYCLING, level: 3 },
@@ -104,16 +110,16 @@ describe('存檔的互斥結果不能看排列順序', () => {
   };
 
   it('should keep the same one whichever way round the save lists them', () => {
-    // 存檔是可以手改的，順序不該決定哪一條活下來 —— 同一個檔案在不同版本的遊戲
-    // 讀出不同結果，玩家沒有辦法知道發生了什麼事。
+    // Saves can be hand edited, and ordering must not decide which policy survives: one file
+    // reading differently in different builds leaves the player no way to know what happened.
     expect(kept([PolicyType.LEGALIZE_GAMBLING, PolicyType.CURFEW]))
       .toEqual(kept([PolicyType.CURFEW, PolicyType.LEGALIZE_GAMBLING]));
   });
 
   it('should collapse two entries of the same policy into one', () => {
-    // 同一個 PolicyType 兩筆不在彼此的互斥組裡，所以互斥檢查放行 —— 而 effect()
-    // 是逐筆疊乘的，setter 與 UI 卻只操作 find() 找到的第一筆。畫面上關掉了，
-    // 效果還在。
+    // Two entries of one PolicyType are not in each other's exclusive group, so the exclusivity
+    // check lets them through, while effect() multiplies entry by entry and the setter and UI
+    // only touch the first one find() returns: switched off on screen, still in effect.
     const d = saveWith([
       { type: PolicyType.ENCOURAGE_RECYCLING, level: 3 },
       { type: PolicyType.ENCOURAGE_RECYCLING, level: 2 },

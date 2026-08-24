@@ -5,10 +5,10 @@ import { PolicyType } from '../types';
 import { ZoneType } from '../../grid/types';
 
 /**
- * 條例的強度用一個等級欄位表示，不是三個 enum 成員（LIGHT / MEDIUM / HEAVY）。
+ * A policy's strength is one level field rather than three enum members (LIGHT / MEDIUM / HEAVY).
  *
- * 互斥必須自動成立 —— 分成三個成員的話，「不能同時開輕度和重度」會變成另一份要
- * 手動維護的檢查，而漏掉的那一條不會有任何徵兆。一個欄位只能是一個值。
+ * Exclusivity has to hold automatically: with three members, "light and heavy cannot both be on"
+ * becomes another hand-maintained check whose omission has no symptom. One field holds one value.
  */
 
 function fresh() {
@@ -63,7 +63,7 @@ describe('舊存檔的遷移', () => {
   }
 
   it('should never turn an old active:true policy off', () => {
-    // 掉成 0 的話，玩家讀檔會發現政策全被關掉了，而畫面上沒有任何東西說明為什麼。
+    // Falling back to 0 turns every policy off on load with nothing on screen explaining why.
     expect(load({ ...base, active: true })).toBeGreaterThan(0);
   });
 
@@ -72,8 +72,8 @@ describe('舊存檔的遷移', () => {
   });
 
   it('should clamp a corrupt level from a tampered save', () => {
-    // `level` 宣告成 0|1|2|3，而 TypeScript 只在編譯期看得到它。存檔是使用者能
-    // 編輯的檔案，讀進來不夾住就會破壞那個不變量。
+    // `level` is declared 0|1|2|3, which TypeScript only sees at compile time. A save is a file
+    // the user can edit, and reading one in unclamped breaks that invariant.
     expect(load({ ...base, level: 99 }), 'level 99 沒有被夾住').toBe(3);
     expect(load({ ...base, level: -1 }), 'level -1 沒有被夾住').toBe(0);
     expect(load({ ...base, level: 2.7 }), '小數 level 沒有被截斷').toBe(2);
@@ -81,20 +81,24 @@ describe('舊存檔的遷移', () => {
   });
 
   it('should prefer an explicit level over the legacy flag', () => {
-    // 新格式兩個欄位都在時，level 是權威 —— 不然存過一次的檔案會被舊欄位蓋回去。
+    // With both fields present in the new format, level is authoritative, or a file saved once
+    // is overwritten by the older field.
     expect(load({ ...base, level: 3, active: false })).toBe(3);
   });
 
   it('should land an old policy on the tier that keeps its benefit', () => {
-    // 分級之前每條政策只有一組數字。一律轉成 level 1 的話，那組數字剛好不在第一格
-    // 的政策就會在讀檔當下靜靜地變弱 —— 回收原本是 garbage 0.65，而 0.65 是新表的
-    // 第 2 級。玩家沒有動任何東西，垃圾量卻變差了。
+    // Before levels, each policy had one set of numbers. Converting everything to level 1
+    // silently weakens, on load, any policy whose numbers were not the first entry: recycling was
+    // garbage 0.65, and 0.65 is the new table's level 2. A player who changed nothing gets worse
+    // refuse figures.
     //
-    // 這條只保證**好處**的量級不變。新表每一級都多了代價（回收扣商業收入、觀光
-    // 加犯罪、有機食品扣商業收入），那些代價對舊存檔一樣生效 —— 那正是這次改造
-    // 的目的:沒有純好處的條例。下一條把那件事寫成斷言。
-    // 兩條政策放在不同分區 —— 同一區的話效果會相乘（回收現在也扣商業收入），
-    // 量到的就不是「觀光自己有沒有變」了。
+    // This guarantees only that the **benefit** keeps its magnitude. Every level in the new table
+    // also carries a cost — recycling docks commercial revenue, tourism adds crime, organic food
+    // docks commercial revenue — and those costs apply to older saves too, which is the point of
+    // the change: no policy is a pure benefit. The next test states that as an assertion.
+    //
+    // The two policies go in different districts: in one district their effects multiply, since
+    // recycling now docks commerce too, and what is measured stops being tourism's own change.
     const dm = DistrictManager.fromJSON({
       nextId: 3,
       districts: [
@@ -110,7 +114,7 @@ describe('舊存檔的遷移', () => {
     } as never);
     const pm = new PolicyManager(dm);
 
-    // 分級之前的效果:回收 garbage 0.65、觀光 revenue 1.2。
+    // The pre-levels effects: recycling garbage 0.65, tourism revenue 1.2.
     expect(pm.getGarbageMultiplier('district_1'), '舊存檔的回收讀進來之後變弱了')
       .toBeCloseTo(0.65, 6);
     expect(pm.getRevenueMultiplier('district_2', ZoneType.COMMERCIAL_LOW), '舊存檔的觀光變了')
@@ -118,11 +122,13 @@ describe('舊存檔的遷移', () => {
   });
 
   it('should apply the new downsides to an old save as well', () => {
-    // 舊存檔的政策不會被豁免。這是刻意的:條例的重點是取捨，如果讀進來的政策
-    // 永遠停在「只有好處」的舊版本，舊城市就會永遠比新城市划算。
+    // Policies from an older save are not exempt. That is deliberate: the point of a policy is
+    // the trade-off, and if loaded policies stayed on the pure-benefit version forever, an old
+    // city would always be a better deal than a new one.
     //
-    // 寫成斷言而不是留在註解裡，是因為它看起來很像遷移漏掉了東西 —— 沒有這一條，
-    // 下一個讀到上面那支測試的人會以為代價沒生效是 bug。
+    // Written as an assertion rather than left in a comment, because it looks like something the
+    // migration missed: without it, the next reader of the test above would take the costs
+    // applying as a defect.
     const dm = DistrictManager.fromJSON({
       nextId: 3,
       districts: [
@@ -145,7 +151,7 @@ describe('舊存檔的遷移', () => {
   });
 });
 
-/** 這一級一共扣了多少收入（跨所有分區類型取最重的那一個）。 */
+/** How much revenue this level docks in total, taking the heaviest across all zone types. */
 function revenueCost(e: PolicyEffect): number {
   let worst = 1 - (e.revenue ?? 1);
   for (const m of Object.values(e.revenueByZone ?? {})) worst = Math.max(worst, 1 - m);
@@ -163,10 +169,11 @@ describe('分級的效果', () => {
   });
 
   it('should charge an accelerating price for each step', () => {
-    // 代價加速上升才有「找得到的最佳點」。線性的話分級只是一根沒有決策的滑桿 ——
-    // 最高級永遠是最划算的，那就不是選擇。
+    // Accelerating costs are what give the levels a findable optimum. Linear, they are a slider
+    // with no decision: the top level is always the best deal, which is not a choice.
     //
-    // 用 revenueCost 而不是直接讀 `revenue`，因為代價可能只落在特定分區類型上。
+    // revenueCost rather than reading `revenue` directly, because a cost may fall on particular
+    // zone types alone.
     const tiers = POLICY_EFFECTS[PolicyType.ENCOURAGE_RECYCLING]!;
     expect(tiers.length, '回收只有一級，這條測試等於空轉').toBeGreaterThan(1);
     const ratios = tiers.map(t => revenueCost(t) / (1 - (t.garbage ?? 1)));
@@ -177,7 +184,7 @@ describe('分級的效果', () => {
   });
 
   it('should derive maxLevel from the table, not a hand-kept number', () => {
-    // 手寫的那份一定會跟表走散，而走散的那天不會有任何徵兆。
+    // A hand-written copy will drift from the table, and the day it does there is no symptom.
     expect(maxLevel(PolicyType.ENCOURAGE_RECYCLING))
       .toBe(POLICY_EFFECTS[PolicyType.ENCOURAGE_RECYCLING]!.length);
     expect(maxLevel(PolicyType.TOURISM)).toBe(1);

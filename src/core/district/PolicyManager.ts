@@ -68,97 +68,111 @@ export interface PolicyEffect {
   /** Flat addition to land value before the usual clamp. */
   landValue?: number;
   /**
-   * 只作用在特定分區類型的收入乘數。
+   * A revenue multiplier applying only to certain zone types.
    *
-   * `revenue` 是全分區一視同仁,做不出「只扣商業」—— 而多數條例的代價本來就落在
-   * 特定產業上:回收增加的是商家的處理成本,跟住戶無關。
+   * `revenue` treats every zone alike and cannot express "commercial only", while most policies'
+   * costs fall on particular industries: recycling adds to a shop's disposal costs and has
+   * nothing to do with households.
    */
   revenueByZone?: Partial<Record<ZoneType, number>>;
   /**
-   * 加到該區犯罪率上的量。正值是代價，單位同 `calculateLandValue` 的 `crimeRate`。
+   * What this adds to the district's crime rate. Positive is a cost, in the same units as
+   * `calculateLandValue`'s `crimeRate`.
    *
-   * `PoliceService` 只提供 `getCrimeReduction` —— 整個模擬沒有任何東西能讓犯罪
-   * **上升**，所以「+收入 +犯罪」這類取捨做不出來。這一欄是那個缺口。
+   * `PoliceService` offers only `getCrimeReduction`, so nothing in the simulation can make crime
+   * **rise** and a trade of more revenue for more crime cannot be expressed. This field is that
+   * gap.
    */
   crime?: number;
   /**
-   * 全城電力總需求的乘數。
+   * The multiplier on the city's total power demand.
    *
-   * 這是一個**城市級的池子** —— 只在半個城市要求節能，省下來的電照樣進同一張
-   * 電網，所以「在哪裡」不是決策。帶這個欄位的條例必然是全城範圍。
+   * This is a **city-level pool**: conservation required in half the city still feeds the same
+   * grid, so where it applies is not a decision. Any policy carrying this field is necessarily
+   * city-scoped.
    */
   powerDemand?: number;
-  /** 全城逐格用水需求乘數。 */
+  /** The city-wide multiplier on per-cell water demand. */
   waterDemand?: number;
-  /** 全城逐格汙水排放乘數。 */
+  /** The city-wide multiplier on per-cell sewage discharge. */
   sewageLoad?: number;
-  /** 工業格的地面汙染乘數。 */
+  /** The multiplier on ground pollution from industrial cells. */
   industrialPollution?: number;
   /**
-   * 全城生育機率的乘數。
+   * The city-wide multiplier on birth probability.
    *
-   * 生育是逐個市民擲一次骰子,所以這裡乘的是機率本身,不是人數 —— 乘人數的話
-   * 一個沒有半個育齡成人的城市也會生出小孩。
+   * Births are one roll per citizen, so this multiplies the probability itself rather than a
+   * count: multiplying a count would produce children in a city with no adults of childbearing
+   * age.
    */
   fertility?: number;
   /**
-   * 國民教育辦到學制的第幾階。1 = 國小,2 = 到高中,3 = 到大學。
+   * How far compulsory schooling reaches as a school stage: 1 primary, 2 through high school, 3
+   * through university.
    *
-   * 存階數而不是速度乘數:分級要分的是**辦到哪裡**,不是辦得多用力。三級各給一個
-   * 乘數的話,「義務到國小」與「義務到大學」會變成同一件事的輕重版,大學生也跟著
-   * 被加速 —— 那就沒有「辦到哪一階」可言了。
+   * A stage rather than a speed multiplier, because what the levels distinguish is **how far it
+   * reaches**, not how hard it is pushed. Three multipliers would make "compulsory to primary"
+   * and "compulsory to university" the same thing at different strengths, accelerating university
+   * students too, and there would be no "how far" left.
    */
   compulsorySchooling?: number;
   /**
-   * 全城死亡機率的乘數。對誰都有效。
+   * The city-wide multiplier on death probability, applying to everyone.
    *
-   * 分成兩個欄位而不是一個帶旗標的:接線的地方是死亡判定的回呼，那裡本來就已經
-   * 分好「這個人有沒有被醫院蓋到」的三條分支。兩個欄位各自乘進對應的分支，比
-   * 一個欄位加一個「要不要看覆蓋」的旗標少一次判斷，也少一種寫錯的方式。
+   * Two fields rather than one with a flag: the wiring point is the death-roll callback, which
+   * already branches three ways on whether the citizen is within hospital coverage. Each field
+   * multiplies into its own branch, which is one check and one way to get it wrong fewer than a
+   * single field plus a "does coverage matter" flag.
    */
   deathRate?: number;
   /**
-   * 只作用在**醫院覆蓋範圍內**的死亡機率乘數。
+   * A death probability multiplier applying only **inside hospital coverage**.
    *
-   * 醫院蓋不到的地方，人根本沒去看病 —— 補助也就沒發出去。所以免費診所是醫院的
-   * 補強，不是替代品:要先有醫院，這條才有東西可以補。
+   * Where no hospital reaches, nobody attends and no subsidy is paid. So free clinics reinforce
+   * hospitals rather than replacing them: there has to be a hospital first for this to reinforce.
    */
   coveredDeathRate?: number;
   /**
-   * 開車在市民心裡要乘上幾倍（壅塞費）。1 = 沒有收費。
+   * How much driving is multiplied by in a citizen's reckoning under a congestion charge. 1 means
+   * no charge.
    *
-   * 只影響**比較**，不影響實際的通勤時間 —— 收費不會讓車開得比較慢。所以有大眾
-   * 運輸可搭的人會改搭車，沒得搭的人照開，只是這一區的商業會少幾個客人。
+   * It affects only the **comparison**, not the actual commute time: a charge does not slow cars
+   * down. So people with transit available switch to it, people without keep driving, and the
+   * district's shops simply lose a few customers.
    */
   driveDeterrence?: number;
 }
 
 /**
- * 每個條例每一級做什麼。索引 0 是第 1 級;二元條例只放一格。
+ * What each ordinance does at each level. Index 0 is level 1; binary ordinances hold one entry.
  *
- * 回收原本是一條純好處 —— 付得起就一定開,那不是決策,是價目表。現在每一級都同時
- * 扣商業收入,而且**單位代價逐級上升**:第三級每減 1% 垃圾要付的收入代價比第一級
- * 高,所以最強的那一級不會自動是最好的選擇。
+ * Recycling as a pure benefit is not a decision but a price list: affordable means always on.
+ * Every level now costs commercial revenue as well, and the **cost per unit rises with the
+ * level** — level 3 pays more revenue per 1% of refuse removed than level 1 — so the strongest
+ * level is not automatically the best choice.
  *
- * 代價落在 `revenueByZone` 而不是 `revenue`:回收增加的是商家的處理成本,跟住戶
- * 無關。
+ * The cost sits in `revenueByZone` rather than `revenue`: recycling adds to a shop's disposal
+ * costs and has nothing to do with households.
  */
 export const POLICY_EFFECTS: Partial<Record<PolicyType, readonly PolicyEffect[]>> = {
   [PolicyType.ENCOURAGE_RECYCLING]: [
-    // 減 15% 垃圾，代價 2% 商業收入 → 單位代價 0.133
+    // -15% refuse for 2% of commercial revenue: 0.133 per unit
     { garbage: 0.85, revenueByZone: { [ZoneType.COMMERCIAL_LOW]: 0.98, [ZoneType.COMMERCIAL_HIGH]: 0.98 } },
-    // 減 35%，代價 8% → 0.229
+    // -35% for 8%: 0.229
     { garbage: 0.65, revenueByZone: { [ZoneType.COMMERCIAL_LOW]: 0.92, [ZoneType.COMMERCIAL_HIGH]: 0.92 } },
-    // 減 55%，代價 18% → 0.327
+    // -55% for 18%: 0.327
     { garbage: 0.45, revenueByZone: { [ZoneType.COMMERCIAL_LOW]: 0.82, [ZoneType.COMMERCIAL_HIGH]: 0.82 } },
   ],
-  // 觀光帶人潮，人潮帶治安問題 —— 這是它的代價，不是市府掏的錢。
+  // Tourism brings crowds and crowds bring crime. That is its price, not money from the
+  // treasury.
   [PolicyType.TOURISM]: [{ revenue: 1.2, crime: 4 }],
-  // 有機食品讓這一區更宜居，代價是商家的進貨成本。
+  // Organic food makes the district more liveable at the cost of shops' supply prices.
   [PolicyType.ORGANIC_FOOD]: [{ landValue: 6, revenueByZone: { [ZoneType.COMMERCIAL_LOW]: 0.95, [ZoneType.COMMERCIAL_HIGH]: 0.95 } }],
   /**
-   * 節能法規。作用在電網的**總需求**上，代價落在商業與工業:設備更新與製程改造
-   * 的成本由業者吸收。工業扣得比商業重 —— 製程改造比換一批冷氣貴得多。
+   * Energy regulation. Acts on the grid's **total demand**, with the cost falling on commerce
+   * and industry, who absorb equipment upgrades and process changes. Industry is charged more
+   * heavily than commerce: re-engineering a process costs far more than replacing air
+   * conditioning.
    */
   [PolicyType.ENERGY_REGULATION]: [
     { powerDemand: 0.92, revenueByZone: { [ZoneType.COMMERCIAL_LOW]: 0.99, [ZoneType.COMMERCIAL_HIGH]: 0.99, [ZoneType.INDUSTRIAL]: 0.98 } },
@@ -167,13 +181,13 @@ export const POLICY_EFFECTS: Partial<Record<PolicyType, readonly PolicyEffect[]>
   ],
 
   /**
-   * 賭場與宵禁是刻意設計的一對:同一塊地只能選一邊。賭場把夜生活放出來換錢，
-   * 宵禁把它關掉換治安。
+   * Gambling and the curfew are a deliberate pair: one plot of land takes one side. Gambling
+   * opens the nightlife up for money; the curfew shuts it down for safety.
    */
   [PolicyType.LEGALIZE_GAMBLING]: [
     { revenueByZone: { [ZoneType.COMMERCIAL_LOW]: 1.35, [ZoneType.COMMERCIAL_HIGH]: 1.35 }, crime: 12 },
   ],
-  // 賭場的溫和版，分兩級。第二級的每 1% 收入要付的犯罪比第一級高。
+  // A milder gambling, in two levels. Level 2 pays more crime per 1% of revenue than level 1.
   [PolicyType.NIGHT_ECONOMY]: [
     { revenueByZone: { [ZoneType.COMMERCIAL_LOW]: 1.12, [ZoneType.COMMERCIAL_HIGH]: 1.12 }, crime: 4 },
     { revenueByZone: { [ZoneType.COMMERCIAL_LOW]: 1.25, [ZoneType.COMMERCIAL_HIGH]: 1.25 }, crime: 10 },
@@ -182,7 +196,8 @@ export const POLICY_EFFECTS: Partial<Record<PolicyType, readonly PolicyEffect[]>
     { crime: -5, revenueByZone: { [ZoneType.COMMERCIAL_LOW]: 0.90, [ZoneType.COMMERCIAL_HIGH]: 0.90 } },
     { crime: -10, revenueByZone: { [ZoneType.COMMERCIAL_LOW]: 0.78, [ZoneType.COMMERCIAL_HIGH]: 0.78 } },
   ],
-  // 限高與外觀規範對誰都一樣，所以住宅也付代價 —— 只是比商業輕。
+  // Height limits and appearance rules apply to everyone, so housing pays too, more lightly than
+  // commerce.
   [PolicyType.HERITAGE_PRESERVATION]: [
     {
       landValue: 12,
@@ -192,37 +207,41 @@ export const POLICY_EFFECTS: Partial<Record<PolicyType, readonly PolicyEffect[]>
       },
     },
   ],
-  // 補貼換來的是工廠擴張，代價落在地價上 —— 沒有人想住在旁邊。
+  // The subsidy buys factory expansion at the cost of land value: nobody wants to live beside
+  // it.
   [PolicyType.INDUSTRY_SUBSIDY]: [
     { revenueByZone: { [ZoneType.INDUSTRIAL]: 1.12 }, landValue: -4 },
     { revenueByZone: { [ZoneType.INDUSTRIAL]: 1.25 }, landValue: -9 },
   ],
 
-  // 治安換隱私。地價的代價是刻意的 —— 少了它這條就變成「花錢買治安」的價目表。
+  // Safety for privacy. The land value cost is deliberate: without it this becomes a price list
+  // for buying safety.
   [PolicyType.SURVEILLANCE_NETWORK]: [
     { crime: -6, landValue: -2 },
     { crime: -13, landValue: -5 },
   ],
-  // 垃圾費隨袋徵收。少了垃圾，多了居民的不滿。
+  // Pay-as-you-throw. Less refuse, more resentment.
   [PolicyType.PAY_AS_YOU_THROW]: [
     { garbage: 0.78, landValue: -3 },
     { garbage: 0.58, landValue: -7 },
   ],
-  // 省下來的水是實打實的:逐格需求變小，同一座水廠的預算就送得到更遠的地方。
-  // 代價落在業者身上 —— 工業的製程用水改造比商業換一批省水龍頭貴得多。
+  // The water saved is real: lower per-cell demand carries one plant's budget further. The cost
+  // falls on businesses, and re-engineering industrial process water costs far more than fitting
+  // low-flow taps in a shop.
   [PolicyType.WATER_CONSERVATION]: [
     { waterDemand: 0.92, revenueByZone: { [ZoneType.COMMERCIAL_LOW]: 0.99, [ZoneType.COMMERCIAL_HIGH]: 0.99, [ZoneType.INDUSTRIAL]: 0.98 } },
     { waterDemand: 0.82, revenueByZone: { [ZoneType.COMMERCIAL_LOW]: 0.97, [ZoneType.COMMERCIAL_HIGH]: 0.97, [ZoneType.INDUSTRIAL]: 0.94 } },
     { waterDemand: 0.70, revenueByZone: { [ZoneType.COMMERCIAL_LOW]: 0.94, [ZoneType.COMMERCIAL_HIGH]: 0.94, [ZoneType.INDUSTRIAL]: 0.88 } },
   ],
-  // 排放標準壓在製程上，所以代價只落在工業 —— 家戶端換的是水龍頭，工廠端換的
-  // 是整條處理線。
+  // Discharge standards act on processes, so the cost falls on industry alone: a household
+  // changes a tap, a factory changes a whole treatment line.
   [PolicyType.SEWAGE_STANDARDS]: [
     { sewageLoad: 0.85, revenueByZone: { [ZoneType.INDUSTRIAL]: 0.96 } },
     { sewageLoad: 0.70, revenueByZone: { [ZoneType.INDUSTRIAL]: 0.90 } },
   ],
-  // 只降地面汙染。工廠的噪音來自機具，不是排放 —— 把噪音也一起降的話，這條就
-  // 變成一顆萬用的「工業變乾淨」按鈕，而不是一個取捨。
+  // Ground pollution only. A factory's noise comes from its machinery rather than its
+  // discharges, and lowering noise too would make this a universal "industry gets clean" button
+  // rather than a trade-off.
   [PolicyType.INDUSTRIAL_EMISSION_CONTROL]: [
     { industrialPollution: 0.80, revenueByZone: { [ZoneType.INDUSTRIAL]: 0.95 } },
     { industrialPollution: 0.60, revenueByZone: { [ZoneType.INDUSTRIAL]: 0.88 } },
@@ -230,15 +249,18 @@ export const POLICY_EFFECTS: Partial<Record<PolicyType, readonly PolicyEffect[]>
   ],
 
   /**
-   * 育兒補貼。公托與津貼讓家戶敢生,財源是對雇主課的育兒基金 —— 所以代價落在
-   * 商業與工業,住宅不動:受益的正是住在裡面的那些人。
+   * The childcare subsidy. Public nurseries and payments make households willing to have
+   * children, funded by a levy on employers, so the cost falls on commerce and industry and
+   * leaves housing alone: the beneficiaries are the people living there.
    *
-   * 多出來的嬰兒不會立刻變成稅基。他們佔著住宅容量、不工作,要等成年才進勞動
-   * 市場 —— 那個時間差是這條條例真正的賭注,而它已經在模擬裡了,不必寫進這張表。
+   * The extra babies do not become a tax base immediately. They occupy housing capacity, do not
+   * work, and enter the labour market only as adults. That delay is this ordinance's real wager,
+   * and it is already in the simulation rather than in this table.
    *
-   * 三級是**補到孩子幾歲**:嬰兒 / 到兒童 / 到青少年。現實裡的育兒津貼一定是年齡
-   * 有界的,預算也是按符合資格的孩子人頭編的 —— 沒有哪一個國家按總人口編一筆固定
-   * 的育兒預算。補得越久家戶越敢生,所以生育率跟著階數上去。
+   * The three levels are **how old a child is supported to**: infants, through childhood, through
+   * adolescence. Real childcare payments are always age-bounded and budgeted per eligible child;
+   * no country budgets a flat childcare sum against total population. Longer support makes
+   * households more willing, so fertility rises with the stage.
    */
   [PolicyType.CHILDCARE_SUBSIDY]: [
     { fertility: 1.20, revenueByZone: { [ZoneType.COMMERCIAL_LOW]: 0.98, [ZoneType.COMMERCIAL_HIGH]: 0.98, [ZoneType.INDUSTRIAL]: 0.98 } },
@@ -247,10 +269,12 @@ export const POLICY_EFFECTS: Partial<Record<PolicyType, readonly PolicyEffect[]>
   ],
 
   /**
-   * 義務教育。三級對應學制的三階 —— 遊戲沒有獨立的國中,國小之上就是高中。
+   * Compulsory education. The three levels match the three school stages; the game has no
+   * separate middle school, so high school follows primary directly.
    *
-   * 代價只落在工業:學歷拉高之後願意進工廠的人變少。而且每一級的代價跳得比上一級
-   * 多（3% → 7% → 14%）,所以「一路辦到大學」不會自動是最佳解。
+   * The cost falls on industry alone: with education raised, fewer people are willing to work in
+   * a factory. And each level costs more than the last in proportion (3% to 7% to 14%), so
+   * running it all the way to university is not automatically the best answer.
    */
   [PolicyType.COMPULSORY_EDUCATION]: [
     { compulsorySchooling: 1, revenueByZone: { [ZoneType.INDUSTRIAL]: 0.97 } },
@@ -259,14 +283,16 @@ export const POLICY_EFFECTS: Partial<Record<PolicyType, readonly PolicyEffect[]>
   ],
 
   /**
-   * 免費診所與禁菸令是刻意設計的一對:同樣在買健康，差別是誰付錢。
+   * Free clinics and the smoking ban are a deliberate pair: both buy health, and they differ in
+   * who pays.
    *
-   * 診所掏市府的錢（按加權後的病人數計費，全表最貴），商業只輕輕擦到 ——
-   * 公辦的免費診所把病人從私人體系吸走。禁菸令幾乎不用市府出錢，改成讓餐飲與
-   * 夜間商業買單。
+   * Clinics come out of the treasury, billed on weighted patient numbers and the most expensive
+   * entry in the table, and only graze commerce, since a public free clinic draws patients away
+   * from private practice. The smoking ban costs the treasury almost nothing and is paid for by
+   * restaurants and the night economy instead.
    *
-   * 兩條可以同時開，效果相乘 —— 它們不是同一個決定的兩個答案，而是同一個目標的
-   * 兩條財源。
+   * Both can run at once and their effects multiply: they are not two answers to one decision but
+   * two ways of funding one goal.
    */
   [PolicyType.FREE_CLINIC]: [
     { coveredDeathRate: 0.88, revenueByZone: { [ZoneType.COMMERCIAL_LOW]: 0.98, [ZoneType.COMMERCIAL_HIGH]: 0.98 } },
@@ -277,10 +303,12 @@ export const POLICY_EFFECTS: Partial<Record<PolicyType, readonly PolicyEffect[]>
   ],
 
   /**
-   * 壅塞費。代價落在收費區裡的商業 —— 開車來的客人少了。
+   * The congestion charge. The cost falls on commerce inside the charging zone, which loses the
+   * customers who drove in.
    *
-   * 它只有在**有東西可以改搭**的時候才減得了車:沒有大眾運輸的收費區，車照開，
-   * 商業照扣。那不是 bug，是這條條例真正的前提 —— 先蓋路網，再收費。
+   * It reduces traffic only where there is **something to switch to**: in a charging zone with no
+   * transit, the cars keep coming and the shops still pay. That is not a defect but this
+   * ordinance's premise — build the network first, then charge.
    */
   [PolicyType.CONGESTION_CHARGE]: [
     { driveDeterrence: 1.30, revenueByZone: { [ZoneType.COMMERCIAL_LOW]: 0.95, [ZoneType.COMMERCIAL_HIGH]: 0.95 } },
@@ -322,60 +350,64 @@ export function isPolicyImplemented(type: PolicyType): boolean {
 }
 
 /**
- * 把任意數字夾成合法的等級。
+ * Which level a pre-levels `active: true` maps to.
  *
- * 存檔是使用者能編輯的檔案，而 `Policy.level` 宣告成 `0 | 1 | 2 | 3` —— 沒有夾住
- * 的話，`-1` / `4` / 小數 / `NaN` 會直接破壞那個不變量，而 TypeScript 只在編譯期
- * 看得到它。`Math.max(0, NaN)` 仍是 `NaN`，所以非有限數要先擋掉。
- */
-/**
- * 分級之前的 `active: true` 對應到現在的第幾級。
+ * Before levels, each policy had one set of numbers. Converting everything to level 1 silently
+ * weakens, on load, any policy whose numbers were not the first entry: recycling was
+ * `garbage: 0.65`, and 0.65 is the new table's **level 2**. Converted to level 1, a player who
+ * changed nothing goes from -35% refuse to -15% and gains a 2% commercial revenue cost.
  *
- * 分級之前每條政策只有一組數字。一律轉成 level 1 的話，那組數字剛好不在第一格的
- * 政策就會在讀檔當下靜靜地變弱 —— 回收原本是 `garbage: 0.65`，而 0.65 是新表的
- * **第 2 級**;轉成 level 1 的玩家沒有動任何東西，垃圾量卻從減 35% 掉到減 15%，
- * 而且多了 2% 的商業收入代價。
- *
- * 沒有列在這裡的就是 1 —— 它們的舊數字本來就在第一格。
+ * Anything not listed here is 1, because its old numbers were already the first entry.
  */
 const LEGACY_ACTIVE_LEVEL: Partial<Record<PolicyType, number>> = {
   [PolicyType.ENCOURAGE_RECYCLING]: 2,
 };
 
-/** 舊存檔的 `active` 旗標對應到的等級。 */
+/** The level an older save's `active` flag maps to. */
 export function levelForLegacyActive(type: PolicyType, active: boolean | undefined): number {
   if (!active) return 0;
   return LEGACY_ACTIVE_LEVEL[type] ?? 1;
 }
 
+/**
+ * Clamps an arbitrary number into a valid level.
+ *
+ * A save is a file the user can edit, and `Policy.level` is declared `0 | 1 | 2 | 3`. Unclamped,
+ * `-1`, `4`, a fraction or `NaN` breaks that invariant, which TypeScript only sees at compile
+ * time. `Math.max(0, NaN)` is still `NaN`, so non-finite values are rejected first.
+ */
 export function clampLevel(level: number, max: number): Policy['level'] {
   if (!Number.isFinite(level)) return 0;
   return Math.max(0, Math.min(max, Math.floor(level))) as Policy['level'];
 }
 
 /**
- * 這個條例最高幾級。
+ * This policy's highest level.
  *
- * 由效果表的長度推導,不手寫 —— 手寫的那份一定會跟表走散,而走散的那天不會有任何
- * 徵兆:多出來的那一級會靜靜地套用最後一格的效果。
+ * Derived from the effect table's length rather than written by hand: a hand-written copy will
+ * eventually drift from the table, and the day it does there is no symptom — the extra level
+ * silently applies the last entry's effect.
  *
- * 沒有效果表條目的（限制型條例）是二元的,最高 1 級。
+ * Policies with no effect table entry, the restrictive ones, are binary with a maximum of 1.
  */
 export function maxLevel(type: PolicyType): number {
   return POLICY_EFFECTS[type]?.length ?? 1;
 }
 
 /**
- * 一趟路要多付幾倍的開車不情願（壅塞費）。
+ * How much a trip's reluctance to drive is multiplied by under a congestion charge.
  *
- * 起點或終點任一端在收費區內就算 —— 收費是過關卡收的，開進去跟開出來是同一趟。
+ * Either end inside a charging zone counts: the charge is collected at a cordon, and driving in
+ * and driving out are one trip.
  *
- * 兩端都在收費區時取比較高的那一個，**不是相乘**:整趟都在區內的人只過一次關卡，
- * 相乘等於向他收兩次，而且那個人正是最沒有替代方案的那一個（他家跟公司都在區內，
- * 附近不見得有站牌）。
+ * With both ends inside, the higher of the two is taken and **not the product**: someone whose
+ * whole trip is inside crosses one cordon, multiplying charges them twice, and that person has
+ * the fewest alternatives of anyone, with home and work both inside and no guarantee of a stop
+ * nearby.
  *
- * 抽成獨立函式是因為呼叫端只有一個座標查詢，兩端都在區內的情形在那裡看不出差別 ——
- * 乘法與取最大在單邊收費時給出完全一樣的答案。
+ * Extracted into its own function because the call site does a single coordinate lookup, where
+ * the both-ends case is invisible: multiplying and taking the maximum give identical answers
+ * whenever only one end is charged.
  */
 export function tripDriveDeterrence(fromDeterrence: number, toDeterrence: number): number {
   return Math.max(fromDeterrence, toDeterrence);
@@ -390,23 +422,25 @@ export class PolicyManager {
   }
 
   /**
-   * 設定某個分區裡某條政策的強度。0 = 關閉。
+   * Sets one policy's level in one district. 0 turns it off.
    *
-   * 已經存在的條目就地改等級，不新增第二筆 —— 互斥靠的就是「一個型別只有一筆
-   * 紀錄，而那筆紀錄只有一個等級」。
+   * An existing entry has its level changed in place rather than gaining a second: exclusivity
+   * rests on one record per type, each with one level.
    *
-   * 等級 0 且原本沒有條目時什麼都不做:留一筆 level 0 的紀錄只是垃圾，而且會讓
-   * 「這個分區有哪些政策」的計數變得不準。
+   * Level 0 with no existing entry does nothing: a level-0 record is litter and makes the count
+   * of which policies a district has inaccurate.
    */
   setPolicyLevel(districtId: string, policyType: PolicyType, level: number): void {
-    // 全城條例畫在分區上沒有意義，而且兩邊都設得進去的話效果會無聲地加倍。
+    // A city ordinance on a district is meaningless, and settable at both levels its effect
+    // doubles silently.
     if (!isDistrictScoped(policyType)) return;
     const district = this.districtLookup.getDistrict(districtId);
     if (!district) return;
     const clamped = clampLevel(level, maxLevel(policyType));
 
-    // 開一條就把同組的其他條關掉。只在真的開啟時做 —— 關閉一條不該把同組的別條
-    // 也掃掉，那會讓「關閉」變成一顆會誤傷的按鈕。
+    // Enabling one switches the rest of its group off. Only when actually enabling: switching
+    // one off must not sweep away the others, which would make "off" a button with collateral
+    // damage.
     if (clamped > 0) {
       for (const other of conflictsWith(policyType)) {
         const p = district.policies.find((x) => x.type === other);
@@ -431,7 +465,7 @@ export class PolicyManager {
     district.policies.push(policy);
   }
 
-  /** 這個分區這條政策開到第幾級。沒有分區、沒有那條政策都是 0。 */
+  /** What level this policy is at in this district. 0 for no district and for no such policy. */
   getPolicyLevel(districtId: string | null, policyType: PolicyType): number {
     if (!districtId) return 0;
     return this.districtLookup.getDistrict(districtId)
@@ -484,9 +518,9 @@ export class PolicyManager {
   /**
    * Multiplier on tax revenue from buildings of this zone type in this district.
    *
-   * `revenue`（全分區一視同仁）與 `revenueByZone`（只打特定產業）在同一趟裡合成。
-   * 分成兩次 `effect()` 呼叫會查兩次分區、掃兩次政策，而這是逐棟建築、每次收入
-   * 計算都會走的路。
+   * `revenue`, which treats every zone alike, and `revenueByZone`, which targets particular
+   * industries, are combined in one pass. Two `effect()` calls would look the district up twice
+   * and scan the policies twice, on a path walked per building on every income calculation.
    */
   getRevenueMultiplier(districtId: string | null, zoneType: ZoneType): number {
     return this.effect(districtId, (e) => {
@@ -502,15 +536,17 @@ export class PolicyManager {
     return this.effect(districtId, e => e.landValue, 0, (a, b) => a + b);
   }
 
-  /** 該區因條例而增加的犯罪率。沒有分區就是 0。 */
+  /** The multiplier on ground pollution from this district's industrial cells. */
   getIndustrialPollutionMultiplier(districtId: string | null): number {
     return this.effect(districtId, e => e.industrialPollution, 1, (a, b) => a * b);
   }
 
   /**
-   * 開車成本的乘數（壅塞費）。1 = 這一區沒有收費。
+   * The multiplier on the cost of driving under a congestion charge. 1 means this district does
+   * not charge.
    *
-   * 這是市民心裡的成本，不是路上的時間 —— 消費端只拿它比較，不拿它回報通勤時間。
+   * This is a cost in a citizen's reckoning, not time on the road: consumers compare with it and
+   * never report a commute time from it.
    */
   getDriveDeterrence(districtId: string | null): number {
     return this.effect(districtId, e => e.driveDeterrence, 1, (a, b) => a * b);

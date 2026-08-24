@@ -39,11 +39,11 @@ export interface Policy {
   name: string;
   type: PolicyType;
   /**
-   * 強度。0 = 關閉。
+   * The level. 0 is off.
    *
-   * 用一個等級欄位而不是三個 enum 成員（LIGHT / MEDIUM / HEAVY），是因為互斥必須
-   * 自動成立 —— 分成三個成員的話，「不能同時開輕度和重度」會變成另一份要手動
-   * 維護的檢查，而漏掉的那一條不會有任何徵兆。一個欄位只能是一個值。
+   * One level field rather than three enum members (LIGHT / MEDIUM / HEAVY), because exclusivity
+   * has to hold automatically: with three members, "light and heavy cannot both be on" becomes
+   * another hand-maintained check whose omission has no symptom. One field holds one value.
    */
   level: 0 | 1 | 2 | 3;
 }
@@ -52,10 +52,12 @@ export interface District {
   id: string;
   name: string;
   /**
-   * 玩家選的色票索引。沒選過就是 undefined，圖層退回從 id 雜湊出來的顏色。
+   * The swatch index the player chose, or undefined when they never did, in which case the
+   * overlay falls back to a hue hashed from the id.
    *
-   * 存索引而不是顏色本身:色票是固定的一組，存索引的話調整那組顏色時舊存檔會跟著
-   * 更新，而存下來的色碼會永遠停在舊的那一版。
+   * An index rather than the colour itself: the swatches are a fixed set, and storing the index
+   * lets older saves follow adjustments to that set, while a stored colour value would stay on
+   * the old version forever.
    */
   colorIndex?: number;
   cells: Set<string>;

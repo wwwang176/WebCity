@@ -11,24 +11,26 @@ import { useSeededRandom, reseedRandom } from '../../__tests__/helpers/seededRan
 import { HAPPINESS } from '../../citizen/Happiness';
 
 /**
- * 條例上寫著 Crime +12，玩家在犯罪圖層、幸福度、棄置壓力上卻一點也看不到 ——
- * 那 UI 就是在說謊。犯罪原本只走到地價那一條線。
+ * An ordinance saying Crime +12 while the crime overlay, happiness and abandonment stress show
+ * nothing is a UI that lies. Crime reached the land value line alone.
  *
- * 這裡量的是犯罪真正的四個出口，不是地價。
+ * What is measured here is crime's four real exits rather than land value.
  */
 
-// 整個檔案都上種子:每一條測試都在比較兩座城市，而 tick 裡的建築成長、解僱、
-// 車輛抖動都在擲骰子。`city()` 另外在每次建城時重設序列，讓 A/B 從同一點出發。
+// The whole file is seeded: every test compares two cities, and building growth, layoffs and
+// vehicle jitter all roll dice inside a tick. `city()` resets the sequence on each build, so A
+// and B start from the same point.
 useSeededRandom();
 
-/** Small House（RESIDENTIAL_LOW）。 */
+/** Small House (RESIDENTIAL_LOW). */
 const HOUSE = 1;
-/** Small Shop（COMMERCIAL_LOW）。 */
+/** Small Shop (COMMERCIAL_LOW). */
 const SHOP = 7;
 
 function city(): { state: GameState; loop: SimulationLoop } {
-  // A/B 的兩座城市要從同一個亂數狀態出發。不重設的話第二次接續第一次留下的
-  // 序列，兩座城市會自己走岔，量到的是那個岔而不是條例。
+  // The A and B cities have to start from the same random state. Without a reset the second
+  // continues the sequence the first left behind, the two cities diverge on their own, and what
+  // is measured is that divergence rather than the ordinance.
   reseedRandom();
   const state = createGameState(30, 30);
   for (let x = 5; x < 20; x++) state.grid.setCell(x, 10, { roadType: 1, roadFlags: 0b1111 });
@@ -36,20 +38,21 @@ function city(): { state: GameState; loop: SimulationLoop } {
     state.grid.setCell(x, 11, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: HOUSE });
     state.grid.setCell(x, 9, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: SHOP });
     for (let i = 0; i < 4; i++) {
-      // 有家也有工作。失業的懲罰是 −15 起跳，會把幸福度壓在地板上 —— 那時候
-      // 犯罪的 −10 加不加都一樣，測試就量不到東西了。
+      // With a home and a job. Unemployment's penalty starts at -15 and pins happiness to the
+      // floor, at which point crime's -10 makes no difference and the test measures nothing.
       state.citizens.restoreCitizen(
         { homeId: toPosKey(x, 11), workplaceId: toPosKey(x, 9) }, 0);
     }
   }
-  // 要有電有水。缺一樣，幸福度就會掉到 0、房子就會自己被棄置 —— 兩個出口都被
-  // 壓到底之後，條例推不推得動就量不出來了。
+  // Power and water are required. Missing either drops happiness to 0 and abandons the housing
+  // on its own, and with both exits already at their floor the ordinance's push is unmeasurable.
   state.power.addPlant({ x: 12, y: 8, output: 100000, pollution: 0, type: 'wind' });
   state.water.addPlant({ x: 13, y: 8, output: 100000 });
   return { state, loop: new SimulationLoop(state) };
 }
 
-/** 圖層的 ctx 就是 GameState 加兩個通勤統計欄位（見 `Game.buildOverlayData`）。 */
+/** The overlay ctx is GameState plus two commute statistics fields (see
+ *  `Game.buildOverlayData`). */
 function overlayCtx(state: GameState): OverlayBuildContext {
   return Object.assign(Object.create(state) as OverlayBuildContext, {
     commuteByHome: new Map<string, number>(),
@@ -57,12 +60,14 @@ function overlayCtx(state: GameState): OverlayBuildContext {
   });
 }
 
-/** 圖層鍵是字串 —— `OverlayType` 這個 enum 住在 renderer，core 不能 import。 */
+/** Overlay keys are strings: the `OverlayType` enum lives in the renderer, which core cannot
+ *  import. */
 function crimeOverlayAt(state: GameState, x: number, y: number): number {
   return buildOverlayValue(overlayCtx(state), 'crime', state.grid.getCell(x, y)!, x, y);
 }
 
-/** 暫時給全城條例塞一組效果。測的是接線，不是某一條條例現在的數字。 */
+/** Temporarily gives a city ordinance a set of effects. What is tested is the wiring, not any
+ *  ordinance's current numbers. */
 function withCityCrime(state: GameState, crime: number, body: () => void) {
   const type = PolicyType.ENERGY_REGULATION;
   const saved = POLICY_EFFECTS[type];
@@ -75,7 +80,8 @@ function withCityCrime(state: GameState, crime: number, body: () => void) {
   }
 }
 
-/** 分區版本。賭場借來當載體 —— 測的是接線，不是賭場現在的數字。 */
+/** The district version, carried by gambling. What is tested is the wiring, not gambling's
+ *  current numbers. */
 function withDistrictCrime(
   state: GameState, districtId: string, crime: number, body: () => void,
 ) {
@@ -114,13 +120,15 @@ describe('犯罪圖層看得到條例', () => {
 
 describe('犯罪走到幸福度', () => {
   it('should make residents unhappier', () => {
-    // 直接叫那一輪的幸福度計算，不跑整個 tick —— 建築成長與棄置都帶隨機取樣，
-    // 混進來的話兩次執行的差異就不一定來自犯罪了。既有測試也是這樣戳私有方法
-    // （見 `BuildingAbandonment.test.ts`）。
+    // The happiness pass is called directly rather than running a whole tick: building growth
+    // and abandonment both sample randomly, and mixing them in means the difference between two
+    // runs need not come from crime. Existing tests reach into private methods the same way (see
+    // `BuildingAbandonment.test.ts`).
     const avgHappinessWith = (crime: number) => {
       const { state, loop } = city();
-      // 快樂度改成分片之後，一個 tick 只重算其中一片 —— 要推進 SLOW_TICK_INTERVAL 個
-      // tick 才輪得到每一位市民（BUG-330）。時鐘不動的話會重複算同一片。
+      // With happiness sliced, one tick recomputes one slice, and reaching every citizen takes
+      // SLOW_TICK_INTERVAL ticks (BUG-330). Without advancing the clock the same slice is
+      // recomputed.
       const inner = loop as unknown as {
         refreshHappinessContext(): void;
         updateCitizenHappinessSlice(): void;
@@ -140,18 +148,20 @@ describe('犯罪走到幸福度', () => {
     const plain = avgHappinessWith(0);
     const withCrime = avgHappinessWith(60);
     expect(plain, '幸福度已經是 0，再低也看不出來').toBeGreaterThan(0);
-    // 綁在常數上而不是「比較小」:上了種子之後兩次執行只差條例這一項，差距就是
-    // 犯罪懲罰本身。犯罪 60 超過最高門檻，拿到的是最重的那一級。
+    // Pinned to the constant rather than to "smaller": seeded, the two runs differ only by the
+    // ordinance, so the gap is the crime penalty itself. Crime 60 is past the top threshold and
+    // takes the heaviest step.
     //
-    // 只寫 toBeLessThan 的話沒有接線也有一半機率會過 —— 那正是這條測試上種子之前
-    // 的樣子。
+    // A bare toBeLessThan would pass half the time with no wiring at all, which is what this test
+    // was before it was seeded.
     const worst = HAPPINESS.CRIME_MODIFIERS[0]!.modifier;
     expect(plain - withCrime, '犯罪飆高，居民卻一樣開心').toBeCloseTo(-worst, 6);
   });
 });
 
 describe('犯罪走到棄置壓力', () => {
-  // 棄置的犯罪門檻是 30 —— 一座小城的基礎犯罪遠低於它，所以只有條例推得過去。
+  // Abandonment's crime threshold is 30, far above a small city's baseline, so only an ordinance
+  // pushes past it.
   const abandonedAfter = (
     withPolicy: (state: GameState, districtId: string, run: () => void) => void,
   ) => {
@@ -177,12 +187,13 @@ describe('犯罪走到棄置壓力', () => {
   });
 
   it('should add the two scopes up before deciding the crime is gone', () => {
-    // 夾值只能做一次，而且要在全城與分區都加完之後。
+    // The clamp happens once, after both the city and district terms are added.
     //
-    // 先夾全城那一半的話:基礎 1 + 全城 −100 會先變成 0，分區的 +120 再加上去就是
-    // 120 —— 遠超過棄置門檻 30。全部加完再夾是 max(0, 1 − 100 + 120) = 21，房子
-    // 撐得住。同一格在地價那條線看到 21、在棄置這條線看到 120，兩套系統對同一件
-    // 事有兩個答案。
+    // Clamping the city half first: a baseline of 1 plus a city -100 becomes 0, and the
+    // district's +120 on top is 120, far past abandonment's threshold of 30. Clamping after
+    // everything gives max(0, 1 - 100 + 120) = 21 and the housing survives. Otherwise one cell
+    // reads 21 on the land value line and 120 on the abandonment line: two answers to one
+    // question.
     const n = abandonedAfter((state, districtId, run) => {
       withCityCrime(state, -100, () => withDistrictCrime(state, districtId, 120, run));
     });

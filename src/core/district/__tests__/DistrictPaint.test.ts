@@ -3,10 +3,11 @@ import { DistrictManager } from '../DistrictManager';
 import { paintDistrictRect, resolveDistrictGesture } from '../DistrictPaint';
 
 /**
- * 分區筆刷的三種模式。
+ * The district brush's three modes.
  *
- * 一格只能屬於一個分區（`addCellToDistrict` 會把它從舊分區移走），所以「畫進來」
- * 天生就會從別區搶格子 —— 那是對的，玩家看到的就是重疊處歸最後畫的那一區。
+ * A cell belongs to one district — `addCellToDistrict` moves it out of the old one — so painting
+ * inherently takes cells from other districts. That is correct: what the player sees is an
+ * overlap going to whichever district was painted last.
  */
 
 function setup() {
@@ -28,7 +29,8 @@ describe('add —— 併進來', () => {
   });
 
   it('should take cells away from whichever district held them', () => {
-    // 重疊處歸最後畫的那一區。一格屬於兩個分區的話，收入乘數與費用都會算兩次。
+    // An overlap goes to whichever was painted last. A cell in two districts has its revenue
+    // multiplier and its fees counted twice.
     const { districts, a, b } = setup();
     paintDistrictRect(districts, b, 0, 0, 2, 0, 'add');
     paintDistrictRect(districts, a, 1, 0, 1, 0, 'add');
@@ -47,7 +49,7 @@ describe('replace —— 這一區只剩這個矩形', () => {
   });
 
   it('should leave other districts alone outside the rectangle', () => {
-    // 「取代」取代的是這一區，不是整張地圖。
+    // Replace replaces this district, not the whole map.
     const { districts, a, b } = setup();
     paintDistrictRect(districts, b, 8, 8, 9, 9, 'add');
     paintDistrictRect(districts, a, 0, 0, 1, 1, 'replace');
@@ -72,8 +74,8 @@ describe('subtract —— 挖掉', () => {
   });
 
   it('should not touch another district', () => {
-    // 你正在編輯 A，挖掉的就只是 A。掃到 B 的話玩家會在完全沒有意識的情況下
-    // 拆掉另一區的邊界。
+    // Editing A carves out A alone. Reaching into B would dismantle another district's boundary
+    // with the player entirely unaware.
     const { districts, a, b } = setup();
     paintDistrictRect(districts, b, 0, 0, 2, 0, 'add');
     paintDistrictRect(districts, a, 0, 0, 2, 0, 'subtract');
@@ -81,7 +83,8 @@ describe('subtract —— 挖掉', () => {
   });
 
   it('should leave an empty district behind, not delete it', () => {
-    // 分區還在，只是沒有格子 —— 它身上的條例設定不該因為擦掉一次就消失。
+    // The district survives with no cells: its policy settings should not vanish because of one
+    // erase.
     const { districts, a } = setup();
     paintDistrictRect(districts, a, 0, 0, 1, 1, 'add');
     paintDistrictRect(districts, a, 0, 0, 1, 1, 'subtract');
@@ -91,7 +94,8 @@ describe('subtract —— 挖掉', () => {
 });
 
 describe('矩形的兩個角', () => {
-  /** 單獨一個 manager，避免第二次畫把第一次的格子搶走 —— 那會蓋掉要驗的東西。 */
+  /** A separate manager each time, so the second paint does not take the first's cells and mask
+   *  what is being checked. */
   const cellsFor = (x1: number, y1: number, x2: number, y2: number) => {
     const dm = new DistrictManager();
     const d = dm.createDistrict('D');
@@ -101,15 +105,15 @@ describe('矩形的兩個角', () => {
 
   it('should not care which corner the drag started from', () => {
     const reversed = cellsFor(3, 3, 1, 1);
-    // 先確認正著拖真的畫得出東西 —— 少了這一條，兩邊都是空的也會「相等」，
-    // 而把正規化拿掉之後迴圈剛好就不會跑。
+    // Confirms a forward drag paints anything at all: without it, two empty results are also
+    // equal, and removing the normalisation happens to make the loop not run.
     expect(cellsFor(1, 1, 3, 3).length, '正著拖也沒畫出格子，這條測試等於空轉').toBe(9);
     expect(reversed, '反著拖畫出來的範圍不一樣').toEqual(cellsFor(1, 1, 3, 3));
   });
 });
 
 describe('點一下是選取，拖曳才是畫', () => {
-  /** A 佔 0,0–1,1；B 佔 5,5。作用中的是 A。 */
+  /** A holds 0,0-1,1 and B holds 5,5. A is active. */
   const world = () => {
     const districts = new DistrictManager();
     const a = districts.createDistrict('A');
@@ -126,16 +130,16 @@ describe('點一下是選取，拖曳才是畫', () => {
   });
 
   it('should pick one up when nothing is selected yet', () => {
-    // 手上什麼都沒有的時候，點地圖上任何一區就是把它撿起來 —— 不然玩家得先開一個
-    // 新的分區才碰得到既有的。
+    // With nothing in hand, clicking any district on the map picks it up; otherwise the player
+    // has to create a new district before touching an existing one.
     const { districts, b } = world();
     expect(resolveDistrictGesture(districts, null, 5, 5, 5, 5, 'add'))
       .toEqual({ kind: 'select', districtId: b });
   });
 
   it('should let go when you click the district you already have', () => {
-    // 選取是可以按掉的:點起來、改一改、再點一次放掉。少了這一條，放掉選取只剩
-    // 工具列上那顆按鈕。
+    // A selection can be pressed off: pick it up, adjust it, click again to put it down. Without
+    // this, releasing a selection is only the toolbar button.
     const { districts, a } = world();
     expect(resolveDistrictGesture(districts, a, 1, 1, 1, 1, 'add'))
       .toEqual({ kind: 'deselect' });
@@ -144,8 +148,8 @@ describe('點一下是選取，拖曳才是畫', () => {
   });
 
   it('should erase instead of letting go while the eraser is up', () => {
-    // 扣除模式下點自己這一區的格子，意思沒有歧義:擦掉那一格。改成放掉選取的話，
-    // 單格擦除就沒有任何手勢做得到了。
+    // In subtract mode, clicking your own cell unambiguously means erasing it. Releasing the
+    // selection instead would leave no gesture that erases a single cell.
     const { districts, a } = world();
     expect(resolveDistrictGesture(districts, a, 1, 1, 1, 1, 'subtract'))
       .toEqual({ kind: 'paint' });
@@ -160,8 +164,8 @@ describe('點一下是選取，拖曳才是畫', () => {
   });
 
   it('should never select or deselect from a dragged rectangle', () => {
-    // 拖出範圍就是在畫，即使起點落在別區或自己身上。拖曳中途改成選取的話，玩家
-    // 拖了一大塊什麼都不會發生。
+    // A drag is painting, even starting on another district or on your own. Turning a drag into
+    // a selection means a large drag does nothing at all.
     const { districts, a } = world();
     expect(resolveDistrictGesture(districts, a, 5, 5, 6, 6, 'add')).toEqual({ kind: 'paint' });
     expect(resolveDistrictGesture(districts, a, 6, 6, 5, 5, 'add'), '反著拖被當成點擊了')
@@ -171,14 +175,15 @@ describe('點一下是選取，拖曳才是畫', () => {
   });
 
   it('should treat a straight drag as a drag, not a click', () => {
-    // 只沿著一個軸拖也是拖。上面那些起訖點 x 與 y 都變了，所以把「x 變了**或**
-    // y 變了」寫成「而且」也照樣通過 —— 而畫一條一格寬的長條是常見動作。
+    // A drag along one axis is still a drag. The cases above move both x and y, so writing
+    // "x changed **and** y changed" instead of "or" would also pass — while drawing a one-cell
+    // strip is a common action.
     const { districts, a, b } = world();
     expect(resolveDistrictGesture(districts, a, 5, 5, 8, 5, 'add'), '水平拖被當成點擊')
       .toEqual({ kind: 'paint' });
     expect(resolveDistrictGesture(districts, a, 5, 5, 5, 8, 'add'), '垂直拖被當成點擊')
       .toEqual({ kind: 'paint' });
-    // 起點落在自己身上的直線拖曳，同樣不該變成放掉選取。
+    // A straight drag starting on your own district must not become a release either.
     expect(resolveDistrictGesture(districts, a, 0, 0, 3, 0, 'add')).toEqual({ kind: 'paint' });
     void b;
   });
@@ -186,8 +191,8 @@ describe('點一下是選取，拖曳才是畫', () => {
 
 describe('不存在的分區', () => {
   it('should do nothing rather than throw, in every mode', () => {
-    // 三種模式都要試。`add` 那條路徑根本不碰 district 物件，只測它的話把守衛
-    // 拿掉也不會有事。
+    // All three modes are exercised. The `add` path never touches the district object, so
+    // testing only that would let the guard be removed with no consequence.
     const { districts } = setup();
     for (const mode of ['add', 'replace', 'subtract'] as const) {
       expect(() => paintDistrictRect(districts, 'nope', 0, 0, 1, 1, mode),
@@ -199,8 +204,9 @@ describe('不存在的分區', () => {
 
 describe('筆刷回報它動了什麼', () => {
   /**
-   * 一格只屬於一個分區，所以「畫進來」天生就會從別區搶格子。搶是對的 —— 錯的是
-   * 它不出聲:玩家拖一塊蓋到別區上，二十幾格轉手了，畫面上只有顏色悄悄變了。
+   * A cell belongs to one district, so painting inherently takes cells from other districts.
+   * Taking is correct; doing it silently is not: a stroke over another district transfers two
+   * dozen cells with nothing but a quiet colour change on screen.
    */
   it('should say how many cells it took, and from whom', () => {
     const { districts, a, b } = setup();
@@ -218,7 +224,8 @@ describe('筆刷回報它動了什麼', () => {
   });
 
   it('should not count cells it already owned as new', () => {
-    // 同一塊畫兩次，第二次沒有任何改變。回報 4 格的話，通知會憑空冒出來。
+    // The same area painted twice changes nothing the second time. Reporting 4 cells would
+    // conjure a notification out of nothing.
     const { districts, a } = setup();
     paintDistrictRect(districts, a, 0, 0, 1, 1, 'add');
     const r = paintDistrictRect(districts, a, 0, 0, 1, 1, 'add');
@@ -233,8 +240,9 @@ describe('筆刷回報它動了什麼', () => {
   });
 
   it('should name the owner when subtract has nothing of its own to remove', () => {
-    // 扣除只動自己這一區。掃到別區時什麼都不會發生 —— 靜默失敗是這支筆刷最難懂的
-    // 一件事，呼叫端要有東西可以說出「那些是 B 的」。
+    // Subtract touches your own district alone and does nothing over another. That silent no-op
+    // is the hardest thing about this brush to understand, so the caller needs something with
+    // which to say those cells belong to B.
     const { districts, a, b } = setup();
     paintDistrictRect(districts, b, 0, 0, 2, 0, 'add');
     const r = paintDistrictRect(districts, a, 0, 0, 2, 0, 'subtract');

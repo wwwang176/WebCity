@@ -197,24 +197,27 @@ describe('PolicyManager', () => {
   });
 
   it('POLICY_CONFIG should name every PolicyType', () => {
-    // 價錢已經不在這張表上 —— 它跟著規模走，由 POLICY_BILLING 算。這裡只剩名字，
-    // 而名字是 UI 唯一的來源，缺一個就會在畫面上看到 enum 的原字串。
+    // Prices are no longer in this table: they follow scale and come from POLICY_BILLING. Only
+    // the names are left, and they are the UI's only source, so a missing one puts the raw enum
+    // string on screen.
     for (const policyType of Object.values(PolicyType)) {
       const cfg = POLICY_CONFIG[policyType];
       expect(cfg, `${policyType} 沒有設定`).toBeDefined();
       expect(cfg.name, `${policyType} 沒有名字`).toBeTruthy();
     }
-    // 名字必須各不相同 —— 全部叫同一個字也會通過「有名字」，但玩家看到的是五顆
-    // 一模一樣的按鈕。
+    // The names have to differ: one name for everything also satisfies "has a name", and the
+    // player sees five identical buttons.
     const names = Object.values(PolicyType).map(t => POLICY_CONFIG[t].name);
     expect(new Set(names).size, `有兩條條例同名:${names.join(', ')}`).toBe(names.length);
   });
 
   it('should charge a scale-dependent price for every billable policy', () => {
-    // 取代舊的「每條政策都有一個正數價錢」。限制型條例現在刻意不收費，所以那個
-    // 問法已經不成立 —— 改成問:凡是列了計費基數的，價錢就必須跟著規模動。
-    // 每一個計費基數都要給值。漏掉一個的話，用那個基數的條例會恆為 0，而這條
-    // 測試會把它讀成「這條條例不收錢」而紅 —— 那是對的，加基數就要補這裡。
+    // Replaces "every policy has a positive price". Restrictive ordinances are deliberately
+    // free now, so that question no longer holds. The question instead: anything with a billing
+    // basis must have a price that moves with scale.
+    // Every billing basis needs a value here. A missing one makes policies on that basis
+    // permanently 0, which this test reads as "this ordinance is free" and turns red — correctly,
+    // because adding a basis means adding it here.
     const small = scaleOf({
       population: 100, districtCells: 10, districtRoadCells: 4,
       babies: 4, children: 6, teens: 5, clinicPatients: 90, chargedDrivers: 12,
@@ -402,9 +405,9 @@ describe('色票與名字的存檔往返', () => {
 
 describe('刪掉一個分區', () => {
   /**
-   * 玩家可以把一區的格子扣光。那個分區會留下來（它身上的條例設定不該因為擦掉一次
-   * 就消失），但留下來就得有辦法清掉 —— 不然條例面板的側邊欄會慢慢積滿再也碰不到
-   * 的名字。
+   * The player can erase a district's last cell. The district survives, because its policy
+   * settings should not vanish because of one erase, but surviving means there has to be a way to
+   * clear it, or the policy panel's sidebar fills with unreachable names.
    */
   it('should take the district off the list', () => {
     const dm = new DistrictManager();
@@ -416,12 +419,12 @@ describe('刪掉一個分區', () => {
   });
 
   it('should hand its cells back to nobody', () => {
-    // 刪掉一區之後，它的格子要變回無主的 —— 筆刷的點選與分區條例的逐格查詢走的
-    // 都是 `getDistrictAt`。
+    // After a district is deleted its cells become unowned again: the brush's click-to-select
+    // and per-cell district policy lookups both go through `getDistrictAt`.
     //
-    // 注意這條**守不到** `deleteDistrict` 裡清索引的那個迴圈:`getDistrictAt` 自己
-    // 有 `?? null`，索引留著髒資料它也照樣回 null。那個迴圈是維持「逐格索引是純
-    // 衍生狀態」這個不變式，不是這裡的行為靠著它。
+    // This does **not** guard the index-clearing loop in `deleteDistrict`: `getDistrictAt` has a
+    // `?? null` and returns null with dirty index entries anyway. That loop keeps the invariant
+    // that the per-cell index is purely derived state; this behaviour does not rest on it.
     const dm = new DistrictManager();
     const a = dm.createDistrict('A');
     dm.addCellToDistrict(a.id, 3, 4);
@@ -430,8 +433,8 @@ describe('刪掉一個分區', () => {
   });
 
   it('should let another district claim those cells afterwards', () => {
-    // 上一條只驗了查詢，這條驗寫入。同樣守不到清索引的迴圈 ——
-    // `addCellToDistrict` 對舊主人用的是 `?.`。
+    // The test above checks the read; this checks the write. It does not guard the
+    // index-clearing loop either, because `addCellToDistrict` uses `?.` on the previous owner.
     const dm = new DistrictManager();
     const a = dm.createDistrict('A');
     dm.addCellToDistrict(a.id, 3, 4);

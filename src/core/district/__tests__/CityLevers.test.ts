@@ -9,14 +9,15 @@ import { toPosKey } from '../../grid/GridHelpers';
 import { useSeededRandom, reseedRandom } from '../../__tests__/helpers/seededRandom';
 
 /**
- * 全城條例原本只碰得到 powerDemand 與 revenue —— crime / landValue / garbage 的
- * 消費端只問分區。這三條線補上之後，全城範圍才做得出「監視器網路」「垃圾隨袋徵收」
- * 這類條例。
+ * City ordinances could reach only powerDemand and revenue: the consumers of crime, landValue
+ * and garbage asked districts alone. With those three lines wired up, the city scope can express
+ * ordinances like the surveillance network and pay-as-you-throw.
  */
 
-/** 暫時給某個全城條例塞一組效果。測的是接線，不是某一條條例現在的數字。 */
+/** Temporarily gives one city ordinance a set of effects. What is tested is the wiring, not any
+ *  ordinance's current numbers. */
 function withCityEffect(tiers: PolicyEffect[], body: (o: CityOrdinances) => void) {
-  const type = PolicyType.ENERGY_REGULATION;   // 目前唯一的全城條例
+  const type = PolicyType.ENERGY_REGULATION;   // currently the only city ordinance
   const saved = POLICY_EFFECTS[type];
   (POLICY_EFFECTS as Record<string, unknown>)[type] = tiers;
   try {
@@ -28,8 +29,9 @@ function withCityEffect(tiers: PolicyEffect[], body: (o: CityOrdinances) => void
   }
 }
 
-// 整個檔案都上種子:每一條測試都在比較兩座城市，而 tick 裡的建築成長、解僱、
-// 車輛抖動都在擲骰子。建城時另外重設序列，讓 A/B 從同一點出發。
+// The whole file is seeded: every test compares two cities, and building growth, layoffs and
+// vehicle jitter all roll dice inside a tick. The sequence is reset again when each city is
+// built, so A and B start from the same point.
 useSeededRandom();
 
 describe('全城條例的三個新槓桿', () => {
@@ -53,25 +55,27 @@ describe('全城條例的三個新槓桿', () => {
   });
 });
 
-/** Small Shop（COMMERCIAL_LOW）。 */
+/** Small Shop (COMMERCIAL_LOW). */
 const SHOP = 7;
 
 const WORKERS_PER_SHOP = 100;
 
 function cityWithShops() {
-  // A/B 的兩座城市要從同一個亂數狀態出發。不重設的話第二次接續第一次留下的
-  // 序列，兩座城市會自己走岔，量到的是那個岔而不是條例。
+  // The A and B cities have to start from the same random state. Without a reset the second
+  // continues the sequence the first left behind, the two cities diverge on their own, and what
+  // is measured is that divergence rather than the ordinance.
   reseedRandom();
   const state = createGameState(30, 30);
   const loop = new SimulationLoop(state);
   for (let x = 5; x < 15; x++) state.grid.setCell(x, 10, { roadType: 1, roadFlags: 0b1111 });
   for (let x = 6; x < 14; x++) {
     state.grid.setCell(x, 11, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: SHOP });
-    // 垃圾是按實際入住人數算的（`produceGarbageAndSewage` 用 getWorkers，不是
-    // 建築容量），所以沒有市民的城市產出恆為 0 —— 正向控制會先掛掉。
+    // Refuse follows actual occupancy — `produceGarbageAndSewage` uses getWorkers rather than
+    // building capacity — so a city with no citizens produces zero and the positive control
+    // fails first.
     //
-    // 一格塞 100 個工作人口，是為了讓袋數分得開:袋子是整數，產量小的時候
-    // 打八折跟打三折都會被無條件捨去成同一個數字。
+    // 100 workers on one cell separate the bag counts: bags are whole numbers, and at small
+    // volumes a 20% and a 70% reduction both floor to the same figure.
     for (let i = 0; i < WORKERS_PER_SHOP; i++) {
       state.citizens.restoreCitizen({ workplaceId: toPosKey(x, 11) }, 0);
     }
@@ -80,10 +84,10 @@ function cityWithShops() {
 }
 
 /**
- * 跑一段模擬，期間讓某條全城條例帶著指定的效果。
+ * Runs a stretch of simulation with one city ordinance carrying the given effects.
  *
- * 還原寫在 `finally` 裡:tick 途中拋錯的話，被改過的 `POLICY_EFFECTS` 會留給同一
- * 個檔案後面的測試。
+ * The restore is in a `finally`: a throw during a tick would otherwise leave the modified
+ * `POLICY_EFFECTS` to the rest of the file.
  */
 function simulateWithCityEffect(
   state: GameState, loop: SimulationLoop, tiers: PolicyEffect[] | null, ticks: number,
@@ -104,8 +108,8 @@ function simulateWithCityEffect(
 }
 
 describe('三個槓桿真的接進模擬', () => {
-  // 建築直接種進格子:updateLandValue 與垃圾產生都跳過 buildingId === 0，而建築
-  // 成長要求該格有電有水。
+  // Buildings are planted straight into cells: updateLandValue and refuse production both skip
+  // `buildingId === 0`, and growth requires the cell to have power and water.
 
   const landValueWith = (tiers: PolicyEffect[] | null) => {
     const { state, loop } = cityWithShops();
@@ -121,28 +125,31 @@ describe('三個槓桿真的接進模擬', () => {
   });
 
   it('should let a city ordinance move crime', () => {
-    // 犯罪走到地價的那一條線。犯罪還有另外三個出口（圖層、幸福度、棄置壓力），
-    // 由 `CrimeIsReal.test.ts` 守著。
+    // The line from crime to land value. Crime has three other exits — the overlay, happiness
+    // and abandonment stress — which `CrimeIsReal.test.ts` guards.
     expect(landValueWith([{ crime: 20 }]), '全城條例的犯罪效果沒有進到地價')
       .toBeLessThan(landValueWith([{ crime: 0 }]));
   });
 
   it('should not let a crime reduction create land value out of nothing', () => {
-    // `calculateLandValue` 是 `value -= crimeRate * CRIME_PENALTY` —— 負的犯罪率
-    // 會直接變成地價加成。壓得越低賺越多，而條例是可以疊的。
+    // `calculateLandValue` is `value -= crimeRate * CRIME_PENALTY`, so a negative crime rate
+    // becomes a land value bonus directly. The lower it is pushed the more it earns, and
+    // ordinances stack.
     //
-    // 驗的是「壓過頭沒有額外好處」:兩個不同深度的負值必須落在同一個地價，
-    // 因為兩者都該被夾成 0。沒有夾值的話，−100 會比 −50 多出 20 點地價。
+    // What is checked is that overshooting buys nothing: two different negative depths must land
+    // on the same land value, because both should clamp to 0. Unclamped, -100 gives 20 more
+    // land value than -50.
     expect(landValueWith([{ crime: -100 }]), '犯罪壓成負數之後還在繼續加地價')
       .toBe(landValueWith([{ crime: -50 }]));
   });
 
   /**
-   * 四種組合的垃圾量:什麼都沒開、只有分區、只有全城、兩個都開。
+   * Refuse under four combinations: nothing on, district only, city only, both.
    *
-   * 這一組是被突變測試逼出來的 —— 把 `ServiceRegistry` 那一行的分區乘數整項刪掉，
-   * 只留全城的，5916 條測試全部照樣綠。只比較「有沒有變少」的話，兩個乘數少掉
-   * 任何一個都還是會變少;要驗合成，就得要求兩個一起開比任何一個單獨開更少。
+   * Mutation testing forced this group out: deleting the district multiplier from that line in
+   * `ServiceRegistry` and keeping only the city one left all 5,916 tests green. Comparing only
+   * whether refuse fell is satisfied by either multiplier alone; checking that they combine
+   * requires both together to give less than either on its own.
    */
   const garbageWith = (district: boolean, city: boolean) => {
     const { state, loop } = cityWithShops();

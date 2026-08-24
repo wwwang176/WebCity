@@ -11,8 +11,9 @@ import { createGameState } from '../../simulation/GameState';
 import { SimulationLoop } from '../../simulation/SimulationLoop';
 
 /**
- * 目錄的形狀。個別條例的數字會被平衡調動，所以這裡守的是「加一條條例不能漏掉哪
- * 一張表」與「多級條例的價錢必須逐級變貴」，不是某一個數字。
+ * The catalogue's shape. Individual numbers move with balance, so what is guarded here is that
+ * adding a policy cannot miss a table and that a multi-level policy's price rises with each
+ * level, rather than any particular figure.
  */
 
 describe('目錄的完整性', () => {
@@ -28,10 +29,13 @@ describe('目錄的完整性', () => {
   });
 
   it('should charge more for every step up', () => {
-    // 高等級不能白拿。驗的是**費用**不是單價 —— 育兒補貼三級的單價相同，貴在
-    // 符合資格的孩子變多了，比單價會把那條誤判成「沒有比前一級貴」。
+    // A higher level cannot be free. What is checked is the **cost** rather than the unit price:
+    // the childcare subsidy's three levels share a unit price and get more expensive because more
+    // children are eligible, and comparing unit prices would read that as no dearer than the
+    // level below.
     //
-    // 每一個計費基數都給正值，不然用那個基數的條例會恆為 0 而無聲通過。
+    // Every billing basis is given a positive value, or policies on that basis are permanently 0
+    // and pass silently.
     const FULL = scaleOf({
       population: 1000, districtCells: 100, districtRoadCells: 40,
       babies: 40, children: 60, teens: 50, clinicPatients: 900, chargedDrivers: 120,
@@ -45,8 +49,9 @@ describe('目錄的完整性', () => {
   });
 
   it('should carry exactly the catalogue that was designed', () => {
-    // 寫死一份清單，不是「至少幾條」。只驗數量的話，刪掉夜間經濟再加一條別的
-    // 也會過 —— 而且沒有任何測試直接引用夜間經濟。
+    // A literal list rather than a minimum count. Checking the count alone stays green if the
+    // night economy is deleted and something else added, and no test references the night economy
+    // directly.
     expect(new Set(Object.values(PolicyType))).toEqual(new Set([
       PolicyType.NO_HEAVY_INDUSTRY, PolicyType.HIGH_DENSITY_BAN,
       PolicyType.ENCOURAGE_RECYCLING, PolicyType.ORGANIC_FOOD, PolicyType.TOURISM,
@@ -63,9 +68,10 @@ describe('目錄的完整性', () => {
   });
 
   it('should put every policy in the scope it was designed for', () => {
-    // 刻意重複一份 POLICY_SCOPE 的內容。分類與一致性測試都是從那張表推導預期再
-    // 回頭驗那張表 —— 那守得住「表彼此一致」，守不住「範圍是當初決定的那個」。
-    // 這一份是產品契約，不是資料的第二份來源。
+    // A deliberate second copy of POLICY_SCOPE's contents. The category and consistency tests
+    // derive their expectations from that table and check it against itself, which guards the
+    // tables agreeing with each other but not the scopes being the ones that were decided. This
+    // copy is the product contract, not a second source of the data.
     const DESIGNED: Record<PolicyType, 'district' | 'city'> = {
       [PolicyType.NO_HEAVY_INDUSTRY]: 'district',
       [PolicyType.HIGH_DENSITY_BAN]: 'district',
@@ -96,30 +102,32 @@ describe('目錄的完整性', () => {
 });
 
 /**
- * 逐級的方向。
+ * The direction of each level.
  *
- * 多數條例只有某一級被個別測到 —— 把第二級的收入改成負的、或把宵禁第二級的犯罪
- * 改成正的，都不會有任何測試轉紅。這一組是跨全表的不變量。
+ * Most policies have only one level covered individually: making level 2's revenue negative, or
+ * the curfew's level 2 crime positive, turns no test red. This group is the invariant across the
+ * whole table.
  */
 describe('逐級的方向', () => {
-  /** 減量型的槓桿:乘數 < 1 是好處，> 1 是代價。 */
+  /** Reducing levers, where a multiplier below 1 is a benefit and above 1 a cost. */
   const REDUCERS = ['garbage', 'waterDemand', 'sewageLoad', 'industrialPollution',
     'powerDemand', 'deathRate', 'coveredDeathRate'] as const;
 
   /**
-   * 增量型的槓桿:方向跟 REDUCERS 相反，乘數 > 1 才是好處。
+   * Increasing levers, running the opposite way to REDUCERS: above 1 is the benefit.
    *
-   * 分成兩張表而不是在每個槓桿身上標一個 `goodDirection`:標記會跟效果表分開放，
-   * 而漏標的那一條會被當成「沒有這個欄位」靜靜跳過 —— 一條純好處的條例就這樣
-   * 從這個不變量底下溜過去了。
+   * Two tables rather than a `goodDirection` marker on each lever, because the markers would live
+   * apart from the effect table and an unmarked lever would be skipped silently as "no such
+   * field", letting a pure-benefit policy slip under this invariant.
    */
   const INCREASERS = ['fertility', 'driveDeterrence'] as const;
 
   /**
-   * 計數型的槓桿:原值是 0，> 0 就是好處，而且逐級要更多。
+   * Counting levers, whose baseline is 0: above 0 is the benefit, and it has to grow with each
+   * level.
    *
-   * 跟 INCREASERS 分開是因為原值不同 —— 拿 `> 1` 去驗「辦到國小」（值 1）會把它
-   * 判成沒有好處。
+   * Separate from INCREASERS because the baseline differs: checking `> 1` would read "reaches
+   * primary school", whose value is 1, as no benefit at all.
    */
   const COUNTERS = ['compulsorySchooling'] as const;
 
@@ -197,7 +205,8 @@ describe('賭場與宵禁是一對相反的條例', () => {
     const curfew = POLICY_EFFECTS[PolicyType.CURFEW]![0]!;
     expect(gambling.crime!, '賭場沒有增加犯罪').toBeGreaterThan(0);
     expect(curfew.crime!, '宵禁沒有減少犯罪').toBeLessThan(0);
-    // 而且商業收入的方向也相反 —— 一個把夜生活放出來，一個把它關掉。
+    // And commercial revenue runs the opposite way: one opens the nightlife up, the other shuts
+    // it down.
     expect(gambling.revenueByZone![ZoneType.COMMERCIAL_LOW]!, '賭場沒有加商業收入')
       .toBeGreaterThan(1);
     expect(curfew.revenueByZone![ZoneType.COMMERCIAL_LOW]!, '宵禁沒有扣商業收入')
@@ -216,7 +225,8 @@ describe('新條例的分區類型針對性', () => {
   });
 
   it('should let heritage preservation cost both commerce and housing', () => {
-    // 歷史保存是全區都要付代價的 —— 限高與外觀規範對誰都一樣。
+    // Heritage preservation costs the whole district: height limits and appearance rules apply
+    // to everyone.
     const tier = POLICY_EFFECTS[PolicyType.HERITAGE_PRESERVATION]![0]!;
     expect(tier.landValue!, '歷史保存沒有加地價').toBeGreaterThan(0);
     for (const z of [ZoneType.COMMERCIAL_LOW, ZoneType.RESIDENTIAL_LOW]) {
@@ -241,9 +251,9 @@ describe('全城條例', () => {
   });
 
   it('should not let stacked crime reductions create land value out of nothing', () => {
-    // `calculateLandValue` 是 `value -= crimeRate * CRIME_PENALTY` —— 犯罪率變負
-    // 會直接變成地價加成，而且宵禁疊上監視器網路可以一直疊下去。夾值做在
-    // SimulationLoop，這條走真的路徑驗它。
+    // `calculateLandValue` is `value -= crimeRate * CRIME_PENALTY`, so a negative crime rate
+    // becomes a land value bonus directly, and a curfew stacked with the surveillance network can
+    // keep stacking. The clamp lives in SimulationLoop, and this checks it through the real path.
     const build = (stack: boolean) => {
       const state = createGameState(30, 30);
       const loop = new SimulationLoop(state);
@@ -260,7 +270,8 @@ describe('全城條例', () => {
       for (let i = 0; i < 6; i++) loop.tick();
       return state.grid.getCell(10, 11)!.landValue;
     };
-    // 兩條加起來是 −23，遠超過一座空城的平均犯罪率 —— 沒有夾值的話地價會被推高。
+    // The two together are -23, far past an empty city's average crime rate: unclamped, land
+    // value is pushed up.
     const plain = build(false);
     expect(plain, '地價沒有被算過，這條測試等於空轉').toBeGreaterThan(0);
     expect(build(true), '疊了兩條減犯罪的條例之後地價憑空變高了')
@@ -268,8 +279,9 @@ describe('全城條例', () => {
   });
 
   it('should bill both of them per resident', () => {
-    // 全城條例的 districtCells 恆為 0 —— 用格數計費就等於免費。這條由
-    // PolicyBilling.test.ts 的範圍檢查守著，這裡只是把新條例納入它的迴圈。
+    // A city ordinance's districtCells is always 0, so billing on cell count makes it free.
+    // PolicyBilling.test.ts's scope check guards that; this only brings the new ordinances into
+    // its loop.
     for (const t of [PolicyType.SURVEILLANCE_NETWORK, PolicyType.PAY_AS_YOU_THROW]) {
       expect(POLICY_BILLING[t]!.basis, `${t} 不是按人口計費`).toBe('population');
       expect(POLICY_SCOPE[t], `${t} 不是全城條例`).toBe('city');

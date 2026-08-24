@@ -71,8 +71,8 @@ describe('Encourage Recycling cuts what the district throws away', () => {
   });
 });
 
-// 觀光的效果是 `revenue`（全分區一視同仁），所以下面傳哪一個分區類型都一樣 ——
-// 挑商業只是因為它是觀光最直覺的受益者。
+// Tourism's effect is `revenue`, which treats every zone alike, so the zone type passed below
+// makes no difference; commerce is chosen only as tourism's most obvious beneficiary.
 describe('Tourism Promotion raises what the district earns', () => {
   it('should raise the revenue multiplier', () => {
     const { policies, id } = districtWith(PolicyType.TOURISM);
@@ -127,11 +127,12 @@ describe('policies stack per district, not city-wide', () => {
 
     expect(mgr.getGarbageMultiplier(green.id)).toBeLessThan(1);
     expect(mgr.getGarbageMultiplier(resort.id)).toBe(1);
-    // 觀光的收入加成只落在觀光區。回收現在也動收入（它扣商業），所以這裡比的是
-    // 「一邊往上、一邊往下」，不是「一邊有、一邊沒有」。
+    // Tourism's revenue bonus falls on the tourism district alone. Recycling now moves revenue
+    // too, docking commerce, so this compares one going up against one going down rather than one
+    // having an effect and the other not.
     expect(mgr.getRevenueMultiplier(resort.id, ZoneType.COMMERCIAL_LOW)).toBeGreaterThan(1);
     expect(mgr.getRevenueMultiplier(green.id, ZoneType.COMMERCIAL_LOW)).toBeLessThan(1);
-    // 住宅完全不受回收的代價影響 —— 那是商家的處理成本。
+    // Housing is untouched by recycling's cost, which is a shop's disposal expense.
     expect(mgr.getRevenueMultiplier(green.id, ZoneType.RESIDENTIAL_LOW)).toBe(1);
   });
 

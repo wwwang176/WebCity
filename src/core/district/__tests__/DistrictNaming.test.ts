@@ -2,11 +2,11 @@ import { describe, it, expect } from 'vitest';
 import { nextDistrictName, sanitiseDistrictName, DISTRICT_NAME_MAX } from '../DistrictNaming';
 
 /**
- * 分區的名字。
+ * District names.
  *
- * 預設名字原本是 `District ${分區數量 + 1}` —— 數量會因為合併而變少，於是合併過
- * 一次之後再開新的就可能跟既有的撞名。兩個同名的分區在側邊欄裡分不出來，而條例
- * 是設定在各自身上的。
+ * A default of `District ${count + 1}` collides after a merge, which lowers the count: the next
+ * new district can take a name that already exists. Two districts with one name are
+ * indistinguishable in the sidebar, and policies are set on each of them separately.
  */
 
 describe('預設名字', () => {
@@ -19,12 +19,14 @@ describe('預設名字', () => {
   });
 
   it('should fill a gap left by a merge', () => {
-    // 合併把 District 2 併掉之後，下一個新分區該補那個洞，不是跳到 3。
+    // After a merge takes District 2 away, the next district fills that gap rather than jumping
+    // to 3.
     expect(nextDistrictName(['District 1', 'District 3'])).toBe('District 2');
   });
 
   it('should not collide with a renamed district that took the number', () => {
-    // 玩家把某一區改名成 District 5 也算佔用 —— 撞名的來源不分是誰取的。
+    // A district the player renamed to District 5 counts as taken: a collision is a collision
+    // whoever caused it.
     expect(nextDistrictName(['District 1', 'District 5'])).toBe('District 2');
     expect(nextDistrictName(['District 1', 'District 2', 'District 3', 'District 5']))
       .toBe('District 4');
@@ -41,7 +43,7 @@ describe('玩家改的名字', () => {
   });
 
   it('should fall back when the player clears it', () => {
-    // 空白名字在側邊欄裡是一顆按不出東西的空按鈕。
+    // A blank name is an empty button in the sidebar with nothing to press.
     expect(sanitiseDistrictName('', 'District 3')).toBe('District 3');
     expect(sanitiseDistrictName('   ', 'District 3')).toBe('District 3');
   });
@@ -57,7 +59,7 @@ describe('玩家改的名字', () => {
   });
 
   it('should strip newlines rather than let them into the label', () => {
-    // 貼上多行文字時，換行會把側邊欄的按鈕撐開。
+    // Pasting multi-line text would otherwise stretch the sidebar's button.
     expect(sanitiseDistrictName('Old\nTown', 'District 1')).toBe('Old Town');
   });
 });

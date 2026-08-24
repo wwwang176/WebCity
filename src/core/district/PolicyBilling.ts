@@ -3,17 +3,18 @@ import { maxLevel } from './PolicyManager';
 import { LifeStage, type Citizen } from '../citizen/types';
 import { parsePosKey } from '../grid/GridHelpers';
 
-/** 費用跟著哪一個規模走。 */
+/** Which scale the fee follows. */
 export type BillingBasis =
   | 'flat' | 'population' | 'districtCells' | 'childcareRecipients' | 'clinicPatients'
   | 'chargedDrivers' | 'districtRoadCells';
 
 /**
- * 各生命階段對免費診所的看診權重。成人是 1。
+ * Each life stage's weight in free-clinic attendance, with adults at 1.
  *
- * 老人與嬰幼兒吃掉大部分的醫療支出，這是現實裡醫療費用年齡分布的形狀。按總人口
- * 計價的話，一座年輕城市與一座高齡城市的診所帳單一樣多 —— 而那正是這條條例最該
- * 讓玩家感覺到的差別。
+ * The old and the very young account for most healthcare spending, which is the shape of the
+ * real age distribution of medical costs. Pricing by total population gives a young city and an
+ * ageing one the same clinic bill, and that difference is the one this ordinance should make the
+ * player feel.
  */
 export const CLINIC_AGE_WEIGHT: Record<LifeStage, number> = {
   [LifeStage.BABY]: 2.5,
@@ -24,53 +25,58 @@ export const CLINIC_AGE_WEIGHT: Record<LifeStage, number> = {
 };
 
 /**
- * 全城規模。補貼型條例按「真正領得到的人」計費。
+ * City-wide scales. Subsidy ordinances are billed on the people who actually receive them.
  *
- * 只有一個「人口」的話，育兒補貼在一座沒有小孩的城市也要付全額 —— 那筆錢沒有任何
- * 人領得到，玩家也看不出開了跟沒開差在哪。
+ * With population as the only scale, a childcare subsidy costs full price in a city with no
+ * children: money nobody receives, and no visible difference between the ordinance being on and
+ * off.
  */
 export interface CityScales {
-  /** 全城人口。 */
+  /** The city's population. */
   population: number;
   babies: number;
   children: number;
   teens: number;
   /**
-   * 醫院覆蓋範圍內的人口，依年齡加權。
+   * The population inside hospital coverage, weighted by age.
    *
-   * 覆蓋範圍外的人不算 —— 醫院蓋不到的地方，人根本沒去看病，補助也就沒發出去。
-   * 無家者同理:沒有家就沒有座標可查，判不出他在不在範圍內。
+   * People outside coverage do not count: where no hospital reaches, nobody attends and no
+   * subsidy is paid. The same applies to the homeless, who have no address to check coverage
+   * against.
    */
   clinicPatients: number;
 }
 
-/** 算費用要知道的規模。呼叫端負責填。 */
+/** The scales billing needs. The caller fills them in. */
 export interface PolicyScale extends CityScales {
-  /** 這個條例所在分區的格數。全城條例填 0。 */
+  /** The cell count of this policy's district. 0 for a city ordinance. */
   districtCells: number;
   /**
-   * 這個分區裡的**道路**格數。全城條例填 0。
+   * The count of **road** cells in this district. 0 for a city ordinance.
    *
-   * 門架架在路上，不是架在地上 —— 圈一片綠地不該產生任何門架維運費。
+   * Gantries stand on roads, not on land, so enclosing a green field should produce no gantry
+   * upkeep at all.
    */
   districtRoadCells: number;
   /**
-   * 付錢開進**這個分區**的通勤人數。全城條例填 0。
+   * How many commuters pay to drive into **this district**. 0 for a city ordinance.
    *
-   * 唯一一個**流量**基數 —— 其他都是存量（有多少人、多少格、多少病人）。收入要跟
-   * 著它走，條例才會「越成功賺越少」;跟著格數走的話，荒地上的大收費區會變成
-   * 印鈔機。
+   * The only **flow** basis; every other one is a stock — how many people, cells or patients.
+   * Revenue follows it so the ordinance earns less the better it works; following cell count
+   * would turn a large charging zone over open country into a money printer.
    *
-   * 是分區的量不是全城的:一趟車只過一次關卡。放在全城那一層的話，每個收費區都會
-   * 拿整個城市的付費人數去乘，畫兩個就收兩次。
+   * A per-district quantity rather than a city-wide one: a trip passes one cordon. At the city
+   * level, every charging zone would multiply by the whole city's paying drivers and drawing two
+   * would charge twice.
    */
   chargedDrivers: number;
 }
 
 /**
- * 從市民清單算出全城規模。
+ * Computes the city-wide scales from the citizen list.
  *
- * 一趟走完 —— 每個量各掃一次的話，一座十萬人的城市每個預算週期要多走四趟。
+ * In one pass: a separate scan per quantity would walk a hundred thousand citizens four extra
+ * times every budget period.
  */
 export function computeCityScales(
   citizens: readonly Citizen[],
@@ -91,17 +97,19 @@ export function computeCityScales(
 }
 
 /**
- * 每個條例怎麼收錢。
+ * How each ordinance is billed.
  *
- * 沒有條目 = 不收費。限制型條例（禁重工業、禁高密度）就屬於這一類:它們的代價是
- * 機會成本 —— 該區長不出高稅收的建築 —— 而不是市府掏錢。再收一次是雙重懲罰，
- * 而且那個數字沒有來由。
+ * No entry means no fee. Restrictive ordinances — banning heavy industry or high density —
+ * belong in that group: their cost is the opportunity cost of the high-tax buildings the
+ * district cannot grow, not money out of the treasury. Charging as well would be a double
+ * penalty, and that number would have no basis.
  *
- * `perUnit` 每一級一格，索引 0 是第 1 級，長度必須等於 `maxLevel(type)`。兩張表
- * 走散的話，第三級會靜靜地用第二級的價錢。
+ * `perUnit` has one entry per level, index 0 being level 1, and its length must equal
+ * `maxLevel(type)`. If the two tables drift apart, level 3 silently charges level 2's price.
  *
- * 固定費用在大城市等於免費 —— 早期是限制，後期是無感。跟著規模走，費用才有來由，
- * 而且「政策越成功越貴」本身就是一個要玩家自己決定何時收手的張力。
+ * A flat fee is free in a large city: a constraint early on and imperceptible later. Following a
+ * scale gives the fee a basis, and "the more successful the policy, the more it costs" is itself
+ * a tension the player has to decide when to stop paying.
  */
 export const POLICY_BILLING: Partial<Record<PolicyType, {
   basis: BillingBasis;
@@ -110,7 +118,8 @@ export const POLICY_BILLING: Partial<Record<PolicyType, {
   [PolicyType.ENCOURAGE_RECYCLING]: { basis: 'districtCells', perUnit: [1.5, 4, 9] },
   [PolicyType.TOURISM]: { basis: 'districtCells', perUnit: [3] },
   [PolicyType.ORGANIC_FOOD]: { basis: 'districtCells', perUnit: [2] },
-  // 全城條例沒有分區格數可言 —— 它服務的是整座城市，所以按人口收。
+  // A city ordinance has no district cell count; it serves the whole city, so it is billed by
+  // population.
   [PolicyType.ENERGY_REGULATION]: { basis: 'population', perUnit: [0.08, 0.22, 0.5] },
   [PolicyType.LEGALIZE_GAMBLING]: { basis: 'districtCells', perUnit: [4] },
   [PolicyType.NIGHT_ECONOMY]: { basis: 'districtCells', perUnit: [2, 5] },
@@ -123,28 +132,31 @@ export const POLICY_BILLING: Partial<Record<PolicyType, {
   [PolicyType.SEWAGE_STANDARDS]: { basis: 'population', perUnit: [0.09, 0.24] },
   [PolicyType.INDUSTRIAL_EMISSION_CONTROL]: { basis: 'districtCells', perUnit: [2, 5, 11] },
   /**
-   * 育兒補貼是按人頭發的:每個符合資格的孩子每期領一樣多，所以三級的單價相同。
-   * 分級變的是**誰符合資格** —— 那才是這條條例在問的問題，而它反映在基數上，
-   * 不在單價上。
+   * The childcare subsidy is paid per head: every eligible child receives the same amount each
+   * period, so the unit price is identical across the three levels. What the level changes is
+   * **who is eligible**, the question this ordinance actually asks, and that shows up in the
+   * basis rather than the price.
    */
   [PolicyType.CHILDCARE_SUBSIDY]: { basis: 'childcareRecipients', perUnit: [1.2, 1.2, 1.2] },
-  // 辦到哪一階就付到哪一階。跳得比線性快 —— 大學的單位成本本來就比國小高。
+  // Paid as far as it reaches. Superlinear, because a university place costs more per head than
+  // a primary school one.
   [PolicyType.COMPULSORY_EDUCATION]: { basis: 'population', perUnit: [0.08, 0.20, 0.45] },
-  // 診所按實際看得到的病人收費 —— 一座高齡城市的帳單本來就該比年輕城市重，而
-  // 按總人口計價的話那個差別會整個不見。
+  // Clinics are billed on the patients they actually see: an ageing city's bill should be
+  // heavier than a young city's, and pricing by total population erases that difference.
   [PolicyType.FREE_CLINIC]: { basis: 'clinicPatients', perUnit: [0.35, 0.85] },
-  // 禁菸令只有稽查成本。它真正的代價在商業收入那一欄。
+  // The smoking ban costs only enforcement. Its real price is in the commercial revenue column.
   [PolicyType.SMOKING_BAN]: { basis: 'population', perUnit: [0.02] },
-  // 門架與稽查跟著**分區內的道路格數**走，不是總格數 —— 門架架在路上，圈一片
-  // 綠地不該產生任何維運費。
+  // Gantries and enforcement follow the district's **road** cell count rather than its total:
+  // gantries stand on roads, and enclosing a green field should produce no upkeep.
   [PolicyType.CONGESTION_CHARGE]: { basis: 'districtRoadCells', perUnit: [0.8, 1.8] },
 };
 
 /**
- * 這個基數在這個等級下有多少單位。
+ * How many units this basis has at this level.
  *
- * `level` 是給「範圍會隨等級變寬」的基數用的:育兒補貼補到哪一階，就數到哪一階。
- * 那個對應寫在這裡而不是效果表 —— 它是計費規則，不是模擬效果。
+ * `level` is for bases whose scope widens with the level: the childcare subsidy counts as far as
+ * it reaches. That mapping lives here rather than in the effect table, because it is a billing
+ * rule and not a simulation effect.
  */
 function unitsOf(basis: BillingBasis, scale: PolicyScale, level: number): number {
   switch (basis) {
@@ -162,21 +174,24 @@ function unitsOf(basis: BillingBasis, scale: PolicyScale, level: number): number
 }
 
 /**
- * 每個條例每一級**賺**多少。
+ * What each ordinance **earns** at each level.
  *
- * 跟計費表分開兩張，不是讓單價帶正負號 —— 一條條例可以同時兩邊都有:壅塞費的門架
- * 要維運（跟著收費區的格數走），過路費要收（跟著還在開車的人走）。一個帶正負號的
- * 數字表達不了兩個方向各自跟著不同的東西變。
+ * A separate table rather than a signed unit price, because one ordinance can have both: the
+ * congestion charge's gantries need upkeep (following the zone's road cells) while its tolls are
+ * collected (following the people still driving). A single signed number cannot express two
+ * directions following different scales.
  *
- * 分開還有一個好處:計費表既有的不變量（單價必須是正數、逐級要更貴）原封不動就
- * 繼續守得住支出，收入這邊自己有一組同形狀的。
+ * Separating them has a second benefit: the billing table's existing invariants — unit prices
+ * are positive and rise with level — keep guarding spending unchanged, and revenue has its own
+ * set of the same shape.
  */
 export const POLICY_REVENUE: Partial<Record<PolicyType, {
   basis: BillingBasis;
   perUnit: readonly number[];
 }>> = {
-  // 過路費。跟著「還有多少人在開車」走，所以政策越成功收得越少 —— 做到極致會
-  // 賠錢，因為門架照樣要養。那正是這條條例要玩家自己拿捏的地方。
+  // Tolls follow how many people are still driving, so the more successful the policy the less
+  // it collects; taken to its limit it loses money, because the gantries still need upkeep. That
+  // is the judgement this ordinance asks of the player.
   [PolicyType.CONGESTION_CHARGE]: { basis: 'chargedDrivers', perUnit: [0.04, 0.09] },
 };
 
@@ -192,12 +207,12 @@ function amountOf(
   return perUnit * unitsOf(entry.basis, scale, level);
 }
 
-/** 這個條例在這個等級、這個規模下，每個預算週期要花多少。 */
+/** What this ordinance costs per budget period at this level and scale. */
 export function policyCost(type: PolicyType, level: number, scale: PolicyScale): number {
   return amountOf(POLICY_BILLING, type, level, scale);
 }
 
-/** 這個條例在這個等級、這個規模下，每個預算週期收得到多少。 */
+/** What this ordinance collects per budget period at this level and scale. */
 export function policyRevenue(type: PolicyType, level: number, scale: PolicyScale): number {
   return amountOf(POLICY_REVENUE, type, level, scale);
 }

@@ -4,13 +4,13 @@ import { CitizenManager } from '../../citizen/CitizenManager';
 import { LifeStage, LIFE_STAGE_AGE } from '../../citizen/types';
 
 /**
- * 計費的規模不只有「人口」一個數字。
+ * Billing scales are more than a single population figure.
  *
- * 育兒補貼發給孩子、免費診所看的是病人 —— 按總人口收的話，一座沒有小孩的城市
- * 也要為育兒補貼付全額，而那筆錢沒有任何人領得到。
+ * The childcare subsidy is paid to children and the free clinic sees patients. Billed by total
+ * population, a city with no children pays the full childcare subsidy for money nobody receives.
  */
 
-/** 各生命階段的代表年齡。 */
+/** A representative age for each life stage. */
 const AGE = {
   baby: 4,
   child: 20,
@@ -43,7 +43,8 @@ describe('計費規模', () => {
   });
 
   it('should weight clinic patients by age', () => {
-    // 老人與嬰幼兒吃掉大部分的醫療支出，成人相對便宜。
+    // The old and the very young account for most healthcare spending; adults are cheap by
+    // comparison.
     const seniors = computeCityScales(managerWith({ senior: 10 }).getCitizens(), coveredEverywhere);
     const adults = computeCityScales(managerWith({ adult: 10 }).getCitizens(), coveredEverywhere);
     expect(seniors.clinicPatients, '十個老人不比十個成人貴').toBeGreaterThan(adults.clinicPatients);
@@ -52,7 +53,7 @@ describe('計費規模', () => {
   });
 
   it('should count nobody the hospitals cannot reach', () => {
-    // 使用者的觀察:醫院蓋不到的地方，人根本沒去看病 —— 補助也就沒發出去。
+    // Where no hospital reaches, nobody attends and no subsidy is paid.
     const mgr = managerWith({ adult: 10 });
     const half = computeCityScales(mgr.getCitizens(), (x) => x < 5);
     expect(half.clinicPatients, '沒被醫院蓋到的人也被算進帳單')
@@ -61,7 +62,8 @@ describe('計費規模', () => {
   });
 
   it('should count no patient for someone with no home at all', () => {
-    // 沒有家就沒有座標可查，判不出他在不在覆蓋範圍內。算進去等於憑空收錢。
+    // With no home there is no coordinate to check coverage against. Counting them charges for
+    // nothing.
     const mgr = new CitizenManager();
     for (let i = 0; i < 10; i++) mgr.restoreCitizen({ age: AGE.adult, homeId: null });
     expect(computeCityScales(mgr.getCitizens(), coveredEverywhere).clinicPatients,
@@ -69,8 +71,8 @@ describe('計費規模', () => {
   });
 
   it('should agree with the life stage boundaries', () => {
-    // 邊界直接讀 LIFE_STAGE_AGE，不寫死數字 —— 分界改了這裡要跟著改，而不是靜靜
-    // 地把一批嬰兒算成兒童。
+    // The boundaries are read from LIFE_STAGE_AGE rather than written as literals: a change to
+    // them has to reach here rather than silently counting a cohort of infants as children.
     const s = computeCityScales(
       managerWith({}).getCitizens(), coveredEverywhere);
     expect(s.babies + s.children + s.teens, '空城不該有小孩').toBe(0);

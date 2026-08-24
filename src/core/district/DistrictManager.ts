@@ -9,10 +9,10 @@ import { exclusiveGroupRank, EXCLUSIVE_GROUP_OF } from './PolicyExclusion';
 import type { TaxRates } from '../economy/Tax';
 
 /**
- * 存檔裡的政策。舊存檔沒有 `level`，只有 `active`。
+ * A policy as stored in a save. Older saves have `active` and no `level`.
  *
- * 兩個欄位都宣告成可選是為了讓 `fromJSON` 能同時吃兩種形狀 —— 讀存檔的程式碼
- * 是唯一該知道舊格式長什麼樣的地方。
+ * Both fields are optional so `fromJSON` can accept either shape: the save-reading code is the
+ * only place that should know what the old format looked like.
  */
 export type SerializedPolicy =
   Omit<Policy, 'level'> & { level?: number; active?: boolean };
@@ -34,14 +34,14 @@ export interface SerializedDistrictManager {
 }
 
 /**
- * 這個分區裡有幾格是道路。
+ * How many of this district's cells are roads.
  *
- * 壅塞費的門架維運費照這個數字收 —— 門架是架在路上的，不是架在地上。用分區的
- * 總格數計價的話，圈一片公園綠地跟圈一片密集路網要付一樣多，而前者根本沒有地方
- * 可以架門架。
+ * The congestion charge's gantry upkeep is charged on this figure, because gantries stand on
+ * roads rather than on land. Pricing by total district cells makes enclosing a park cost the
+ * same as enclosing a dense road network, and the park has nowhere to put a gantry.
  *
- * 越界的格子不算:存檔是使用者能編輯的檔案，`getCell` 對越界回 null，當成有路的話
- * 一個手改過的分區就能憑空生出門架費。
+ * Out-of-bounds cells do not count: a save is a file the user can edit, `getCell` returns null
+ * out of bounds, and treating that as a road lets a hand-edited district conjure gantry fees.
  */
 export function countRoadCellsInDistrict(
   grid: { getCell(x: number, y: number): { roadType: number } | null },
@@ -58,11 +58,12 @@ export function countRoadCellsInDistrict(
 }
 
 /**
- * 把分區清單補上計費要用的兩個量:道路格數與付費的駕駛人數。
+ * Adds the two quantities billing needs to a district list: road cell count and paying drivers.
  *
- * 計費那一層只認得一個最小介面（格數、道路格數、付費人數、政策），不認得
- * `District` —— 這裡是兩者之間唯一的轉接點，所以「門架照道路算」「過路費逐區算」
- * 這兩件事各只有一個地方會寫錯。
+ * The billing layer knows only a minimal interface — cell count, road cell count, paying
+ * drivers, policies — and not `District`. This is the only adapter between them, so "gantries
+ * are charged on roads" and "tolls are charged per district" each have exactly one place to go
+ * wrong.
  */
 export function billableDistricts<T extends { id: string; cells: ReadonlySet<string> }>(
   grid: { getCell(x: number, y: number): { roadType: number } | null },
@@ -96,10 +97,10 @@ export class DistrictManager {
   }
 
   /**
-   * 目前沒人用（或用得最少）的色票。
+   * The least-used swatch, or an unused one.
    *
-   * 分區一建立就配好顏色 —— 不配的話它會落在 id 雜湊出來的色相上，那個色相不在
-   * 色票裡，玩家也沒得「改回原本那個」。
+   * A district gets a colour when it is created. Without one it falls back to a hue hashed from
+   * its id, which is not in the palette and which the player cannot choose again.
    */
   private freeSwatch(): number {
     return nextSwatchIndex(this.getAllDistricts().map(d => d.colorIndex));
@@ -143,7 +144,7 @@ export class DistrictManager {
     return this.districts.get(id) ?? null;
   }
 
-  /** 換色票。索引壞掉就當成沒選過 —— 存檔是可以編輯的。 */
+  /** Changes the swatch. A broken index counts as never chosen, since saves are editable. */
   setDistrictColor(id: string, colorIndex: number | undefined): void {
     const district = this.districts.get(id);
     if (!district) return;
@@ -157,16 +158,17 @@ export class DistrictManager {
   }
 
   /**
-   * 整個分區刪掉，連同它身上的條例。
+   * Deletes a district along with its policies.
    *
-   * 筆刷把一區的格子扣光時分區會留下來 —— 它身上的條例設定不該因為擦掉一次就消失
-   * （見 `DistrictPaint` 的測試）。但那代表清單上會慢慢積滿沒有格子、也碰不到的
-   * 名字，所以要有一條明確的刪除路徑。
+   * Erasing a district's last cell with the brush leaves the district behind: its policy settings
+   * should not vanish because of one erase (see `DistrictPaint`'s tests). But that lets the list
+   * fill with unreachable, cell-less names, so there has to be an explicit delete.
    *
-   * 逐格索引跟著清。這件事**沒有測試守得到** —— `getDistrictAt` 有 `?? null`、
-   * `addCellToDistrict` 對舊主人用 `?.`，兩邊都吃得下指向已刪分區的索引，所以清不清
-   * 在行為上看不出差別，只差在那些鍵會一直留著。留著它是為了維持「逐格索引是純衍生
-   * 狀態」這個不變式（`fromJSON` 就是照這個前提整個重建的），而不是下游靠著它。
+   * The per-cell index is cleared with it. Nothing tests that: `getDistrictAt` has a `?? null`
+   * and `addCellToDistrict` uses `?.` on the previous owner, so both tolerate an index pointing
+   * at a deleted district and the only difference is that those keys stay around. It is done to
+   * keep the invariant that the per-cell index is purely derived state — `fromJSON` rebuilds it
+   * wholesale on that assumption — not because anything downstream relies on it.
    */
   deleteDistrict(id: string): void {
     const district = this.districts.get(id);
@@ -200,7 +202,8 @@ export class DistrictManager {
       id: `district_${this.nextId++}`,
       name: `${original.name} (Split)`,
       cells: new Set<string>(),
-      // 切出來的也是一個新分區，玩家一樣要在地圖上分得出它跟原本那一區。
+      // A split produces a new district too, and the player has to tell it from the original on
+      // the map.
       colorIndex: this.freeSwatch(),
       policies: [],
       specialization: Specialization.NONE,
@@ -249,17 +252,18 @@ export class DistrictManager {
         cells: new Set(sd.cells ?? []),
         taxRateOverride: sd.taxRateOverride,
         colorIndex: isValidSwatchIndex(sd.colorIndex) ? sd.colorIndex : undefined,
-        // 全城條例不該出現在分區的政策清單裡。`setPolicyLevel` 擋得住正常路徑，
-        // 但存檔是另一條進得來的門 —— 從那裡塞一條進來，收入效果會被套兩次
-        // （全城一次、分區一次），費用也會被收兩次。
+        // A city ordinance has no place in a district's policy list. `setPolicyLevel` stops the
+        // normal path, but a save is another way in: one inserted there applies its revenue
+        // effect twice, once city-wide and once per district, and charges its fee twice.
         policies: (sd.policies ?? []).filter((p) => isDistrictScoped(p.type)).map((p) => ({
           id: p.id, name: p.name, type: p.type,
-          // 舊存檔只有 `active`。掉成 0 的話玩家讀檔會發現政策全被關掉了，而畫面上
-          // 沒有任何東西說明為什麼；一律轉成 1 則會讓舊數字不在第一格的政策靜靜地
-          // 變弱，所以走 `levelForLegacyActive`。
+          // Older saves have only `active`. Falling back to 0 turns every policy off on load
+          // with nothing on screen explaining why, and converting everything to 1 silently
+          // weakens policies whose old value was not the first step, so this goes through
+          // `levelForLegacyActive`.
           //
-          // 新格式的 `level` 是權威（存過一次的檔案不該被舊欄位蓋回去），但一樣要
-          // 夾 —— 存檔是能被編輯的。
+          // The new format's `level` is authoritative — a file saved once must not be overwritten
+          // by the older field — but is still clamped, because saves are editable.
           level: clampLevel(
             p.level ?? levelForLegacyActive(p.type, p.active),
             maxLevel(p.type),
@@ -267,9 +271,10 @@ export class DistrictManager {
         })),
         specialization: sd.specialization ?? Specialization.NONE,
       };
-      // 同一個 PolicyType 只能有一筆。兩筆不在彼此的互斥組裡，所以下面的檢查會
-      // 放行 —— 而 `PolicyManager.effect` 是逐筆疊乘的，setter 與 UI 卻只操作
-      // `find()` 找到的第一筆:畫面上關掉了，效果還在。
+      // One entry per PolicyType. Two entries are not in each other's exclusive group, so the
+      // check below lets them through, while `PolicyManager.effect` multiplies entry by entry and
+      // the setter and the UI only touch the first one `find()` returns: switched off on screen,
+      // still in effect.
       const byType = new Map<PolicyType, Policy>();
       for (const p of district.policies) {
         const prev = byType.get(p.type);
@@ -277,11 +282,13 @@ export class DistrictManager {
       }
       district.policies = [...byType.values()];
 
-      // 互斥組在存檔這條路上也要重跑。`setPolicyLevel` 擋得住正常操作，但手改一次
-      // 存檔就能讓賭場與宵禁同時生效 —— 那是效果表算不出來的組合。
+      // Exclusive groups are re-applied on the save path too. `setPolicyLevel` stops normal
+      // operation, but one hand edit to a save has a casino and a curfew both in effect, a
+      // combination the effect table cannot evaluate.
       //
-      // 留哪一條由 `exclusiveGroupRank`（組內的宣告順序）決定，不是存檔的排列順序:
-      // 同一個檔案換個排列就讀出不同結果的話，玩家沒有辦法知道發生了什麼事。
+      // Which one survives is decided by `exclusiveGroupRank`, the declaration order within the
+      // group, not by the save's ordering: one file reordered reading differently would leave the
+      // player no way to know what happened.
       const winners = new Map<number, Policy>();
       for (const p of district.policies) {
         if (p.level === 0) continue;

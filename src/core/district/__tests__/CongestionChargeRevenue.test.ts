@@ -16,23 +16,25 @@ import { ZoneType } from '../../grid/types';
 import { RoadType, RoadDirection } from '../../road/types';
 
 /**
- * 壅塞費是唯一一條會賺錢的條例，而它賺的錢跟「還有多少人在開車」綁在一起。
+ * The congestion charge is the only ordinance that earns, and what it earns is tied to how many
+ * people are still driving.
  *
- * 用格數之類的存量計價的話，在一片荒地上畫一個超大的收費區也照樣月月進帳，而且
- * 條例越成功（車越少）收入也不會掉 —— 那就不是壅塞費了。
+ * Priced against a stock such as cell count, an enormous charging zone over open country would
+ * still pay every month, and revenue would not fall as the ordinance succeeded and traffic
+ * dropped — at which point it is not a congestion charge.
  */
 
 const HOME = '5,5';
 const WORK = '40,5';
 
-/** 全部收費區加起來收到幾個付費的駕駛。 */
+/** How many paying drivers all the charging zones collect between them. */
 function totalCharged(stats: { chargedDriversByDistrict: ReadonlyMap<string, number> }): number {
   let n = 0;
   for (const v of stats.chargedDriversByDistrict.values()) n += v;
   return n;
 }
 
-/** 一批通勤者，其中 `drivers` 個還在開車而且這趟碰得到收費區。 */
+/** A set of commuters, `chargedDrivers` of whom are still driving and cross a charging zone. */
 function statsWith(total: number, chargedDrivers: number) {
   const mgr = new CitizenManager();
   for (let i = 0; i < total; i++) {
@@ -56,8 +58,8 @@ describe('付了過路費的人數', () => {
   });
 
   it('should not count anyone whose commute cannot be worked out', () => {
-    // 路網剛改過的那幾 tick 會有一批人算不出通勤 —— 他們整個被跳過，收入也不該
-    // 把他們算進去。
+    // For a few ticks after a road change a batch of citizens have no computed commute. They
+    // are skipped entirely, and revenue must not count them.
     const mgr = new CitizenManager();
     for (let i = 0; i < 10; i++) mgr.restoreCitizen({ age: 100, homeId: HOME, workplaceId: WORK });
     const stats = computeCommuteStats(mgr.getCitizens(), () => null, 60, 5);
@@ -76,7 +78,7 @@ describe('壅塞費的收入', () => {
   });
 
   it('should earn nothing from an empty cordon', () => {
-    // 在荒地上畫一個超大的收費區不該是印鈔機。
+    // An enormous charging zone over open country must not be a money printer.
     expect(policyRevenue(PolicyType.CONGESTION_CHARGE, 2, scaleOf({ districtCells: 900 })),
       '沒有人開車經過卻還是收到錢').toBe(0);
   });
@@ -88,8 +90,9 @@ describe('壅塞費的收入', () => {
   });
 
   it('should still cost the city its gantries', () => {
-    // 一條條例可以同時兩邊都有:門架要維運，過路費要收。收入表與計費表是兩張，
-    // 就是為了表達得出這件事 —— 一個帶正負號的數字表達不了。
+    // One ordinance can have both: gantries need upkeep and tolls are collected. The revenue
+    // and billing tables are separate precisely to express that, which a single signed number
+    // cannot.
     expect(policyCost(PolicyType.CONGESTION_CHARGE, 1, scaleOf({ districtRoadCells: 40 })),
       '門架的維運費不見了').toBeGreaterThan(0);
   });
@@ -107,8 +110,8 @@ describe('壅塞費的收入', () => {
   });
 
   it('should only give a revenue side to policies that have one', () => {
-    // 收入表跟計費表一樣，級數必須對得上效果表 —— 走散的話第二級會靜靜地用第一級
-    // 的過路費。
+    // Like the billing table, the revenue table's levels must match the effect table: drifting
+    // apart, level 2 silently charges level 1's toll.
     const entries = Object.entries(POLICY_REVENUE);
     expect(entries.length, '收入表是空的，這條測試等於空轉').toBeGreaterThan(0);
     for (const [type, r] of entries) {
@@ -125,10 +128,11 @@ describe('壅塞費的收入', () => {
 
 
 /**
- * 一座還有人開車經過收費區的城市。
+ * A city where people still drive through the charging zone.
  *
- * 沿用 `CongestionCharge.test.ts` 的形狀:三站一台車的長班距路線，讓公車「搭得到
- * 但輸給開車」—— 這裡要的正是「收了費之後**仍然有人**照開」，過路費才收得到。
+ * The same shape as `CongestionCharge.test.ts`: a three-stop route with one vehicle and a long
+ * headway, so the bus is reachable but loses to driving. What is needed here is that **some
+ * people still drive** after the charge, or there are no tolls to collect.
  */
 function chargedCity(charge: boolean) {
   reseedRandom();
@@ -153,8 +157,8 @@ function chargedCity(charge: boolean) {
     }
     state.policies.setPolicyLevel(d.id, PolicyType.CONGESTION_CHARGE, 1);
   }
-  // 時鐘不要撥:通勤統計只在第 1 個 tick 與之後每 60 個 tick 跑一次，撥過去會整段
-  // 視窗都錯過它，付費人數就永遠是 0。
+  // The clock is not wound: commute statistics run on tick 1 and every 60 ticks after, so
+  // winding past that window misses it entirely and the paying-driver count stays 0.
   const loop = new SimulationLoop(state);
   loop.setRoadLookup(UnifiedRoadLookup.fromGrid(state.grid));
   loop.setPathfindingWorker(createSyncFakeWorker());
@@ -166,7 +170,8 @@ useSeededRandom();
 
 describe('過路費走到市庫', () => {
   it('should count the drivers who actually pay through the loop', () => {
-    // 接線:少了這條，`chargedDrivers` 可以永遠是 0 而上面所有測試照樣全綠。
+    // The wiring: without this, `chargedDrivers` could be permanently 0 and every test above
+    // stays green.
     const { loop } = chargedCity(true);
     expect(totalCharged(loop.getCommuteStats()), '沒有人被算成付了過路費')
       .toBeGreaterThan(0);
@@ -180,11 +185,13 @@ describe('過路費走到市庫', () => {
       loop.billableDistricts(), state.ordinances, loop.cityScales());
     expect(expected, '這座城市一毛過路費都沒收到，接線測不出來').toBeGreaterThan(0);
 
-    // 把收入表暫時清空再結一次帳:差額就是過路費。直接比「有沒有開條例」不行 ——
-    // 條例同時扣了商業收入，兩件事會混在一起。
+    // The revenue table is temporarily emptied and the books closed again: the difference is
+    // the tolls. Comparing the ordinance on and off will not do, because the ordinance also docks
+    // commercial revenue and the two would be mixed together.
     //
-    // 每邊都要跑滿六個 tick:結帳在慢速槽上，只 tick 一次的話兩邊讀到的都是同一
-    // 筆舊帳，差額會是 0 而看起來像「收入沒有進去」。
+    // Each side runs a full six ticks: closing the books is on a slow slot, and with one tick
+    // both sides read the same old figures, giving a difference of 0 that looks like revenue
+    // never arriving.
     const saved = POLICY_REVENUE[PolicyType.CONGESTION_CHARGE];
     delete (POLICY_REVENUE as Record<string, unknown>)[PolicyType.CONGESTION_CHARGE];
     let without = 0;
@@ -200,11 +207,12 @@ describe('過路費走到市庫', () => {
   });
 
   it('should earn nothing once everyone has switched to the bus', () => {
-    // 這條同時釘住兩件事:
+    // This pins two things:
     //
-    // 1. 只有**還在開車**的人算付費 —— 改搭公車的人不該被收過路費。
-    // 2. 這條條例做到極致會把自己的收入歸零，而門架照樣要養。那是它最有意思的
-    //    地方:壅塞費做得太好會賠錢。
+    // 1. Only people **still driving** pay: someone who switched to the bus is not tolled.
+    // 2. Taken to its limit this ordinance zeroes its own revenue while the gantries still need
+    //    upkeep. That is the interesting part: a congestion charge that works too well loses
+    //    money.
     const saved = POLICY_EFFECTS[PolicyType.CONGESTION_CHARGE];
     (POLICY_EFFECTS as Record<string, unknown>)[PolicyType.CONGESTION_CHARGE] =
       [{ driveDeterrence: 3, revenueByZone: { [ZoneType.COMMERCIAL_LOW]: 0.95 } }];

@@ -16,11 +16,13 @@ import { scaleOf } from '../../__tests__/helpers/policyScale';
 import { useSeededRandom, reseedRandom } from '../../__tests__/helpers/seededRandom';
 
 /**
- * 壅塞費:開進收費區變貴，所以有大眾運輸可搭的人改搭車。
+ * The congestion charge: driving into the zone gets more expensive, so people with transit
+ * available switch to it.
  *
- * 貴的是**心裡的**成本，不是路上的時間 —— 收費不會讓車開得比較慢。回報的通勤時間
- * 一律是實際花掉的，跟 `walkWeight` 同一個道理:兩者混在一起的話，通勤統計與圖層
- * 上會出現一個沒有任何人真的花掉的數字。
+ * What gets more expensive is the cost **in a citizen's reckoning**, not time on the road: a
+ * charge does not slow cars down. Reported commute times are always what was actually spent, for
+ * the same reason as `walkWeight`: mixing the two puts a number nobody actually spent into the
+ * commute statistics and the overlay.
  */
 
 const HOME = { x: 6, y: 2 };
@@ -30,14 +32,15 @@ function params(driveDeterrence: number) {
   return { congestionLevel: 0, walkSpeed: 0.35, walkWeight: 1.5, driveDeterrence };
 }
 
-/** 一個比開車稍慢、單靠自己贏不了的大眾運輸選項。 */
+/** A transit option slightly slower than driving that cannot win on its own. */
 const SLOWISH_BUS: AvailableTransport[] = [
   { type: TransportType.BUS, estimatedTime: 90, walkTime: 8 },
 ];
 
 describe('壅塞費怎麼改變選擇', () => {
   it('should still drive when nothing is charged', () => {
-    // 50 格、不塞車 → 開車 50。門檻是 50 × 1.5 = 75，公車加權後 94 > 75。
+    // 50 cells with no congestion means driving costs 50. The threshold is 50 x 1.5 = 75, and
+    // the bus weighs 94, above it.
     const picked = chooseModeMultiModal(
       { x: 0, y: 0 }, { x: 50, y: 0 }, SLOWISH_BUS, [], params(1));
     expect(picked.mode, '沒有收費就該開車').toBe(TransportMode.DRIVE);
@@ -50,8 +53,8 @@ describe('壅塞費怎麼改變選擇', () => {
   });
 
   it('should not make the drive itself take any longer', () => {
-    // 收費不會讓車開得比較慢。乘進回報值的話，通勤統計上會出現一個沒有人真的
-    // 花掉的數字。
+    // A charge does not slow cars down. Multiplied into the reported value, the commute
+    // statistics would carry a number nobody actually spent.
     const plain = chooseModeMultiModal({ x: 0, y: 0 }, { x: 20, y: 0 }, [], [], params(1));
     const charged = chooseModeMultiModal({ x: 0, y: 0 }, { x: 20, y: 0 }, [], [], params(3));
     expect(plain.mode, '沒有大眾運輸可搭時就只能開車').toBe(TransportMode.DRIVE);
@@ -84,10 +87,12 @@ describe('壅塞費是分區條例', () => {
   });
 
   it('should be a district policy billed by the cordon it covers', () => {
-    // 只在市中心收的壅塞費如果全城都收，就等於全面加稅，失去它原本的意義。
+    // A congestion charge levied downtown becomes a general tax increase if levied everywhere
+    // and loses its point.
     expect(POLICY_SCOPE[PolicyType.CONGESTION_CHARGE], '壅塞費不是分區條例')
       .toBe('district');
-    // 門架跟著**道路**格數走 —— 圈一片綠地不該產生任何維運費。
+    // Gantries follow the **road** cell count: enclosing a green field should produce no
+    // upkeep.
     const small = scaleOf({ population: 5000, districtCells: 200, districtRoadCells: 20 });
     const big = scaleOf({ population: 5000, districtCells: 200, districtRoadCells: 60 });
     expect(policyCost(PolicyType.CONGESTION_CHARGE, 1, small), '壅塞費不收門架維運費')
@@ -97,14 +102,15 @@ describe('壅塞費是分區條例', () => {
   });
 
   it('should charge a trip that touches the cordon at either end', () => {
-    // 收費是過關卡收的 —— 開進去跟開出來是同一趟。
+    // The charge is collected at a cordon: driving in and driving out are one trip.
     expect(tripDriveDeterrence(1, 1.75), '從外面開進收費區沒有被收費').toBe(1.75);
     expect(tripDriveDeterrence(1.75, 1), '從收費區開出來沒有被收費').toBe(1.75);
   });
 
   it('should charge a trip inside the cordon once, not twice', () => {
-    // 兩端都在區內的人只過一次關卡。相乘的話等於向他收兩次 —— 而他正是最沒有
-    // 替代方案的那一個:家跟公司都在區內，附近不見得有站牌。
+    // Someone with both ends inside crosses one cordon. Multiplying charges them twice, and
+    // they have the fewest alternatives of anyone: home and work both inside, with no guarantee
+    // of a stop nearby.
     expect(tripDriveDeterrence(1.75, 1.75), '整趟都在區內的人被收了兩次過路費')
       .toBe(1.75);
   });
@@ -118,11 +124,12 @@ describe('壅塞費是分區條例', () => {
 });
 
 /**
- * 一座公車「搭得到、但輸給開車」的城市。
+ * A city where the bus is reachable but loses to driving.
  *
- * 這個區間很難搭出來:站牌超出步行範圍的話公車根本不會被列為選項，收多少費都改變
- * 不了什麼;站牌在範圍內的話公車又幾乎穩贏。所以路線刻意排三站、只發一台車 ——
- * 班距拉長之後，等車的時間讓公車輸給開車，但它仍然留在選單上。
+ * That band is hard to build: with the stop out of walking range the bus is never an option at
+ * all and no charge changes anything, and with it in range the bus almost always wins. So the
+ * route deliberately has three stops and one vehicle: the long headway makes waiting cost the
+ * bus the comparison while leaving it on the menu.
  */
 function commuterCity(): { state: GameState; loop: SimulationLoop; riders: () => number } {
   reseedRandom();
@@ -154,11 +161,12 @@ useSeededRandom();
 
 describe('壅塞費走到真的通勤上', () => {
   /**
-   * 用一個明確夠大的乘數，不是表上的 1.75。
+   * A multiplier clearly large enough, rather than the table's 1.75.
    *
-   * 表上的數字剛好落在這個場景的臨界點上 —— 拿它來驗接線的話，哪天平衡調到 1.6
-   * 這條就會紅，而紅的原因是數字不是接線。實際的數字由「逐級的方向」與
-   * `getDriveDeterrence` 的分級測試守著。
+   * The table's number sits right on this scenario's threshold, so using it to check the wiring
+   * would turn red the day balance moves it to 1.6 — red for the number rather than the wiring.
+   * The actual figures are guarded by the direction-per-level tests and `getDriveDeterrence`'s
+   * own level tests.
    */
   const runWith = (charged: boolean) => {
     const { state, loop, riders } = commuterCity();
@@ -167,7 +175,8 @@ describe('壅塞費走到真的通勤上', () => {
       (POLICY_EFFECTS as Record<string, unknown>)[PolicyType.CONGESTION_CHARGE] =
         [{ driveDeterrence: 3, revenueByZone: { [ZoneType.COMMERCIAL_LOW]: 0.95 } }];
       const d = state.districts.createDistrict('Downtown');
-      // 收費區蓋住公司那一端。收費是過關卡收的，開進去跟開出來是同一趟。
+      // The charging zone covers the workplace end. The charge is collected at a cordon, and
+      // driving in and driving out are one trip.
       for (let x = 12; x <= 20; x++) {
         for (let y = 0; y <= 4; y++) state.districts.addCellToDistrict(d.id, x, y);
       }

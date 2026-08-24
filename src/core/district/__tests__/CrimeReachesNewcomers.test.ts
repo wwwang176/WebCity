@@ -11,14 +11,15 @@ import { toPosKey } from '../../grid/GridHelpers';
 import { useSeededRandom, reseedRandom } from '../../__tests__/helpers/seededRandom';
 
 /**
- * 條例的犯罪效果要走到「外地人要不要搬進來」這條線。
+ * An ordinance's crime effect has to reach whether outsiders move in.
  *
- * 量的不是搬進來幾個人 —— 那一步是擲骰子的，在測試規模下訊號會被隨機性蓋過。
- * 量的是骰子的偏向:模擬迴圈餵給 `migrationTick` 的那個犯罪數字、它算出來的吸引力，
- * 以及吸引力換算出來的這一輪移民上限。這三個都是純函式，完全確定。
+ * What is measured is not how many arrive — that step rolls dice, and at test scale the signal
+ * would be lost in the randomness — but the bias of the roll: the crime figure the simulation
+ * loop feeds `migrationTick`, the attractiveness it computes, and the migration cap that
+ * attractiveness converts to. All three are pure functions and fully determined.
  */
 
-/** 攔下 `migrationTick` 的第二個參數 —— 模擬迴圈眼中的這座城市。 */
+/** Intercepts `migrationTick`'s second argument: the city as the simulation loop sees it. */
 const seen: CityAttractiveness[] = [];
 vi.mock('../../citizen/Migration', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../citizen/Migration')>();
@@ -31,20 +32,22 @@ vi.mock('../../citizen/Migration', async (importOriginal) => {
   };
 });
 
-/** Small House / Small Shop。 */
+/** Small House / Small Shop. */
 const HOUSE = 1;
 const SHOP = 7;
 
 function city(): { state: GameState; loop: SimulationLoop } {
-  // A/B 的兩座城市要從同一個亂數狀態出發。不重設的話第二次接續第一次留下的
-  // 序列，兩座城市會自己走岔，量到的是那個岔而不是條例。
+  // The A and B cities have to start from the same random state. Without a reset the second
+  // continues the sequence the first left behind, the two cities diverge on their own, and what
+  // is measured is that divergence rather than the ordinance.
   reseedRandom();
   const state = createGameState(30, 30);
   for (let x = 5; x < 25; x++) state.grid.setCell(x, 10, { roadType: 1, roadFlags: 0b1111 });
   for (let x = 6; x < 24; x++) {
     state.grid.setCell(x, 11, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: HOUSE });
     state.grid.setCell(x, 9, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: SHOP });
-    // 一戶只住一個人 —— 留著空房，移民上限才不會被「沒地方住」卡住。
+    // One person per household, leaving housing free so the migration cap is not limited by a
+    // lack of homes.
     state.citizens.restoreCitizen({ homeId: toPosKey(x, 11), workplaceId: toPosKey(x, 9) }, 0);
   }
   state.power.addPlant({ x: 12, y: 8, output: 100000, pollution: 0, type: 'wind' });
@@ -52,7 +55,7 @@ function city(): { state: GameState; loop: SimulationLoop } {
   return { state, loop: new SimulationLoop(state) };
 }
 
-/** 跑到移民那一輪，回傳模擬迴圈當時看到的城市。 */
+/** Runs as far as the migration pass and returns the city the simulation loop saw. */
 function cityAsSeenByNewcomers(crime: number): CityAttractiveness {
   seen.length = 0;
   const { state, loop } = city();
@@ -72,15 +75,17 @@ function cityAsSeenByNewcomers(crime: number): CityAttractiveness {
   return last;
 }
 
-// 整個檔案都上種子:每一條測試都在比較兩座城市，而 tick 裡的建築成長、解僱、
-// 車輛抖動都在擲骰子。建城時另外重設序列，讓 A/B 從同一點出發。
+// The whole file is seeded: every test compares two cities, and building growth, layoffs and
+// vehicle jitter all roll dice inside a tick. The sequence is reset again when each city is
+// built, so A and B start from the same point.
 useSeededRandom();
 
 describe('條例的犯罪效果走到外地人眼前', () => {
   it('should show newcomers the crime rate the ordinances actually produce', () => {
-    // 不比兩次執行的差:基礎犯罪是人口 × 0.02，而犯罪本來就會影響人口，兩次跑的
-    // 基礎值不會一樣。改成各自釘一個區間 —— 條例那一項固定是 40，基礎值在這座
-    // 二十來人、沒有警察局的城市裡怎麼漂都不到 3。
+    // Not a difference between two runs: baseline crime is population x 0.02 and crime affects
+    // population, so the baseline differs between runs. Each is pinned to a band instead: the
+    // ordinance's term is fixed at 40, and in this city of twenty-odd people with no police
+    // station the baseline cannot drift past 3.
     const plain = cityAsSeenByNewcomers(0);
     const scary = cityAsSeenByNewcomers(40);
     expect(plain.crimeRate, '沒開條例，基礎犯罪卻不小 —— 這條測試的區間站不住').toBeLessThan(3);
@@ -89,8 +94,9 @@ describe('條例的犯罪效果走到外地人眼前', () => {
   });
 
   it('should make the city less attractive, not just less happy', () => {
-    // 幸福度那條線已經另外接了。這裡要的是犯罪自己那一項 —— 所以比的是同一個
-    // 城市物件在改掉犯罪率前後的吸引力，其餘欄位完全一樣。
+    // The happiness line is wired separately. What is wanted here is crime's own term, so the
+    // comparison is one city object's attractiveness before and after changing its crime rate,
+    // with every other field identical.
     const seenCity = cityAsSeenByNewcomers(0);
     const withCrime: CityAttractiveness = { ...seenCity, crimeRate: seenCity.crimeRate + 40 };
     expect(calculateAttractiveness(withCrime), '犯罪飆高，城市卻一樣吸引人')
@@ -98,7 +104,8 @@ describe('條例的犯罪效果走到外地人眼前', () => {
   });
 
   it('should shrink how many newcomers this round can take', () => {
-    // 這是玩家真正看得到的後果:同樣的空房，願意來的人變少。
+    // The consequence the player actually sees: the same empty housing, fewer people willing to
+    // come.
     const seenCity = cityAsSeenByNewcomers(0);
     const pop = 18, vacant = 18;
     const capOf = (c: CityAttractiveness) =>
@@ -110,13 +117,14 @@ describe('條例的犯罪效果走到外地人眼前', () => {
   });
 
   it('should not move the crime rate when no ordinance is in force', () => {
-    // 反面控制:把犯罪率寫死成一個大數字的實作也會讓第一條過。這座城市只有
-    // 二十來人又沒有警察局，基礎犯罪是人口 × 0.02，連 1 都不到。
+    // The control: an implementation hardcoding a large crime rate would also satisfy the first
+    // test. This city has twenty-odd people and no police station, so baseline crime is
+    // population x 0.02 and does not reach 1.
     const a = cityAsSeenByNewcomers(0);
     const b = cityAsSeenByNewcomers(0);
     expect(a.crimeRate, '沒開條例，外地人看到的犯罪率卻是個大數字').toBeLessThan(5);
-    // 上了種子而且每次建城都重設序列，所以兩次執行是逐字相同的。差一點點就表示
-    // 有東西在 A/B 之間漏了狀態。
+    // Seeded, with the sequence reset on each build, the two runs are identical. Any difference
+    // means something leaked state between A and B.
     expect(a.crimeRate, '同樣的城市兩次跑出不一樣的犯罪率').toBe(b.crimeRate);
   });
 });

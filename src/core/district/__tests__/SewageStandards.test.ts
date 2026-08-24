@@ -6,21 +6,24 @@ import { ZoneType } from '../../grid/types';
 import { useSeededRandom, reseedRandom } from '../../__tests__/helpers/seededRandom';
 
 /**
- * 汙水處理標準:工廠與家戶少排一點，處理廠就撐得比較久。
+ * Sewage treatment standards: factories and households discharge less, so the treatment plant
+ * lasts longer.
  *
- * 量的是 `SewageService.getProduced()` —— 它是 `produceGarbageAndSewage` 那條線的
- * 出口。`getDemand()` 之類的數字是另外算的，乘在那裡不會影響任何一格。
+ * What is measured is `SewageService.getProduced()`, the exit from the `produceGarbageAndSewage`
+ * path. Figures such as `getDemand()` are computed separately, and multiplying there affects no
+ * cell.
  */
 
-/** Small Shop（COMMERCIAL_LOW）。 */
+/** Small Shop (COMMERCIAL_LOW). */
 const SHOP = 7;
 
 function city(): { state: GameState; loop: SimulationLoop } {
-  // A/B 的兩座城市要從同一個亂數狀態出發。不重設的話第二次接續第一次留下的
-  // 序列，兩座城市會自己走岔，量到的是那個岔而不是條例。
+  // The A and B cities have to start from the same random state. Without a reset the second
+  // continues the sequence the first left behind, the two cities diverge on their own, and what
+  // is measured is that divergence rather than the ordinance.
   reseedRandom();
-  // 城市開大一點:`getProduced()` 是無條件捨去的整數，量小的時候打八五折跟打七折
-  // 會落在同一個數字。
+  // A larger city: `getProduced()` floors to a whole number, and at small volumes a 15% and a
+  // 30% reduction land on the same figure.
   const state = createGameState(60, 60);
   for (let x = 2; x < 58; x++) state.grid.setCell(x, 10, { roadType: 1, roadFlags: 0b1111 });
   for (let x = 2; x < 58; x++) {
@@ -33,13 +36,14 @@ function city(): { state: GameState; loop: SimulationLoop } {
 const producedWith = (level: number) => {
   const { state, loop } = city();
   state.ordinances.setLevel(PolicyType.SEWAGE_STANDARDS, level);
-  // 汙水產生跑在 slowSlot 2，也就是每 6 tick 一次。
+  // Sewage production runs in slow slot 2, once every 6 ticks.
   for (let i = 0; i < 12; i++) loop.tick();
   return state.sewage.getProduced();
 };
 
-// 整個檔案都上種子:每一條測試都在比較兩座城市，而 tick 裡的建築成長、解僱、
-// 車輛抖動都在擲骰子。建城時另外重設序列，讓 A/B 從同一點出發。
+// The whole file is seeded: every test compares two cities, and building growth, layoffs and
+// vehicle jitter all roll dice inside a tick. The sequence is reset again when each city is
+// built, so A and B start from the same point.
 useSeededRandom();
 
 describe('汙水處理標準', () => {
@@ -51,7 +55,8 @@ describe('汙水處理標準', () => {
   });
 
   it('should leave less of it untreated', () => {
-    // 處理廠的容量沒變，排放少了，沒處理掉的自然就少 —— 那是玩家真正在買的東西。
+    // With the plant's capacity unchanged and discharge lower, less goes untreated, which is
+    // what the player is actually buying.
     const untreatedWith = (level: number) => {
       const { state, loop } = city();
       state.ordinances.setLevel(PolicyType.SEWAGE_STANDARDS, level);
@@ -64,7 +69,7 @@ describe('汙水處理標準', () => {
   });
 
   it('should be paid for by industry', () => {
-    // 製程排放的標準是壓在工廠身上的，住宅與商業不動。
+    // Process discharge standards act on factories and leave housing and commerce alone.
     const { state } = city();
     state.ordinances.setLevel(PolicyType.SEWAGE_STANDARDS, 2);
     expect(state.ordinances.getRevenueMultiplier(ZoneType.INDUSTRIAL), '工業沒有付代價')
