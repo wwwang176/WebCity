@@ -3,15 +3,15 @@ import * as THREE from 'three';
 import { InstancedLayer } from '../InstancedLayer';
 
 /**
- * 空桶的可見性。
+ * An empty bucket's visibility.
  *
- * three.js 對 `count === 0` 的 `InstancedMesh` 仍會走完整條 render list ——
- * 量體桶從 60 漲到 168（階段 2C-1）之後，空桶的成本從「無所謂」變「有感」，
- * 而開局與稀疏城市大部分的桶都是空的。
+ * three.js still walks the whole render list for an `InstancedMesh` with `count === 0`. At 168
+ * massing buckets the cost of empty ones is noticeable, and at the start of a game and in a sparse
+ * city most buckets are empty.
  *
- * 直接測 `InstancedLayer` 而不是透過 `BuildingRenderer`：後者的 `build()` 會在
- * 建桶之後呼叫 `reset()`，把 `createBucket` 的初始狀態蓋掉 —— 從那個入口測，
- * 拿掉 `createBucket` 裡的那一行也不會轉紅。
+ * These cases drive `InstancedLayer` directly rather than going through `BuildingRenderer`, whose
+ * `build()` calls `reset()` after creating a bucket and overwrites `createBucket`'s initial state:
+ * entered that way, deleting the line in `createBucket` would not turn anything red.
  */
 function layer() {
   const scene = new THREE.Scene();
@@ -23,7 +23,7 @@ function layer() {
 
 describe('empty instanced buckets are not drawn', () => {
   it('should be born invisible', () => {
-    // 新生的空桶就該是不可見的，不該依賴稍後某個 reset 幫它補。
+    // A freshly created empty bucket is invisible on its own, without relying on a later reset.
     const { l } = layer();
     expect(l.meshFor('a')!.visible).toBe(false);
     expect(l.meshFor('b')!.visible).toBe(false);
@@ -54,8 +54,8 @@ describe('empty instanced buckets are not drawn', () => {
   });
 
   it('should stay visible across a capacity doubling', () => {
-    // 倍增會換一個新的 InstancedMesh —— 可見性要跟著搬，否則城市長大到
-    // 某個瞬間整桶建築會消失。
+    // Doubling swaps in a new InstancedMesh and the visibility has to carry over, or a whole
+    // bucket of buildings vanishes at the moment the city grows past a certain size.
     const { scene, l } = layer();
     for (let i = 0; i < 6; i++) l.acquire(scene, 'a', `${i},0`);
     expect(l.countOf('a')).toBe(6);

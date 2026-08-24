@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { variantIndexOf } from '../BuildingAppearance';
 import { VARIANT_COUNT } from '../geometry/buildings/massing/dimensions';
 
-/** N×N 的街廓上，相鄰兩格用同一個變體的比例。 */
+/** The share of adjacent cell pairs sharing a variant across an N x N block. */
 function adjacencyRate(n: number, seedByte: number, count: number): number {
   const v: number[][] = [];
   for (let x = 0; x < n; x++) {
@@ -25,8 +25,8 @@ function adjacencyRate(n: number, seedByte: number, count: number): number {
 
 describe('variant selection avoids the neighbours', () => {
   it('should keep neighbouring cells from sharing a variant', () => {
-    // 本階段的主要驗收條件。純逐格雜湊是 1/V = 12.5%，而一條街上每八棟就有
-    // 一棟跟隔壁一樣是看得出來的。
+    // A plain per-cell hash gives 1/V = 12.5%, and one building in eight matching its neighbour
+    // along a street is visible.
     for (const seed of [0, 7, 128, 255]) {
       const rate = adjacencyRate(64, seed, VARIANT_COUNT);
       expect(rate, `seed ${seed} 相鄰重複 ${(rate * 100).toFixed(1)}%`).toBeLessThan(0.05);
@@ -34,7 +34,8 @@ describe('variant selection avoids the neighbours', () => {
   });
 
   it('should still use every variant roughly evenly', () => {
-    // 迴避不能把分布壓歪 —— 某幾個變體從此不出現的話，等於變體數變少。
+    // The avoidance must not skew the distribution: variants that stop appearing are variants
+    // lost.
     const counts = new Array<number>(VARIANT_COUNT).fill(0);
     for (let x = 0; x < 64; x++) {
       for (let y = 0; y < 64; y++) counts[variantIndexOf(x, y, 0, VARIANT_COUNT)]!++;

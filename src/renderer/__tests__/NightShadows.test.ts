@@ -3,12 +3,12 @@ import * as THREE from 'three';
 import { WeatherRenderer } from '../WeatherRenderer';
 
 /**
- * 影子的濃度要跟著太陽高度走，不是跟著亮度曲線走。
+ * Shadow intensity follows the sun's height, not the brightness curve.
  *
- * 那是兩套時程：亮度從 t=0.19 就開始爬，但 `sunY` 的下限讓太陽在 `sunFactor`
- * 超過 0.1 之前（約 t=0.266）一直凍在同一個位置。照亮度給濃度的話，影子會在太陽
- * 還沒開始動的時候就浮出來、在原地僵著，等太陽脫離下限才忽然開始縮 —— 畫面上
- * 就是「天亮了一陣子，影子才開始動」。
+ * They are two schedules: brightness starts climbing at t=0.19 while `sunY`'s lower bound freezes
+ * the sun in place until `sunFactor` passes 0.1, around t=0.266. Driven by brightness, shadows
+ * appear while the sun has not started moving, stand still, and then suddenly begin to shorten once
+ * the sun leaves the bound — on screen, the shadows only start moving a while after dawn.
  */
 
 function harness() {
@@ -29,13 +29,13 @@ function harness() {
   };
 }
 
-/** `sunY = 80 * max(0.1, sunFactor)` 的下限值。太陽凍住時就停在這裡。 */
+/** The lower bound of `sunY = 80 * max(0.1, sunFactor)`, where the frozen sun rests. */
 const FROZEN_SUN_Y = 8;
 const STEPS = 720;
 
 describe('影子的濃度', () => {
   it('should never show a shadow while the sun is still frozen at its floor', () => {
-    // 這條就是「天亮了一陣子，影子才開始動」的機器可檢查形式。
+    // The machine-checkable form of "the shadows only start moving a while after dawn".
     const { w, light, sun } = harness();
     let seen = 0;
     for (let i = 0; i < STEPS; i++) {
@@ -58,7 +58,7 @@ describe('影子的濃度', () => {
   });
 
   it('should be solid at noon', () => {
-    // 反面：白天沒有影子的話，整個畫面會扁掉。
+    // The other side: without shadows in daylight the whole view flattens.
     const { w, light } = harness();
     w.setDayFraction(0.5);
     expect(light.shadow.intensity, '正午的影子不是實心的').toBe(1);
@@ -66,8 +66,9 @@ describe('影子的濃度', () => {
   });
 
   it('should keep the shadow pass in step with the shadow', () => {
-    // 濃度 0 卻還開著 castShadow，就是每幀白畫一張 2048² 深度圖；反過來則是
-    // 影子該看得見卻被關掉。兩者綁同一個數字，兩邊都不該發生。
+    // castShadow left on at zero intensity draws a 2048-square depth map every frame for nothing;
+    // the reverse hides shadows that should be visible. Both are tied to the same number so neither
+    // can happen.
     const { w, light } = harness();
     let off = 0, on = 0;
     for (let i = 0; i < STEPS; i++) {
@@ -94,8 +95,8 @@ describe('影子的濃度', () => {
   });
 
   it('should keep the light above the horizon all day', () => {
-    // 讓光源沉下去會從底下往上打，建築的下緣會亮起來。夜裡的解法是把影子的
-    // 濃度歸零，不是把光源埋掉。
+    // Sinking the light below the ground lights buildings from underneath and brightens their
+    // lower edges. At night the intensity goes to zero instead.
     const { w, sun } = harness();
     for (let i = 0; i < STEPS; i++) {
       w.setDayFraction(i / STEPS);

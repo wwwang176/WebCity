@@ -10,7 +10,7 @@ const DIMS: Dimensions = { w: 0.72, d: 0.68, floors: 8, floorHeight: 0.26, heigh
 
 describe('prototype table', () => {
   it('should give every zone at least two prototypes at every level', () => {
-    // 一個原型的話八個變體只剩尺寸可以變。
+    // With one prototype, the eight variants can differ only in size.
     for (const z of ZONE_TYPES) {
       for (const lv of LEVELS) {
         expect(prototypesFor(z, lv).length, `zone ${z} L${lv}`).toBeGreaterThanOrEqual(2);
@@ -19,7 +19,7 @@ describe('prototype table', () => {
   });
 
   it('should only ever add prototypes as the level climbs', () => {
-    // 等級的外型差異就靠這個。L3 少掉 L1 有的東西是筆誤。
+    // This is what makes levels look different; L3 lacking something L1 has is a slip.
     for (const z of ZONE_TYPES) {
       const names = (lv: number) => new Set(prototypesFor(z, lv).map(p => p.name));
       for (const lower of [1, 2]) {
@@ -32,9 +32,10 @@ describe('prototype table', () => {
   });
 
   it('should keep at least half the available prototypes asymmetric', () => {
-    // prototypeFor 用 variantIndex % 可用數輪流取，所以不對稱變體的比例約等於
-    // 不對稱原型的比例 —— 而驗收要 4/8。高密度分區在 L1 只有板樓與裙樓塔，
-    // 兩個都對稱，所以偏置塔必須在 L1 就開放。
+    // prototypeFor cycles with variantIndex modulo the available count, so the share of asymmetric
+    // variants is about the share of asymmetric prototypes, and acceptance asks for 4 of 8. At L1 a
+    // high-density zone has only the slab and the podium tower, both symmetric, so the offset tower
+    // has to be available from L1.
     for (const z of ZONE_TYPES) {
       for (const lv of LEVELS) {
         const ps = prototypesFor(z, lv);

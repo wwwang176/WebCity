@@ -3,17 +3,18 @@ import * as THREE from 'three';
 import { HighlightManager } from '../HighlightManager';
 
 /**
- * 漸層高亮下，每一棟公共建築要拿**自己那一格**的顏色。
+ * Under a gradient highlight each civic building takes **its own cell's** colour.
  *
- * 原本是 `cells[0].color` —— 整批基礎設施一律塗成陣列裡第一格的顏色。通勤圖層
- * 把站牌標成青色、住宅標成漸層色，於是所有交通建築都被塗成第一個住宅格的顏色，
- * 那一格通勤很糟的話就是全城的公共建築一起變紅。
+ * With `cells[0].color`, every piece of infrastructure is painted the colour of the array's first
+ * cell. The commute overlay marks stops cyan and houses on a gradient, so every transit building is
+ * painted the first residential cell's colour — and if that cell commutes badly, every civic
+ * building in the city turns red together.
  *
- * 警消圖層也有同樣的毛病，只是那裡的顏色全都來自同一組漸層，塗錯了看起來只是
- * 深淺不對，不像通勤圖層那樣一眼看穿。
+ * The police and fire overlays have the same flaw, but their colours all come from one gradient, so
+ * the error only reads as a wrong shade rather than being obvious at a glance.
  */
 
-/** 一棟位在 (x,z) 的公共建築。 */
+/** A civic building at (x,z). */
 function infraGroup(x: number, z: number): THREE.Group {
   const group = new THREE.Group();
   group.position.set(x, 0, z);

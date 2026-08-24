@@ -14,7 +14,8 @@ const TOP: Volume = { x: 0, z: 0, w: 0.7, d: 0.66, y0: 1.3, y1: 1.56 };
 
 describe('roof forms', () => {
   it('should give every zone at least two forms at every level', () => {
-    // 屋頂形式是在不增加原型數的前提下多一倍面貌最便宜的做法。只有一種就沒了。
+    // Roof forms are the cheapest way to double the number of faces without adding prototypes; one
+    // form gives none of that.
     for (const z of ZONE_TYPES) {
       for (const lv of LEVELS) {
         expect(roofFormsFor(z, lv).length, `zone ${z} L${lv}`).toBeGreaterThanOrEqual(2);
@@ -23,7 +24,7 @@ describe('roof forms', () => {
   });
 
   it('should sit on top of the volume it is given', () => {
-    // 屋頂浮在半空或陷進樓層裡都不會有東西報錯。
+    // A roof floating above the walls or sunk into the top floor goes unreported.
     for (const z of ZONE_TYPES) {
       for (const lv of LEVELS) {
         for (const form of roofFormsFor(z, lv)) {
@@ -65,7 +66,7 @@ describe('roof forms', () => {
   });
 
   it('should tag every roof piece as roof', () => {
-    // 標成 PART_WALL 的屋頂會長出窗戶。
+    // A roof labelled PART_WALL grows windows.
     for (const z of ZONE_TYPES) {
       for (const lv of LEVELS) {
         for (const form of roofFormsFor(z, lv)) {
@@ -78,7 +79,8 @@ describe('roof forms', () => {
   });
 
   it('should keep a pitched roof under half a storey tall', () => {
-    // 屋頂高過半層樓時，建築的總高度就不是樓層數乘樓高了 —— 等級階梯會漂掉。
+    // Once a roof is taller than half a storey the building's total height is no longer floors
+    // times floor height, and the level ladder drifts.
     for (const form of ['gable', 'hip', 'shed', 'sawtooth'] as const) {
       const vs = buildRoof(form, TOP, DIMS, variantRng(1, 'LOW', 1, 0));
       expect(topOf(vs) - TOP.y1, `${form} 太高`)
@@ -97,10 +99,12 @@ describe('roof forms', () => {
   });
 
   it('should not lock a prototype to one roof form', () => {
-    // 原型用餘數輪流取。屋頂若也用餘數，兩者的週期會對齊 —— 「L 形永遠配
-    // 山牆」，兩個維度就只剩一個。屋頂改用分層（慢週期）才枚舉得到乘積。
+    // Prototypes cycle by remainder. A roof chosen by remainder too aligns the two periods — an L
+    // shape always paired with a gable — and the two dimensions collapse into one. Choosing the roof
+    // by band, a slower cycle, enumerates the product.
     //
-    // 「用滿所有屋頂形式」那一條擋不住這件事：餘數也會用滿，只是配對固定。
+    // "uses every roof form" does not catch this: a remainder uses them all too, just in fixed
+    // pairs.
     for (const z of ZONE_TYPES) {
       for (const lv of LEVELS) {
         const pairs = new Set<string>();

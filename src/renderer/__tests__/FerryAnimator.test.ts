@@ -22,7 +22,7 @@ function createMockFerrySystem(vessels: Array<{
   };
 }
 
-/** 假造 transportVehicle 渡輪資料 */
+/** Fake transportVehicle data for a ferry. */
 function createFerryRenderData(vesselId: number, idOffset = 500_000): TransportVehicleRenderData {
   return {
     id: vesselId + idOffset,
@@ -42,7 +42,7 @@ describe('FerryAnimator', () => {
   });
 
   it('應該實作 VehicleAnimator 介面', () => {
-    // 型別檢查：確保 FerryAnimator 可以賦值給 VehicleAnimator
+    // A type check: FerryAnimator has to be assignable to VehicleAnimator.
     const _va: VehicleAnimator = animator;
     expect(_va).toBeDefined();
     expect(typeof animator.update).toBe('function');
@@ -62,7 +62,7 @@ describe('FerryAnimator', () => {
 
     animator.update(0.016, 1, ferry, vehicles);
 
-    // 更新後，vehicle 的 x/y 應該被動畫覆蓋
+    // After the update the vehicle's x and y come from the animation.
     expect(vehicles[0]!.x).toBeDefined();
     expect(vehicles[0]!.y).toBeDefined();
   });
@@ -73,11 +73,11 @@ describe('FerryAnimator', () => {
     ]);
     const vehicles = [createFerryRenderData(1)];
 
-    // 第一次 update 建立動畫
+    // The first update creates the animation.
     animator.update(0.016, 1, ferry, vehicles);
     const x0 = vehicles[0]!.x;
 
-    // 第二次 update 推進一大步
+    // The second update advances it by a large step.
     animator.update(1.0, 1, ferry, vehicles);
     const x1 = vehicles[0]!.x;
 
@@ -93,7 +93,7 @@ describe('FerryAnimator', () => {
     animator.update(0.016, 1, ferry, vehicles);
     const x0 = vehicles[0]!.x;
 
-    // speed = 0 模擬暫停
+    // speed = 0 stands for paused.
     animator.update(1.0, 0, ferry, vehicles);
     const x1 = vehicles[0]!.x;
 
@@ -101,7 +101,7 @@ describe('FerryAnimator', () => {
   });
 
   it('heading 應隨路徑方向平滑轉向（LERP）', () => {
-    // 路徑先向東再向南
+    // The path runs east, then south.
     const ferry = createMockFerrySystem([
       { id: 1, traveling: true, waterPath: [
         { x: 0, y: 0 }, { x: 5, y: 0 }, { x: 5, y: 5 },
@@ -109,17 +109,17 @@ describe('FerryAnimator', () => {
     ]);
     const vehicles = [createFerryRenderData(1)];
 
-    // 初始建立
+    // Initial creation.
     animator.update(0.016, 1, ferry, vehicles);
     const h0 = vehicles[0]!.heading;
 
-    // 推進到接近轉彎處
+    // Advance to near the turn.
     for (let i = 0; i < 50; i++) {
       animator.update(0.1, 1, ferry, vehicles);
     }
     const hFinal = vehicles[0]!.heading;
 
-    // heading 應該已變化（從東向轉成其他方向）
+    // The heading has changed, turning away from east.
     expect(hFinal).not.toBeCloseTo(h0, 1);
   });
 
@@ -131,15 +131,15 @@ describe('FerryAnimator', () => {
 
     animator.update(0.016, 1, ferry, vehicles);
 
-    // 渡輪停止
+    // The ferry stops.
     ferry.getVessels()[0]!.traveling = false;
 
-    // 推進足夠讓動畫播完
+    // Advance far enough for the animation to play out.
     for (let i = 0; i < 100; i++) {
       animator.update(0.1, 1, ferry, vehicles);
     }
 
-    // dispose 不應拋錯
+    // dispose must not throw.
     expect(() => animator.dispose()).not.toThrow();
   });
 
@@ -152,7 +152,7 @@ describe('FerryAnimator', () => {
 
     animator.update(1.0, 1, ferry, vehicles);
 
-    // 兩艘船的位置應不同（一艘向東，一艘向南）
+    // The two vessels sit at different positions, one heading east and one south.
     expect(vehicles[0]!.x).not.toBeCloseTo(vehicles[1]!.x, 1);
   });
 
@@ -165,10 +165,10 @@ describe('FerryAnimator', () => {
     animator.update(0.016, 1, ferry, vehicles);
     animator.dispose();
 
-    // dispose 後重新使用不應殘留狀態
+    // Reuse after dispose leaves no state behind.
     const vehicles2 = [createFerryRenderData(1)];
     animator.update(0.016, 1, ferry, vehicles2);
-    // 應該能正常運作（重新建立動畫）
+    // It works again, recreating the animation.
     expect(vehicles2[0]!.x).toBeDefined();
   });
 });

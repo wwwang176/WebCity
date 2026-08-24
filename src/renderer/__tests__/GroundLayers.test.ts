@@ -32,11 +32,12 @@ function baseY(layer: InstancedLayer, x: number, y: number): number {
 }
 
 /**
- * BUG-224：分區建築放在 y = 0.05，那是**路面**的高度（ROAD_Y 0.025 + 板厚
- * 0.05 的一半），不是地面的高度。地形表面是 y = 0，所以每一棟建築都浮空
- * 0.6 m，影子投在地上、建築從 0.6 m 才開始，太陽斜射時兩者分家。
+ * BUG-224: zoned buildings sat at y = 0.05, the height of the **road surface** (ROAD_Y 0.025 plus
+ * half the 0.05 slab thickness), not of the ground. The terrain surface is y = 0, so every building
+ * floated 0.6 m: the shadow fell on the ground while the building began 0.6 m up, and under a low
+ * sun the two parted company.
  *
- * 基礎設施建築用的是 y = 0 —— 兩者不一致本身就是這是筆誤的證據。
+ * Infrastructure buildings use y = 0, and that inconsistency is itself the evidence it was a slip.
  */
 describe('GROUND_LAYERS', () => {
   it('should keep everything that sits on the ground within a few centimetres of it', () => {
@@ -48,7 +49,7 @@ describe('GROUND_LAYERS', () => {
   });
 
   it('should stack markings above paving', () => {
-    // 標線疊在鋪面上，否則會 z-fighting。
+    // Markings sit above the paving, or they z-fight.
     expect(GROUND_LAYERS.MARKING).toBeGreaterThan(GROUND_LAYERS.DECAL);
   });
 
@@ -85,12 +86,10 @@ describe('buildings stand on the ground', () => {
   });
 
   it('should stand every public facility on the ground too', () => {
-    // 手寫的那一版有十七種的幾何底部寫在 0.05（路面高度），捷運站寫在
-    // 0.01 —— 全部浮空，與分區建築同一個成因。
-    //
-    // 十九種**全部**要查，渡輪碼頭也是：它曾經是唯一伸進水裡的一種，而那一版
-    // 在基地裡自己畫了港池。`isShorePosition` 的定義是「這一格是陸地，而且
-    // 四鄰有一格是水」—— 碼頭蓋在陸地上，水在隔壁那一格。
+    // All nineteen kinds are checked, the ferry terminal included. It was once the only kind
+    // reaching into water, back when it drew its own basin inside its footprint.
+    // `isShorePosition` means the cell is land with water in one of its four neighbours: the
+    // terminal stands on land and the water is the cell next door.
     const scene = new THREE.Scene();
     const renderer = new BuildingRenderer();
     let i = 0;
@@ -109,9 +108,9 @@ describe('buildings stand on the ground', () => {
   });
 
   it('should stand the ferry dock on the land it is actually built on', () => {
-    // 這一條原本反過來寫：碼頭要伸到水面（−0.2）之下，而 `snapToGround` 為此
-    // 開了一個例外。那是照著「基地裡有港池」那一版寫的，而那片水後來拿掉了
-    // （BUG-244）—— `isShorePosition` 要求碼頭那一格**是陸地**。
+    // The terminal sits on the ground like every other kind, with no exception in `snapToGround`
+    // for reaching below the water surface at -0.2: `isShorePosition` requires the terminal's cell
+    // to **be land** (BUG-244).
     const scene = new THREE.Scene();
     const renderer = new BuildingRenderer();
     renderer.addInfrastructure(scene, 0, 0, 'ferry_dock', 0);
@@ -122,7 +121,8 @@ describe('buildings stand on the ground', () => {
   });
 
   it('should not leave a step between a building and its own forecourt', () => {
-    // 前庭鋪面與牆腳對不上的話，浮空反而更明顯。
+    // A forecourt's paving out of line with the wall's foot makes the floating more obvious, not
+    // less.
     const { renderer, internals } = fresh();
     renderer.addBuilding(0, 0, ZoneType.INDUSTRIAL, 'LOW', 3, false);
     const building = baseY(internals.zoneLayer, 0, 0);
